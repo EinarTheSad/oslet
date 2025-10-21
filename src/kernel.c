@@ -4,11 +4,11 @@ extern int kb_wait_and_echo(void);
 
 void kmain(void) {
     vga_clear();
-    kputs("OSlet: tiny kernel alive.\n");
-    kputs("Press a key: ");
+    kprintf("OSlet: tiny kernel alive. Debug code: %x, current user: %s\n", 0xDEADBEEF, "root");
+    kprintf("Press a key: ");
 
     kb_wait_and_echo();
 
-    kputs("\nDone. Halting.\n");
+    kprintf("\nDone. Halting.\n");
     for (;;) __asm__ volatile ("hlt");
 }

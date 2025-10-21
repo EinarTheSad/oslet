@@ -1,3 +1,4 @@
+#include <stdarg.h>
 #include "osletio.h"
 
 #define VGA_ADDRESS 0xB8000
@@ -39,34 +40,90 @@ void vga_clear() {
     update_cursor();
 }
 
-void kputs(const char* str) {
-    vga_puts(str);
+void vga_putint(int n) {
+    char buf[16];
+    int i = 0;
+
+    if (n == 0) {
+        vga_putc('0');
+        return;
+    }
+
+    if (n < 0) {
+        vga_putc('-');
+        n = -n;
+    }
+
+    while (n > 0 && i < 15) {
+        buf[i++] = '0' + (n % 10);
+        n /= 10;
+    }
+
+    while (i--) vga_putc(buf[i]);
+}
+
+void vga_puthex(unsigned int n) {
+    char hex[] = "0123456789ABCDEF";
+    char buf[9];
+    int i = 0;
+
+    if (n == 0) {
+        vga_puts("0x0");
+        return;
+    }
+
+    while (n && i < 8) {
+        buf[i++] = hex[n & 0xF];
+        n >>= 4;
+    }
+
+    vga_puts("0x");
+    while (i--) vga_putc(buf[i]);
 }
 
 void kputc(char c) {
     vga_putc(c);
 }
 
+void kprintf(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    for (; *fmt; fmt++) {
+        if (*fmt == '%') {
+            fmt++;
+            switch (*fmt) {
+                case 'c':
+                    vga_putc((char)va_arg(args, int));
+                    break;
+                case 's':
+                    vga_puts(va_arg(args, const char *));
+                    break;
+                case 'd':
+                case 'i':
+                    vga_putint(va_arg(args, int));
+                    break;
+                case 'x':
+                    vga_puthex(va_arg(args, unsigned int));
+                    break;
+                case '%':
+                    vga_putc('%');
+                    break;
+                default:
+                    vga_putc('%');
+                    vga_putc(*fmt);
+                    break;
+            }
+        } else {
+            vga_putc(*fmt);
+        }
+    }
+
+    va_end(args);
+}
+
 int kstrlen(const char* s) {
     int len = 0;
     while (*s++) len++;
     return len;
-}
-
-void kitoa(int value, char* buffer, int base) {
-    char digits[] = "0123456789ABCDEF";
-    char temp[32];
-    int i = 0;
-    if (value == 0) {
-        buffer[0] = '0';
-        buffer[1] = '\0';
-        return;
-    }
-    while (value > 0 && i < 31) {
-        temp[i++] = digits[value % base];
-        value /= base;
-    }
-    int j = 0;
-    while (i--) buffer[j++] = temp[i];
-    buffer[j] = '\0';
 }

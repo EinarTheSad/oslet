@@ -4,17 +4,17 @@
 #include <stdint.h>
 
 // Core VGA I/O
-void vga_putc(char c);
 void vga_clear();
-void vga_setcolor(uint8_t color);
 void vga_puts(const char* str);
+void vga_putc(char c);
+void vga_putint(int n);
+void vga_puthex(unsigned int n);
 
 // Kernel-level output wrappers
-void kputs(const char* str);
 void kputc(char c);
+void kprintf(const char* fmt, ...);
 
 // String helpers
 int kstrlen(const char* s);
-void kitoa(int value, char* buffer, int base);
 
 #endif
