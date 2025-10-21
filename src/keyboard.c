@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "osletio.h"
 
 static inline uint8_t inb(uint16_t port) {
     uint8_t val;
@@ -25,8 +26,8 @@ int kb_wait_and_echo(void) {
             uint8_t sc = inb(0x60);
             char c = scancode_to_ascii(sc);
             if (c) {
-                extern void putchar(char);
-                putchar(c);
+                extern void kputc(char);
+                kputc(c);
                 return 0;
             }
         }
