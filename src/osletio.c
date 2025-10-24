@@ -147,23 +147,27 @@ void vga_putint(int n) {
 
 void vga_puthex(unsigned int n) {
     vga_puts("0x");
-    char buf[8];
-    int i = 0;
-    do {
-        uint8_t d = (uint8_t)(n & 0xF);
-        buf[i++] = (char)(d < 10 ? '0' + d : 'A' + (d - 10));
-        n >>= 4;
-    } while (n && i < (int)sizeof(buf));
 
-    if (i == 0) vga_putc('0');
-    while (i--) vga_putc(buf[i]);
+    if (n == 0) {
+        vga_putc('0');
+        return;
+    }
+    
+    int shift = 28; /* highest nibble in 32-bit */
+    while (((n >> shift) & 0xF) == 0 && shift > 0)
+        shift -=4;
+    /* skip leading zeroes */
+    for (; shift >= 0; shift -= 4) {
+        uint8_t digit = (n >> shift) & 0xF;
+        vga_putc(digit < 10 ? '0' + digit : 'A' + (digit - 10));
+    }
 }
 
 void kputc(char c) {
     vga_putc(c);
 }
 
-/* Tiny printf: supports %c %s %d %u %x %p %% */
+/* Tiny printf: supports %c %s %d %u %x %p %% \n */
 void kprintf(const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -198,7 +202,7 @@ void kprintf(const char* fmt, ...) {
                 } while (u && i < (int)sizeof(buf));
                 while (i--) vga_putc(buf[i]);
             } break;
-            case 'x':
+            case 'x': /* empty */
             case 'p': {
                 unsigned int x = va_arg(ap, unsigned int);
                 vga_puthex(x);
