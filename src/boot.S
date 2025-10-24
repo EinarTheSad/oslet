@@ -1,4 +1,3 @@
-/* boot.S — minimal 32-bit Multiboot entry with our own GDT and stack */
     .code32
     .section .multiboot
     .align 4
@@ -48,7 +47,6 @@ gdtr:
     .equ SEL_CODE, 0x08
     .equ SEL_DATA, 0x10
 
-/* -------- BSS stack -------- */
     .section .bss
     .align 16
 stack_bottom:
@@ -64,10 +62,10 @@ stack_top:
 start:
     cli
 
-    /* Load our own GDT so 0x08/0x10 are exactly what we think they are */
     lgdt gdtr
+    nop
 
-    /* Set data segments to our data descriptor */
+    /* Set data segments to the data descriptor */
     mov  $SEL_DATA, %eax
     mov  %ax, %ds
     mov  %ax, %es
@@ -80,14 +78,11 @@ start:
     and  $~0xF, %esp                /* align down to 16 */
     sub  $8, %esp                   /* compensate for return addr, keep 16B */
 
-    cld                             /* just in case the toolchain cares */
+    cld
 
-    /* Long-jump to load CS with our code selector (safer than assuming it) */
     ljmp $SEL_CODE, $1f
+    
 1:
-    /* Now CS = SEL_CODE for sure */
-
-    /* Call C kernel */
     call kmain
 
 .hang:
