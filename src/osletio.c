@@ -1,83 +1,161 @@
 #include <stdarg.h>
+#include <stdint.h>
 #include "osletio.h"
 
-#define VGA_ADDRESS 0xB8000
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
+/* Text-mode VGA */
+#define VGA_ADDRESS 0xB8000u
+#define VGA_WIDTH   80
+#define VGA_HEIGHT  25
 
-static uint16_t* const VGA_BUFFER = (uint16_t*)VGA_ADDRESS;
-static int cursor_x = 0, cursor_y = 0;
-static uint8_t color = 0x07; // light gray on black
+/* MMIO: volatile to stop the compiler from caching writes */
+static volatile uint16_t* const VGA_BUFFER = (volatile uint16_t*) (uintptr_t)VGA_ADDRESS;
 
-static inline void update_cursor() {
-    // optional: write to VGA I/O ports 0x3D4, 0x3D5 to move cursor
+/* Cursor and color state */
+static int cursor_x = 0;
+static int cursor_y = 0;
+static uint8_t color = 0x07;
+
+/* Port I/O */
+static inline void outb(uint16_t port, uint8_t val) {
+    __asm__ volatile ("outb %0, %1" :: "a"(val), "Nd"(port));
+}
+
+static inline uint8_t inb(uint16_t port) {
+    uint8_t val;
+    __asm__ volatile ("inb %1, %0" : "=a"(val) : "Nd"(port));
+    return val;
+}
+
+static inline void move_cursor_hw(void);
+static inline void scroll(void);
+static inline void put_at(char c, int x, int y);
+
+/* Update the hardware cursor (0x3D4/0x3D5) */
+static inline void move_cursor_hw(void) {
+    if (cursor_x < 0) cursor_x = 0;
+    if (cursor_y < 0) cursor_y = 0;
+    if (cursor_x >= VGA_WIDTH)  cursor_x = VGA_WIDTH - 1;
+    if (cursor_y >= VGA_HEIGHT) cursor_y = VGA_HEIGHT - 1;
+
+    uint16_t pos = (uint16_t)(cursor_y * VGA_WIDTH + cursor_x);
+    outb(0x3D4, 0x0F);
+    outb(0x3D5, (uint8_t)(pos & 0xFF));
+    outb(0x3D4, 0x0E);
+    outb(0x3D5, (uint8_t)((pos >> 8) & 0xFF));
+}
+
+/* Scroll up by one line when the cursor goes off the bottom */
+static inline void scroll(void) {
+    if (cursor_y < VGA_HEIGHT) return;
+
+    /* Move lines 1..24 to 0..23 */
+    for (int y = 1; y < VGA_HEIGHT; ++y) {
+        for (int x = 0; x < VGA_WIDTH; ++x) {
+            VGA_BUFFER[(y - 1) * VGA_WIDTH + x] = VGA_BUFFER[y * VGA_WIDTH + x];
+        }
+    }
+    /* Clear last line */
+    uint16_t blank = (uint16_t)(' ') | ((uint16_t)color << 8);
+    for (int x = 0; x < VGA_WIDTH; ++x) {
+        VGA_BUFFER[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = blank;
+    }
+    cursor_y = VGA_HEIGHT - 1;
+}
+
+/* Write a character at a specific location */
+static inline void put_at(char c, int x, int y) {
+    VGA_BUFFER[y * VGA_WIDTH + x] = (uint16_t)c | ((uint16_t)color << 8);
+}
+
+/* Public API */
+
+void vga_clear(void) {
+    uint16_t blank = (uint16_t)(' ') | ((uint16_t)color << 8);
+    for (int y = 0; y < VGA_HEIGHT; ++y) {
+        for (int x = 0; x < VGA_WIDTH; ++x) {
+            VGA_BUFFER[y * VGA_WIDTH + x] = blank;
+        }
+    }
+    cursor_x = 0;
+    cursor_y = 0;
+    move_cursor_hw();
 }
 
 void vga_putc(char c) {
-    if (c == '\n') {
-        cursor_x = 0;
-        cursor_y++;
-    } else {
-        VGA_BUFFER[cursor_y * VGA_WIDTH + cursor_x] = (uint16_t)c | (uint16_t)color << 8;
-        cursor_x++;
+    switch ((unsigned char)c) {
+        case '\r':
+            cursor_x = 0;
+            break;
+        case '\n':
+            cursor_x = 0;
+            cursor_y++;
+            break;
+        case '\t': {
+            int next = (cursor_x + 4) & ~3;
+            while (cursor_x < next) {
+                put_at(' ', cursor_x, cursor_y);
+                cursor_x++;
+            }
+            break;
+        }
+        case '\b':
+            if (cursor_x > 0) {
+                cursor_x--;
+                put_at(' ', cursor_x, cursor_y);
+            }
+            break;
+        default:
+            put_at(c, cursor_x, cursor_y);
+            cursor_x++;
+            if (cursor_x >= VGA_WIDTH) {
+                cursor_x = 0;
+                cursor_y++;
+            }
+            break;
     }
-    if (cursor_x >= VGA_WIDTH) {
-        cursor_x = 0;
-        cursor_y++;
+
+    if (cursor_y >= VGA_HEIGHT) {
+        scroll();
     }
-    if (cursor_y >= VGA_HEIGHT) cursor_y = 0;
-    update_cursor();
+    move_cursor_hw();
 }
 
 void vga_puts(const char* str) {
+    if (!str) return;
     while (*str) vga_putc(*str++);
 }
 
-void vga_clear() {
-    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++)
-        VGA_BUFFER[i] = (uint16_t)' ' | (uint16_t)color << 8;
-    cursor_x = cursor_y = 0;
-    update_cursor();
-}
-
 void vga_putint(int n) {
-    char buf[16];
-    int i = 0;
-
-    if (n == 0) {
-        vga_putc('0');
-        return;
-    }
-
+    unsigned int u;
     if (n < 0) {
         vga_putc('-');
-        n = -n;
+        /* cast to long to avoid UB on INT_MIN, then negate and cast back */
+        u = (unsigned int)(-(long)n);
+    } else {
+        u = (unsigned int)n;
     }
 
-    while (n > 0 && i < 15) {
-        buf[i++] = '0' + (n % 10);
-        n /= 10;
-    }
+    char buf[16];
+    int i = 0;
+    do {
+        buf[i++] = (char)('0' + (u % 10));
+        u /= 10;
+    } while (u && i < (int)sizeof(buf));
 
     while (i--) vga_putc(buf[i]);
 }
 
 void vga_puthex(unsigned int n) {
-    char hex[] = "0123456789ABCDEF";
-    char buf[9];
-    int i = 0;
-
-    if (n == 0) {
-        vga_puts("0x0");
-        return;
-    }
-
-    while (n && i < 8) {
-        buf[i++] = hex[n & 0xF];
-        n >>= 4;
-    }
-
     vga_puts("0x");
+    char buf[8];
+    int i = 0;
+    do {
+        uint8_t d = (uint8_t)(n & 0xF);
+        buf[i++] = (char)(d < 10 ? '0' + d : 'A' + (d - 10));
+        n >>= 4;
+    } while (n && i < (int)sizeof(buf));
+
+    if (i == 0) vga_putc('0');
     while (i--) vga_putc(buf[i]);
 }
 
@@ -85,45 +163,60 @@ void kputc(char c) {
     vga_putc(c);
 }
 
+/* Tiny printf: supports %c %s %d %u %x %p %% */
 void kprintf(const char* fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
+    va_list ap;
+    va_start(ap, fmt);
 
-    for (; *fmt; fmt++) {
-        if (*fmt == '%') {
-            fmt++;
-            switch (*fmt) {
-                case 'c':
-                    vga_putc((char)va_arg(args, int));
-                    break;
-                case 's':
-                    vga_puts(va_arg(args, const char *));
-                    break;
-                case 'd':
-                case 'i':
-                    vga_putint(va_arg(args, int));
-                    break;
-                case 'x':
-                    vga_puthex(va_arg(args, unsigned int));
-                    break;
-                case '%':
-                    vga_putc('%');
-                    break;
-                default:
-                    vga_putc('%');
-                    vga_putc(*fmt);
-                    break;
-            }
-        } else {
-            vga_putc(*fmt);
+    for (const char* p = fmt; *p; ++p) {
+        if (*p != '%') {
+            vga_putc(*p);
+            continue;
+        }
+
+        ++p;
+        switch (*p) {
+            case '%': vga_putc('%'); break;
+            case 'c': {
+                int ch = va_arg(ap, int);
+                vga_putc((char)ch);
+            } break;
+            case 's': {
+                const char* s = va_arg(ap, const char*);
+                vga_puts(s ? s : "(null)");
+            } break;
+            case 'd': {
+                int val = va_arg(ap, int);
+                vga_putint(val);
+            } break;
+            case 'u': {
+                unsigned int u = va_arg(ap, unsigned int);
+                char buf[16]; int i = 0;
+                do {
+                    buf[i++] = (char)('0' + (u % 10));
+                    u /= 10;
+                } while (u && i < (int)sizeof(buf));
+                while (i--) vga_putc(buf[i]);
+            } break;
+            case 'x':
+            case 'p': {
+                unsigned int x = va_arg(ap, unsigned int);
+                vga_puthex(x);
+            } break;
+            default:
+                /* Unknown specifier: print it literally */
+                vga_putc('%');
+                vga_putc(*p);
+                break;
         }
     }
 
-    va_end(args);
+    va_end(ap);
 }
 
 int kstrlen(const char* s) {
-    int len = 0;
-    while (*s++) len++;
-    return len;
+    if (!s) return 0;
+    int n = 0;
+    while (*s++) n++;
+    return n;
 }
