@@ -1,15 +1,16 @@
-#include "osletio.h"
+#include "console.h"
 
 extern void idt_init(void);
-// extern int kb_wait_and_echo(void);
+extern void vga_clear(void);
+extern void vga_use_as_console(void);
 
 void kmain(void) {
     idt_init();
+    vga_use_as_console();
     vga_clear();
-    kprintf("OSlet has booted\n\n");
 
-    /* kb_wait_and_echo(); */
+    printf("OSlet has booted. VGA width=%d height=%d\n", 80, 25);
+    printf("hex %x no prefix, pointer %p\n", 0xBADC0DEu, (void*)0xB8000);
 
-    kprintf("\nHalt");
-     for (;;) __asm__ volatile ("hlt");
+    for (;;) __asm__ volatile ("hlt");
 }

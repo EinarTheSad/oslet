@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "osletio.h"
+#include "console.h"
 
 struct idt_entry {
     uint16_t offset_low;
@@ -23,7 +23,7 @@ static inline void load_idt(void) {
     idtr.limit = sizeof(idt) - 1;
     idtr.base  = (uint32_t)&idt;
     __asm__ volatile ("lidt %0" :: "m"(idtr));
-    kprintf("IDT loaded\n");
+    printf("IDT loaded\n");
 }
 
 static void idt_set_entry(int num, uint32_t base, uint16_t sel, uint8_t flags) {
@@ -35,7 +35,7 @@ static void idt_set_entry(int num, uint32_t base, uint16_t sel, uint8_t flags) {
 }
 
 void isr_common_stub(void) {
-    kprintf("[EXCEPTION] System halted");
+    printf("[EXCEPTION] System halted");
     for (;;) __asm__ volatile ("hlt");
 }
 
