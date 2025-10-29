@@ -1,4 +1,6 @@
 #pragma once
+#define STREQ(a, b) (streq((a), (b)) == 0)
+
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -8,6 +10,8 @@ typedef struct {
     size_t (*write)(const char* s, size_t n, void* ctx);
     void* ctx;
 } console_t;
+
+int streq(const char *a, const char *b);
 
 // Global current console (stdout/stderr equivalent)
 void console_set(const console_t* c);

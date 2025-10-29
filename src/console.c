@@ -30,6 +30,14 @@ static inline void pad_out(int count, char ch, emit_fn emit, void* user, int* wr
     }
 }
 
+int streq(const char *a, const char *b) {
+    while (*a && *a == *b) {
+        a++;
+        b++;
+    }
+    return (unsigned char)*a - (unsigned char)*b;
+}
+
 /* Supports: %c %s %d %u %x %X %p %% with width/zero-pad basics */
 int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
     int written = 0;
