@@ -24,5 +24,6 @@ void kmain(void) {
         printf("oslet> ");
         size_t n = kbd_getline(line, sizeof(line));
         /* TODO: command handler */
+        if (STREQ(line,"help")) printf("There is no help for you.\n");
     }
 }
