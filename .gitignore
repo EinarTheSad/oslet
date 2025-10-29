@@ -1,3 +1,4 @@
 build/*.o
 iso/*.iso
 iso/boot/*.elf
+.vscode/settings.json
