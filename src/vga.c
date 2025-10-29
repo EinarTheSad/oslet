@@ -84,4 +84,6 @@ void vga_use_as_console(void) {
     console_set(&VGA_CONSOLE);
 }
 
-void vga_set_color(uint8_t attr) { vga_color = attr; }
+void vga_set_color(uint8_t background, uint8_t foreground) {
+    vga_color = (foreground & 0x0F) | ((background & 0x0F) << 4);
+}

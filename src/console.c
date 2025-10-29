@@ -17,7 +17,9 @@ static void emit_console(char ch, void* user) {
 
 static void emit_buffer(char ch, void* user) {
     buf_ctx* b = (buf_ctx*)user;
-    if (b->n + 1 < b->cap) b->dst[b->n] = ch;
+    if (b->n < b->cap - 1) {
+        b->dst[b->n] = ch;
+    }
     b->n++;
 }
 
@@ -150,7 +152,7 @@ int vsnprintf(char* dst, size_t cap, const char* fmt, va_list ap) {
     va_list cp; va_copy(cp, ap);
     int n = kvprintf(fmt, cp, emit_buffer, &ctx);
     va_end(cp);
-    // NUL-terminate if space available
+
     size_t term = (ctx.n < cap) ? ctx.n : (cap - 1);
     dst[term] = '\0';
     return n;
