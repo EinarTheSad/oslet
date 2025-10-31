@@ -55,10 +55,7 @@ stack_top:
     .extern kmain
 
 start:
-    cli
-
     lgdt gdtr
-    nop
 
     mov  $SEL_DATA, %eax
     mov  %ax, %ds

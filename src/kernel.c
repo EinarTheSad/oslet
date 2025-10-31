@@ -25,5 +25,16 @@ void kmain(void) {
         size_t n = kbd_getline(line, sizeof(line));
         /* TODO: command handler */
         if (STREQ(line,"help")) printf("There is no help for you.\n");
+        if (STREQ(line,"except")) {
+            printf("I'm going dark.\n");
+            __asm__ volatile (
+                "xor %%edx, %%edx\n\t"
+                "mov $1, %%eax\n\t"
+                "div %%edx\n\t"
+                :
+                :
+                : "eax", "edx"
+            );         
+        }
     }
 }
