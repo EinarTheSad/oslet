@@ -1,5 +1,3 @@
-# === OSlet Makefile (final sane version) ===
-
 TARGET  = kernel.elf
 BUILD   = build
 SRC     = src
@@ -38,7 +36,7 @@ iso: $(BUILD)/$(TARGET)
 	else \
 	   echo "No top-level grub.cfg found; leaving existing one in place."; \
 	fi
-	-if command -v grub-mkrescue >/dev/null 2>&1; then \
+	@if command -v grub-mkrescue >/dev/null 2>&1; then \
 	   grub-mkrescue -o $(ISO)/oslet.iso $(ISO); \
 	else \
 	   echo "grub-mkrescue not found; skipping ISO creation."; \
