@@ -1,10 +1,12 @@
 #include "console.h"
 #include "vga.h"
 #include "keyboard.h"
+#include "early_alloc.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
 extern void keyboard_init(void);
+extern uint8_t __kernel_end;
 
 void kmain(void) {
     vga_use_as_console();
@@ -13,11 +15,12 @@ void kmain(void) {
     idt_init();
     pic_remap();
     keyboard_init();
+    mm_early_init((uintptr_t)&__kernel_end);
 
     __asm__ volatile ("sti"); /* start listening to interrupts */
 
     printf("OSlet has booted. VGA width=%d height=%d\n", 80, 25);
-    printf("hex %x no prefix, pointer %p\n\n", 0xdeadbeefu, (void*)0xB8000);
+    printf("Memory allocation pointer %p\n\n", mm_early_alloc(4096, 4096));
 
     char line[128];
     for (;;) {
