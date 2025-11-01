@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "io.h"
+#include "keyboard.h"
 #include "console.h"
 #include "keyboard.h"
 
@@ -95,7 +96,6 @@ static void keyboard_irq(void) {
 
 /* public API */
 void keyboard_init(void) {
-    extern void irq_install_handler(int irq, void (*h)(void));
     irq_install_handler(1, keyboard_irq);
 }
 
