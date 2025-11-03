@@ -4,6 +4,7 @@
 #include "keyboard.h"
 #include "console.h"
 #include "keyboard.h"
+#include "irq.h"
 
 /* --- ring buffer for chars produced by IRQ --- */
 #define KBD_BUF_SZ 128

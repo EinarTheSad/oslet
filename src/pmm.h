@@ -8,3 +8,4 @@ void pmm_mark_region_free(uintptr_t start, size_t len);
 uintptr_t pmm_alloc_frame(void);
 void pmm_free_frame(uintptr_t paddr);
 size_t pmm_total_frames(void);
+void pmm_debug_dump_bitmap(void);

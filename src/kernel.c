@@ -4,10 +4,10 @@
 #include "early_alloc.h"
 #include "io.h"
 #include "pmm.h"
+#include "paging.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
-extern void keyboard_init(void);
 extern uint8_t __kernel_end;
 
 void kmain(void) {
@@ -19,26 +19,52 @@ void kmain(void) {
     keyboard_init();
     mm_early_init((uintptr_t)&__kernel_end);
     pmm_init_from_multiboot((uint32_t)multiboot_info_ptr);
-
-    __asm__ volatile ("sti"); /* start listening to interrupts */
+    __asm__ volatile ("cli");
+    uintptr_t kernel_end = (uintptr_t)&__kernel_end;
+    uintptr_t map_upto = (kernel_end + 0xFFF) & ~((uintptr_t)0xFFF);
+    map_upto += 0x1000;
+    if (paging_identity_enable(map_upto) != 0) {
+        printf("paging: failed to enable\n");
+        for (;;) __asm__ volatile("hlt");
+    }
+    __asm__ volatile ("sti");
 
     printf("OSlet has booted. VGA width=%d height=%d\n", 80, 25);
     printf("Memory allocation pointer %p\n\n", mm_early_alloc(4096, 4096));
+    printf("Paging enabled identity up to 0x%08x\n", (unsigned)map_upto);
 
     uintptr_t f1 = pmm_alloc_frame();
     uintptr_t f2 = pmm_alloc_frame();
-    printf("pmm alloc frames: %p %p\n", (void*)f1, (void*)f2);
+    printf("PMM alloc frames: %p %p\n", (void*)f1, (void*)f2);
     pmm_free_frame(f1);
     uintptr_t f3 = pmm_alloc_frame();
     printf("after free, new frame: %p (should be %p)\n", (void*)f3, (void*)f1);
 
     char line[128];
+
     for (;;) {
         printf("oslet> ");
-        size_t n = kbd_getline(line, sizeof(line));
-        /* TODO: command handler */
-        if (STREQ(line,"help")) printf("There is no help for you.\n");
-        if (STREQ(line,"except")) {
+        int n = kbd_getline(line, sizeof(line));
+        if (n <= 0) {
+            __asm__ volatile("hlt");
+            continue;
+        }
+
+        if (n > 0) {
+            /* strip trailing CR/NL */
+            while (n > 0 && (line[n-1] == '\n' || line[n-1] == '\r')) {
+                line[--n] = '\0';
+            }
+        } else {
+            line[0] = '\0';
+        }
+
+        if (STREQ(line, "help")) {
+            printf("Available commands: help, except, dump_pmm\n");
+            continue;
+        }
+
+        if (STREQ(line, "except")) {
             printf("I'm going dark.\n");
             __asm__ volatile (
                 "xor %%edx, %%edx\n\t"
@@ -47,7 +73,19 @@ void kmain(void) {
                 :
                 :
                 : "eax", "edx"
-            );         
+            );
         }
+
+        if (STREQ(line, "dump_pmm")) {
+            pmm_debug_dump_bitmap();
+            continue;
+        }
+
+        if (line[0] == '\0') {
+            /* empty command: ignore */
+            continue;
+        }
+
+        printf("unknown command: '%s'\n", line);
     }
 }
