@@ -1,4 +1,7 @@
 #define FRAME_SIZE 4096u
+#define PAGE_SIZE 4096u
+#define ALIGN_UP(x, a)   (((x) + ((a) - 1)) & ~((a) - 1))
+
 #include "pmm.h"
 #include "early_alloc.h"
 #include <stddef.h>
@@ -54,7 +57,8 @@ static void pmm_build_bitmap(uintptr_t base, uintptr_t top) {
     bitmap_bytes = (nframes + 7) / 8;
 
     /* allocate bitmap using early allocator */
-    frame_bitmap = (uint8_t*) mm_early_alloc(bitmap_bytes, FRAME_SIZE);
+    frame_bitmap = (uint8_t*)mm_early_alloc(bitmap_bytes, FRAME_SIZE);
+    frame_bitmap = (uint8_t*)ALIGN_UP((uintptr_t)frame_bitmap, PAGE_SIZE);
     /* mark all frames used at first */
     for (size_t i = 0; i < bitmap_bytes; ++i) frame_bitmap[i] = 0xFFu;
 }
@@ -84,12 +88,24 @@ void pmm_reserve_region(uintptr_t start, size_t len) {
 
 /* Find first zero bit and set it */
 uintptr_t pmm_alloc_frame(void) {
+    if (!frame_bitmap) {
+        printf("PMM: alloc called but frame_bitmap==NULL\n");
+        return 0;
+    }
+    /* quick sanity: print first bytes of bitmap to spot corruption */
+    printf("PMM: alloc_frame start: bitmap[0]=%02x bitmap[1]=%02x ...\n",
+           (unsigned)frame_bitmap[0], (unsigned)frame_bitmap[1]);
+
     for (size_t f = 0; f < nframes; ++f) {
         if (!bitmap_test(f)) {
+            /* mark used and return address */
             bitmap_set(f);
-            return frame_index_to_addr(f);
+            uintptr_t addr = frame_index_to_addr(f);
+            printf("PMM: alloc success f=%u addr=%p\n", (unsigned)f, (void*)addr);
+            return addr;
         }
     }
+    printf("PMM: alloc_frame OOM: nframes=%u\n", (unsigned)nframes);
     return 0; /* out of memory */
 }
 
@@ -145,8 +161,10 @@ void pmm_init_from_multiboot(uint32_t mboot_ptr) {
             }
             p += e->size + sizeof(e->size);
         }
+        pmm_debug_dump_bitmap();
     }
-
+    /* Reserve first physical page (0x00000000..0x00000FFF) — IVT, BIOS data, etc. */
+    pmm_reserve_region(0, FRAME_SIZE);
     /* Reserve kernel image */
     uintptr_t k_end = (uintptr_t)&__kernel_end;
     /* kernel base loaded at 1MB */
@@ -168,4 +186,40 @@ void pmm_init_from_multiboot(uint32_t mboot_ptr) {
                (unsigned)phys_top, (unsigned)pmm_total_frames(),
                (void*)frame_bitmap, (unsigned)bitmap_bytes);
     }
+}
+
+void pmm_debug_dump_bitmap(void) {
+    if (!frame_bitmap) {
+        printf("PMMDBG: frame_bitmap == NULL\n");
+        return;
+    }
+    printf("PMMDBG: phys_base=%p phys_top=%p nframes=%u bitmap=%p bytes=%u\n",
+           (void*)phys_base, (void*)phys_top, (unsigned)nframes,
+           (void*)frame_bitmap, (unsigned)bitmap_bytes);
+
+    /* show first 64 bytes of bitmap (or up to bitmap_bytes) */
+    size_t toshow = bitmap_bytes < 64 ? bitmap_bytes : 64;
+    printf("PMMDBG: bitmap first %u bytes:", (unsigned)toshow);
+    for (size_t i = 0; i < toshow; ++i) {
+        printf(" %02x", (unsigned)frame_bitmap[i]);
+    }
+    printf("\n");
+
+    /* count free frames */
+    size_t freecount = 0;
+    for (size_t f = 0; f < nframes; ++f) {
+        if (!bitmap_test(f)) ++freecount;
+    }
+    printf("PMMDBG: free frames = %u / %u\n", (unsigned)freecount, (unsigned)nframes);
+
+    /* show a few sample frame addresses (first few free frames) */
+    printf("PMMDBG: sample free frames (first 8):");
+    size_t found = 0;
+    for (size_t f = 0; f < nframes && found < 8; ++f) {
+        if (!bitmap_test(f)) {
+            printf(" %p", (void*)frame_index_to_addr(f));
+            ++found;
+        }
+    }
+    printf("\n");
 }
