@@ -7,6 +7,7 @@
     .set MBOOT_CHECKSUM, -(MBOOT_MAGIC + MBOOT_FLAGS)
 
     .global multiboot_header
+
 multiboot_header:
     .long MBOOT_MAGIC
     .long MBOOT_FLAGS
@@ -14,6 +15,7 @@ multiboot_header:
 
     .section .rodata
     .align 8
+
 gdt_start:
 gdt_null:   .quad 0
 
@@ -34,8 +36,8 @@ gdt_data:
     .byte 0x00
 
 gdt_end:
-
     .align 4
+
 gdtr:
     .word gdt_end - gdt_start - 1
     .long gdt_start
@@ -45,14 +47,21 @@ gdtr:
 
     .section .bss
     .align 16
+
 stack_bottom:
     .skip 16 * 1024
-stack_top:
 
+stack_top:
     .section .text
     .globl start
     .type  start,@function
     .extern kmain
+    .globl multiboot_info_ptr
+    .data
+
+multiboot_info_ptr:
+    .long 0
+    .text
 
 start:
     lgdt gdtr
@@ -69,7 +78,7 @@ start:
     sub  $8, %esp
 
     cld
-
+    movl %ebx, multiboot_info_ptr
     ljmp $SEL_CODE, $1f
     
 1:
