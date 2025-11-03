@@ -51,6 +51,13 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
         if (*p == '0') { zero = true; ++p; }
         while (*p >= '0' && *p <= '9') { width = width*10 + (*p - '0'); ++p; }
 
+        int precision = 6;
+        if (*p == '.') {
+            precision = 0; ++p;
+            while (*p >= '0' && *p <= '9')
+            precision = precision * 10 + (*p++ - '0');
+        }
+
         char spec = *p ? *p : '%';
         char pad_char = zero ? '0' : ' ';
 
@@ -89,6 +96,33 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
                 do { tmp[i++] = (char)('0' + (v % 10)); v /= 10; } while (v && i < 32);
                 if (width > i) pad_out(width - i, pad_char, emit, user, &written);
                 while (i--) { emit(tmp[i], user); written++; }
+            } break;
+
+            case 'f': {
+                double v = va_arg(ap, double);
+                if (v < 0) { emit('-', user); written++; v = -v; }
+
+                double rounding = 0.5;
+                for (int d = 0; d < precision; d++) rounding /= 10.0;
+                v += rounding;
+
+                long whole = (long)v;
+                double frac = v - (double)whole;
+
+                // whole part
+                char tmp[32]; int i = 0;
+                do { tmp[i++] = (char)('0' + (whole % 10)); whole /= 10; } while (whole && i < 32);
+                while (i--) { emit(tmp[i], user); written++; }
+
+                emit('.', user); written++;
+
+                // fractional part
+                for (int d = 0; d < precision; d++) {
+                    frac *= 10.0;
+                    int digit = (int)frac;
+                    emit('0' + digit, user); written++;
+                    frac -= digit;
+                }
             } break;
 
             case 'x':
