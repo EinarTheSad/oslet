@@ -10,3 +10,4 @@ void pmm_free_frame(uintptr_t paddr);
 size_t pmm_total_frames(void);
 void pmm_debug_dump_bitmap(void);
 void pmm_print_stats(void);
+void pmm_identity_map_bitmap(void);

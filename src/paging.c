@@ -2,10 +2,13 @@
 #include "pmm.h"
 #include "console.h"
 #include <stdint.h>
+#include "early_alloc.h"
 
 #define PAGE_SIZE 4096u
 #define P_PRESENT (1u << 0)
 #define P_RW (1u << 1)
+
+extern void vga_set_color(uint8_t background, uint8_t foreground);
 
 static uintptr_t current_pd_phys = 0;
 
@@ -23,38 +26,51 @@ static uintptr_t alloc_zeroed_frame(void) {
     return f;
 }
 
-static int ensure_pt(uint32_t *pd, uint32_t idx) {
+static uintptr_t ensure_pt(uint32_t *pd, uint32_t idx) {
     uint32_t pde = pd[idx];
-    if (pde & P_PRESENT) return (int)(pde & 0xFFFFF000u);
+    if (pde & P_PRESENT) return (uintptr_t)(pde & 0xFFFFF000u);
 
     uintptr_t pt_phys = alloc_zeroed_frame();
     if (!pt_phys) return 0;
     pd[idx] = (pt_phys & 0xFFFFF000u) | P_PRESENT | P_RW;
-    return (int)pt_phys;
+    return pt_phys;
 }
 
 int paging_map_page(uintptr_t vaddr, uintptr_t paddr, uint32_t flags) {
     if (!current_pd_phys) return -1;
     uint32_t *pd = (uint32_t*)current_pd_phys;
-    uint32_t *pt = (uint32_t*)ensure_pt(pd, pd_index(vaddr));
-    if (!pt) return -2;
+    
+    uintptr_t pt_phys = ensure_pt(pd, pd_index(vaddr));
+    if (!pt_phys) return -2;
+    
+    uint32_t *pt = (uint32_t*)pt_phys;
     pt[pt_index(vaddr)] = (uint32_t)(paddr & 0xFFFFF000u) | (flags & 0xFFFu);
     return 0;
 }
 
 int paging_identity_enable(uintptr_t upto_phys) {
     if (!upto_phys) return -1;
-
-    extern uint8_t __kernel_end;
+    
     uintptr_t pd_phys = (uintptr_t)mm_early_alloc(PAGE_SIZE, PAGE_SIZE);
-    if (!pd_phys) return -1;
+    if (!pd_phys) {
+        vga_set_color(12,15);
+        printf("FAILED to allocate page directory\n");
+        vga_set_color(0,7);
+        return -1;
+    }
+    
     memzero((void*)pd_phys, PAGE_SIZE);
     pmm_reserve_region(pd_phys, PAGE_SIZE);
     current_pd_phys = pd_phys;
 
-    for (uintptr_t p = 0; p < upto_phys; p += PAGE_SIZE)
-        if (paging_map_page(p, p, P_PRESENT | P_RW) != 0)
+    for (uintptr_t p = 0; p < upto_phys; p += PAGE_SIZE) {
+        if (paging_map_page(p, p, P_PRESENT | P_RW) != 0) {
+            vga_set_color(12,15);
+            printf("FAILED to map page at 0x%x\n", (unsigned)p);
+            vga_set_color(0,7);
             return -4;
+        }
+    }
 
     if (upto_phys <= 0xB8000u)
         paging_map_page(0xB8000u, 0xB8000u, P_PRESENT | P_RW);

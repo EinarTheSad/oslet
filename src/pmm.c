@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include "io.h"
 #include "console.h"
+#include "paging.h"
 
 extern uint8_t __kernel_end;
 
@@ -152,7 +153,6 @@ void pmm_init_from_multiboot(uint32_t mboot_ptr) {
             if (e->type == 1) pmm_mark_region_free(base, len);
             p += e->size + sizeof(e->size);
         }
-        pmm_debug_dump_bitmap();
     }
 
     pmm_reserve_region(0, FRAME_SIZE);
