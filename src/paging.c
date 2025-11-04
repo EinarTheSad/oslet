@@ -68,15 +68,3 @@ int paging_identity_enable(uintptr_t upto_phys) {
     );
     return 0;
 }
-
-static void paging_dump_debug(uintptr_t pd_phys) {
-    uint32_t *pd = (uint32_t*)pd_phys;
-    for (int i = 0; i < 8; ++i) {
-        uint32_t pde = pd[i];
-        printf("PDE[%02d]=%08x\n", i, pde);
-        if (!(pde & P_PRESENT)) continue;
-        uint32_t *pt = (uint32_t*)(pde & 0xFFFFF000u);
-        for (int j = 0; j < 8; ++j)
-            printf("  PTE[%02d][%02d]=%08x\n", i, j, pt[j]);
-    }
-}

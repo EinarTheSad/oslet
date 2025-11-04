@@ -28,26 +28,15 @@ void kmain(void) {
     map_upto += 16 * 1024 * 1024; /* 16 MB mapped */
 
     if (paging_identity_enable(map_upto) != 0) {
-        printf("Paging: FAILED to enable\n");
+        vga_set_color(12,15);
+        printf("FAILED to enable memory paging\n");
         for (;;) __asm__ volatile ("hlt");
     }
 
     __asm__ volatile ("sti");
 
-    printf("Memory allocation pointer %p\n\n", mm_early_alloc(4096, 4096));
-    printf("Paging enabled, identity-mapped up to 0x%08x\n", (unsigned)map_upto);
-
-    uintptr_t f1 = pmm_alloc_frame();
-    uintptr_t f2 = pmm_alloc_frame();
-
-    printf("PMM allocated frames: %p %p\n", (void*)f1, (void*)f2);
-    pmm_free_frame(f1);
-
-    uintptr_t f3 = pmm_alloc_frame();
-    printf("After free, new frame: %p (expected %p)\n\n", (void*)f3, (void*)f1);
-
     vga_clear();
-    vga_set_color(1, 7); printf("osLET Development Kernel\n");
+    vga_set_color(1, 7); printf("osLET Development Kernel\n\n");
     vga_set_color(0, 7);
 
     char line[128];

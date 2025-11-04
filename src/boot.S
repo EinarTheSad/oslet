@@ -79,6 +79,7 @@ start:
 
     cld
     movl %ebx, multiboot_info_ptr
+    and $-16, %esp
     ljmp $SEL_CODE, $1f
     
 1:
