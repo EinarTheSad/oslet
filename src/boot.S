@@ -74,12 +74,10 @@ start:
     mov  %ax, %ss
 
     mov  $stack_top, %esp
-    and  $~0xF, %esp
-    sub  $8, %esp
-
+    and  $-16, %esp
+    
     cld
     movl %ebx, multiboot_info_ptr
-    and $-16, %esp
     ljmp $SEL_CODE, $1f
     
 1:

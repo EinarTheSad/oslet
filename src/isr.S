@@ -52,7 +52,7 @@ isr\vec:
     SAVE_REGS
     pushl $\vec
     call isr_common_stub
-    addl $4, %esp
+    addl $8, %esp
     RESTORE_REGS
     sti
     iret

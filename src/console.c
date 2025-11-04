@@ -1,3 +1,6 @@
+#define LONG_MIN (-2147483647L - 1)
+#define LONG_MAX 2147483647L
+
 #include "console.h"
 #include <stdbool.h>
 
@@ -81,12 +84,25 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
 
             case 'd': {
                 long v = va_arg(ap, int);
-                unsigned long uv = (v < 0) ? (unsigned long)(-(long)v) : (unsigned long)v;
+                unsigned long uv;
+                int is_negative = 0;
+                
+                if (v < 0) {
+                    is_negative = 1;
+                    if (v == LONG_MIN) {
+                        uv = (unsigned long)LONG_MAX + 1UL;
+                    } else {
+                        uv = (unsigned long)(-v);
+                    }
+                } else {
+                    uv = (unsigned long)v;
+                }
+                
                 char tmp[32]; int i = 0;
                 do { tmp[i++] = (char)('0' + (uv % 10)); uv /= 10; } while (uv && i < 32);
-                int len = i + (v < 0 ? 1 : 0);
+                int len = i + (is_negative ? 1 : 0);
                 if (width > len) pad_out(width - len, pad_char, emit, user, &written);
-                if (v < 0) { emit('-', user); written++; }
+                if (is_negative) { emit('-', user); written++; }
                 while (i--) { emit(tmp[i], user); written++; }
             } break;
 

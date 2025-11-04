@@ -12,6 +12,13 @@ void mm_early_init(uintptr_t kernel_end) {
 void *mm_early_alloc(size_t size, size_t align) {
     if (align == 0) align = 1;
     uintptr_t p = (early_ptr + (align - 1)) & ~(align - 1);
-    early_ptr = p + size;
+    uintptr_t next_ptr = p + size;
+    
+    /* check memory limit */
+    if (next_ptr > early_end) {
+        return (void*)0;
+    }
+    
+    early_ptr = next_ptr;
     return (void*)p;
 }
