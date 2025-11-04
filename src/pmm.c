@@ -97,18 +97,14 @@ uintptr_t pmm_alloc_frame(void) {
         printf("PMM: alloc called but frame_bitmap==NULL\n");
         return 0;
     }
-    printf("PMM: alloc_frame start: bitmap[0]=%02x bitmap[1]=%02x ...\n",
-           (unsigned)frame_bitmap[0], (unsigned)frame_bitmap[1]);
 
     for (size_t f = 0; f < nframes; ++f) {
         if (!bitmap_test(f)) {
             bitmap_set(f);
             uintptr_t addr = frame_index_to_addr(f);
-            printf("PMM: alloc success f=%u addr=%p\n", (unsigned)f, (void*)addr);
             return addr;
         }
     }
-    printf("PMM: alloc_frame OOM: nframes=%u\n", (unsigned)nframes);
     return 0;
 }
 
@@ -169,12 +165,6 @@ void pmm_init_from_multiboot(uint32_t mboot_ptr) {
         uintptr_t bmp = (uintptr_t)frame_bitmap;
         pmm_reserve_region(bmp, bitmap_bytes);
     }
-
-    if (console_get()) {
-        printf("PMM: phys_top=0x%08x frames=%u bitmap=%p bytes=%u\n",
-               (unsigned)phys_top, (unsigned)pmm_total_frames(),
-               (void*)frame_bitmap, (unsigned)bitmap_bytes);
-    }
 }
 
 void pmm_identity_map_bitmap(void) {
@@ -186,32 +176,29 @@ void pmm_identity_map_bitmap(void) {
 
     for (uintptr_t p = bmp_phys; p < bmp_end; p += PAGE_SIZE)
         paging_map_page(p, p, P_PRESENT | P_RW);
-
-    printf("PMM: bitmap identity-mapped from %p to %p\n",
-           (void*)bmp_phys, (void*)bmp_end);
 }
 
 void pmm_debug_dump_bitmap(void) {
     pmm_identity_map_bitmap();
 
     if (!frame_bitmap) {
-        printf("PMMDBG: frame_bitmap == NULL\n");
+        printf("PMM: frame_bitmap == NULL\n");
         return;
     }
-    printf("PMMDBG: phys_base=%p phys_top=%p nframes=%u bitmap=%p bytes=%u\n",
+    printf("phys_base=%p phys_top=%p nframes=%u bitmap=%p bytes=%u\n",
            (void*)phys_base, (void*)phys_top, (unsigned)nframes,
            (void*)frame_bitmap, (unsigned)bitmap_bytes);
 
     size_t toshow = bitmap_bytes < 64 ? bitmap_bytes : 64;
-    printf("PMMDBG: bitmap first %u bytes:", (unsigned)toshow);
+    printf("Bitmap first %u bytes:", (unsigned)toshow);
     for (size_t i = 0; i < toshow; ++i) printf(" %02x", (unsigned)frame_bitmap[i]);
     printf("\n");
 
     size_t freecount = 0;
     for (size_t f = 0; f < nframes; ++f) if (!bitmap_test(f)) ++freecount;
-    printf("PMMDBG: free frames = %u / %u\n", (unsigned)freecount, (unsigned)nframes);
+    printf("Free frames = %u / %u\n", (unsigned)freecount, (unsigned)nframes);
 
-    printf("PMMDBG: sample free frames (first 8):");
+    printf("Sample free frames (first 8):");
     size_t found = 0;
     for (size_t f = 0; f < nframes && found < 8; ++f) {
         if (!bitmap_test(f)) {
@@ -226,7 +213,7 @@ void pmm_print_stats(void) {
     pmm_identity_map_bitmap();
     
     if (!frame_bitmap) {
-        printf("PMM: not initialized\n");
+        printf("PMM not initialized\n");
         return;
     }
 
@@ -239,15 +226,15 @@ void pmm_print_stats(void) {
     uintptr_t total_bytes = total * FRAME_SIZE;
     uintptr_t free_bytes  = free  * FRAME_SIZE;
 
-    printf("PMM: total memory = %u KiB (%.2f MiB)\n",
+    printf("Total memory = %u KiB (%.2f MiB)\n",
            (unsigned)(total_bytes / 1024),
            (double)total_bytes / (1024.0 * 1024.0));
 
-    printf("PMM: free memory  = %u KiB (%.2f MiB)\n",
+    printf("Free memory  = %u KiB (%.2f MiB)\n",
            (unsigned)(free_bytes / 1024),
            (double)free_bytes / (1024.0 * 1024.0));
 
-    printf("PMM: used frames = %u / %u\n",
+    printf("Used frames = %u / %u\n",
            (unsigned)(total - free),
            (unsigned)total);
 }
