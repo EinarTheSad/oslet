@@ -7,7 +7,10 @@
 #define PIT_COMMAND  0x43
 #define PIT_BASE_FREQ 1193182
 
+extern void perform_task_switch(void);
+
 static volatile uint32_t timer_ticks = 0;
+static volatile int scheduling_enabled = 0;
 
 static void timer_handler(void) {
     timer_ticks++;
@@ -24,8 +27,6 @@ void timer_init(uint32_t frequency) {
     outb(PIT_CHANNEL0, (uint8_t)((divisor >> 8) & 0xFF));
     
     irq_install_handler(0, timer_handler);
-    
-    printf("Initialized timer at %u Hz\n", frequency);
 }
 
 uint32_t timer_get_ticks(void) {
@@ -37,4 +38,9 @@ void timer_wait(uint32_t ticks) {
     while (timer_ticks < target) {
         __asm__ volatile ("hlt");
     }
+}
+
+void timer_enable_scheduling(void) {
+    scheduling_enabled = 1;
+    printf("Scheduling enabled\n");
 }
