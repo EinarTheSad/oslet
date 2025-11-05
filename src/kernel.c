@@ -6,6 +6,7 @@
 #include "pmm.h"
 #include "paging.h"
 #include "heap.h"
+#include "timer.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
@@ -13,9 +14,11 @@ extern uint8_t __kernel_end;
 
 void kmain(void) {
     vga_use_as_console();
+
     idt_init();
     pic_remap();
     keyboard_init();
+    timer_init(100); /* 10 ms timer (100 HZ) */
 
     mm_early_init((uintptr_t)&__kernel_end);
     pmm_init_from_multiboot((uint32_t)multiboot_info_ptr);
@@ -59,7 +62,7 @@ void kmain(void) {
             continue;
 
         if (STREQ(line, "help")) {
-            printf("Commands: bitmap, cls, heap, help, mem\n");
+            printf("Commands: bitmap, cls, heap, help, mem, test, uptime\n");
             continue;
         }
 
@@ -80,6 +83,13 @@ void kmain(void) {
 
         if (STREQ(line, "heap")) {
             heap_print_stats();
+            continue;
+        }
+
+        if (STREQ(line, "uptime")) {
+            uint32_t ticks = timer_get_ticks();
+            uint32_t seconds = ticks / 100;
+            printf("Uptime: %u ticks (%u seconds)\n", ticks, seconds);
             continue;
         }
 
@@ -104,6 +114,10 @@ void kmain(void) {
                 printf("%s\n", str);
                 kfree(str);
             }
+
+            printf("Testing timer wait (3 seconds)...\n");
+            timer_wait(300);
+            printf("Done!\n");
             
             continue;
         }
