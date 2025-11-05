@@ -5,6 +5,7 @@
 #include "io.h"
 #include "pmm.h"
 #include "paging.h"
+#include "heap.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
@@ -12,7 +13,6 @@ extern uint8_t __kernel_end;
 
 void kmain(void) {
     vga_use_as_console();
-
     idt_init();
     pic_remap();
     keyboard_init();
@@ -32,6 +32,8 @@ void kmain(void) {
         printf("FAILED to enable memory paging\n");
         for (;;) __asm__ volatile ("hlt");
     }
+    
+    heap_init();
 
     __asm__ volatile ("sti");
 
@@ -57,7 +59,7 @@ void kmain(void) {
             continue;
 
         if (STREQ(line, "help")) {
-            printf("Commands: bitmap, cls, help, mem\n");
+            printf("Commands: bitmap, cls, heap, help, mem\n");
             continue;
         }
 
@@ -73,6 +75,36 @@ void kmain(void) {
 
         if (STREQ(line, "bitmap")) {
             pmm_debug_dump_bitmap();
+            continue;
+        }
+
+        if (STREQ(line, "heap")) {
+            heap_print_stats();
+            continue;
+        }
+
+        if (STREQ(line, "test")) {
+            printf("Testing heap allocator...\n");
+            
+            int *arr = (int*)kmalloc(10 * sizeof(int));
+            if (arr) {
+                for (int i = 0; i < 10; i++) arr[i] = i * i;
+                printf("Array: ");
+                for (int i = 0; i < 10; i++) printf("%d ", arr[i]);
+                printf("\n");
+                kfree(arr);
+                printf("Array freed\n");
+            } else {
+                printf("Allocation failed\n");
+            }
+            
+            char *str = (char*)kmalloc(64);
+            if (str) {
+                snprintf(str, 64, "Dynamic string test: %d", 42);
+                printf("%s\n", str);
+                kfree(str);
+            }
+            
             continue;
         }
 
