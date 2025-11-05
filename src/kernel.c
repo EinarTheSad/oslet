@@ -7,14 +7,39 @@
 #include "paging.h"
 #include "heap.h"
 #include "timer.h"
+#include "task.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
 extern uint8_t __kernel_end;
 
+void demo_task_a(void) {
+    for (int i = 0; i < 5; i++) {
+        printf("Task A: iteration %d\n", i);
+        timer_wait(100);
+    }
+    printf("Task A: completed\n");
+}
+
+void demo_task_b(void) {
+    for (int i = 0; i < 5; i++) {
+        printf("Task B: iteration %d\n", i);
+        timer_wait(150);
+    }
+    printf("Task B: completed\n");
+}
+
+void demo_task_c(void) {
+    for (int i = 0; i < 3; i++) {
+        printf("Task C: counting... %d\n", i);
+        timer_wait(200);
+    }
+    printf("Task C: done\n");
+}
+
 void kmain(void) {
     vga_use_as_console();
-
+    vga_clear();
     idt_init();
     pic_remap();
     keyboard_init();
@@ -37,10 +62,10 @@ void kmain(void) {
     }
     
     heap_init();
+    tasking_init();
 
     __asm__ volatile ("sti");
 
-    vga_clear();
     vga_set_color(1, 7); printf("osLET Development Kernel\n\n");
     vga_set_color(0, 7);
 
@@ -62,7 +87,7 @@ void kmain(void) {
             continue;
 
         if (STREQ(line, "help")) {
-            printf("Commands: bitmap, cls, heap, help, mem, test, uptime\n");
+            printf("Commands: bitmap, cls, heap, help, mem, task, test, ps, uptime\n");
             continue;
         }
 
@@ -93,6 +118,27 @@ void kmain(void) {
             continue;
         }
 
+        if (STREQ(line, "ps")) {
+            task_list_print();
+            continue;
+        }
+
+        if (STREQ(line, "task")) {
+            printf("Starting multitasking demo...\n");
+            printf("Creating 3 concurrent tasks...\n\n");
+            
+            task_create(demo_task_a, "TaskA");
+            task_create(demo_task_b, "TaskB");
+            task_create(demo_task_c, "TaskC");
+            
+            timer_enable_scheduling();
+            
+            printf("\nScheduler enabled. Tasks running...\n");
+            printf("Type 'ps' to see task list\n\n");
+            
+            continue;
+        }
+
         if (STREQ(line, "test")) {
             printf("Testing heap allocator...\n");
             
@@ -118,7 +164,7 @@ void kmain(void) {
             printf("Testing timer wait (3 seconds)...\n");
             timer_wait(300);
             printf("Done!\n");
-            
+
             continue;
         }
 
