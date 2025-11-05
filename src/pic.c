@@ -23,8 +23,8 @@ void pic_remap(void) {
     outb(PIC1_DATA, a1);
     outb(PIC2_DATA, a2);
 
-    /* Unmask only IRQ1 (keyboard) */
-    uint8_t new_a1 = a1 & ~(1 << 1);
+    /* Unmask only IRQ0 (timer) and IRQ1 (keyboard) */
+    uint8_t new_a1 = a1 & ~((1 << 0) | (1 << 1));
     outb(PIC1_DATA, new_a1);
 }
 
