@@ -178,37 +178,6 @@ void pmm_identity_map_bitmap(void) {
         paging_map_page(p, p, P_PRESENT | P_RW);
 }
 
-void pmm_debug_dump_bitmap(void) {
-    pmm_identity_map_bitmap();
-
-    if (!frame_bitmap) {
-        printf("PMM: frame_bitmap == NULL\n");
-        return;
-    }
-    printf("phys_base=%p phys_top=%p nframes=%u bitmap=%p bytes=%u\n",
-           (void*)phys_base, (void*)phys_top, (unsigned)nframes,
-           (void*)frame_bitmap, (unsigned)bitmap_bytes);
-
-    size_t toshow = bitmap_bytes < 64 ? bitmap_bytes : 64;
-    printf("Bitmap first %u bytes:", (unsigned)toshow);
-    for (size_t i = 0; i < toshow; ++i) printf(" %02x", (unsigned)frame_bitmap[i]);
-    printf("\n");
-
-    size_t freecount = 0;
-    for (size_t f = 0; f < nframes; ++f) if (!bitmap_test(f)) ++freecount;
-    printf("Free frames = %u / %u\n", (unsigned)freecount, (unsigned)nframes);
-
-    printf("Sample free frames (first 8):");
-    size_t found = 0;
-    for (size_t f = 0; f < nframes && found < 8; ++f) {
-        if (!bitmap_test(f)) {
-            printf(" %p", (void*)frame_index_to_addr(f));
-            ++found;
-        }
-    }
-    printf("\n");
-}
-
 void pmm_print_stats(void) {
     pmm_identity_map_bitmap();
     

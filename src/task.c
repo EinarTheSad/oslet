@@ -12,12 +12,6 @@ extern void vga_set_color(uint8_t background, uint8_t foreground);
 
 static void task_wrapper(void);
 
-static void memcpy_custom(void *dst, const void *src, size_t n) {
-    uint8_t *d = dst;
-    const uint8_t *s = src;
-    while (n--) *d++ = *s++;
-}
-
 static void memset_custom(void *dst, int val, size_t n) {
     uint8_t *d = dst;
     while (n--) *d++ = (uint8_t)val;
@@ -33,10 +27,10 @@ static void strlen_copy(char *dst, const char *src, size_t max) {
 }
 
 void tasking_init(void) {
-    printf("DEBUG: tasking_init() starting...\n");
+    printf("tasking_init() starting...\n");
     
     current_task = (task_t*)kmalloc(sizeof(task_t));
-    printf("DEBUG: kmalloc returned %p for kernel task\n", current_task);
+    printf("kmalloc returned %p for kernel task\n", current_task);
     
     if (!current_task) {
         vga_set_color(12,15);
@@ -52,13 +46,13 @@ void tasking_init(void) {
     current_task->stack = NULL;
     current_task->next = current_task;
     
-    printf("DEBUG: kernel task setup: tid=%u, name=%s, next=%p\n",
+    printf("kernel task setup: tid=%u, name=%s, next=%p\n",
            current_task->tid, current_task->name, current_task->next);
     
     task_list = current_task;
     tasking_enabled = 1;
     
-    printf("DEBUG: task_list=%p, tasking_enabled=%d\n", task_list, tasking_enabled);
+    printf("task_list=%p, tasking_enabled=%d\n", task_list, tasking_enabled);
     printf("Multitasking initialized\n");
 }
 
@@ -104,7 +98,6 @@ uint32_t task_create(void (*entry)(void), const char *name) {
     task->next = task_list;
     __asm__ volatile ("sti");
     
-    printf("Created task '%s' (TID %u)\n", task->name, task->tid);
     return task->tid;
 }
 
@@ -188,33 +181,27 @@ void task_yield(void) {
     );
 }
 
-void task_list_print(void) {
-    printf("DEBUG: task_list=%p, current_task=%p\n", task_list, current_task);
-    
+void task_list_print(void) { 
     if (!task_list) {
-        printf("No tasks (task_list is NULL)\n");
+        printf("Something is wrong with task_list, it's NULL\n");
         return;
     }
     
-    printf("PID  State      Name\n");
-    printf("---  ---------  --------\n");
+    printf("Task list:\n");
     
     task_t *t = task_list;
     int count = 0;
     do {
-        printf("DEBUG: task #%d at %p, tid=%u, next=%p\n", 
-               count, t, t->tid, t->next);
-        
         const char *state_str = "UNKNOWN";
         switch (t->state) {
-            case TASK_READY:      state_str = "READY    "; break;
-            case TASK_RUNNING:    state_str = "RUNNING  "; break;
-            case TASK_BLOCKED:    state_str = "BLOCKED  "; break;
+            case TASK_READY:      state_str = "READY"; break;
+            case TASK_RUNNING:    state_str = "RUNNING"; break;
+            case TASK_BLOCKED:    state_str = "BLOCKED"; break;
             case TASK_TERMINATED: state_str = "TERMINATED"; break;
         }
         
-        char marker = (t == current_task) ? '*' : ' ';
-        printf("%c%-2u  %s  %s\n", marker, t->tid, state_str, t->name);
+        /* char marker = (t == current_task) ? '*' : ' '; */
+        printf("#%u  %s  (%s)\n", t->tid, t->name, state_str);
         
         t = t->next;
         count++;
