@@ -19,17 +19,16 @@ void kmain(void) {
     idt_init();
     pic_remap();
     keyboard_init();
-    timer_init(100); /* 10 ms timer (100 HZ) */
+    timer_init(100);
 
     mm_early_init((uintptr_t)&__kernel_end);
     pmm_init_from_multiboot((uint32_t)multiboot_info_ptr);
 
-    /* Paging setup */
     __asm__ volatile ("cli");
 
     uintptr_t kernel_end = (uintptr_t)&__kernel_end;
     uintptr_t map_upto = (kernel_end + 0xFFF) & ~((uintptr_t)0xFFF);
-    map_upto += 16 * 1024 * 1024; /* 16 MB mapped */
+    map_upto += 16 * 1024 * 1024;
 
     if (paging_identity_enable(map_upto) != 0) {
         vga_set_color(12,15);
@@ -42,7 +41,8 @@ void kmain(void) {
 
     __asm__ volatile ("sti");
 
-    vga_set_color(1, 7); printf("osLET Development Kernel\n\n");
+    vga_set_color(1, 7);
+    printf("osLET Development Kernel\n\n");
     vga_set_color(0, 7);
 
     char line[128];
@@ -55,7 +55,6 @@ void kmain(void) {
             continue;
         }
 
-        // Strip CR/LF
         while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
             line[--n] = '\0';
 

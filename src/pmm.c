@@ -178,9 +178,7 @@ void pmm_identity_map_bitmap(void) {
         paging_map_page(p, p, P_PRESENT | P_RW);
 }
 
-void pmm_print_stats(void) {
-    pmm_identity_map_bitmap();
-    
+void pmm_print_stats(void) {   
     if (!frame_bitmap) {
         printf("PMM not initialized\n");
         return;

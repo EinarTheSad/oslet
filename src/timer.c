@@ -14,6 +14,10 @@ static volatile int scheduling_enabled = 0;
 
 static void timer_handler(void) {
     timer_ticks++;
+    
+    if (scheduling_enabled) {
+        perform_task_switch();
+    }
 }
 
 void timer_init(uint32_t frequency) {

@@ -10,8 +10,6 @@ static volatile int tasking_enabled = 0;
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
 
-static void task_wrapper(void);
-
 static void memset_custom(void *dst, int val, size_t n) {
     uint8_t *d = dst;
     while (n--) *d++ = (uint8_t)val;
@@ -56,6 +54,9 @@ void tasking_init(void) {
     printf("Multitasking initialized\n");
 }
 
+/* Forward declaration of wrapper */
+static void task_wrapper(void);
+
 uint32_t task_create(void (*entry)(void), const char *name) {
     if (!tasking_enabled) return 0;
     
@@ -75,18 +76,26 @@ uint32_t task_create(void (*entry)(void), const char *name) {
     strlen_copy(task->name, name ? name : "unnamed", sizeof(task->name));
     task->state = TASK_READY;
     
+    /* Setup initial stack frame */
     uint32_t *stack_top = (uint32_t*)((char*)task->stack + TASK_STACK_SIZE);
-    stack_top -= 9;
     
-    stack_top[0] = (uint32_t)entry;
-    stack_top[1] = 0;
-    stack_top[2] = 0;
-    stack_top[3] = 0;
-    stack_top[4] = 0;
-    stack_top[5] = 0;
-    stack_top[6] = 0;
-    stack_top[7] = 0;
-    stack_top[8] = 0x202;
+    /* Push initial context for task_wrapper */
+    stack_top--;
+    *stack_top = 0x202;          /* EFLAGS (interrupts enabled) */
+    stack_top--;
+    *stack_top = 0;              /* EDI */
+    stack_top--;
+    *stack_top = 0;              /* ESI */
+    stack_top--;
+    *stack_top = 0;              /* EBP */
+    stack_top--;
+    *stack_top = 0;              /* EDX */
+    stack_top--;
+    *stack_top = 0;              /* ECX */
+    stack_top--;
+    *stack_top = 0;              /* EBX */
+    stack_top--;
+    *stack_top = (uint32_t)entry; /* EAX = function pointer */
     
     task->regs.esp = (uint32_t)stack_top;
     task->regs.eip = (uint32_t)task_wrapper;
@@ -101,14 +110,18 @@ uint32_t task_create(void (*entry)(void), const char *name) {
     return task->tid;
 }
 
+/* Wrapper executed when task starts - EAX contains entry point */
 static void task_wrapper(void) {
+    void (*func)(void);
+    
+    __asm__ volatile (
+        "movl %%eax, %0"
+        : "=r"(func)
+    );
+    
     __asm__ volatile ("sti");
     
-    uint32_t entry;
-    __asm__ volatile ("popl %0" : "=r"(entry));
-    
-    void (*func)(void) = (void(*)(void))entry;
-    func();
+    if (func) func();
     
     task_exit();
 }
@@ -137,23 +150,29 @@ void schedule(void) {
     if (!tasking_enabled || !current_task) return;
     
     task_t *next = current_task->next;
-    int searched = 0;
+    task_t *start = current_task;
     
-    while (searched < 100) {
-        if (next->state == TASK_READY || next->state == TASK_RUNNING) {
-            if (next != current_task || next->state == TASK_RUNNING) {
-                break;
-            }
+    /* Find next runnable task */
+    do {
+        if (next->state == TASK_READY) {
+            break;
         }
+        
+        if (next->state == TASK_RUNNING && next != current_task) {
+            break;
+        }
+        
         next = next->next;
-        searched++;
-        if (next == current_task) break;
+    } while (next != start);
+    
+    if (next == start && current_task->state == TASK_TERMINATED) {
+        next = task_list;
     }
     
     if (next == current_task) return;
     
     task_t *prev = current_task;
-    if (prev->state == TASK_RUNNING && prev->state != TASK_TERMINATED) {
+    if (prev->state == TASK_RUNNING) {
         prev->state = TASK_READY;
     }
     
@@ -200,7 +219,6 @@ void task_list_print(void) {
             case TASK_TERMINATED: state_str = "TERMINATED"; break;
         }
         
-        /* char marker = (t == current_task) ? '*' : ' '; */
         printf("#%u  %s  (%s)\n", t->tid, t->name, state_str);
         
         t = t->next;

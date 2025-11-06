@@ -1,8 +1,9 @@
-    .section .text
+.section .text
     .code32
     .globl isr0
     .extern isr_common_stub
     .extern irq_invoke_from_stub
+    .extern perform_task_switch
 
 .macro SAVE_REGS
     pushl %eax
@@ -24,19 +25,12 @@
     popl %eax
 .endm
 
-/* For exceptions that do not automatically push an error code, push a dummy 0 so the common
-   handler always sees [vector, error_code] on the stack in the same layout.
-   For exceptions that do push an error code, the CPU already placed it on the stack; in that
-   case we only push the vector. */
-
-/* exceptions that push an error code are: 8, 10, 11, 12, 13, 14 */
-
 .macro MAKE_ISR_NOERR vec
     .globl isr\vec
 isr\vec:
     cli
     SAVE_REGS
-    pushl $0              /* dummy error code */
+    pushl $0
     pushl $\vec
     call isr_common_stub
     addl $8, %esp
@@ -91,8 +85,6 @@ MAKE_ISR_NOERR 29
 MAKE_ISR_NOERR 30
 MAKE_ISR_NOERR 31
 
-/* For IRQs push the vector as the single argument to irq_invoke_from_stub and preserve regs */
-
 .macro MAKE_IRQ vec
     .globl irq\vec
 irq\vec:
@@ -122,3 +114,10 @@ MAKE_IRQ 12
 MAKE_IRQ 13
 MAKE_IRQ 14
 MAKE_IRQ 15
+
+    .globl syscall_handler
+syscall_handler:
+    cli
+    call perform_task_switch
+    sti
+    iret
