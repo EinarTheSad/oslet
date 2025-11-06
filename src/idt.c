@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include "console.h"
 
+extern void vga_set_color(uint8_t background, uint8_t foreground);
+
 struct idt_entry {
     uint16_t offset_low;
     uint16_t selector;
@@ -36,6 +38,7 @@ extern void irq12(void); extern void irq13(void);
 extern void irq14(void); extern void irq15(void);
 
 extern void pic_send_eoi(int irq);
+extern void perform_task_switch(void);
 
 static inline void load_idt(void) {
     idtr.limit = sizeof(idt) - 1;
@@ -69,8 +72,14 @@ void irq_invoke_from_stub(int vector) {
 }
 
 void isr_common_stub(int vector, int error_code) {
-    printf("[EXCEPTION] vector=%d err=0x%08x\n", vector, (unsigned)error_code);
+    vga_set_color(12,15);
+    printf("[EXCEPTION] vector=%d err=0x%x\n", vector, (unsigned)error_code);
     for (;;) __asm__ volatile ("hlt");
+}
+
+/* Syscall handler for int 0x80 */
+void syscall_handler_idt(void) {
+    perform_task_switch();
 }
 
 void idt_init(void) {
@@ -125,6 +134,9 @@ void idt_init(void) {
     idt_set_entry(45, (uint32_t)irq13, 0x08, 0x8E);
     idt_set_entry(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_entry(47, (uint32_t)irq15, 0x08, 0x8E);
+
+    /* Syscall gate for task switching (int 0x80) */
+    idt_set_entry(0x80, (uint32_t)syscall_handler_idt, 0x08, 0x8E);
 
     load_idt();
 }
