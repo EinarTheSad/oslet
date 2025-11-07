@@ -138,6 +138,33 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
                 }
             } break;
 
+            case 'f': {
+                double v = va_arg(ap, double);
+                if (v < 0) { emit('-', user); written++; v = -v; }
+
+                double rounding = 0.5;
+                for (int d = 0; d < precision; d++) rounding /= 10.0;
+                v += rounding;
+
+                long whole = (long)v;
+                double frac = v - (double)whole;
+
+                // whole part
+                char tmp[32]; int i = 0;
+                do { tmp[i++] = (char)('0' + (whole % 10)); whole /= 10; } while (whole && i < 32);
+                while (i--) { emit(tmp[i], user); written++; }
+
+                emit('.', user); written++;
+
+                // fractional part
+                for (int d = 0; d < precision; d++) {
+                    frac *= 10.0;
+                    int digit = (int)frac;
+                    emit('0' + digit, user); written++;
+                    frac -= digit;
+                }
+            } break;
+
             case 'x':
             case 'X': {
                 unsigned long v = va_arg(ap, unsigned int);
@@ -235,5 +262,11 @@ int snprintf(char* dst, size_t cap, const char* fmt, ...) {
     va_list ap; va_start(ap, fmt);
     int n = vsnprintf(dst, cap, fmt, ap);
     va_end(ap);
+    return n;
+}
+
+size_t strlen_simple(const char *s) {
+    size_t n = 0;
+    while (s[n]) n++;
     return n;
 }
