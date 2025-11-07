@@ -266,6 +266,7 @@ int snprintf(char* dst, size_t cap, const char* fmt, ...) {
 }
 
 size_t strlen_simple(const char *s) {
+    if (!s) return 0;
     size_t n = 0;
     while (s[n]) n++;
     return n;
