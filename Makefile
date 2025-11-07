@@ -43,7 +43,9 @@ iso: $(BUILD)/$(TARGET)
 	fi
 
 run: iso
-	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 512M -net none -rtc base=localtime
+	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 512M -net none -rtc base=localtime\
+	    -drive file=disk.img,format=raw,index=0,media=disk\
+		-boot d
 
 clean:
 	@echo "Cleaning project..."

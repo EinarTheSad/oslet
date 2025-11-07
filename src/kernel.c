@@ -10,6 +10,8 @@
 #include "task.h"
 #include "rtc.h"
 #include "syscall.h"
+#include "ata.h"
+#include "fat32.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
@@ -86,19 +88,31 @@ void kmain(void) {
     pmm_identity_map_bitmap();
     heap_init();
     rtc_init();
+
+    ata_init();
+    fat32_init();
+    
+    if (ata_identify() == 0) {
+        if (fat32_mount() == 0) {
+            printf("Filesystem ready!\n");
+        }
+    }
+
     tasking_init();
     syscall_init();
     timer_enable_scheduling();
 
     __asm__ volatile ("sti");
 
+    vga_clear();
     vga_set_color(1, 7);
-    printf("osLET Development Kernel\n\n");
+    printf("osLET Development Kernel");
     vga_set_color(0, 7);
+    printf("                                       EinarTheSad, 2025");
 
     char line[128];
     for (;;) {
-        printf("oslet> ");
+        printf("\noslet> ");
 
         int n = kbd_getline(line, sizeof(line));
         if (n <= 0) {
@@ -114,13 +128,14 @@ void kmain(void) {
 
         if (STREQ(line, "help")) {
             printf("Commands:\n");
-            printf("  cls       - Clear screen\n");
-            printf("  heap      - Show heap stats\n");
-            printf("  mem       - Show memory stats\n");
-            printf("  ps        - List tasks\n");
-            printf("  rtc       - Show current time/date\n");
-            printf("  uptime    - Show uptime\n");
-            printf("  test      - Run test tasks\n");
+            printf("cls       - Clear screen\n");
+            printf("heap      - Show heap stats\n");
+            printf("ls        - List current directory\n");
+            printf("mem       - Show memory stats\n");
+            printf("ps        - List tasks\n");
+            printf("rtc       - Show current time/date\n");
+            printf("uptime    - Show uptime\n");
+            printf("test      - Run test tasks\n");
             continue;
         }
 
@@ -161,6 +176,25 @@ void kmain(void) {
             uint32_t t1 = task_create(ipc_sender, "sender", PRIORITY_NORMAL);
             uint32_t t2 = task_create(ipc_receiver, "receiver", PRIORITY_NORMAL);
             printf("Created sender (TID %u) and receiver (TID %u)\n", t1, t2);
+            continue;
+        }
+
+        if (STREQ(line, "ls")) {
+            fat32_dirent_t entries[32];
+            int count = fat32_list_dir("/", entries, 32);
+            
+            if (count < 0) {
+                printf("Failed to list directory\n");
+            } else {
+                printf("Files in /:\n\n");
+                for (int i = 0; i < count; i++) {
+                    if (entries[i].is_directory) {
+                        printf("%-12s [DIR]\n", entries[i].name);
+                    } else {
+                        printf("%-12s %u bytes\n", entries[i].name, entries[i].size);
+                    }
+                }
+            }
             continue;
         }
 
