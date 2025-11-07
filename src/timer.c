@@ -2,6 +2,7 @@
 #include "io.h"
 #include "irq.h"
 #include "console.h"
+#include "task.h"
 
 #define PIT_CHANNEL0 0x40
 #define PIT_COMMAND  0x43
@@ -11,10 +12,14 @@ extern void perform_task_switch(void);
 
 static volatile uint32_t timer_ticks = 0;
 static volatile int scheduling_enabled = 0;
-static volatile int in_task_switch = 0;
+static volatile int in_task_switch = 0;  /* Race condition guard */
 
 static void timer_handler(void) {
     timer_ticks++;
+    
+    if (scheduling_enabled) {
+        task_tick();
+    }
     
     if (scheduling_enabled && !in_task_switch) {
         in_task_switch = 1;

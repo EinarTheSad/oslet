@@ -43,7 +43,7 @@ iso: $(BUILD)/$(TARGET)
 	fi
 
 run: iso
-	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 512M -net none
+	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 512M -net none -rtc base=localtime
 
 clean:
 	@echo "Cleaning project..."

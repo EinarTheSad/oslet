@@ -14,6 +14,30 @@ extern void idt_init(void);
 extern void pic_remap(void);
 extern uint8_t __kernel_end;
 
+static void test_task_high(void) {
+    for (int i = 0; i < 5; i++) {
+        printf("[HIGH] Iteration %d\n", i);
+        task_sleep(500);  /* 500ms */
+    }
+    printf("[HIGH] Finished!\n");
+}
+
+static void test_task_normal(void) {
+    for (int i = 0; i < 5; i++) {
+        printf("[NORMAL] Iteration %d\n", i);
+        task_sleep(800);
+    }
+    printf("[NORMAL] Finished!\n");
+}
+
+static void test_task_low(void) {
+    for (int i = 0; i < 5; i++) {
+        printf("[LOW] Iteration %d\n", i);
+        task_sleep(1000);
+    }
+    printf("[LOW] Finished!\n");
+}
+
 void kmain(void) {
     vga_use_as_console();
     vga_clear();
@@ -41,6 +65,8 @@ void kmain(void) {
     heap_init();
     rtc_init();
     tasking_init();
+    
+    timer_enable_scheduling();
 
     __asm__ volatile ("sti");
 
@@ -65,7 +91,14 @@ void kmain(void) {
             continue;
 
         if (STREQ(line, "help")) {
-            printf("Commands: cls, heap, help, mem, ps, rtc, uptime\n");
+            printf("Commands:\n");
+            printf("  cls       - Clear screen\n");
+            printf("  heap      - Show heap stats\n");
+            printf("  mem       - Show memory stats\n");
+            printf("  ps        - List tasks\n");
+            printf("  rtc       - Show current time/date\n");
+            printf("  uptime    - Show uptime\n");
+            printf("  test      - Run test tasks\n");
             continue;
         }
 
@@ -95,9 +128,18 @@ void kmain(void) {
             task_list_print();
             continue;
         }
-
+        
         if (STREQ(line, "rtc")) {
             rtc_print_time();
+            continue;
+        }
+        
+        if (STREQ(line, "test")) {
+            printf("Creating test tasks...\n");
+            task_create(test_task_high, "high_task", PRIORITY_HIGH);
+            task_create(test_task_normal, "normal_task", PRIORITY_NORMAL);
+            task_create(test_task_low, "low_task", PRIORITY_LOW);
+            printf("Tasks created. Watch them run!\n");
             continue;
         }
 
