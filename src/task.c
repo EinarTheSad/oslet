@@ -3,6 +3,7 @@
 #include "console.h"
 #include "timer.h"
 #include <stddef.h>
+#include "syscall.h"
 
 static task_t *task_list = NULL;
 static task_t *current_task = NULL;
@@ -43,6 +44,9 @@ void tasking_init(void) {
     }
     
     memset_custom(&current_task->regs, 0, sizeof(registers_t));
+    current_task->msg_queue.head = 0;
+    current_task->msg_queue.tail = 0;
+    current_task->msg_queue.count = 0;
     current_task->tid = next_tid++;
     strlen_copy(current_task->name, "kernel", sizeof(current_task->name));
     current_task->state = TASK_RUNNING;
@@ -78,6 +82,11 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     
     memset_custom(task->stack, 0, TASK_STACK_SIZE);
     memset_custom(&task->regs, 0, sizeof(registers_t));
+
+    /* Initialize message queue */
+    task->msg_queue.head = 0;
+    task->msg_queue.tail = 0;
+    task->msg_queue.count = 0;
     
     task->tid = next_tid++;
     strlen_copy(task->name, name ? name : "unnamed", sizeof(task->name));
@@ -324,4 +333,16 @@ void task_list_print(void) {
 
 task_t *task_get_current(void) {
     return current_task;
+}
+
+task_t *task_find_by_tid(uint32_t tid) {
+    if (!task_list) return NULL;
+    
+    task_t *t = task_list;
+    do {
+        if (t->tid == tid) return t;
+        t = t->next;
+    } while (t != task_list);
+    
+    return NULL;
 }

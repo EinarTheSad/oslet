@@ -115,18 +115,44 @@ MAKE_IRQ 13
 MAKE_IRQ 14
 MAKE_IRQ 15
 
+    .extern syscall_handler
     .globl syscall_handler_idt
 syscall_handler_idt:
     cli
-    SAVE_REGS
     
-    movl %esp, %eax
+    /* Save all registers */
+    pushl %edi
+    pushl %esi
+    pushl %ebp
+    pushl %esp
+    pushl %ebx
+    pushl %edx
+    pushl %ecx
     pushl %eax
-    call switch_task
-    addl $4, %esp
     
-    movl %eax, %esp
+    /* Call handler: syscall_handler(eax, ebx, ecx, edx) */
+    pushl %edx
+    pushl %ecx
+    pushl %ebx
+    pushl %eax
+    call syscall_handler
+    addl $16, %esp
     
-    RESTORE_REGS
+    /* Result in eax - save it */
+    movl %eax, %ebx
+    
+    /* Restore registers */
+    popl %eax
+    popl %ecx
+    popl %edx
+    addl $4, %esp  /* skip saved ebx */
+    addl $4, %esp  /* skip saved esp */
+    popl %ebp
+    popl %esi
+    popl %edi
+    
+    /* Put result in eax */
+    movl %ebx, %eax
+    
     sti
     iret

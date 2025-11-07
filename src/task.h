@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include "syscall.h"
 
 #define TASK_STACK_SIZE 8192
 
@@ -35,6 +36,7 @@ typedef struct task {
     task_priority_t priority;
     uint32_t sleep_until_ticks;
     uint32_t quantum_remaining;
+    msg_queue_t msg_queue;
     struct task *next;
 } task_t;
 
@@ -49,3 +51,5 @@ task_t *task_get_current(void);
 void schedule(void);
 uint32_t switch_task(uint32_t esp);
 void task_tick(void);
+
+task_t *task_find_by_tid(uint32_t tid);
