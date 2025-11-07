@@ -7,9 +7,17 @@
 typedef enum {
     TASK_READY,
     TASK_RUNNING,
+    TASK_SLEEPING,
     TASK_BLOCKED,
     TASK_TERMINATED
 } task_state_t;
+
+typedef enum {
+    PRIORITY_HIGH   = 0,  /* 90% CPU */
+    PRIORITY_NORMAL = 1,  /* 45% CPU */
+    PRIORITY_LOW    = 2,  /* 22% CPU */
+    PRIORITY_IDLE   = 3   /* the rest */
+} task_priority_t;
 
 typedef struct {
     uint32_t eax, ebx, ecx, edx;
@@ -24,15 +32,20 @@ typedef struct task {
     registers_t regs;
     void *stack;
     task_state_t state;
+    task_priority_t priority;
+    uint32_t sleep_until_ticks;
+    uint32_t quantum_remaining;
     struct task *next;
 } task_t;
 
 void tasking_init(void);
-uint32_t task_create(void (*entry)(void), const char *name);
+uint32_t task_create(void (*entry)(void), const char *name, task_priority_t priority);
 void task_yield(void);
+void task_sleep(uint32_t milliseconds);
 void task_exit(void);
 void task_list_print(void);
 task_t *task_get_current(void);
 
 void schedule(void);
 uint32_t switch_task(uint32_t esp);
+void task_tick(void);
