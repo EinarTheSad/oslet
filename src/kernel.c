@@ -8,6 +8,7 @@
 #include "heap.h"
 #include "timer.h"
 #include "task.h"
+#include "rtc.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
@@ -38,6 +39,7 @@ void kmain(void) {
     
     pmm_identity_map_bitmap();
     heap_init();
+    rtc_init();
     tasking_init();
 
     __asm__ volatile ("sti");
@@ -63,7 +65,7 @@ void kmain(void) {
             continue;
 
         if (STREQ(line, "help")) {
-            printf("Commands: cls, heap, help, mem, ps, uptime\n");
+            printf("Commands: cls, heap, help, mem, ps, rtc, uptime\n");
             continue;
         }
 
@@ -91,6 +93,11 @@ void kmain(void) {
 
         if (STREQ(line, "ps")) {
             task_list_print();
+            continue;
+        }
+
+        if (STREQ(line, "rtc")) {
+            rtc_print_time();
             continue;
         }
 
