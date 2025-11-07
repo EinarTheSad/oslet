@@ -48,17 +48,24 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
         if (*p != '%') { emit(*p, user); written++; continue; }
         ++p;
 
-        // flags & width (zero pad only)
+        // flags: '-' (left-justify), '0' (zero pad)
+        bool left = false;
         bool zero = false;
+        for (;;) {
+            if (*p == '-') { left = true; ++p; continue; }
+            if (*p == '0') { zero = true; ++p; continue; }
+            break;
+        }
+        if (left) zero = false;
+
         int width = 0;
-        if (*p == '0') { zero = true; ++p; }
         while (*p >= '0' && *p <= '9') { width = width*10 + (*p - '0'); ++p; }
 
         int precision = 6;
         if (*p == '.') {
             precision = 0; ++p;
             while (*p >= '0' && *p <= '9')
-            precision = precision * 10 + (*p++ - '0');
+                precision = precision * 10 + (*p++ - '0');
         }
 
         char spec = *p ? *p : '%';
@@ -71,22 +78,25 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
 
             case 'c': {
                 int ch = va_arg(ap, int);
+                if (!left && width > 1) pad_out(width - 1, ' ', emit, user, &written);
                 emit((char)ch, user); written++;
+                if (left && width > 1) pad_out(width - 1, ' ', emit, user, &written);
             } break;
 
             case 's': {
                 const char* s = va_arg(ap, const char*);
                 if (!s) s = "(null)";
                 int len = 0; while (s[len]) len++;
-                if (width > len) pad_out(width - len, pad_char, emit, user, &written);
+                if (!left && width > len) pad_out(width - len, ' ', emit, user, &written);
                 for (int i = 0; i < len; i++) { emit(s[i], user); written++; }
+                if (left && width > len) pad_out(width - len, ' ', emit, user, &written);
             } break;
 
             case 'd': {
                 long v = va_arg(ap, int);
                 unsigned long uv;
                 int is_negative = 0;
-                
+
                 if (v < 0) {
                     is_negative = 1;
                     if (v == LONG_MIN) {
@@ -97,71 +107,76 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
                 } else {
                     uv = (unsigned long)v;
                 }
-                
+
                 char tmp[32]; int i = 0;
                 do { tmp[i++] = (char)('0' + (uv % 10)); uv /= 10; } while (uv && i < 32);
+
                 int len = i + (is_negative ? 1 : 0);
-                if (width > len) pad_out(width - len, pad_char, emit, user, &written);
-                if (is_negative) { emit('-', user); written++; }
-                while (i--) { emit(tmp[i], user); written++; }
+
+                if (!left) {
+                    if (width > len) pad_out(width - len, pad_char, emit, user, &written);
+                    if (is_negative) { emit('-', user); written++; }
+                    while (i--) { emit(tmp[i], user); written++; }
+                } else {
+                    if (is_negative) { emit('-', user); written++; }
+                    while (i--) { emit(tmp[i], user); written++; }
+                    if (width > len) pad_out(width - len, ' ', emit, user, &written);
+                }
             } break;
 
             case 'u': {
                 unsigned long v = va_arg(ap, unsigned int);
                 char tmp[32]; int i = 0;
                 do { tmp[i++] = (char)('0' + (v % 10)); v /= 10; } while (v && i < 32);
-                if (width > i) pad_out(width - i, pad_char, emit, user, &written);
-                while (i--) { emit(tmp[i], user); written++; }
-            } break;
-
-            case 'f': {
-                double v = va_arg(ap, double);
-                if (v < 0) { emit('-', user); written++; v = -v; }
-
-                double rounding = 0.5;
-                for (int d = 0; d < precision; d++) rounding /= 10.0;
-                v += rounding;
-
-                long whole = (long)v;
-                double frac = v - (double)whole;
-
-                // whole part
-                char tmp[32]; int i = 0;
-                do { tmp[i++] = (char)('0' + (whole % 10)); whole /= 10; } while (whole && i < 32);
-                while (i--) { emit(tmp[i], user); written++; }
-
-                emit('.', user); written++;
-
-                // fractional part
-                for (int d = 0; d < precision; d++) {
-                    frac *= 10.0;
-                    int digit = (int)frac;
-                    emit('0' + digit, user); written++;
-                    frac -= digit;
+                int len = i;
+                if (!left) {
+                    if (width > len) pad_out(width - len, pad_char, emit, user, &written);
+                    while (i--) { emit(tmp[i], user); written++; }
+                } else {
+                    while (i--) { emit(tmp[i], user); written++; }
+                    if (width > len) pad_out(width - len, ' ', emit, user, &written);
                 }
             } break;
 
             case 'x':
             case 'X': {
                 unsigned long v = va_arg(ap, unsigned int);
-                // compute nibble count without output side effects
                 unsigned long t = v; int n = 0; do { n++; t >>= 4; } while (t);
-                if (width > n) pad_out(width - n, pad_char, emit, user, &written);
                 const char* dig = (spec == 'X') ? "0123456789ABCDEF" : "0123456789abcdef";
-                // emit hex
-                for (int i = (n - 1) * 4; i >= 0; i -= 4) {
-                    unsigned d = (v >> i) & 0xF;
-                    emit(dig[d], user); written++;
+
+                if (!left) {
+                    if (width > n) pad_out(width - n, pad_char, emit, user, &written);
+                    for (int i = (n - 1) * 4; i >= 0; i -= 4) {
+                        unsigned d = (v >> i) & 0xF;
+                        emit(dig[d], user); written++;
+                    }
+                } else {
+                    for (int i = (n - 1) * 4; i >= 0; i -= 4) {
+                        unsigned d = (v >> i) & 0xF;
+                        emit(dig[d], user); written++;
+                    }
+                    if (width > n) pad_out(width - n, ' ', emit, user, &written);
                 }
             } break;
 
             case 'p': {
                 uintptr_t v = (uintptr_t)va_arg(ap, void*);
-                emit('0', user); emit('x', user); written += 2;
                 int nibbles = (int)(sizeof(uintptr_t) * 2);
-                for (int i = nibbles - 1; i >= 0; --i) {
-                    unsigned d = (v >> (i * 4)) & 0xF;
-                    emit("0123456789abcdef"[d], user); written++;
+                int core_len = 2 + nibbles; // "0x" + hex
+                if (!left) {
+                    if (width > core_len) pad_out(width - core_len, pad_char, emit, user, &written);
+                    emit('0', user); emit('x', user); written += 2;
+                    for (int i = nibbles - 1; i >= 0; --i) {
+                        unsigned d = (v >> (i * 4)) & 0xF;
+                        emit("0123456789abcdef"[d], user); written++;
+                    }
+                } else {
+                    emit('0', user); emit('x', user); written += 2;
+                    for (int i = nibbles - 1; i >= 0; --i) {
+                        unsigned d = (v >> (i * 4)) & 0xF;
+                        emit("0123456789abcdef"[d], user); written++;
+                    }
+                    if (width > core_len) pad_out(width - core_len, ' ', emit, user, &written);
                 }
             } break;
 
