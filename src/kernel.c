@@ -9,33 +9,55 @@
 #include "timer.h"
 #include "task.h"
 #include "rtc.h"
+#include "syscall.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
 extern uint8_t __kernel_end;
 
-static void test_task_high(void) {
+static void ipc_sender(void) {
+    uint32_t my_tid = sys_getpid();
+    char msg[64];
+    
     for (int i = 0; i < 5; i++) {
-        printf("[HIGH] Iteration %d\n", i);
-        task_sleep(500);  /* 500ms */
+        snprintf(msg, sizeof(msg), "Hello from task %u, iteration %d", my_tid, i);
+        
+        uint32_t receiver_tid = (my_tid == 1) ? 2 : 1;
+        int ret = sys_send_msg(receiver_tid, msg, strlen_simple(msg) + 1);
+        
+        if (ret == 0) {
+            sys_write("[SENDER] Message sent\n");
+        } else {
+            sys_write("[SENDER] Send failed\n");
+        }
+        
+        sys_sleep(1000);
     }
-    printf("[HIGH] Finished!\n");
+    
+    sys_write("[SENDER] Exiting\n");
+    sys_exit();
 }
 
-static void test_task_normal(void) {
+static void ipc_receiver(void) {
+    message_t msg;
+    
+    sys_write("[RECEIVER] Waiting for messages...\n");
+    
     for (int i = 0; i < 5; i++) {
-        printf("[NORMAL] Iteration %d\n", i);
-        task_sleep(800);
+        int ret = sys_recv_msg(&msg);
+        
+        if (ret == 0) {
+            char buf[256];
+            snprintf(buf, sizeof(buf), "[RECEIVER] Got message from TID %u: %s\n", 
+                    msg.from_tid, msg.data);
+            sys_write(buf);
+        } else {
+            sys_write("[RECEIVER] Recv failed\n");
+        }
     }
-    printf("[NORMAL] Finished!\n");
-}
-
-static void test_task_low(void) {
-    for (int i = 0; i < 5; i++) {
-        printf("[LOW] Iteration %d\n", i);
-        task_sleep(1000);
-    }
-    printf("[LOW] Finished!\n");
+    
+    sys_write("[RECEIVER] Exiting\n");
+    sys_exit();
 }
 
 void kmain(void) {
@@ -65,7 +87,7 @@ void kmain(void) {
     heap_init();
     rtc_init();
     tasking_init();
-    
+    syscall_init();
     timer_enable_scheduling();
 
     __asm__ volatile ("sti");
@@ -135,11 +157,10 @@ void kmain(void) {
         }
         
         if (STREQ(line, "test")) {
-            printf("Creating test tasks...\n");
-            task_create(test_task_high, "high_task", PRIORITY_HIGH);
-            task_create(test_task_normal, "normal_task", PRIORITY_NORMAL);
-            task_create(test_task_low, "low_task", PRIORITY_LOW);
-            printf("Tasks created. Watch them run!\n");
+            printf("Creating IPC test tasks...\n");
+            uint32_t t1 = task_create(ipc_sender, "sender", PRIORITY_NORMAL);
+            uint32_t t2 = task_create(ipc_receiver, "receiver", PRIORITY_NORMAL);
+            printf("Created sender (TID %u) and receiver (TID %u)\n", t1, t2);
             continue;
         }
 
