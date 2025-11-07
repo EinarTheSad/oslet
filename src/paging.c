@@ -38,6 +38,9 @@ static uintptr_t ensure_pt(uint32_t *pd, uint32_t idx) {
 
 int paging_map_page(uintptr_t vaddr, uintptr_t paddr, uint32_t flags) {
     if (!current_pd_phys) return -1;
+    if (vaddr & 0xFFF || paddr & 0xFFF) return -3; /* check if aligned */
+    
+    if (!current_pd_phys) return -1;
     uint32_t *pd = (uint32_t*)current_pd_phys;
     
     uintptr_t pt_phys = ensure_pt(pd, pd_index(vaddr));

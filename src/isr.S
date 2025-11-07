@@ -115,9 +115,18 @@ MAKE_IRQ 13
 MAKE_IRQ 14
 MAKE_IRQ 15
 
-    .globl syscall_handler
-syscall_handler:
+    .globl syscall_handler_idt
+syscall_handler_idt:
     cli
-    call perform_task_switch
+    SAVE_REGS
+    
+    movl %esp, %eax
+    pushl %eax
+    call switch_task
+    addl $4, %esp
+    
+    movl %eax, %esp
+    
+    RESTORE_REGS
     sti
     iret
