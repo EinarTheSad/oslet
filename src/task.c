@@ -78,27 +78,22 @@ uint32_t task_create(void (*entry)(void), const char *name) {
     
     /* Setup initial stack frame */
     uint32_t *stack_top = (uint32_t*)((char*)task->stack + TASK_STACK_SIZE);
-    
-    /* Push initial context for task_wrapper */
-    stack_top--;
-    *stack_top = 0x202;          /* EFLAGS (interrupts enabled) */
-    stack_top--;
-    *stack_top = 0;              /* EDI */
-    stack_top--;
-    *stack_top = 0;              /* ESI */
-    stack_top--;
-    *stack_top = 0;              /* EBP */
-    stack_top--;
-    *stack_top = 0;              /* EDX */
-    stack_top--;
-    *stack_top = 0;              /* ECX */
-    stack_top--;
-    *stack_top = 0;              /* EBX */
-    stack_top--;
-    *stack_top = (uint32_t)entry; /* EAX = function pointer */
-    
+
+    // EFLAGS for iret
+    stack_top--; *stack_top = 0x202;  
+    // Registers for RESTORE_REGS
+    stack_top--; *stack_top = 0;              // EDI
+    stack_top--; *stack_top = 0;              // ESI
+    stack_top--; *stack_top = 0;              // EBP (base pointer)
+    stack_top--; *stack_top = 0;              // EBX
+    stack_top--; *stack_top = 0;              // EDX
+    stack_top--; *stack_top = 0;              // ECX
+    stack_top--; *stack_top = (uint32_t)entry; // EAX = entry point
+    stack_top--; *stack_top = (uint32_t)task_wrapper; // Return address
+
     task->regs.esp = (uint32_t)stack_top;
     task->regs.eip = (uint32_t)task_wrapper;
+    task->regs.eax = (uint32_t)entry;
     
     __asm__ volatile ("cli");
     task_t *t = task_list;
@@ -110,14 +105,11 @@ uint32_t task_create(void (*entry)(void), const char *name) {
     return task->tid;
 }
 
-/* Wrapper executed when task starts - EAX contains entry point */
+/* Wrapper executed when task starts */
 static void task_wrapper(void) {
     void (*func)(void);
     
-    __asm__ volatile (
-        "movl %%eax, %0"
-        : "=r"(func)
-    );
+    func = (void (*)(void))current_task->regs.eax;
     
     __asm__ volatile ("sti");
     
@@ -146,8 +138,31 @@ void task_exit(void) {
     }
 }
 
+static void cleanup_terminated_tasks(void) {
+    if (!task_list || !current_task) return;
+    
+    task_t *prev = task_list;
+    task_t *curr = task_list->next;
+    
+    while (curr != task_list) {
+        if (curr->state == TASK_TERMINATED && curr != current_task) {
+            task_t *to_free = curr;
+            prev->next = curr->next;
+            curr = curr->next;
+            
+            if (to_free->stack) kfree(to_free->stack);
+            kfree(to_free);
+        } else {
+            prev = curr;
+            curr = curr->next;
+        }
+    }
+}
+
 void schedule(void) {
     if (!tasking_enabled || !current_task) return;
+
+    cleanup_terminated_tasks();
     
     task_t *next = current_task->next;
     task_t *start = current_task;

@@ -36,6 +36,7 @@ void kmain(void) {
         for (;;) __asm__ volatile ("hlt");
     }
     
+    pmm_identity_map_bitmap();
     heap_init();
     tasking_init();
 

@@ -2,6 +2,7 @@
 #include "console.h"
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
+extern void syscall_handler_idt(void);
 
 struct idt_entry {
     uint16_t offset_low;
@@ -78,9 +79,7 @@ void isr_common_stub(int vector, int error_code) {
 }
 
 /* Syscall handler for int 0x80 */
-void syscall_handler_idt(void) {
-    perform_task_switch();
-}
+/* moved to isr.S */
 
 void idt_init(void) {
     for (int i = 0; i < 256; ++i) idt_set_entry(i, 0, 0, 0);
