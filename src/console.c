@@ -33,13 +33,13 @@ static inline void pad_out(int count, char ch, emit_fn emit, void* user, int* wr
     }
 }
 
-int streq(const char *a, const char *b) {
+/* int streq(const char *a, const char *b) {
     while (*a && *a == *b) {
         a++;
         b++;
     }
     return (unsigned char)*a - (unsigned char)*b;
-}
+} */
 
 /* Supports: %c %s %d %u %x %X %p %% with width/zero-pad basics */
 int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
@@ -262,12 +262,5 @@ int snprintf(char* dst, size_t cap, const char* fmt, ...) {
     va_list ap; va_start(ap, fmt);
     int n = vsnprintf(dst, cap, fmt, ap);
     va_end(ap);
-    return n;
-}
-
-size_t strlen_simple(const char *s) {
-    if (!s) return 0;
-    size_t n = 0;
-    while (s[n]) n++;
     return n;
 }

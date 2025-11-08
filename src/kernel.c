@@ -18,6 +18,77 @@ extern void idt_init(void);
 extern void pic_remap(void);
 extern uint8_t __kernel_end;
 
+static void cmd_cat(const char *filename) {
+    fat32_file_t *f = fat32_open(filename, "r");
+    if (!f) {
+        printf("Cannot open file: %s\n", filename);
+        return;
+    }
+    
+    char buffer[513];
+    int n;
+    
+    while ((n = fat32_read(f, buffer, 512)) > 0) {
+        buffer[n] = '\0';
+        printf("%s", buffer);
+    }
+    
+    fat32_close(f);
+    printf("\n");
+}
+
+static void cmd_echo(const char *text, const char *filename) {
+    fat32_file_t *f = fat32_open(filename, "w");
+    if (!f) {
+        printf("Cannot create file: %s\n", filename);
+        return;
+    }
+    
+    fat32_write(f, text, strlen_s(text));
+    fat32_close(f);
+    printf("Written to %s\n", filename);
+}
+
+static void cmd_mkdir(const char *dirname) {
+    if (fat32_mkdir(dirname) == 0) {
+        printf("Directory created: %s\n", dirname);
+    } else {
+        printf("Failed to create directory: %s\n", dirname);
+    }
+}
+
+static void cmd_rm(const char *filename) {
+    if (fat32_unlink(filename) == 0) {
+        printf("Deleted: %s\n", filename);
+    } else {
+        printf("Failed to delete: %s\n", filename);
+    }
+}
+
+static void cmd_rmdir(const char *dirname) {
+    if (fat32_rmdir(dirname) == 0) {
+        printf("Directory removed: %s\n", dirname);
+    } else {
+        printf("Failed to remove directory (not empty?): %s\n", dirname);
+    }
+}
+
+static void cmd_cd(const char *path) {
+    if (fat32_chdir(path) == 0) {
+        char cwd[256];
+        fat32_getcwd(cwd, sizeof(cwd));
+        printf("Changed to: %s\n", cwd);
+    } else {
+        printf("Failed to change directory: %s\n", path);
+    }
+}
+
+static void cmd_pwd(void) {
+    char cwd[256];
+    fat32_getcwd(cwd, sizeof(cwd));
+    printf("%s\n", cwd);
+}
+
 static void ipc_sender(void) {
     uint32_t my_tid = sys_getpid();
     char msg[64];
@@ -93,12 +164,6 @@ void kmain(void) {
     ata_init();
     fat32_init();
     
-    if (ata_identify() == 0) {
-        if (fat32_mount() == 0) {
-            printf("Filesystem ready!\n");
-        }
-    }
-
     tasking_init();
     syscall_init();
     timer_enable_scheduling();
@@ -127,52 +192,65 @@ void kmain(void) {
         if (line[0] == '\0')
             continue;
 
-        if (STREQ(line, "help")) {
+        if (!strcmp_s(line, "help")) {
             printf("Commands:\n");
-            printf("cls       - Clear screen\n");
-            printf("heap      - Show heap stats\n");
-            printf("ls        - List current directory\n");
-            printf("mem       - Show memory stats\n");
-            printf("ps        - List tasks\n");
-            printf("rtc       - Show current time/date\n");
-            printf("uptime    - Show uptime\n");
-            printf("test      - Run test tasks\n");
+            printf("cat <file>           - Display file contents\n");
+            printf("cd <dir>             - Change directory\n");
+            printf("cls                  - Clear screen\n");
+            printf("echo <text> > <file> - Write text to file\n");
+            printf("heap                 - Show heap stats\n");
+            printf("ls [path]            - List directory\n");
+            printf("mem                  - Show memory stats\n");
+            printf("mkdir <dir>          - Create directory\n");
+            printf("mount <drive> <lba>  - Mount FAT32 drive\n");
+            printf("ps                   - List tasks\n");
+            printf("pwd                  - Print working directory\n");
+            printf("rm <file>            - Delete file\n");
+            printf("rmdir <dir>          - Remove empty directory\n");
+            printf("rtc                  - Show current time/date\n");
+            printf("test                 - Run test tasks\n");
+            printf("uptime               - Show uptime\n");
             continue;
         }
 
-        if (STREQ(line, "cls")) {
+        if (!strcmp_s(line, "cls")) {
             vga_clear();
             continue;
         }
 
-        if (STREQ(line, "mem")) {
+        if (!strcmp_s(line, "mem")) {
             pmm_print_stats();
             continue;
         }
 
-        if (STREQ(line, "heap")) {
+        if (!strcmp_s(line, "heap")) {
             heap_print_stats();
             continue;
         }
 
-        if (STREQ(line, "uptime")) {
+        if (!strcmp_s(line, "uptime")) {
             uint32_t ticks = timer_get_ticks();
             uint32_t seconds = ticks / 100;
             printf("Uptime: %u ticks (%u seconds)\n", ticks, seconds);
             continue;
         }
 
-        if (STREQ(line, "ps")) {
+        if (!strcmp_s(line, "ps")) {
             task_list_print();
             continue;
         }
         
-        if (STREQ(line, "rtc")) {
+        if (!strcmp_s(line, "rtc")) {
             rtc_print_time();
             continue;
         }
         
-        if (STREQ(line, "test")) {
+        if (!strcmp_s(line, "pwd")) {
+            cmd_pwd();
+            continue;
+        }
+        
+        if (!strcmp_s(line, "test")) {
             printf("Creating IPC test tasks...\n");
             uint32_t t1 = task_create(ipc_sender, "sender", PRIORITY_NORMAL);
             uint32_t t2 = task_create(ipc_receiver, "receiver", PRIORITY_NORMAL);
@@ -180,25 +258,141 @@ void kmain(void) {
             continue;
         }
 
-        if (STREQ(line, "ls")) {
-            fat32_dirent_t entries[32];
-            int count = fat32_list_dir("/", entries, 32);
-            
-            if (count < 0) {
-                printf("Failed to list directory\n");
-            } else {
-                printf("Files in /:\n\n");
-                for (int i = 0; i < count; i++) {
-                    if (entries[i].is_directory) {
-                        printf("%-12s [DIR]\n", entries[i].name);
-                    } else {
-                        printf("%-12s %u bytes\n", entries[i].name, entries[i].size);
+        /* Commands with arguments */
+        char *cmd = line;
+        char *arg1 = NULL;
+        char *arg2 = NULL;
+        
+        /* find first arg */
+        for (int i = 0; line[i]; i++) {
+            if (line[i] == ' ') {
+                line[i] = '\0';
+                arg1 = &line[i+1];
+                
+                /* skip spaces */
+                while (*arg1 == ' ') arg1++;
+                
+                /* find next argument (or >) */
+                for (int j = 0; arg1[j]; j++) {
+                    if (arg1[j] == ' ' || arg1[j] == '>') {
+                        if (arg1[j] == '>') {
+                            arg1[j] = '\0';
+                            arg2 = &arg1[j+1];
+                            while (*arg2 == ' ') arg2++;
+                        } else {
+                            arg1[j] = '\0';
+                            arg2 = &arg1[j+1];
+                            while (*arg2 == ' ') arg2++;
+                        }
+                        break;
                     }
                 }
+                break;
+            }
+        }
+        
+        if (!strcmp_s(cmd, "ls")) {
+            const char *path = arg1 ? arg1 : ".";
+            
+            fat32_dirent_t entries[64];
+            int count = fat32_list_dir(path, entries, 64);
+            
+            if (count < 0) {
+                printf("Failed to list directory: %s\n", path);
+            } else if (count == 0) {
+                printf("Empty directory\n");
+            } else {
+                printf("\n");
+                for (int i = 0; i < count; i++) {
+                    if (entries[i].is_directory) {
+                        printf("%-16s <DIR>\n", entries[i].name);
+                    } else {
+                        printf("%-16s %8u bytes\n", entries[i].name, entries[i].size);
+                    }
+                }
+                printf("\n%d item(s)\n", count);
+            }
+            continue;
+        }
+        
+        if (!strcmp_s(cmd, "cat")) {
+            if (arg1) {
+                cmd_cat(arg1);
+            } else {
+                printf("Usage: cat <file>\n");
+            }
+            continue;
+        }
+        
+        if (!strcmp_s(cmd, "echo")) {
+            if (arg1 && arg2) {
+                cmd_echo(arg1, arg2);
+            } else {
+                printf("Usage: echo <text> > <file>\n");
+            }
+            continue;
+        }
+        
+        if (!strcmp_s(cmd, "mkdir")) {
+            if (arg1) {
+                cmd_mkdir(arg1);
+            } else {
+                printf("Usage: mkdir <dir>\n");
+            }
+            continue;
+        }
+        
+        if (!strcmp_s(cmd, "rm")) {
+            if (arg1) {
+                cmd_rm(arg1);
+            } else {
+                printf("Usage: rm <file>\n");
+            }
+            continue;
+        }
+        
+        if (!strcmp_s(cmd, "rmdir")) {
+            if (arg1) {
+                cmd_rmdir(arg1);
+            } else {
+                printf("Usage: rmdir <dir>\n");
+            }
+            continue;
+        }
+        
+        if (!strcmp_s(cmd, "cd")) {
+            if (arg1) {
+                cmd_cd(arg1);
+            } else {
+                printf("Usage: cd <dir>\n");
+            }
+            continue;
+        }
+        
+        if (!strcmp_s(cmd, "mount")) {
+            if (arg1 && arg2) {
+                uint8_t drive = toupper_s(arg1[0]);
+                uint32_t lba = 0;
+                
+                /* number parser */
+                for (int i = 0; arg2[i]; i++) {
+                    if (arg2[i] >= '0' && arg2[i] <= '9') {
+                        lba = lba * 10 + (arg2[i] - '0');
+                    }
+                }
+                
+                if (fat32_mount_drive(drive, lba) == 0) {
+                    printf("Mounted %c: at LBA %u\n", drive, lba);
+                } else {
+                    printf("Failed to mount %c:\n", drive);
+                }
+            } else {
+                printf("Usage: mount <drive> <lba>\n");
             }
             continue;
         }
 
-        printf("Unknown command: %s\n", line);
+        printf("Unknown command: %s\n", cmd);
+        printf("Type 'help' for list of commands\n");
     }
 }
