@@ -12,6 +12,7 @@
 #include "syscall.h"
 #include "ata.h"
 #include "fat32.h"
+#include "string.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
@@ -25,7 +26,7 @@ static void ipc_sender(void) {
         snprintf(msg, sizeof(msg), "Hello from task %u, iteration %d", my_tid, i);
         
         uint32_t receiver_tid = (my_tid == 1) ? 2 : 1;
-        int ret = sys_send_msg(receiver_tid, msg, strlen_simple(msg) + 1);
+        int ret = sys_send_msg(receiver_tid, msg, strlen_s(msg) + 1);
         
         if (ret == 0) {
             sys_write("[SENDER] Message sent\n");

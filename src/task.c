@@ -4,6 +4,7 @@
 #include "timer.h"
 #include <stddef.h>
 #include "syscall.h"
+#include "string.h"
 
 static task_t *task_list = NULL;
 static task_t *current_task = NULL;
@@ -18,20 +19,6 @@ static const uint32_t QUANTUM_NORMAL = 5;   /* 50ms */
 static const uint32_t QUANTUM_LOW    = 2;   /* 20ms */
 static const uint32_t QUANTUM_IDLE   = 1;   /* 10ms */
 
-static void memset_custom(void *dst, int val, size_t n) {
-    uint8_t *d = dst;
-    while (n--) *d++ = (uint8_t)val;
-}
-
-static void strlen_copy(char *dst, const char *src, size_t max) {
-    size_t i = 0;
-    while (i < max - 1 && src[i]) {
-        dst[i] = src[i];
-        i++;
-    }
-    dst[i] = '\0';
-}
-
 void tasking_init(void) {
     printf("tasking_init() starting...\n");
     
@@ -43,12 +30,12 @@ void tasking_init(void) {
         return;
     }
     
-    memset_custom(&current_task->regs, 0, sizeof(registers_t));
+    memset_s(&current_task->regs, 0, sizeof(registers_t));
     current_task->msg_queue.head = 0;
     current_task->msg_queue.tail = 0;
     current_task->msg_queue.count = 0;
     current_task->tid = next_tid++;
-    strlen_copy(current_task->name, "kernel", sizeof(current_task->name));
+    strcpy_s(current_task->name, "kernel", sizeof(current_task->name));
     current_task->state = TASK_RUNNING;
     current_task->priority = PRIORITY_HIGH;
     current_task->sleep_until_ticks = 0;
@@ -80,8 +67,8 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
         return 0;
     }
     
-    memset_custom(task->stack, 0, TASK_STACK_SIZE);
-    memset_custom(&task->regs, 0, sizeof(registers_t));
+    memset_s(task->stack, 0, TASK_STACK_SIZE);
+    memset_s(&task->regs, 0, sizeof(registers_t));
 
     /* Initialize message queue */
     task->msg_queue.head = 0;
@@ -89,7 +76,7 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     task->msg_queue.count = 0;
     
     task->tid = next_tid++;
-    strlen_copy(task->name, name ? name : "unnamed", sizeof(task->name));
+    strcpy_s(task->name, name ? name : "unnamed", sizeof(task->name));
     task->state = TASK_READY;
     task->priority = priority;
     task->sleep_until_ticks = 0;
