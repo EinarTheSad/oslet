@@ -1,5 +1,5 @@
 #pragma once
-#define STREQ(a, b) (streq((a), (b)) == 0)
+/* #define STREQ(a, b) (streq((a), (b)) == 0) */
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -11,7 +11,7 @@ typedef struct {
     void* ctx;
 } console_t;
 
-int streq(const char *a, const char *b);
+/* int streq(const char *a, const char *b); */
 
 // Global current console (stdout/stderr equivalent)
 void console_set(const console_t* c);
@@ -30,4 +30,3 @@ int snprintf(char* dst, size_t cap, const char* fmt, ...);
 // Core formatter reusable for any sink
 typedef void (*emit_fn)(char ch, void* user);
 int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user);
-size_t strlen_simple(const char *s);
