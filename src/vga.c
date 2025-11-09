@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "console.h"
+#include "io.h"
 
 #define VGA_ADDRESS 0xB8000u
 #define VGA_WIDTH   80
@@ -9,10 +10,6 @@
 static volatile uint16_t* const VGA = (volatile uint16_t*)(uintptr_t)VGA_ADDRESS;
 static uint8_t vga_color = 0x07;
 static int cx = 0, cy = 0;
-
-static inline void outb(uint16_t port, uint8_t val) {
-    __asm__ volatile ("outb %0,%1" :: "a"(val), "Nd"(port));
-}
 
 static inline void move_hw_cursor(void) {
     if (cx < 0) cx = 0;

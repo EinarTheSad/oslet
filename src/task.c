@@ -19,11 +19,10 @@ static const uint32_t QUANTUM_LOW    = 2;
 static const uint32_t QUANTUM_IDLE   = 1;
 
 void tasking_init(void) {
-    printf("tasking_init() starting...\n");
-    
+   
     current_task = (task_t*)kmalloc(sizeof(task_t));
     if (!current_task) {
-        vga_set_color(12,15);
+        vga_set_color(0,12);
         printf("FAILED to allocate kernel task\n");
         vga_set_color(0,7);
         return;
@@ -44,14 +43,11 @@ void tasking_init(void) {
     
     task_list = current_task;
     tasking_enabled = 1;
-    
-    printf("Multitasking initialized\n");
 }
 
-static void task_wrapper(void) {
+/* static void task_wrapper(void) {
     __asm__ volatile ("sti");
     
-    /* Get entry point from stack */
     void (*entry)(void);
     __asm__ volatile (
         "movl 4(%%ebp), %0"
@@ -60,7 +56,7 @@ static void task_wrapper(void) {
     
     entry();
     task_exit();
-}
+} */
 
 uint32_t task_create(void (*entry)(void), const char *name, task_priority_t priority) {
     if (!tasking_enabled) return 0;
@@ -294,19 +290,38 @@ void task_list_print(void) {
         return;
     }
     
+    vga_set_color(0, 11); /* cyan header */
     printf("TID  NAME              STATE        PRIORITY   QUANTUM\n");
+    vga_set_color(0, 8);  /* dark gray separator */
     printf("---  ----------------  -----------  ---------  -------\n");
+    vga_set_color(0, 7);
     
     task_t *t = task_list;
     int count = 0;
     do {
         const char *state_str = "UNKNOWN";
+        uint8_t state_color = 7;
         switch (t->state) {
-            case TASK_READY:      state_str = "READY"; break;
-            case TASK_RUNNING:    state_str = "RUNNING"; break;
-            case TASK_SLEEPING:   state_str = "SLEEPING"; break;
-            case TASK_BLOCKED:    state_str = "BLOCKED"; break;
-            case TASK_TERMINATED: state_str = "TERMINATED"; break;
+            case TASK_READY:
+                state_str = "READY";
+                state_color = 14; /* yellow */
+                break;
+            case TASK_RUNNING:
+                state_str = "RUNNING";
+                state_color = 10; /* green */
+                break;
+            case TASK_SLEEPING:
+                state_str = "SLEEPING";
+                state_color = 11; /* cyan */
+                break;
+            case TASK_BLOCKED:
+                state_str = "BLOCKED";
+                state_color = 12; /* red */
+                break;
+            case TASK_TERMINATED:
+                state_str = "TERMINATED";
+                state_color = 8; /* gray */
+                break;
         }
         
         const char *prio_str = "UNKNOWN";
@@ -317,14 +332,28 @@ void task_list_print(void) {
             case PRIORITY_IDLE:   prio_str = "IDLE"; break;
         }
         
-        printf("%-4u %-16s %-11s  %-9s  %u\n", 
-               t->tid, t->name, state_str, prio_str, t->quantum_remaining);
+        /* TID and name in white */
+        vga_set_color(0, 15);
+        printf("%-4u ", t->tid);
+        vga_set_color(0, 7);
+        printf("%-16s  ", t->name);
+        
+        /* State in color */
+        vga_set_color(0, state_color);
+        printf("%-11s  ", state_str);
+        
+        /* Rest in gray */
+        vga_set_color(0, 8);
+        printf("%-9s  %u\n", prio_str, t->quantum_remaining);
+        vga_set_color(0, 7);
         
         t = t->next;
         count++;
         
         if (count > 20) {
+            vga_set_color(0, 12);
             printf("ERROR: Loop detected!\n");
+            vga_set_color(0, 7);
             break;
         }
     } while (t != task_list);

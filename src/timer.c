@@ -45,5 +45,4 @@ void timer_wait(uint32_t ticks) {
 
 void timer_enable_scheduling(void) {
     scheduling_enabled = 1;
-    printf("Scheduling enabled\n");
 }
