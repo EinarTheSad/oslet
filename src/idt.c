@@ -45,7 +45,6 @@ static inline void load_idt(void) {
     idtr.limit = sizeof(idt) - 1;
     idtr.base  = (uint32_t)&idt;
     __asm__ volatile ("lidt %0" :: "m"(idtr));
-    printf("IDT loaded\n");
 }
 
 static void idt_set_entry(int num, uint32_t base, uint16_t sel, uint8_t flags) {
@@ -74,7 +73,7 @@ void irq_invoke_from_stub(int vector) {
 
 void isr_common_stub(int vector, int error_code) {
     vga_set_color(12,15);
-    printf("[EXCEPTION] vector=%d err=0x%x\n", vector, (unsigned)error_code);
+    printf("[EXCEPTION] Vector=%d Error=0x%x\n", vector, (unsigned)error_code);
     for (;;) __asm__ volatile ("hlt");
 }
 

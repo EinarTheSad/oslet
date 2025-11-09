@@ -34,10 +34,6 @@ static int rtc_is_updating(void) {
 void rtc_init(void) {
     while (rtc_is_updating());
     rtc_read_time(&boot_time);
-    
-    printf("RTC initialized: %02u/%02u/%04u %02u:%02u:%02u\n",
-           boot_time.day, boot_time.month, boot_time.year,
-           boot_time.hour, boot_time.minute, boot_time.second);
 }
 
 void rtc_read_time(rtc_time_t *time) {

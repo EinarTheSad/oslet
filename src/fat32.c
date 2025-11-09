@@ -439,7 +439,6 @@ void fat32_init(void) {
     memset_s(open_files, 0, sizeof(open_files));
     memset_s(fat_dirty, 0, sizeof(fat_dirty));
     for (int i = 0; i < FAT32_MAX_VOLUMES; i++) last_alloc[i] = 2;
-    printf("FAT32 driver initialized\n");
 }
 
 int fat32_mount_drive(uint8_t drive_letter, uint32_t start_lba) {
@@ -489,7 +488,6 @@ int fat32_mount_drive(uint8_t drive_letter, uint32_t start_lba) {
         last_alloc[idx] = 2;
     }
     vol->mounted = 1;
-    printf("Mounted drive %c: (cluster_size=%u root=%u)\n", drive_letter, vol->sectors_per_cluster * vol->bytes_per_sector, vol->root_cluster);
     return 0;
 }
 

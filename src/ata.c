@@ -45,8 +45,6 @@ void ata_init(void) {
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, 0);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, 0);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, 0);
-    
-    printf("ATA: Primary master initialized\n");
 }
 
 int ata_identify(void) {
@@ -73,10 +71,10 @@ int ata_identify(void) {
     ata_wait_drq();
     
     uint16_t identify[256];
-    for (int i = 0; i < 256; i++)
+    for (int i = 0; i < 256; i++) {
         identify[i] = inw(ATA_PRIMARY_IO + ATA_REG_DATA);
+    }
     
-    printf("ATA: Drive identified successfully\n");
     return 0;
 }
 
@@ -85,8 +83,6 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
         printf("ATA: Invalid parameters\n");
         return -1;
     }
-    
-    /* printf("ATA: Reading %u sectors from LBA %u\n", sector_count, lba); */
     
     ata_wait_bsy();
     

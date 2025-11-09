@@ -12,7 +12,7 @@ static void memcpy_safe(void *dst, const void *src, size_t n) {
 }
 
 void syscall_init(void) {
-    printf("Syscall interface initialized\n");
+    /* printf("Syscall interface initialized\n"); */
 }
 
 static int sys_send_msg_impl(uint32_t to_tid, const void *data, uint32_t size) {
