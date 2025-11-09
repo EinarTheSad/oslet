@@ -14,23 +14,16 @@ typedef enum {
 } task_state_t;
 
 typedef enum {
-    PRIORITY_HIGH   = 0,  /* 90% CPU */
-    PRIORITY_NORMAL = 1,  /* 45% CPU */
-    PRIORITY_LOW    = 2,  /* 22% CPU */
-    PRIORITY_IDLE   = 3   /* the rest */
+    PRIORITY_HIGH   = 0,
+    PRIORITY_NORMAL = 1,
+    PRIORITY_LOW    = 2,
+    PRIORITY_IDLE   = 3
 } task_priority_t;
-
-typedef struct {
-    uint32_t eax, ebx, ecx, edx;
-    uint32_t esi, edi, ebp;
-    uint32_t esp, eip;
-    uint32_t eflags;
-} registers_t;
 
 typedef struct task {
     uint32_t tid;
     char name[32];
-    registers_t regs;
+    uint32_t esp;
     void *stack;
     task_state_t state;
     task_priority_t priority;
@@ -49,7 +42,6 @@ void task_list_print(void);
 task_t *task_get_current(void);
 
 void schedule(void);
-uint32_t switch_task(uint32_t esp);
 void task_tick(void);
 
 task_t *task_find_by_tid(uint32_t tid);

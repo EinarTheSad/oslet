@@ -13,11 +13,10 @@ static volatile int tasking_enabled = 0;
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
 
-/* Quantum (CPU time) for each priority */
-static const uint32_t QUANTUM_HIGH   = 10;  /* 100ms at 100Hz */
-static const uint32_t QUANTUM_NORMAL = 5;   /* 50ms */
-static const uint32_t QUANTUM_LOW    = 2;   /* 20ms */
-static const uint32_t QUANTUM_IDLE   = 1;   /* 10ms */
+static const uint32_t QUANTUM_HIGH   = 10;
+static const uint32_t QUANTUM_NORMAL = 5;
+static const uint32_t QUANTUM_LOW    = 2;
+static const uint32_t QUANTUM_IDLE   = 1;
 
 void tasking_init(void) {
     printf("tasking_init() starting...\n");
@@ -30,7 +29,7 @@ void tasking_init(void) {
         return;
     }
     
-    memset_s(&current_task->regs, 0, sizeof(registers_t));
+    memset_s(current_task, 0, sizeof(task_t));
     current_task->msg_queue.head = 0;
     current_task->msg_queue.tail = 0;
     current_task->msg_queue.count = 0;
@@ -49,8 +48,16 @@ void tasking_init(void) {
     printf("Multitasking initialized\n");
 }
 
-static void task_trampoline(void (*entry)(void)) {
+static void task_wrapper(void) {
     __asm__ volatile ("sti");
+    
+    /* Get entry point from stack */
+    void (*entry)(void);
+    __asm__ volatile (
+        "movl 4(%%ebp), %0"
+        : "=r"(entry)
+    );
+    
     entry();
     task_exit();
 }
@@ -68,9 +75,8 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     }
     
     memset_s(task->stack, 0, TASK_STACK_SIZE);
-    memset_s(&task->regs, 0, sizeof(registers_t));
+    memset_s(task, 0, sizeof(task_t));
 
-    /* Initialize message queue */
     task->msg_queue.head = 0;
     task->msg_queue.tail = 0;
     task->msg_queue.count = 0;
@@ -88,15 +94,14 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
         case PRIORITY_IDLE:   task->quantum_remaining = QUANTUM_IDLE; break;
     }
     
-    /* Setup stack */   
+    /* Setup initial stack frame */
     uint32_t *sp = (uint32_t *)((uint8_t*)task->stack + TASK_STACK_SIZE);
-
-    /* cdecl stack: top -> [return addr][arg0] */
-    *--sp = (uint32_t)task_exit;
-    *--sp = (uint32_t)entry;
-
-    task->regs.esp = (uint32_t)sp;
-    task->regs.eip = (uint32_t)task_trampoline;
+    
+    *--sp = (uint32_t)entry;      /* Argument to task_wrapper */
+    *--sp = 0;                     /* Fake return address */
+    *--sp = 0;                     /* EBP */
+    
+    task->esp = (uint32_t)sp;
     
     __asm__ volatile ("cli");
     task_t *t = task_list;
@@ -132,14 +137,16 @@ void task_sleep(uint32_t milliseconds) {
     __asm__ volatile ("cli");
     
     uint32_t current_ticks = timer_get_ticks();
-    uint32_t sleep_ticks = (milliseconds * 100) / 1000;  /* 100 Hz timer */
+    uint32_t sleep_ticks = (milliseconds * 100) / 1000;
     
     current_task->state = TASK_SLEEPING;
     current_task->sleep_until_ticks = current_ticks + sleep_ticks;
     
     __asm__ volatile ("sti");
     
-    task_yield();
+    while (current_task->state == TASK_SLEEPING) {
+        __asm__ volatile ("hlt");
+    }
 }
 
 static void wakeup_sleeping_tasks(void) {
@@ -175,19 +182,18 @@ static void cleanup_terminated_tasks(void) {
     }
 }
 
-/* Weighted round-robin algorithm (thanks, Claude) */
 static task_t *pick_next_task(void) {
     static uint32_t schedule_counter = 0;
     schedule_counter++;
     
     task_priority_t try_priority;
-    uint32_t mod = schedule_counter % 10;
+    uint32_t mod = schedule_counter % 16;
    
     if (mod < 9) {
         try_priority = PRIORITY_HIGH;
-    } else if (mod < 9 + 5) {
+    } else if (mod < 14) {
         try_priority = PRIORITY_NORMAL;
-    } else if (mod < 9 + 5 + 2) {
+    } else if (mod < 16) {
         try_priority = PRIORITY_LOW;
     } else {
         try_priority = PRIORITY_IDLE;
@@ -236,13 +242,20 @@ void schedule(void) {
     current_task = next;
     current_task->state = TASK_RUNNING;
     
-    /* Reset quantum for a new task */
     switch (current_task->priority) {
         case PRIORITY_HIGH:   current_task->quantum_remaining = QUANTUM_HIGH; break;
         case PRIORITY_NORMAL: current_task->quantum_remaining = QUANTUM_NORMAL; break;
         case PRIORITY_LOW:    current_task->quantum_remaining = QUANTUM_LOW; break;
         case PRIORITY_IDLE:   current_task->quantum_remaining = QUANTUM_IDLE; break;
     }
+    
+    /* Cooperative switch */
+    __asm__ volatile (
+        "movl %0, %%esp\n\t"
+        "popl %%ebp\n\t"
+        "ret"
+        :: "r"(current_task->esp)
+    );
 }
 
 void task_tick(void) {
@@ -252,27 +265,26 @@ void task_tick(void) {
     if (current_task->quantum_remaining > 0) {
         current_task->quantum_remaining--;
     }
-    
-    if (current_task->quantum_remaining == 0) {
-        schedule();
-    }
-}
-
-uint32_t switch_task(uint32_t esp) {
-    if (!tasking_enabled || !current_task) return esp;
-    
-    task_t *prev = current_task;
-    
-    if (prev->state != TASK_TERMINATED) {
-        prev->regs.esp = esp;
-    }
-    
-    schedule();
-    
-    return current_task->regs.esp;
 }
 
 void task_yield(void) {
+    if (!tasking_enabled || !current_task) return;
+    
+    __asm__ volatile ("cli");
+    
+    uint32_t esp_save;
+    __asm__ volatile (
+        "movl %%esp, %0\n\t"
+        "movl %%ebp, %%eax\n\t"
+        "pushl %%eax"
+        : "=r"(esp_save)
+        :: "eax"
+    );
+    
+    current_task->esp = esp_save;
+    
+    __asm__ volatile ("sti");
+    
     schedule();
 }
 
