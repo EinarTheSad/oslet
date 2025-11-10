@@ -25,6 +25,19 @@ static inline void put_at(char c, int x, int y) {
     VGA[y * VGA_WIDTH + x] = (uint16_t)c | ((uint16_t)vga_color << 8);
 }
 
+static inline void enable_cursor(uint8_t cursor_start, uint8_t cursor_end) {
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, (inb(0x3D5) & 0xC0) | cursor_start);
+    
+    outb(0x3D4, 0x0B);
+    outb(0x3D5, (inb(0x3D5) & 0xE0) | cursor_end);
+}
+
+static inline void disable_cursor(void) {
+    outb(0x3D4, 0x0A);
+    outb(0x3D5, 0x20);
+}
+
 static void scroll_if_needed(void) {
     if (cy < VGA_HEIGHT) return;
     for (int y = 1; y < VGA_HEIGHT; ++y) {
@@ -79,6 +92,7 @@ static const console_t VGA_CONSOLE = { .write = vga_write, .ctx = 0 };
 
 void vga_use_as_console(void) {
     console_set(&VGA_CONSOLE);
+    enable_cursor(12, 12);
 }
 
 void vga_set_color(uint8_t background, uint8_t foreground) {
