@@ -31,6 +31,16 @@ void strcpy_s(char *dst, const char *src, size_t max) {
     dst[i] = '\0';
 }
 
+char* strrchr_s(const char *s, char c) {
+    const char *last = NULL;
+    while (*s) {
+        if (*s == c) last = s;
+        s++;
+    }
+    if (c == '\0') return (char*)s;
+    return (char*)last;
+}
+
 char toupper_s(char c) {
     return (c >= 'a' && c <= 'z') ? c - 32 : c;
 }

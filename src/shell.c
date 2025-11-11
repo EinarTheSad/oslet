@@ -24,7 +24,7 @@
 #define COLOR_INFO_FG      11  /* bright cyan */
 #define COLOR_DIR_FG       14  /* yellow */
 
-static char current_path[256];
+static char current_path[FAT32_MAX_PATH];
 
 static void print_prompt(void) {
     fat32_getcwd(current_path, sizeof(current_path));
@@ -69,7 +69,7 @@ static void cmd_cat(const char *filename) {
     char buffer[513];
     int n;
     
-    vga_set_color(COLOR_NORMAL_BG, 15); /* bright white */
+    vga_set_color(COLOR_NORMAL_BG, 15);
     while ((n = fat32_read(f, buffer, 512)) > 0) {
         buffer[n] = '\0';
         printf("%s", buffer);
@@ -101,8 +101,6 @@ static void cmd_echo(const char *text, const char *filename) {
 
 static void cmd_mkdir(const char *dirname) {
     if (fat32_mkdir(dirname) == 0) {
-        vga_set_color(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
-        printf("OK ");
         vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         printf("Created directory: %s\n", dirname);
     } else {
@@ -115,8 +113,6 @@ static void cmd_mkdir(const char *dirname) {
 
 static void cmd_rm(const char *filename) {
     if (fat32_unlink(filename) == 0) {
-        vga_set_color(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
-        printf("OK ");
         vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         printf("Deleted: %s\n", filename);
     } else {
@@ -129,8 +125,6 @@ static void cmd_rm(const char *filename) {
 
 static void cmd_rmdir(const char *dirname) {
     if (fat32_rmdir(dirname) == 0) {
-        vga_set_color(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
-        printf("OK ");
         vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         printf("Removed directory: %s\n", dirname);
     } else {
@@ -141,8 +135,34 @@ static void cmd_rmdir(const char *dirname) {
     }
 }
 
+/* First here, later will move to fat32.c */
+static char* check_path(const char *path) {
+    fat32_getcwd(current_path, sizeof(current_path));
+
+    if (!path || !path[0] || strcmp_s(path, ".") == 0) {
+        /* If the current catalog is not main, trim '/' */
+        size_t len = strlen_s(current_path);
+        if (len > 3 && current_path[len - 1] == '/')
+            current_path[len - 1] = '\0';
+        path = current_path;
+    } 
+    else if (strcmp_s(path, "..") == 0) {
+        /* Back up one level */
+        size_t len = strlen_s(current_path);
+        if (len > 3 && current_path[len - 1] == '/') current_path[len - 1] = '\0';
+        char *last = strrchr_s(current_path, '/');
+        if (last && last > current_path + 2) *(last + 1) = '\0';
+        else strcpy_s(current_path, "C:/", 4);
+        path = current_path;
+    } 
+    else {
+        /* nothing */
+    }
+    return path;
+}
+
 static void cmd_cd(const char *path) {
-    if (fat32_chdir(path) == 0) {
+    if (fat32_chdir(check_path(path)) == 0) {
         /* Success - prompt will show new path */
     } else {
         vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
@@ -152,16 +172,8 @@ static void cmd_cd(const char *path) {
     }
 }
 
-static void cmd_pwd(void) {
-    char cwd[256];
-    fat32_getcwd(cwd, sizeof(cwd));
-    vga_set_color(COLOR_INFO_BG, COLOR_INFO_FG);
-    printf("%s\n", cwd);
-    vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-}
-
 static void cmd_help(void) {
-    vga_set_color(0, 14); /* yellow */
+    vga_set_color(0, 14);
     printf("\nAvailable commands:\n\n");
     vga_set_color(0, 7);
     
@@ -204,12 +216,7 @@ static void cmd_help(void) {
     vga_set_color(0, 8);
     printf("Mount FAT32 drive\n");
     vga_set_color(0, 7);
-    
-    printf("  pwd                  ");
-    vga_set_color(0, 8);
-    printf("Print working directory\n");
-    vga_set_color(0, 7);
-    
+      
     printf("  rm <file>            ");
     vga_set_color(0, 8);
     printf("Delete file\n");
@@ -259,12 +266,7 @@ static void cmd_help(void) {
 }
 
 static void cmd_ls(const char *path) {
-    const char *target = NULL;
-    char cwd[256];
-    fat32_getcwd(cwd, sizeof(cwd));
-    if (!path || !path[0] || strcmp_s(path, ".") == 0) target = cwd;
-    else if (strcmp_s(path, "..") == 0) target = "..";
-    else target = path;
+    const char *target = check_path(path);
     
     fat32_dirent_t entries[64];
     int count = fat32_list_dir(target, entries, 64);
@@ -295,16 +297,18 @@ static void cmd_ls(const char *path) {
     }
     
     printf("\n");
+    int dirs = 0;
     for (int i = 0; i < count; i++) {
         if (entries[i].is_directory) {
             vga_set_color(0, COLOR_DIR_FG);
-            printf("  %-16s   ", entries[i].name);
+            printf("  %-22s ", entries[i].name);
             vga_set_color(0, 8);
             printf("<DIR>\n");
             vga_set_color(0, 7);
+            dirs++;
         } else {
-            vga_set_color(0, 15); /* bright white */
-            printf("  %-16s ", entries[i].name);
+            vga_set_color(0, 15);
+            printf("  %-13s ", entries[i].name);
             vga_set_color(0, 8);
             printf("%8u bytes\n", entries[i].size);
             vga_set_color(0, 7);
@@ -313,7 +317,7 @@ static void cmd_ls(const char *path) {
     
     printf("\n");
     vga_set_color(0, 8);
-    printf("  %d item(s)\n", count);
+    printf("  %d files\n  %d catalogues\n  %d items in total\n\n", count-dirs, dirs, count);
     vga_set_color(0, 7);
 }
 
@@ -444,11 +448,6 @@ void shell_run(void) {
         
         if (!strcmp_s(line, "rtc")) {
             rtc_print_time();
-            continue;
-        }
-        
-        if (!strcmp_s(line, "pwd")) {
-            cmd_pwd();
             continue;
         }
         

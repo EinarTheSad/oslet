@@ -8,3 +8,4 @@ int strcmp_s(const char *a, const char *b);
 size_t strlen_s(const char *s);
 void strcpy_s(char *dst, const char *src, size_t max);
 char toupper_s(char c);
+char* strrchr_s(const char *s, char c);
