@@ -45,19 +45,6 @@ void tasking_init(void) {
     tasking_enabled = 1;
 }
 
-/* static void task_wrapper(void) {
-    __asm__ volatile ("sti");
-    
-    void (*entry)(void);
-    __asm__ volatile (
-        "movl 4(%%ebp), %0"
-        : "=r"(entry)
-    );
-    
-    entry();
-    task_exit();
-} */
-
 uint32_t task_create(void (*entry)(void), const char *name, task_priority_t priority) {
     if (!tasking_enabled) return 0;
     

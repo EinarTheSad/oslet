@@ -284,7 +284,8 @@ static int find_in_dir(fat32_volume_t *vol, uint32_t dir_cluster, const char *na
 
 static int navigate_path(fat32_volume_t *vol, const char *path, uint32_t *out_dir_cluster, char *out_filename) {
     *out_dir_cluster = vol->root_cluster;
-    if (!path || path[0] == '\0' || path[0] == '.' || (path[0] == '/' && path[1] == '\0')) {
+    if (!path || path[0] == '\0' || (path[0] == '/' && path[1] == '\0') ||
+        (strcmp_s(path, ".") == 0)) {
         if (out_filename) out_filename[0] = '\0';
         return 0;
     }

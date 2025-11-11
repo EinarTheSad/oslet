@@ -29,9 +29,8 @@ static char current_path[256];
 static void print_prompt(void) {
     fat32_getcwd(current_path, sizeof(current_path));
     vga_set_color(COLOR_PROMPT_BG, COLOR_PROMPT_FG);
-    printf("%s", current_path);
+    printf("%s>", current_path);
     vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-    printf("> ");
 }
 
 static int compare_entries(const void *a, const void *b) {
@@ -260,7 +259,12 @@ static void cmd_help(void) {
 }
 
 static void cmd_ls(const char *path) {
-    const char *target = (path && path[0]) ? path : ".";
+    const char *target = NULL;
+    char cwd[256];
+    fat32_getcwd(cwd, sizeof(cwd));
+    if (!path || !path[0] || strcmp_s(path, ".") == 0) target = cwd;
+    else if (strcmp_s(path, "..") == 0) target = "..";
+    else target = path;
     
     fat32_dirent_t entries[64];
     int count = fat32_list_dir(target, entries, 64);
@@ -294,7 +298,7 @@ static void cmd_ls(const char *path) {
     for (int i = 0; i < count; i++) {
         if (entries[i].is_directory) {
             vga_set_color(0, COLOR_DIR_FG);
-            printf("  %-16s ", entries[i].name);
+            printf("  %-16s   ", entries[i].name);
             vga_set_color(0, 8);
             printf("<DIR>\n");
             vga_set_color(0, 7);
