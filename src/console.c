@@ -1,8 +1,8 @@
-#define LONG_MIN (-2147483647L - 1)
-#define LONG_MAX 2147483647L
-
 #include "console.h"
 #include <stdbool.h>
+
+#define LONG_MIN (-2147483647L - 1)
+#define LONG_MAX 2147483647L
 
 static const console_t* CURRENT;
 
@@ -32,14 +32,6 @@ static inline void pad_out(int count, char ch, emit_fn emit, void* user, int* wr
         (*written)++;
     }
 }
-
-/* int streq(const char *a, const char *b) {
-    while (*a && *a == *b) {
-        a++;
-        b++;
-    }
-    return (unsigned char)*a - (unsigned char)*b;
-} */
 
 /* Supports: %c %s %d %u %x %X %p %% with width/zero-pad basics */
 int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
@@ -216,7 +208,6 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
     return written;
 }
 
-/* Public “stdio” */
 int putchar(int c) {
     if (!CURRENT || !CURRENT->write) return -1;
     char ch = (char)c;
