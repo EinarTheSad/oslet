@@ -10,9 +10,12 @@
 #define SYS_RECV_MSG  6
 #define SYS_GETPID    7
 #define SYS_SPAWN     8
+#define SYS_SETCOLOR  10
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
+
+extern void vga_set_color(uint8_t background, uint8_t foreground);
 
 typedef struct {
     uint32_t from_tid;
@@ -64,4 +67,8 @@ static inline uint32_t sys_getpid(void) {
     uint32_t tid;
     __asm__ volatile("int $0x80" : "=a"(tid) : "a"(SYS_GETPID));
     return tid;
+}
+
+static inline void sys_setcolor(uint8_t background, uint8_t foreground) {
+    vga_set_color(background, foreground);
 }
