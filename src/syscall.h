@@ -10,12 +10,10 @@
 #define SYS_RECV_MSG  6
 #define SYS_GETPID    7
 #define SYS_SPAWN     8
-#define SYS_SETCOLOR  10
+#define SYS_SETCOLOR  9
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
-
-extern void vga_set_color(uint8_t background, uint8_t foreground);
 
 typedef struct {
     uint32_t from_tid;

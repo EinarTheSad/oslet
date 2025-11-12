@@ -61,7 +61,7 @@ clean:
 
 fetchlet:
 	@echo "Building fetchlet.bin..."
-	@gcc -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-stack-protector \
+	@gcc -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-pie -fno-stack-protector \
 	    -c $(BIN)/fetchlet.c -o $(BIN)/fetchlet.o
 	@ld -m elf_i386 -T $(BIN)/fetchlet.ld -nostdlib -o $(BIN)/fetchlet.bin $(BIN)/fetchlet.o
 	@rm -f $(BIN)/fetchlet.o

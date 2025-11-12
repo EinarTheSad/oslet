@@ -37,7 +37,7 @@ int exec_load(const char *path, exec_image_t *image) {
     
     /* Get file size */
     uint32_t size = f->size;
-    if (size == 0 || size > 1024 * 1024) {  /* max 1MB binaries */
+    if (size == 0 || size > 2 * 1024 * 1024) {  /* max 2MB binaries, so she doesn't choke */
         printf("Invalid binary size %u\n", size);
         fat32_close(f);
         return -1;
@@ -67,16 +67,16 @@ int exec_load(const char *path, exec_image_t *image) {
     image->size = size;
     image->memory = mem;
     
-    printf("Loaded %s (%u bytes) at 0x%x\n", path, size, EXEC_LOAD_ADDR);
+    /* printf("Loaded %s (%u bytes) at 0x%x\n", path, size, EXEC_LOAD_ADDR); */
     return 0;
 }
 
 int exec_run(exec_image_t *image) {
     if (!image || !image->memory) return -1;
 
-    uint32_t tid = task_create((void(*)(void))image->entry_point,"exec", PRIORITY_NORMAL);
+    uint32_t tid = task_create((void(*)(void))image->entry_point,"executable", PRIORITY_NORMAL);
     if (!tid) {
-        printf("task_create failed\n");
+        printf("Could not create task for the executable\n");
         return -1;
     }
 

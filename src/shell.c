@@ -169,20 +169,15 @@ static void cmd_exec(const char *path) {
     
     exec_image_t image;
     
-    printf("Loading %s...\n", path);
-    
     if (exec_load(path, &image) != 0) {
         printf("Failed to load binary\n");
         return;
     }
     
-    printf("Executing...\n");
-    
     if (exec_run(&image) != 0) {
-        printf("Execution failed\n");
+        printf("Could not execute %s\n", path);
     }
     
-    printf("Binary returned to kernel\n");
     exec_free(&image);
 }
 

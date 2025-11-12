@@ -112,8 +112,8 @@ void task_exit(void) {
     }
     
     current_task->state = TASK_TERMINATED;
-    printf("Task '%s' (TID %u) exited\n", 
-           current_task->name, current_task->tid);
+    /* printf("Task '%s' (TID %u) exited\n", 
+           current_task->name, current_task->tid); */
     
     __asm__ volatile ("sti");
     task_yield();
