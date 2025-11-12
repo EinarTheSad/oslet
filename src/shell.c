@@ -10,6 +10,7 @@
 #include "task.h"
 #include "rtc.h"
 #include "syscall.h"
+#include "exec.h"
 
 /* Color schemes */
 #define COLOR_PROMPT_BG    0
@@ -123,6 +124,31 @@ static void cmd_rm(const char *filename) {
     }
 }
 
+static void cmd_exec(const char *path) {
+    if (!path || path[0] == '\0') {
+        printf("Usage: exec <binary>\n");
+        return;
+    }
+    
+    exec_image_t image;
+    
+    printf("Loading %s...\n", path);
+    
+    if (exec_load(path, &image) != 0) {
+        printf("Failed to load binary\n");
+        return;
+    }
+    
+    printf("Executing...\n");
+    
+    if (exec_run(&image) != 0) {
+        printf("Execution failed\n");
+    }
+    
+    printf("Binary returned to kernel\n");
+    exec_free(&image);
+}
+
 static void cmd_rmdir(const char *dirname) {
     if (fat32_rmdir(dirname) == 0) {
         vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
@@ -195,6 +221,11 @@ static void cmd_help(void) {
     printf("  echo <text> > <file> ");
     vga_set_color(0, 8);
     printf("Write text to file\n");
+    vga_set_color(0, 7);
+
+    printf("  exec <file>          ");
+    vga_set_color(0, 8);
+    printf("Execute binary from disk\n");
     vga_set_color(0, 7);
     
     printf("  help                 ");
@@ -595,6 +626,15 @@ void shell_run(void) {
                 printf("Usage: ");
                 vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
                 printf("mount <drive> <lba>\n");
+            }
+            continue;
+        }
+
+        if (!strcmp_s(cmd, "exec")) {
+            if (arg1) {
+                cmd_exec(arg1);
+            } else {
+                printf("Usage: exec <binary>\n");
             }
             continue;
         }
