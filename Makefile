@@ -43,10 +43,15 @@ iso: $(BUILD)/$(TARGET)
 	   echo "grub-mkrescue not found; skipping ISO creation."; \
 	fi
 
-run: iso
-	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 512M -net none -rtc base=localtime\
-	    -drive file=disk.img,format=raw,index=0,media=disk\
-		-boot d
+run:
+	@if [ ! -f "$(ISO)/oslet.iso" ]; then \
+		$(MAKE) iso; \
+	else \
+		echo "ISO already exists, skipping rebuild."; \
+	fi
+	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 512M -net none -rtc base=localtime \
+	    -drive file=disk.img,format=raw,index=0,media=disk \
+	    -boot d
 
 clean:
 	@echo "Cleaning project..."
