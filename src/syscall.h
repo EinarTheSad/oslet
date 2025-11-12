@@ -69,6 +69,8 @@ static inline uint32_t sys_getpid(void) {
     return tid;
 }
 
-static inline void sys_setcolor(uint8_t background, uint8_t foreground) {
-    vga_set_color(background, foreground);
+static inline int sys_setcolor(uint8_t background, uint8_t foreground) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_SETCOLOR), "b"(background), "c"(foreground));
+    return ret;
 }

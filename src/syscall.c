@@ -5,6 +5,8 @@
 #include "heap.h"
 #include <stddef.h>
 
+extern void vga_set_color(uint8_t background, uint8_t foreground);
+
 static void memcpy_safe(void *dst, const void *src, size_t n) {
     char *d = dst;
     const char *s = src;
@@ -101,7 +103,8 @@ uint32_t syscall_handler(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uin
         }
 
         case SYS_SETCOLOR:
-            sys_setcolor((uint8_t)arg1, (uint8_t)arg2);
+            vga_set_color((uint8_t)arg1, (uint8_t)arg2);
+            return 0;
             
         default:
             printf("Unknown syscall: %u (%X)\n", syscall_num, syscall_num);
