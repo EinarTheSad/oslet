@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include "shell.h"
 #include "console.h"
 #include "vga.h"
@@ -25,7 +26,43 @@
 #define COLOR_INFO_FG      11  /* bright cyan */
 #define COLOR_DIR_FG       14  /* yellow */
 
+#define MAX_ARGS 8
+
 static char current_path[FAT32_MAX_PATH];
+
+int parse_args(char *line, char *argv[], int max_args) {
+    int argc = 0;
+    bool in_quote = false;
+    char *p = line;
+
+    while (*p && argc < max_args) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p == '\0')
+            break;
+
+        argv[argc++] = p;
+
+        if (*p == '"') {
+            in_quote = true;
+            argv[argc - 1] = ++p;
+        }
+
+        while (*p) {
+            if (in_quote && *p == '"') {
+                *p++ = '\0';
+                in_quote = false;
+                break;
+            } else if (!in_quote && (*p == ' ' || *p == '\t')) {
+                *p++ = '\0';
+                break;
+            }
+            p++;
+        }
+    }
+
+    argv[argc] = NULL;
+    return argc;
+}
 
 static void print_prompt(void) {
     fat32_getcwd(current_path, sizeof(current_path));
@@ -493,43 +530,22 @@ void shell_run(void) {
         }
         
         /* Parse arguments */
-        char *cmd = line;
-        char *arg1 = NULL;
-        char *arg2 = NULL;
-        
-        for (int i = 0; line[i]; i++) {
-            if (line[i] == ' ') {
-                line[i] = '\0';
-                arg1 = &line[i+1];
-                while (*arg1 == ' ') arg1++;
-                
-                for (int j = 0; arg1[j]; j++) {
-                    if (arg1[j] == ' ' || arg1[j] == '>') {
-                        if (arg1[j] == '>') {
-                            arg1[j] = '\0';
-                            arg2 = &arg1[j+1];
-                            while (*arg2 == ' ') arg2++;
-                        } else {
-                            arg1[j] = '\0';
-                            arg2 = &arg1[j+1];
-                            while (*arg2 == ' ') arg2++;
-                        }
-                        break;
-                    }
-                }
-                break;
-            }
-        }
+        char *argv[MAX_ARGS];
+        int argc = parse_args(line, argv, MAX_ARGS);
+        if (argc == 0)
+            continue;
+
+        char *cmd = argv[0];
         
         /* Commands with arguments */
         if (!strcmp_s(cmd, "ls")) {
-            cmd_ls(arg1);
+            cmd_ls(argv[1]);
             continue;
         }
         
         if (!strcmp_s(cmd, "cat")) {
-            if (arg1) {
-                cmd_cat(arg1);
+            if (argc >= 2) {
+                cmd_cat(argv[1]);
             } else {
                 vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
                 printf("Usage: ");
@@ -540,8 +556,8 @@ void shell_run(void) {
         }
         
         if (!strcmp_s(cmd, "echo")) {
-            if (arg1 && arg2) {
-                cmd_echo(arg1, arg2);
+            if (argc >= 4 && strcmp_s(argv[2], ">") == 0) {
+                cmd_echo(argv[1], argv[3]);
             } else {
                 vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
                 printf("Usage: ");
@@ -552,8 +568,8 @@ void shell_run(void) {
         }
         
         if (!strcmp_s(cmd, "mkdir")) {
-            if (arg1) {
-                cmd_mkdir(arg1);
+            if (argc >= 2) {
+                cmd_mkdir(argv[1]);
             } else {
                 vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
                 printf("Usage: ");
@@ -562,10 +578,10 @@ void shell_run(void) {
             }
             continue;
         }
-        
+
         if (!strcmp_s(cmd, "rm")) {
-            if (arg1) {
-                cmd_rm(arg1);
+            if (argc >= 2) {
+                cmd_rm(argv[1]);
             } else {
                 vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
                 printf("Usage: ");
@@ -574,10 +590,10 @@ void shell_run(void) {
             }
             continue;
         }
-        
+
         if (!strcmp_s(cmd, "rmdir")) {
-            if (arg1) {
-                cmd_rmdir(arg1);
+            if (argc >= 2) {
+                cmd_rmdir(argv[1]);
             } else {
                 vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
                 printf("Usage: ");
@@ -586,10 +602,10 @@ void shell_run(void) {
             }
             continue;
         }
-        
+
         if (!strcmp_s(cmd, "cd")) {
-            if (arg1) {
-                cmd_cd(arg1);
+            if (argc >= 2) {
+                cmd_cd(argv[1]);
             } else {
                 vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
                 printf("Usage: ");
@@ -598,18 +614,18 @@ void shell_run(void) {
             }
             continue;
         }
-        
+
         if (!strcmp_s(cmd, "mount")) {
-            if (arg1 && arg2) {
-                uint8_t drive = toupper_s(arg1[0]);
+            if (argc >= 3) {
+                uint8_t drive = toupper_s(argv[1][0]);
                 uint32_t lba = 0;
-                
-                for (int i = 0; arg2[i]; i++) {
-                    if (arg2[i] >= '0' && arg2[i] <= '9') {
-                        lba = lba * 10 + (arg2[i] - '0');
+
+                for (int i = 0; argv[2][i]; i++) {
+                    if (argv[2][i] >= '0' && argv[2][i] <= '9') {
+                        lba = lba * 10 + (argv[2][i] - '0');
                     }
                 }
-                
+
                 if (fat32_mount_drive(drive, lba) == 0) {
                     vga_set_color(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
                     printf("OK ");
@@ -631,8 +647,8 @@ void shell_run(void) {
         }
 
         if (!strcmp_s(cmd, "exec")) {
-            if (arg1) {
-                cmd_exec(arg1);
+            if (argc >= 2) {
+                cmd_exec(argv[1]);
             } else {
                 printf("Usage: exec <binary>\n");
             }
