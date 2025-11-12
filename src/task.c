@@ -45,20 +45,26 @@ void tasking_init(void) {
     tasking_enabled = 1;
 }
 
+__attribute__((naked)) void task_trampoline(void) {
+    __asm__ volatile(
+        "pop %eax\n\t"
+        "call *%eax\n\t"
+        "call task_exit\n\t"
+        "hlt\n\t"
+        "jmp .-2\n\t"
+    );
+}
+
 uint32_t task_create(void (*entry)(void), const char *name, task_priority_t priority) {
     if (!tasking_enabled) return 0;
     
     task_t *task = (task_t*)kmalloc(sizeof(task_t));
     if (!task) return 0;
-    
-    task->stack = kmalloc(TASK_STACK_SIZE);
-    if (!task->stack) {
-        kfree(task);
-        return 0;
-    }
-    
-    memset_s(task->stack, 0, TASK_STACK_SIZE);
     memset_s(task, 0, sizeof(task_t));
+
+    task->stack = kmalloc(TASK_STACK_SIZE);
+    if (!task->stack) { kfree(task); return 0; }
+    memset_s(task->stack, 0, TASK_STACK_SIZE);
 
     task->msg_queue.head = 0;
     task->msg_queue.tail = 0;
@@ -80,9 +86,9 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     /* Setup initial stack frame */
     uint32_t *sp = (uint32_t *)((uint8_t*)task->stack + TASK_STACK_SIZE);
     
-    *--sp = (uint32_t)entry;      /* Argument to task_wrapper */
-    *--sp = 0;                     /* Fake return address */
-    *--sp = 0;                     /* EBP */
+    *--sp = (uint32_t)entry;
+    *--sp = (uint32_t)task_trampoline;
+    *--sp = 0;
     
     task->esp = (uint32_t)sp;
     
@@ -110,7 +116,7 @@ void task_exit(void) {
            current_task->name, current_task->tid);
     
     __asm__ volatile ("sti");
-    
+    task_yield();
     for (;;) __asm__ volatile ("hlt");
 }
 
@@ -257,11 +263,11 @@ void task_yield(void) {
     
     uint32_t esp_save;
     __asm__ volatile (
-        "movl %%esp, %0\n\t"
         "movl %%ebp, %%eax\n\t"
-        "pushl %%eax"
+        "pushl %%eax\n\t"
+        "movl %%esp, %0"
         : "=r"(esp_save)
-        :: "eax"
+        :: "eax", "memory"
     );
     
     current_task->esp = esp_save;

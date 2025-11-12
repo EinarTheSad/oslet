@@ -4,6 +4,7 @@
 #include "paging.h"
 #include "console.h"
 #include "string.h"
+#include "task.h"
 
 #define P_PRESENT 0x1
 #define P_RW 0x2
@@ -72,32 +73,14 @@ int exec_load(const char *path, exec_image_t *image) {
 
 int exec_run(exec_image_t *image) {
     if (!image || !image->memory) return -1;
-    
-    /* Setup stack for the program */
-    void *stack = kmalloc(EXEC_STACK_SIZE);
-    if (!stack) {
-        printf("Stack allocation failed\n");
+
+    uint32_t tid = task_create((void(*)(void))image->entry_point,"exec", PRIORITY_NORMAL);
+    if (!tid) {
+        printf("task_create failed\n");
         return -1;
     }
-    
-    uint32_t stack_top = (uint32_t)stack + EXEC_STACK_SIZE;
-    
-    /* Jump to entry point with new stack */
-    void (*entry)(void) = (void(*)(void))image->entry_point;
-    
-    printf("Jumping to 0x%x\n", image->entry_point);
-    
-    /* Save kernel stack, switch to user stack, call entry */
-    __asm__ volatile (
-        "movl %%esp, %%ebx\n\t"      /* save kernel ESP */
-        "movl %0, %%esp\n\t"          /* switch to user stack */
-        "call *%1\n\t"                /* call entry point */
-        "movl %%ebx, %%esp\n\t"      /* restore kernel ESP */
-        :: "r"(stack_top), "r"(entry)
-        : "ebx", "memory"
-    );
-    
-    kfree(stack);
+
+    task_yield();
     return 0;
 }
 
