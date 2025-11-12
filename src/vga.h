@@ -1,4 +1,5 @@
 #pragma once
+#include <stdint.h>
 
 void vga_clear(void);
 void vga_use_as_console(void);

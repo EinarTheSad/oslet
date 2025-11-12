@@ -99,9 +99,12 @@ uint32_t syscall_handler(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uin
             task_t *current = task_get_current();
             return current ? current->tid : 0;
         }
+
+        case SYS_SETCOLOR:
+            sys_setcolor((uint8_t)arg1, (uint8_t)arg2);
             
         default:
-            printf("Unknown syscall: %u\n", syscall_num);
+            printf("Unknown syscall: %u (%X)\n", syscall_num, syscall_num);
             return (uint32_t)-1;
     }
 }
