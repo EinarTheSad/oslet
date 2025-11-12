@@ -4,3 +4,5 @@ iso/boot/*.elf
 .vscode/settings.json
 build/kernel.elf
 disk.img
+src/bin/*.bin
+src/bin/*.o

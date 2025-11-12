@@ -2,6 +2,7 @@ TARGET  = kernel.elf
 BUILD   = build
 SRC     = src
 ISO     = iso
+BIN     = $(SRC)/bin
 GRUB    = $(ISO)/boot/grub
 CC      = gcc
 LD      = ld
@@ -12,7 +13,7 @@ SRC_C  := $(wildcard $(SRC)/*.c)
 SRC_S  := $(wildcard $(SRC)/*.S)
 OBJS   := $(SRC_C:$(SRC)/%.c=$(BUILD)/%.o) $(SRC_S:$(SRC)/%.S=$(BUILD)/%.o)
 
-.PHONY: all iso run clean
+.PHONY: all iso run clean fetchlet
 
 all: $(BUILD)/$(TARGET)
 
@@ -50,5 +51,13 @@ run: iso
 clean:
 	@echo "Cleaning project..."
 	rm -rf $(BUILD) $(ISO)/boot/kernel.elf $(ISO)/oslet.iso
-	rm -f $(SRC)/*.o
+	rm -f $(SRC)/*.o $(BIN)/*.o $(BIN)/*.bin
 	find $(ISO)/boot -type d -empty -delete
+
+fetchlet:
+	@echo "Building fetchlet.bin..."
+	@gcc -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-stack-protector \
+	    -c $(BIN)/fetchlet.c -o $(BIN)/fetchlet.o
+	@ld -m elf_i386 -T $(BIN)/fetchlet.ld -nostdlib -o $(BIN)/fetchlet.bin $(BIN)/fetchlet.o
+	@rm -f $(BIN)/fetchlet.o
+	@echo "Binary created: fetchlet.bin"
