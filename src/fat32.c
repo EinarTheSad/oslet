@@ -95,11 +95,16 @@ static int parse_path(const char *path, uint8_t *drive, char *rest, size_t rest_
         
         size_t len = strlen_s(temp);
         if (len > 0 && temp[len-1] != '/') {
-            temp[len] = '/';
-            temp[len+1] = '\0';
+            if (len < FAT32_MAX_PATH - 1) {
+                temp[len] = '/';
+                temp[len+1] = '\0';
+            }
         }
         
-        strcpy_s(temp + strlen_s(temp), path, sizeof(temp) - strlen_s(temp));
+        size_t remaining = sizeof(temp) - strlen_s(temp);
+        if (strlen_s(path) < remaining) {
+            strcpy_s(temp + strlen_s(temp), path, remaining);
+        }
         strcpy_s(rest, temp, rest_size);
     } else if (path[0] == '\0' || strcmp_s(path, ".") == 0) {
         strcpy_s(rest, current_dir + 3, rest_size);
