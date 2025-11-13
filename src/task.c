@@ -1,5 +1,5 @@
 #include "task.h"
-#include "heap.h"
+#include "mem/heap.h"
 #include "console.h"
 #include "timer.h"
 #include <stddef.h>

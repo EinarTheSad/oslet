@@ -2,7 +2,7 @@
 #include "task.h"
 #include "console.h"
 #include "timer.h"
-#include "heap.h"
+#include "mem/heap.h"
 #include <stddef.h>
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);

@@ -9,8 +9,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "io.h"
-#include "console.h"
+#include "../io.h"
+#include "../console.h"
 #include "paging.h"
 
 extern uint8_t __kernel_end;
