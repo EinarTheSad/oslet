@@ -1,6 +1,6 @@
 #include "paging.h"
 #include "pmm.h"
-#include "console.h"
+#include "../console.h"
 #include <stdint.h>
 #include "early_alloc.h"
 

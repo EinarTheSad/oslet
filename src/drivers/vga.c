@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
-#include "console.h"
-#include "io.h"
+#include "../console.h"
+#include "../io.h"
 
 #define VGA_ADDRESS 0xB8000u
 #define VGA_WIDTH   80
