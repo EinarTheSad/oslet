@@ -215,13 +215,18 @@ static task_t *pick_next_task(void) {
 
 void schedule(void) {
     if (!tasking_enabled || !current_task) return;
+
+    __asm__ volatile ("cli");
     
     wakeup_sleeping_tasks();
     cleanup_terminated_tasks();
     
     task_t *next = pick_next_task();
     
-    if (next == current_task) return;
+    if (next == current_task) {
+        __asm__ volatile ("sti");
+        return;
+    }
     
     task_t *prev = current_task;
     if (prev->state == TASK_RUNNING) {
@@ -242,6 +247,7 @@ void schedule(void) {
     __asm__ volatile (
         "movl %0, %%esp\n\t"
         "popl %%ebp\n\t"
+        "sti\n\t"
         "ret"
         :: "r"(current_task->esp)
     );

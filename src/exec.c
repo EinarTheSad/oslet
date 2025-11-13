@@ -86,8 +86,15 @@ int exec_run(exec_image_t *image) {
 
 void exec_free(exec_image_t *image) {
     if (!image) return;
-    /* For now, memory is at fixed address so we don't free it */
-    /* TODO: unmap pages and free frames */
+    
+    /* Unmap pages */
+    size_t pages = (image->size + PAGE_SIZE - 1) / PAGE_SIZE;
+    for (size_t i = 0; i < pages; i++) {
+        uintptr_t vaddr = EXEC_LOAD_ADDR + (i * PAGE_SIZE);
+        paging_unmap_page(vaddr);
+        (void)vaddr;
+    }
+    
     image->memory = NULL;
     image->size = 0;
     image->entry_point = 0;
