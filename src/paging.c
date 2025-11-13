@@ -87,3 +87,20 @@ int paging_identity_enable(uintptr_t upto_phys) {
     );
     return 0;
 }
+
+int paging_unmap_page(uintptr_t vaddr) {
+    if (!current_pd_phys) return -1;
+    if (vaddr & 0xFFF) return -3;
+    
+    uint32_t *pd = (uint32_t*)current_pd_phys;
+    uint32_t pde = pd[pd_index(vaddr)];
+    
+    if (!(pde & P_PRESENT)) return 0;
+    
+    uint32_t *pt = (uint32_t*)(pde & 0xFFFFF000u);
+    pt[pt_index(vaddr)] = 0;
+    
+    /* Flush TLB */
+    __asm__ volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+    return 0;
+}

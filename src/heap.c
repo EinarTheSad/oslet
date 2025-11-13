@@ -96,7 +96,7 @@ static void merge_free_blocks(void) {
 
 void *kmalloc(size_t size) {
     if (size == 0) return NULL;
-    
+    __asm__ volatile ("cli");
     size = ALIGN_UP(size, 8);
     block_t *curr = heap_start;
     
@@ -123,13 +123,13 @@ void *kmalloc(size_t size) {
         
         curr = curr->next;
     }
-    
+    __asm__ volatile ("sti");
     return NULL;
 }
 
 void kfree(void *ptr) {
     if (!ptr) return;
-    
+    __asm__ volatile ("cli");
     block_t *b = (block_t*)((char*)ptr - sizeof(block_t));
     
     if ((uintptr_t)b < HEAP_START || (uintptr_t)b >= heap_end) {
@@ -145,6 +145,7 @@ void kfree(void *ptr) {
     total_freed += b->size;
     b->free = 1;
     merge_free_blocks();
+    __asm__ volatile ("sti");
 }
 
 void heap_print_stats(void) {
