@@ -80,6 +80,7 @@ uint32_t syscall_handler(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uin
             return 0;
             
         case SYS_WRITE:
+            if (arg1 < 0x200000 || arg1 >= 0xC0000000) return -1;
             if (arg1) printf("%s", (const char*)arg1);
             return 0;
             
@@ -92,9 +93,11 @@ uint32_t syscall_handler(uint32_t syscall_num, uint32_t arg1, uint32_t arg2, uin
             return 0;
             
         case SYS_SEND_MSG:
+            if (arg1 < 0x200000 || arg1 >= 0xC0000000) return -1;
             return sys_send_msg_impl(arg1, (const void*)arg2, arg3);
             
         case SYS_RECV_MSG:
+            if (arg1 < 0x200000 || arg1 >= 0xC0000000) return -1;
             return sys_recv_msg_impl((message_t*)arg1);
             
         case SYS_GETPID: {
