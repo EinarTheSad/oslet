@@ -1,7 +1,7 @@
 #include "heap.h"
 #include "pmm.h"
 #include "paging.h"
-#include "console.h"
+#include "../console.h"
 
 #define HEAP_START 0xC0000000
 #define HEAP_INITIAL_SIZE (4 * 1024 * 1024)
