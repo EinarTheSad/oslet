@@ -8,6 +8,7 @@
 static char printf_buf[1024];
 typedef long ssize_t;
 
+
 int putchar(int c) {
     char ch = (char)c;
     printf_buf[0] = ch;
@@ -52,8 +53,7 @@ static void buf_puts_n(char *buf, size_t size, size_t *pos, const char *s, size_
     }
 }
 
-/* convert unsigned integer to base 'base', digits reversed in tmp[]; returns length */
-static size_t utoa_unsigned(unsigned long long val,
+static size_t utoa_unsigned(unsigned long val,
                             unsigned int base,
                             int uppercase,
                             char *tmp)
@@ -62,6 +62,10 @@ static size_t utoa_unsigned(unsigned long long val,
     const char *digits_u = "0123456789ABCDEF";
     const char *digits   = uppercase ? digits_u : digits_l;
 
+    if (base < 2 || base > 16) {
+        return 0;
+    }
+
     size_t i = 0;
     if (val == 0) {
         tmp[i++] = '0';
@@ -69,34 +73,47 @@ static size_t utoa_unsigned(unsigned long long val,
     }
 
     while (val) {
-        tmp[i++] = digits[val % base];
-        val /= base;
+        unsigned long q = val / base;
+        unsigned long r = val % base;
+        tmp[i++] = digits[r];
+        val = q;
     }
 
-    return i; /* digits are in reverse order */
+    return i;
 }
 
-static unsigned long long get_unsigned_arg(va_list *ap, length_t len) {
+
+static unsigned long get_unsigned_arg(va_list *ap, length_t len) {
     switch (len) {
-        case LEN_HH: return (unsigned char)va_arg(*ap, unsigned int);
-        case LEN_H:  return (unsigned short)va_arg(*ap, unsigned int);
-        case LEN_L:  return (unsigned long)va_arg(*ap, unsigned long);
-        case LEN_LL: return (unsigned long long)va_arg(*ap, unsigned long long);
-        case LEN_Z:  return (size_t)va_arg(*ap, size_t);
+        case LEN_HH:
+            return (unsigned char)va_arg(*ap, unsigned int);
+        case LEN_H:
+            return (unsigned short)va_arg(*ap, unsigned int);
+        case LEN_L:
+        case LEN_LL:
+            return va_arg(*ap, unsigned long);
+        case LEN_Z:
+            return (unsigned long)va_arg(*ap, size_t);
         case LEN_NONE:
-        default:     return (unsigned int)va_arg(*ap, unsigned int);
+        default:
+            return va_arg(*ap, unsigned int);
     }
 }
 
-static long long get_signed_arg(va_list *ap, length_t len) {
+static long get_signed_arg(va_list *ap, length_t len) {
     switch (len) {
-        case LEN_HH: return (signed char)va_arg(*ap, int);
-        case LEN_H:  return (short)va_arg(*ap, int);
-        case LEN_L:  return (long)va_arg(*ap, long);
-        case LEN_LL: return (long long)va_arg(*ap, long long);
-        case LEN_Z:  return (ssize_t)va_arg(*ap, ssize_t);
+        case LEN_HH:
+            return (signed char)va_arg(*ap, int);
+        case LEN_H:
+            return (short)va_arg(*ap, int);
+        case LEN_L:
+        case LEN_LL: /* jw. */
+            return va_arg(*ap, long);
+        case LEN_Z:
+            return (long)va_arg(*ap, ssize_t);
         case LEN_NONE:
-        default:     return (int)va_arg(*ap, int);
+        default:
+            return va_arg(*ap, int);
     }
 }
 
@@ -104,9 +121,10 @@ static long long get_signed_arg(va_list *ap, length_t len) {
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
     size_t pos = 0;
 
+    char dummy[1];
     if (!buf || size == 0) {
-        buf = (char *)"";
-        size = 1;
+        buf = dummy;
+        size = sizeof(dummy);
     }
 
     for (const char *p = fmt; *p; p++) {
@@ -206,34 +224,34 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
             if (spec == 'X') uppercase = 1;
             if (spec == 'o') base = 8;
 
-            unsigned long long uval = 0;
-            long long sval = 0;
+            unsigned long uval = 0;
+            long sval = 0;
             int negative = 0;
 
             if (spec == 'p') {
                 void *ptr = va_arg(ap, void *);
-                uval = (unsigned long long)(uintptr_t)ptr;
+                uval = (unsigned long)(uintptr_t)ptr;
                 flags |= FLAGS_ALT;
                 base = 16;
             } else if (is_signed) {
                 sval = get_signed_arg(&ap, len);
                 if (sval < 0) {
                     negative = 1;
-                    uval = (unsigned long long)(-sval);
+                    uval = (unsigned long)(-sval);
                 } else {
-                    uval = (unsigned long long)sval;
+                    uval = (unsigned long)sval;
                 }
             } else {
                 uval = get_unsigned_arg(&ap, len);
             }
 
-            char tmp[64];
+            char tmp[32];
             size_t num_len = 0;
 
             if (precision == 0 && uval == 0) {
                 num_len = 0;
             } else {
-                num_len = utoa_unsigned(uval, base, uppercase, tmp);
+                num_len = utoa_unsigned(uval, (unsigned)base, uppercase, tmp);
             }
 
             size_t prec_zeros = 0;
@@ -319,38 +337,40 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
             }
 
         } else if (spec == 'f') {
-            /* floating point: %f only, no sci-notation, no hex-floats, we're not a glibc clone */
-            double v = va_arg(ap, double);
+            /* 32-bit floating point implementation */
+            float v = (float)va_arg(ap, double);  /* Convert double to float */
 
             if (precision < 0) {
                 precision = 6; /* default for %f */
             }
 
             int negative = 0;
-            if (v < 0.0) {
+            if (v < 0.0f) {
                 negative = 1;
                 v = -v;
             }
 
-            /* rounding: add 0.5 * 10^-precision */
-            double rounding = 0.5;
+            /* Simple rounding: add 0.5 * 10^-precision */
+            float rounding = 0.5f;
             for (int d = 0; d < precision; d++) {
-                rounding /= 10.0;
+                rounding /= 10.0f;
             }
             v += rounding;
 
-            unsigned long long whole = (unsigned long long)v;
-            double frac = v - (double)whole;
+            unsigned int whole = (unsigned int)v;
+            float frac = v - (float)whole;
 
             /* integer part */
-            char int_buf[64];
+            char int_buf[16];  /* 32-bit max is 4294967295 (10 digits) */
             size_t int_len = 0;
+
             if (whole == 0) {
                 int_buf[int_len++] = '0';
             } else {
-                while (whole && int_len < sizeof(int_buf)) {
-                    int_buf[int_len++] = (char)('0' + (whole % 10ULL));
-                    whole /= 10ULL;
+                unsigned int n = whole;
+                while (n > 0 && int_len < sizeof(int_buf)) {
+                    int_buf[int_len++] = (char)('0' + (n % 10));
+                    n /= 10;
                 }
             }
 
@@ -371,7 +391,22 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
                 have_dot = 1; /* %#.0f prints trailing '.' */
             }
 
-            size_t frac_len = (precision > 0) ? (size_t)precision : 0;
+            /* fractional part */
+            char frac_buf[16]; /* enough for precision digits */
+            size_t frac_len = 0;
+
+            if (precision > 0) {
+                float temp_frac = frac;
+                for (int d = 0; d < precision && frac_len < sizeof(frac_buf); d++) {
+                    temp_frac *= 10.0f;
+                    int digit = (int)temp_frac;
+                    if (digit < 0) digit = 0;
+                    if (digit > 9) digit = 9;
+                    frac_buf[frac_len++] = (char)('0' + digit);
+                    temp_frac -= (float)digit;
+                }
+            }
+
             size_t total_len = int_len + frac_len + (have_dot ? 1 : 0) + (sign_char ? 1 : 0);
 
             char pad_char = ' ';
@@ -407,13 +442,9 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
             if (have_dot) {
                 buf_putc(buf, size, &pos, '.');
 
-                for (int d = 0; d < precision; d++) {
-                    frac *= 10.0;
-                    int digit = (int)frac;
-                    if (digit < 0) digit = 0;
-                    if (digit > 9) digit = 9;
-                    buf_putc(buf, size, &pos, (char)('0' + digit));
-                    frac -= digit;
+                /* fractional part */
+                for (size_t i = 0; i < frac_len; i++) {
+                    buf_putc(buf, size, &pos, frac_buf[i]);
                 }
             }
 
