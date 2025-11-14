@@ -161,13 +161,13 @@ static void cmd_rm(const char *filename) {
     }
 }
 
-static void cmd_exec(const char *path) {
+static void cmd_run(const char *path) {
     if (!path || path[0] == '\0') {
-        printf("Usage: exec <binary>\n");
+        printf("Usage: run <binary>\n");
         return;
     }
     
-    exec_image_t image;
+    exec_image_t image = {};
     
     if (exec_load(path, &image) != 0) {
         printf("Failed to load binary\n");
@@ -254,12 +254,7 @@ static void cmd_help(void) {
     vga_set_color(0, 8);
     printf("Write text to file\n");
     vga_set_color(0, 7);
-
-    printf("  exec <file>          ");
-    vga_set_color(0, 8);
-    printf("Execute binary from disk\n");
-    vga_set_color(0, 7);
-    
+   
     printf("  help                 ");
     vga_set_color(0, 8);
     printf("Show this help\n");
@@ -313,6 +308,11 @@ static void cmd_help(void) {
     printf("  rtc                  ");
     vga_set_color(0, 8);
     printf("Show current time\n");
+    vga_set_color(0, 7);
+
+    printf("  run <file>           ");
+    vga_set_color(0, 8);
+    printf("Execute a binary file\n");
     vga_set_color(0, 7);
     
     printf("  test                 ");
@@ -525,7 +525,7 @@ void shell_run(void) {
         }
         
         /* Parse arguments */
-        char *argv[MAX_ARGS];
+        char *argv[MAX_ARGS] = {};
         int argc = parse_args(line, argv, MAX_ARGS);
         if (argc == 0)
             continue;
@@ -641,11 +641,11 @@ void shell_run(void) {
             continue;
         }
 
-        if (!strcmp_s(cmd, "exec")) {
+        if (!strcmp_s(cmd, "run")) {
             if (argc >= 2) {
-                cmd_exec(argv[1]);
+                cmd_run(argv[1]);
             } else {
-                printf("Usage: exec <binary>\n");
+                printf("Usage: run <binary>\n");
             }
             continue;
         }
