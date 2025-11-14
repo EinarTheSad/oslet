@@ -3,6 +3,7 @@ BUILD   = build
 SRC     = src
 ISO     = iso
 BIN     = $(SRC)/bin
+LIB     = $(SRC)/lib
 GRUB    = $(ISO)/boot/grub
 
 CC      = gcc
@@ -11,22 +12,25 @@ LD      = ld
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-stack-protector
 LDFLAGS = -m elf_i386 -T linker.ld -nostdlib
 
-SRC_DIRS := \
+# Kernel source directories (excluding lib and bin)
+KERNEL_SRC_DIRS := \
 	$(SRC) \
 	$(SRC)/drivers \
 	$(SRC)/mem
 
-SRC_C := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.c))
-SRC_S := $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.S))
+# Kernel sources
+KERNEL_SRC_C := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.c))
+KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 
-OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(SRC_C)) \
-        $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(SRC_S))
+# Kernel objects (go to build directory)
+KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
+               $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
 .PHONY: all iso run clean fetchlet
 
 all: $(BUILD)/$(TARGET)
 
-$(BUILD)/$(TARGET): $(OBJS)
+$(BUILD)/$(TARGET): $(KERNEL_OBJS)
 	$(LD) $(LDFLAGS) -o $@ $^
 
 $(BUILD)/%.o: $(SRC)/%.c
@@ -41,8 +45,6 @@ iso: $(BUILD)/$(TARGET)
 	@mkdir -p $(ISO)/boot
 	@mkdir -p $(GRUB)
 	@cp $(BUILD)/$(TARGET) $(ISO)/boot/$(TARGET)
-	# grub.cfg is already tracked in iso/boot/grub/grub.cfg according to your tree,
-	# so we just leave it there and don't try to copy from top level.
 	@if command -v grub-mkrescue >/dev/null 2>&1; then \
 	   grub-mkrescue -o $(ISO)/oslet.iso $(ISO); \
 	else \
@@ -67,8 +69,16 @@ clean:
 
 fetchlet:
 	@echo "Building fetchlet.bin..."
+	# Compile fetchlet and lib files directly to .o in bin directory
 	$(CC) -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-pie -fno-stack-protector \
 	    -c $(BIN)/fetchlet.c -o $(BIN)/fetchlet.o
-	$(LD) -m elf_i386 -T $(BIN)/fetchlet.ld -nostdlib -o $(BIN)/fetchlet.bin $(BIN)/fetchlet.o
-	rm -f $(BIN)/fetchlet.o
+	$(CC) -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-pie -fno-stack-protector \
+	    -c $(LIB)/stdio.c -o $(BIN)/stdio.o
+	$(CC) -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-pie -fno-stack-protector \
+	    -c $(LIB)/string.c -o $(BIN)/string.o
+	# Link fetchlet with lib objects
+	$(LD) -m elf_i386 -T $(BIN)/fetchlet.ld -nostdlib -o $(BIN)/fetchlet.bin \
+	    $(BIN)/fetchlet.o $(BIN)/stdio.o $(BIN)/string.o
+	# Clean up object files
+	rm -f $(BIN)/*.o
 	@echo "Binary created: $(BIN)/fetchlet.bin"
