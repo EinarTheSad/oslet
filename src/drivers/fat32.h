@@ -15,7 +15,7 @@
 #define FAT_ATTR_LFN       0x0F
 
 typedef struct {
-    char name[12];
+    char name[13];
     uint32_t size;
     uint32_t first_cluster;
     uint8_t is_directory;
