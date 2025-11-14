@@ -768,15 +768,34 @@ int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries) {
             if (dir_entries[i].attr & FAT_ATTR_VOLUME_ID) continue;
             if (dir_entries[i].name[0] == '.' && (dir_entries[i].name[1] == ' ' || dir_entries[i].name[1] == '.'))
                 continue;
+
+            memset_s(entries[count].name, 0, sizeof(entries[count].name));
+            size_t max_len = sizeof(entries[count].name) - 1;
             int j = 0;
-            for (int k = 0; k < 8 && dir_entries[i].name[k] != ' '; k++)
+
+            /* Name */
+            int name_end = 7;
+            while (name_end >= 0 && dir_entries[i].name[name_end] == ' ') {
+                name_end--;
+            }
+            for (int k = 0; k <= name_end; k++) {
                 entries[count].name[j++] = dir_entries[i].name[k];
+            }
+
+            /* Extension */
             if (dir_entries[i].name[8] != ' ') {
                 entries[count].name[j++] = '.';
-                for (int k = 8; k < 11 && dir_entries[i].name[k] != ' '; k++)
+                
+                int ext_end = 10;
+                while (ext_end >= 8 && dir_entries[i].name[ext_end] == ' ') {
+                    ext_end--;
+                }
+                for (int k = 8; k <= ext_end; k++) {
                     entries[count].name[j++] = dir_entries[i].name[k];
+                }
             }
-            entries[count].name[j] = '\0';
+            if ((size_t)j > max_len) j = max_len;
+            entries[count].name[j] = '\0';  /* NUL-terminate */
             entries[count].size = dir_entries[i].file_size;
             entries[count].first_cluster = ((uint32_t)dir_entries[i].first_cluster_high << 16) | dir_entries[i].first_cluster_low;
             entries[count].is_directory = (dir_entries[i].attr & FAT_ATTR_DIRECTORY) ? 1 : 0;
