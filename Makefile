@@ -5,12 +5,13 @@ ISO     = iso
 BIN     = $(SRC)/bin
 LIB     = $(SRC)/lib
 GRUB    = $(ISO)/boot/grub
+LNK     = linker.ld
 
 CC      = gcc
 LD      = ld
 
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-stack-protector
-LDFLAGS = -m elf_i386 -T linker.ld -nostdlib
+LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
 
 # Kernel source directories (excluding lib and bin)
 KERNEL_SRC_DIRS := \
@@ -26,7 +27,7 @@ KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all iso run clean fetchlet
+.PHONY: all iso run clean binary
 
 all: $(BUILD)/$(TARGET)
 
@@ -57,28 +58,33 @@ run:
 	else \
 		echo "ISO already exists, skipping rebuild."; \
 	fi
-	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 512M -net none -rtc base=localtime \
+	rm -rf $(BUILD)
+	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 32M -net none -rtc base=localtime \
 	    -drive file=disk.img,format=raw,index=0,media=disk \
 	    -boot d
 
 clean:
 	@echo "Cleaning project..."
-	rm -rf $(BUILD) $(ISO)/boot/$(TARGET) $(ISO)/oslet.iso
-	rm -f $(BIN)/*.o $(BIN)/*.bin
+	rm -rf $(ISO)/boot/$(TARGET) $(ISO)/oslet.iso
+	rm -f $(BIN)/*.bin
 	find $(ISO)/boot -type d -empty -delete
 
-fetchlet:
-	@echo "Building fetchlet.bin..."
-	# Compile fetchlet and lib files directly to .o in bin directory
-	$(CC) -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-pie -fno-stack-protector \
-	    -c $(BIN)/fetchlet.c -o $(BIN)/fetchlet.o
-	$(CC) -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-pie -fno-stack-protector \
-	    -c $(LIB)/stdio.c -o $(BIN)/stdio.o
-	$(CC) -m32 -ffreestanding -O2 -nostdlib -fno-pic -fno-pie -fno-stack-protector \
-	    -c $(LIB)/string.c -o $(BIN)/string.o
-	# Link fetchlet with lib objects
-	$(LD) -m elf_i386 -T $(BIN)/fetchlet.ld -nostdlib -o $(BIN)/fetchlet.bin \
-	    $(BIN)/fetchlet.o $(BIN)/stdio.o $(BIN)/string.o
-	# Clean up object files
-	rm -f $(BIN)/*.o
-	@echo "Binary created: $(BIN)/fetchlet.bin"
+# Binary build: one .bin per .c in src/bin, linked with src/lib/*.c
+# All C sources for libraries
+LIB_SRCS    := $(wildcard $(LIB)/*.c)
+LIB_OBJS    := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(LIB_SRCS))
+
+# All C sources for standalone binaries
+BIN_SRCS    := $(wildcard $(BIN)/*.c)
+
+# One .bin per bin/*.c
+BIN_TARGETS := $(patsubst $(BIN)/%.c,$(BIN)/%.bin,$(BIN_SRCS))
+
+# Use a different linker script for these binaries
+binary: LNK := $(BIN)/binary.ld
+binary: $(BIN_TARGETS)
+
+$(BIN)/%.bin: $(BUILD)/bin/%.o $(LIB_OBJS)
+	@echo "Linking $@..."
+	$(LD) $(LDFLAGS) -o $@ $^
+	@echo "Binary created: $@"
