@@ -8,7 +8,7 @@
 #include "ata.h"
 #include "../mem/heap.h"
 #include "../console.h"
-#include "../string.h"
+#include "../console.h"
 
 #define FAT32_EOC 0x0FFFFFFF
 #define FAT32_BAD 0x0FFFFFF7

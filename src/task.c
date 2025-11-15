@@ -4,7 +4,6 @@
 #include "timer.h"
 #include <stddef.h>
 #include "syscall.h"
-#include "string.h"
 #include "gdt.h"
 
 static task_t *task_list = NULL;

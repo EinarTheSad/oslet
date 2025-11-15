@@ -4,7 +4,6 @@
 #include "drivers/vga.h"
 #include "drivers/keyboard.h"
 #include "drivers/fat32.h"
-#include "string.h"
 #include "mem/pmm.h"
 #include "mem/heap.h"
 #include "timer.h"

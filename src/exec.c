@@ -3,7 +3,6 @@
 #include "mem/heap.h"
 #include "mem/paging.h"
 #include "console.h"
-#include "string.h"
 #include "task.h"
 #include "gdt.h"
 
