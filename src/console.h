@@ -1,5 +1,4 @@
 #pragma once
-/* #define STREQ(a, b) (streq((a), (b)) == 0) */
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -10,8 +9,6 @@ typedef struct {
     size_t (*write)(const char* s, size_t n, void* ctx);
     void* ctx;
 } console_t;
-
-/* int streq(const char *a, const char *b); */
 
 // Global current console (stdout/stderr equivalent)
 void console_set(const console_t* c);
@@ -30,3 +27,12 @@ int snprintf(char* dst, size_t cap, const char* fmt, ...);
 // Core formatter reusable for any sink
 typedef void (*emit_fn)(char ch, void* user);
 int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user);
+
+// Definitions that once occupied string.h for kernel
+void memcpy_s(void *dst, const void *src, size_t n);
+void memset_s(void *dst, int val, size_t n);
+int strcmp_s(const char *a, const char *b);
+size_t strlen_s(const char *s);
+void strcpy_s(char *dst, const char *src, size_t max);
+char toupper_s(char c);
+char* strrchr_s(const char *s, char c);
