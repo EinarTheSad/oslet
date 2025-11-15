@@ -5,20 +5,29 @@
 #include "console.h"
 #include "string.h"
 #include "task.h"
+#include "gdt.h"
 
 #define P_PRESENT 0x1
 #define P_RW 0x2
 #define P_USER 0x4
 #define PAGE_SIZE 4096
 
-/* Map memory for user program with proper permissions */
+extern void enter_usermode(uint32_t entry, uint32_t user_stack);
+
 static int map_user_memory(uintptr_t vaddr, size_t size) {
     size_t pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
     
     for (size_t i = 0; i < pages; i++) {
         uintptr_t addr = vaddr + (i * PAGE_SIZE);
-        /* Identity map (TODO: allocate frames) */
+        
+        /* Check if already mapped */
+        if (paging_is_mapped(addr)) {
+            continue;
+        }
+        
+        /* For now, identity map (TODO: proper frame allocation) */
         if (paging_map_page(addr, addr, P_PRESENT | P_RW | P_USER) != 0) {
+            printf("Failed to map page at 0x%x\n", addr);
             return -1;
         }
     }
@@ -28,32 +37,35 @@ static int map_user_memory(uintptr_t vaddr, size_t size) {
 int exec_load(const char *path, exec_image_t *image) {
     if (!path || !image) return -1;
     
-    /* Open binary file */
     fat32_file_t *f = fat32_open(path, "r");
     if (!f) {
         printf("Cannot open %s\n", path);
         return -1;
     }
     
-    /* Get file size */
     uint32_t size = f->size;
-    if (size == 0 || size > 2 * 1024 * 1024) {  /* max 2MB binaries, so she doesn't choke */
+    if (size == 0 || size > 2 * 1024 * 1024) {
         printf("Invalid binary size %u\n", size);
         fat32_close(f);
         return -1;
     }
     
-    /* Allocate memory at fixed load address */
     void *mem = (void*)EXEC_LOAD_ADDR;
     
-    /* Map memory for the binary (identity mapped for now) */
     if (map_user_memory(EXEC_LOAD_ADDR, size) != 0) {
-        printf("Failed to map memory for the executable\n");
+        printf("Failed to map memory\n");
         fat32_close(f);
         return -1;
     }
     
-    /* Read entire binary into memory */
+    /* Map user stack (1 page = 4KB) */
+    uintptr_t stack_top = EXEC_USER_STACK - PAGE_SIZE;
+    if (map_user_memory(stack_top, PAGE_SIZE) != 0) {
+        printf("Failed to map user stack\n");
+        fat32_close(f);
+        return -1;
+    }
+    
     int bytes_read = fat32_read(f, mem, size);
     fat32_close(f);
     
@@ -62,21 +74,24 @@ int exec_load(const char *path, exec_image_t *image) {
         return -1;
     }
     
-    /* Fill in image info */
-    image->entry_point = EXEC_LOAD_ADDR; /* flat binary - start at beginning */
+    image->entry_point = EXEC_LOAD_ADDR;
     image->size = size;
     image->memory = mem;
+    image->user_stack = EXEC_USER_STACK;
     
-    /* printf("Loaded %s (%u bytes) at 0x%x\n", path, size, EXEC_LOAD_ADDR); */
     return 0;
 }
 
 int exec_run(exec_image_t *image) {
     if (!image || !image->memory) return -1;
 
-    uint32_t tid = task_create((void(*)(void))image->entry_point,"executable", PRIORITY_NORMAL);
+    /* Create task in kernel mode first */
+    uint32_t tid = task_create_user((void(*)(void))image->entry_point, 
+                                     "userapp", 
+                                     PRIORITY_NORMAL,
+                                     image->user_stack);
     if (!tid) {
-        printf("Could not create task for the executable\n");
+        printf("Could not create task\n");
         return -1;
     }
 
@@ -87,15 +102,17 @@ int exec_run(exec_image_t *image) {
 void exec_free(exec_image_t *image) {
     if (!image) return;
     
-    /* Unmap pages */
     size_t pages = (image->size + PAGE_SIZE - 1) / PAGE_SIZE;
     for (size_t i = 0; i < pages; i++) {
         uintptr_t vaddr = EXEC_LOAD_ADDR + (i * PAGE_SIZE);
         paging_unmap_page(vaddr);
-        (void)vaddr;
     }
+    
+    /* Unmap user stack */
+    paging_unmap_page(EXEC_USER_STACK - PAGE_SIZE);
     
     image->memory = NULL;
     image->size = 0;
     image->entry_point = 0;
+    image->user_stack = 0;
 }

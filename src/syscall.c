@@ -14,8 +14,18 @@ static void memcpy_safe(void *dst, const void *src, size_t n) {
     while (n--) *d++ = *s++;
 }
 
+/* Validate user pointer - must be in userspace range */
 static int validate_ptr(uint32_t ptr) {
-    return (ptr >= 0x200000 && ptr < 0xC0000000);
+    task_t *current = task_get_current();
+    if (!current) return 0;
+    
+    /* Kernel tasks can access all memory */
+    if (!current->user_mode) {
+        return (ptr >= 0x200000 && ptr < 0xC0000000);
+    }
+    
+    /* User tasks: only user memory */
+    return (ptr >= EXEC_LOAD_ADDR && ptr < 0xC0000000);
 }
 
 static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
@@ -170,8 +180,8 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
 }
 
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
-    uint32_t ah = (eax >> 8) & 0xFF;  /* Category */
-    uint32_t al = eax & 0xFF;          /* Subfunction */
+    uint32_t ah = (eax >> 8) & 0xFF;
+    uint32_t al = eax & 0xFF;
     
     switch (ah) {
         case 0x01: return handle_console(al, ebx, ecx, edx);

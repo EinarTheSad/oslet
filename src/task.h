@@ -25,6 +25,9 @@ typedef struct task {
     char name[32];
     uint32_t esp;
     void *stack;
+    void *kernel_stack;
+    uint32_t user_stack;
+    uint8_t user_mode;
     task_state_t state;
     task_priority_t priority;
     uint32_t sleep_until_ticks;
@@ -35,6 +38,8 @@ typedef struct task {
 
 void tasking_init(void);
 uint32_t task_create(void (*entry)(void), const char *name, task_priority_t priority);
+uint32_t task_create_user(void (*entry)(void), const char *name, 
+                          task_priority_t priority, uint32_t user_stack);
 void task_yield(void);
 void task_sleep(uint32_t milliseconds);
 void task_exit(void);

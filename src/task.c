@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include "syscall.h"
 #include "string.h"
+#include "gdt.h"
 
 static task_t *task_list = NULL;
 static task_t *current_task = NULL;
@@ -12,6 +13,7 @@ static uint32_t next_tid = 0;
 static volatile int tasking_enabled = 0;
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
+extern void enter_usermode(uint32_t entry, uint32_t user_stack);
 
 static const uint32_t QUANTUM_HIGH   = 10;
 static const uint32_t QUANTUM_NORMAL = 5;
@@ -19,7 +21,6 @@ static const uint32_t QUANTUM_LOW    = 2;
 static const uint32_t QUANTUM_IDLE   = 1;
 
 void tasking_init(void) {
-   
     current_task = (task_t*)kmalloc(sizeof(task_t));
     if (!current_task) {
         vga_set_color(0,12);
@@ -39,6 +40,8 @@ void tasking_init(void) {
     current_task->sleep_until_ticks = 0;
     current_task->quantum_remaining = QUANTUM_HIGH;
     current_task->stack = NULL;
+    current_task->kernel_stack = NULL;
+    current_task->user_mode = 0;
     current_task->next = current_task;
     
     task_list = current_task;
@@ -50,6 +53,17 @@ __attribute__((naked)) void task_trampoline(void) {
         "pop %eax\n\t"
         "call *%eax\n\t"
         "call task_exit\n\t"
+        "hlt\n\t"
+        "jmp .-2\n\t"
+    );
+}
+
+/* User mode trampoline - switches to ring 3 */
+__attribute__((naked)) void user_task_trampoline(void) {
+    __asm__ volatile(
+        "pop %eax\n\t"        /* entry point */
+        "pop %ebx\n\t"        /* user stack */
+        "call enter_usermode\n\t"
         "hlt\n\t"
         "jmp .-2\n\t"
     );
@@ -75,6 +89,8 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     task->state = TASK_READY;
     task->priority = priority;
     task->sleep_until_ticks = 0;
+    task->user_mode = 0;
+    task->kernel_stack = NULL;
     
     switch (priority) {
         case PRIORITY_HIGH:   task->quantum_remaining = QUANTUM_HIGH; break;
@@ -83,12 +99,66 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
         case PRIORITY_IDLE:   task->quantum_remaining = QUANTUM_IDLE; break;
     }
     
-    /* Setup initial stack frame */
     uint32_t *sp = (uint32_t *)((uint8_t*)task->stack + TASK_STACK_SIZE);
     
     *--sp = (uint32_t)entry;
     *--sp = (uint32_t)task_trampoline;
     *--sp = 0;
+    
+    task->esp = (uint32_t)sp;
+    
+    __asm__ volatile ("cli");
+    task_t *t = task_list;
+    while (t->next != task_list) t = t->next;
+    t->next = task;
+    task->next = task_list;
+    __asm__ volatile ("sti");
+    
+    return task->tid;
+}
+
+uint32_t task_create_user(void (*entry)(void), const char *name, 
+                          task_priority_t priority, uint32_t user_stack) {
+    if (!tasking_enabled) return 0;
+    
+    task_t *task = (task_t*)kmalloc(sizeof(task_t));
+    if (!task) return 0;
+    memset_s(task, 0, sizeof(task_t));
+
+    /* Kernel stack for syscalls and interrupts */
+    task->kernel_stack = kmalloc(TASK_STACK_SIZE);
+    if (!task->kernel_stack) { kfree(task); return 0; }
+    memset_s(task->kernel_stack, 0, TASK_STACK_SIZE);
+
+    /* User stack is managed by exec/paging */
+    task->stack = NULL;
+
+    task->msg_queue.head = 0;
+    task->msg_queue.tail = 0;
+    task->msg_queue.count = 0;
+    
+    task->tid = next_tid++;
+    strcpy_s(task->name, name ? name : "userapp", sizeof(task->name));
+    task->state = TASK_READY;
+    task->priority = priority;
+    task->sleep_until_ticks = 0;
+    task->user_mode = 1;
+    task->user_stack = user_stack;
+    
+    switch (priority) {
+        case PRIORITY_HIGH:   task->quantum_remaining = QUANTUM_HIGH; break;
+        case PRIORITY_NORMAL: task->quantum_remaining = QUANTUM_NORMAL; break;
+        case PRIORITY_LOW:    task->quantum_remaining = QUANTUM_LOW; break;
+        case PRIORITY_IDLE:   task->quantum_remaining = QUANTUM_IDLE; break;
+    }
+    
+    /* Setup kernel stack to switch to user mode */
+    uint32_t *sp = (uint32_t *)((uint8_t*)task->kernel_stack + TASK_STACK_SIZE);
+    
+    *--sp = 0;                    /* Alignment */
+    *--sp = user_stack;           /* User stack pointer */
+    *--sp = (uint32_t)entry;      /* Entry point */
+    *--sp = (uint32_t)user_task_trampoline;
     
     task->esp = (uint32_t)sp;
     
@@ -112,8 +182,6 @@ void task_exit(void) {
     }
     
     current_task->state = TASK_TERMINATED;
-    /* printf("Task '%s' (TID %u) exited\n", 
-           current_task->name, current_task->tid); */
     
     __asm__ volatile ("sti");
     task_yield();
@@ -163,6 +231,7 @@ static void cleanup_terminated_tasks(void) {
             curr = curr->next;
             
             if (to_free->stack) kfree(to_free->stack);
+            if (to_free->kernel_stack) kfree(to_free->kernel_stack);
             kfree(to_free);
         } else {
             prev = curr;
@@ -236,6 +305,12 @@ void schedule(void) {
     current_task = next;
     current_task->state = TASK_RUNNING;
     
+    /* Update TSS with kernel stack for user tasks */
+    if (current_task->user_mode && current_task->kernel_stack) {
+        uint32_t kernel_esp = (uint32_t)current_task->kernel_stack + TASK_STACK_SIZE;
+        tss_set_kernel_stack(kernel_esp);
+    }
+    
     switch (current_task->priority) {
         case PRIORITY_HIGH:   current_task->quantum_remaining = QUANTUM_HIGH; break;
         case PRIORITY_NORMAL: current_task->quantum_remaining = QUANTUM_NORMAL; break;
@@ -243,7 +318,6 @@ void schedule(void) {
         case PRIORITY_IDLE:   current_task->quantum_remaining = QUANTUM_IDLE; break;
     }
     
-    /* Cooperative switch */
     __asm__ volatile (
         "movl %0, %%esp\n\t"
         "popl %%ebp\n\t"
@@ -289,10 +363,10 @@ void task_list_print(void) {
         return;
     }
     
-    vga_set_color(0, 11); /* cyan header */
-    printf("TID  NAME              STATE        PRIORITY   QUANTUM\n");
-    vga_set_color(0, 8);  /* dark gray separator */
-    printf("---  ----------------  -----------  ---------  -------\n");
+    vga_set_color(0, 11);
+    printf("TID  NAME              STATE        PRIORITY   MODE\n");
+    vga_set_color(0, 8);
+    printf("---  ----------------  -----------  ---------  ------\n");
     vga_set_color(0, 7);
     
     task_t *t = task_list;
@@ -303,23 +377,23 @@ void task_list_print(void) {
         switch (t->state) {
             case TASK_READY:
                 state_str = "READY";
-                state_color = 14; /* yellow */
+                state_color = 14;
                 break;
             case TASK_RUNNING:
                 state_str = "RUNNING";
-                state_color = 10; /* green */
+                state_color = 10;
                 break;
             case TASK_SLEEPING:
                 state_str = "SLEEPING";
-                state_color = 11; /* cyan */
+                state_color = 11;
                 break;
             case TASK_BLOCKED:
                 state_str = "BLOCKED";
-                state_color = 12; /* red */
+                state_color = 12;
                 break;
             case TASK_TERMINATED:
                 state_str = "TERMINATED";
-                state_color = 8; /* gray */
+                state_color = 8;
                 break;
         }
         
@@ -331,19 +405,18 @@ void task_list_print(void) {
             case PRIORITY_IDLE:   prio_str = "IDLE"; break;
         }
         
-        /* TID and name in white */
+        const char *mode_str = t->user_mode ? "USER" : "KERNEL";
+        
         vga_set_color(0, 15);
         printf("%-4u ", t->tid);
         vga_set_color(0, 7);
         printf("%-16s  ", t->name);
         
-        /* State in color */
         vga_set_color(0, state_color);
         printf("%-11s  ", state_str);
         
-        /* Rest in gray */
         vga_set_color(0, 8);
-        printf("%-9s  %u\n", prio_str, t->quantum_remaining);
+        printf("%-9s  %s\n", prio_str, mode_str);
         vga_set_color(0, 7);
         
         t = t->next;
