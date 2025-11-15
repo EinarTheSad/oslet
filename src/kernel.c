@@ -13,23 +13,23 @@
 #include "drivers/ata.h"
 #include "drivers/fat32.h"
 #include "shell.h"
+#include "gdt.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
+extern void gdt_flush(uint32_t gdt_ptr_addr);
 extern uint8_t __kernel_end;
 
 static void boot_sequence(void) {
     vga_use_as_console();
     vga_clear();
     
-    /* Boot messages with colors */
     vga_set_color(1, 15); printf("Codename osLET v0.3\n");
     vga_set_color(0, 7);
     printf("Starting boot sequence...\n\n");
-    
+        
     idt_init();
     pic_remap();
-
     printf("[ ");
     vga_set_color(0, 10);
     printf("OK");
@@ -81,6 +81,13 @@ static void boot_sequence(void) {
     vga_set_color(0, 7);
     printf(" ] Paging\n");
 
+    gdt_init();
+    printf("[ ");
+    vga_set_color(0, 10);
+    printf("OK");
+    vga_set_color(0, 7);
+    printf(" ] GDT & TSS\n");
+
     heap_init();
     printf("[ ");
     vga_set_color(0, 10);
@@ -112,7 +119,6 @@ static void boot_sequence(void) {
     vga_set_color(0, 7);
     printf(" ] Multitasking\n");
     
-    /* Auto-mount drive C: */
     vga_set_color(0, 8);
     printf("[ .. ] Attempting to mount drive C at 0...\n");
     vga_set_color(0, 7);
@@ -139,6 +145,5 @@ void kmain(void) {
     shell_init();
     shell_run();
     
-    /* Should never reach here */
     for (;;) __asm__ volatile ("hlt");
 }
