@@ -23,32 +23,33 @@ extern void vga_set_color(uint8_t background, uint8_t foreground);
 
 static int expand_heap(size_t min_size) {
     size_t pages = (min_size + PAGE_SIZE - 1) / PAGE_SIZE;
+    uintptr_t old_heap_end = heap_end;
     
     for (size_t i = 0; i < pages; i++) {
         uintptr_t phys = pmm_alloc_frame();
         if (!phys) {
             printf("expand_heap: pmm_alloc_frame failed at page %u\n", (unsigned)i);
+            for (size_t j = 0; j < i; j++) {
+                paging_unmap_page(old_heap_end + (j * PAGE_SIZE));
+            }
             return -1;
         }
         
-        uintptr_t virt = heap_end + (i * PAGE_SIZE);
+        uintptr_t virt = old_heap_end + (i * PAGE_SIZE);
         int ret = paging_map_page(virt, phys, 0x3);
         if (ret != 0) {
             printf("expand_heap: paging_map_page failed (ret=%d) at virt=0x%x\n", 
                    ret, (unsigned)virt);
             pmm_free_frame(phys);
             
-            /* Cleanup already mapped pages in this expansion */
             for (size_t j = 0; j < i; j++) {
-                /* can't unmap here without a full page table walker */
-                /* just mark frames as lost for now */
-                /* TODO: page table walker */
+                paging_unmap_page(old_heap_end + (j * PAGE_SIZE));
             }
             return -1;
         }
     }
     
-    heap_end += pages * PAGE_SIZE;
+    heap_end = old_heap_end + (pages * PAGE_SIZE);
     return 0;
 }
 

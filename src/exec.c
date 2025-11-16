@@ -61,7 +61,7 @@ int exec_load(const char *path, exec_image_t *image) {
     
     /* Round up to page boundary */
     size_t pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
-    size_t total_size = (pages + 256) * PAGE_SIZE; /* Added extra 1MB for heap */
+    size_t total_size = (pages + (size_t)256) * PAGE_SIZE; /* Added extra 1MB for heap */
     
     /* Map user memory */
     if (map_user_memory(EXEC_LOAD_ADDR, total_size) != 0) {
@@ -112,7 +112,7 @@ int exec_run(exec_image_t *image) {
         printf("Cannot create task for the executable\n");
         return -1;
     }
-    
+
     task_yield();
     return 0;
 }
