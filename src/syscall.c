@@ -3,10 +3,54 @@
 #include "console.h"
 #include "timer.h"
 #include "drivers/fat32.h"
+#include "drivers/vga.h"
 #include "exec.h"
+#include "mem/pmm.h"
+#include "mem/heap.h"
 #include <stddef.h>
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
+extern void vga_clear(void);
+extern char kbd_getchar(void);
+
+/* File descriptor table - kernel side */
+#define MAX_OPEN_FILES 32
+typedef struct {
+    fat32_file_t *file;
+    int in_use;
+} file_descriptor_t;
+
+static file_descriptor_t fd_table[MAX_OPEN_FILES];
+
+static void fd_init(void) {
+    for (int i = 0; i < MAX_OPEN_FILES; i++) {
+        fd_table[i].file = NULL;
+        fd_table[i].in_use = 0;
+    }
+}
+
+static int fd_alloc(fat32_file_t *file) {
+    for (int i = 3; i < MAX_OPEN_FILES; i++) { /* Reserve 0,1,2 for stdin/stdout/stderr */
+        if (!fd_table[i].in_use) {
+            fd_table[i].file = file;
+            fd_table[i].in_use = 1;
+            return i;
+        }
+    }
+    return -1;
+}
+
+static fat32_file_t* fd_get(int fd) {
+    if (fd < 0 || fd >= MAX_OPEN_FILES) return NULL;
+    if (!fd_table[fd].in_use) return NULL;
+    return fd_table[fd].file;
+}
+
+static void fd_free(int fd) {
+    if (fd < 0 || fd >= MAX_OPEN_FILES) return;
+    fd_table[fd].in_use = 0;
+    fd_table[fd].file = NULL;
+}
 
 static void memcpy_safe(void *dst, const void *src, size_t n) {
     char *d = dst;
@@ -14,17 +58,14 @@ static void memcpy_safe(void *dst, const void *src, size_t n) {
     while (n--) *d++ = *s++;
 }
 
-/* Validate user pointer - must be in userspace range */
 static int validate_ptr(uint32_t ptr) {
     task_t *current = task_get_current();
     if (!current) return 0;
     
-    /* Kernel tasks can access all memory */
     if (!current->user_mode) {
         return (ptr >= 0x200000 && ptr < 0xC0000000);
     }
     
-    /* User tasks: only user memory */
     return (ptr >= EXEC_LOAD_ADDR && ptr < 0xC0000000);
 }
 
@@ -39,6 +80,13 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             
         case 0x02: /* Set color */
             vga_set_color((uint8_t)ebx, (uint8_t)ecx);
+            return 0;
+        
+        case 0x03: /* Get character */
+            return (uint32_t)kbd_getchar();
+        
+        case 0x04: /* Clear screen */
+            vga_clear();
             return 0;
             
         default:
@@ -83,23 +131,51 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
 
 static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: { /* Open */
-            if (!validate_ptr(ebx) || !validate_ptr(ecx)) return 0;
-            fat32_file_t *f = fat32_open((const char*)ebx, (const char*)ecx);
-            return (uint32_t)f;
+        case 0x00: { /* Open - FIXED */
+            if (!validate_ptr(ebx) || !validate_ptr(ecx)) return -1;
+            
+            fat32_file_t *file = fat32_open((const char*)ebx, (const char*)ecx);
+            if (!file) return -1;
+            
+            int fd = fd_alloc(file);
+            if (fd < 0) {
+                fat32_close(file);
+                return -1;
+            }
+            
+            return fd; /* Return file descriptor, not pointer! */
         }
             
-        case 0x01: /* Close */
-            if (ebx) fat32_close((fat32_file_t*)ebx);
+        case 0x01: { /* Close - FIXED */
+            fat32_file_t *file = fd_get(ebx);
+            if (file) {
+                fat32_close(file);
+                fd_free(ebx);
+            }
             return 0;
+        }
             
-        case 0x02: /* Read */
+        case 0x02: { /* Read - FIXED */
             if (!validate_ptr(ecx)) return -1;
-            return fat32_read((fat32_file_t*)ebx, (void*)ecx, edx);
             
-        case 0x03: /* Write */
+            fat32_file_t *file = fd_get(ebx);
+            if (!file) return -1;
+            
+            return fat32_read(file, (void*)ecx, edx);
+        }
+            
+        case 0x03: { /* Write - FIXED */
             if (!validate_ptr(ecx)) return -1;
-            return fat32_write((fat32_file_t*)ebx, (const void*)ecx, edx);
+            
+            fat32_file_t *file = fd_get(ebx);
+            if (!file) return -1;
+            
+            return fat32_write(file, (const void*)ecx, edx);
+        }
+        
+        case 0x05: /* Delete/Unlink */
+            if (!validate_ptr(ebx)) return -1;
+            return fat32_unlink((const char*)ebx);
             
         default:
             return -1;
@@ -107,8 +183,6 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
 }
 
 static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
-    (void)edx;
-    
     switch (al) {
         case 0x00: /* Chdir */
             if (!validate_ptr(ebx)) return -1;
@@ -117,6 +191,38 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
         case 0x01: /* Getcwd */
             if (!validate_ptr(ebx)) return 0;
             return (uint32_t)fat32_getcwd((char*)ebx, ecx);
+        
+        case 0x02: /* Mkdir */
+            if (!validate_ptr(ebx)) return -1;
+            return fat32_mkdir((const char*)ebx);
+        
+        case 0x03: /* Rmdir */
+            if (!validate_ptr(ebx)) return -1;
+            return fat32_rmdir((const char*)ebx);
+        
+        case 0x04: { /* List directory */
+            if (!validate_ptr(ebx) || !validate_ptr(ecx)) return -1;
+            
+            /* Allocate kernel buffer for FAT32 entries */
+            fat32_dirent_t *fat_entries = (fat32_dirent_t*)kmalloc(sizeof(fat32_dirent_t) * edx);
+            if (!fat_entries) return -1;
+            
+            int count = fat32_list_dir((const char*)ebx, fat_entries, edx);
+            
+            if (count > 0) {
+                sys_dirent_t *sys_entries = (sys_dirent_t*)ecx;
+                for (int i = 0; i < count; i++) {
+                    memcpy_safe(sys_entries[i].name, fat_entries[i].name, 13);
+                    sys_entries[i].size = fat_entries[i].size;
+                    sys_entries[i].first_cluster = fat_entries[i].first_cluster;
+                    sys_entries[i].is_directory = fat_entries[i].is_directory;
+                    sys_entries[i].attr = fat_entries[i].attr;
+                }
+            }
+            
+            kfree(fat_entries);
+            return count;
+        }
             
         default:
             return -1;
@@ -179,6 +285,79 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
     }
 }
 
+static uint32_t handle_time(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    (void)ebx; (void)ecx; (void)edx;
+    
+    switch (al) {
+        case 0x01: /* Uptime */
+            return timer_get_ticks();
+        
+        default:
+            return -1;
+    }
+}
+
+static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    (void)edx;
+    
+    switch (al) {
+        case 0x00: { /* Memory info */
+            if (!validate_ptr(ebx)) return -1;
+            
+            sys_meminfo_t *info = (sys_meminfo_t*)ebx;
+            size_t total = pmm_total_frames();
+            
+            /* Simple approximation - count free frames by trying allocations */
+            size_t free = 0;
+            #define SAMPLE_SIZE 100
+            for (int i = 0; i < SAMPLE_SIZE; i++) {
+                uintptr_t frame = pmm_alloc_frame();
+                if (frame) {
+                    pmm_free_frame(frame);
+                    free++;
+                }
+            }
+            /* Extrapolate */
+            free = (free * total) / SAMPLE_SIZE;
+            
+            info->total_kb = (total * 4096) / 1024;
+            info->free_kb = (free * 4096) / 1024;
+            info->used_kb = info->total_kb - info->free_kb;
+            return 0;
+        }
+        
+        case 0x01: { /* Task list */
+            if (!validate_ptr(ebx)) return -1;
+            
+            sys_taskinfo_t *tasks = (sys_taskinfo_t*)ebx;
+            int max = (int)ecx;
+            int count = 0;
+            
+            task_t *start = task_get_current();
+            if (!start) return 0;
+            
+            task_t *t = start;
+            do {
+                if (count >= max) break;
+                
+                tasks[count].tid = t->tid;
+                memcpy_safe(tasks[count].name, t->name, 32);
+                tasks[count].state = (uint8_t)t->state;
+                tasks[count].priority = (uint8_t)t->priority;
+                tasks[count].user_mode = t->user_mode;
+                count++;
+                
+                t = t->next;
+            } while (t != start && count < max);
+            
+            return count;
+        }
+        
+        default:
+            return -1;
+    }
+}
+
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     uint32_t ah = (eax >> 8) & 0xFF;
     uint32_t al = eax & 0xFF;
@@ -189,6 +368,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x03: return handle_file(al, ebx, ecx, edx);
         case 0x04: return handle_dir(al, ebx, ecx, edx);
         case 0x05: return handle_ipc(al, ebx, ecx, edx);
+        case 0x07: return handle_time(al, ebx, ecx, edx);
+        case 0x08: return handle_info(al, ebx, ecx, edx);
         
         default:
             printf("Unknown syscall: AH=%02Xh AL=%02Xh\n", ah, al);
@@ -197,5 +378,5 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
 }
 
 void syscall_init(void) {
-    /* Syscall interface ready */
+    fd_init();
 }
