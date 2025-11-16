@@ -10,7 +10,7 @@ LNK     = linker.ld
 CC      = gcc
 LD      = ld
 
-CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-stack-protector
+CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector
 LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
 
 # Kernel source directories (excluding lib and bin)
