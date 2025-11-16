@@ -27,13 +27,13 @@ static int map_user_memory(uintptr_t vaddr, size_t size) {
         /* Allocate physical frame */
         uintptr_t phys = pmm_alloc_frame();
         if (!phys) {
-            printf("exec: Cannot allocate frame for 0x%x\n", addr);
+            printf("Cannot allocate frame for 0x%x\n", addr);
             return -1;
         }
         
         /* Map with USER permissions */
         if (paging_map_page(addr, phys, P_PRESENT | P_RW | P_USER) != 0) {
-            printf("exec: Cannot map 0x%x -> 0x%x\n", addr, phys);
+            printf("Cannot map 0x%x -> 0x%x\n", addr, phys);
             pmm_free_frame(phys);
             return -1;
         }
@@ -46,16 +46,18 @@ int exec_load(const char *path, exec_image_t *image) {
     
     fat32_file_t *f = fat32_open(path, "r");
     if (!f) {
-        printf("exec: Cannot open %s\n", path);
+        printf("Cannot open file: %s\n", path);
         return -1;
     }
     
     uint32_t size = f->size;
-    if (size == 0 || size > 2 * 1024 * 1024) {
-        printf("exec: Invalid size %u\n", size);
-        fat32_close(f);
-        return -1;
-    }
+    /*
+        if (size == 0 || size > 2 * 1024 * 1024) {
+            printf("Invalid size %u\n", size);
+            fat32_close(f);
+            return -1;
+        }
+    */
     
     /* Round up to page boundary */
     size_t pages = (size + PAGE_SIZE - 1) / PAGE_SIZE;
@@ -63,7 +65,7 @@ int exec_load(const char *path, exec_image_t *image) {
     
     /* Map user memory */
     if (map_user_memory(EXEC_LOAD_ADDR, total_size) != 0) {
-        printf("exec: Cannot map memory\n");
+        printf("Cannot map memory for %s\n", path);
         fat32_close(f);
         return -1;
     }
@@ -71,7 +73,7 @@ int exec_load(const char *path, exec_image_t *image) {
     /* Map user stack */
     uintptr_t stack_bottom = EXEC_USER_STACK - EXEC_STACK_SIZE;
     if (map_user_memory(stack_bottom, EXEC_STACK_SIZE) != 0) {
-        printf("exec: Cannot map stack\n");
+        printf("Cannot map stack for %s\n", path);
         fat32_close(f);
         return -1;
     }
@@ -87,7 +89,7 @@ int exec_load(const char *path, exec_image_t *image) {
     fat32_close(f);
     
     if (bytes_read != (int)size) {
-        printf("exec: Read error (%d/%u)\n", bytes_read, size);
+        printf("Read error (%d/%u)\n", bytes_read, size);
         return -1;
     }
     
@@ -96,8 +98,6 @@ int exec_load(const char *path, exec_image_t *image) {
     image->memory = (void*)EXEC_LOAD_ADDR;
     image->user_stack = EXEC_USER_STACK;
     
-    printf("exec: Loaded %u bytes at 0x%x\n", size, EXEC_LOAD_ADDR);
-    
     return 0;
 }
 
@@ -105,15 +105,14 @@ int exec_run(exec_image_t *image) {
     if (!image || !image->memory) return -1;
 
     uint32_t tid = task_create_user((void(*)(void))image->entry_point, 
-                                     "userapp", 
+                                     "executable", 
                                      PRIORITY_NORMAL,
                                      image->user_stack);
     if (!tid) {
-        printf("exec: Cannot create task\n");
+        printf("Cannot create task for the executable\n");
         return -1;
     }
-
-    printf("exec: Started task %u\n", tid);
+    
     task_yield();
     return 0;
 }

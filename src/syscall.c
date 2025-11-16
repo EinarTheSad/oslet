@@ -188,9 +188,18 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             if (!validate_ptr(ebx)) return -1;
             return fat32_chdir((const char*)ebx);
             
-        case 0x01: /* Getcwd */
+        case 0x01: { /* Getcwd */
             if (!validate_ptr(ebx)) return 0;
-            return (uint32_t)fat32_getcwd((char*)ebx, ecx);
+            char *result = fat32_getcwd((char*)ebx, ecx);
+            /* If getcwd returns NULL or empty, set default */
+            if (!result || ((char*)ebx)[0] == '\0') {
+                if (ecx >= 4) {
+                    memcpy_safe((void*)ebx, "C:/", 4);
+                    return (uint32_t)ebx;
+                }
+            }
+            return (uint32_t)result;
+        }
         
         case 0x02: /* Mkdir */
             if (!validate_ptr(ebx)) return -1;
@@ -203,7 +212,6 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
         case 0x04: { /* List directory */
             if (!validate_ptr(ebx) || !validate_ptr(ecx)) return -1;
             
-            /* Allocate kernel buffer for FAT32 entries */
             fat32_dirent_t *fat_entries = (fat32_dirent_t*)kmalloc(sizeof(fat32_dirent_t) * edx);
             if (!fat_entries) return -1;
             
