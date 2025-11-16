@@ -89,7 +89,7 @@ static void print_banner(void) {
     printf(" |_____|  _____| |_____ |______    |    \n");
     printf("                                        \n");
     vga_set_color(0, 8);
-    printf("Kernel 0.3              EinarTheSad 2025\n\n");
+    printf("Kernel 0.3.2            EinarTheSad 2025\n\n");
     vga_set_color(0, 7);
 }
 
@@ -259,7 +259,7 @@ static void cmd_help(void) {
     printf("Show this help\n");
     vga_set_color(0, 7);
     
-    printf("  ls [path]            ");
+    printf("  ls <path>            ");
     vga_set_color(0, 8);
     printf("List directory\n");
     vga_set_color(0, 7);
@@ -312,11 +312,6 @@ static void cmd_help(void) {
     printf("  run <file>           ");
     vga_set_color(0, 8);
     printf("Execute a binary file\n");
-    vga_set_color(0, 7);
-    
-    printf("  test                 ");
-    vga_set_color(0, 8);
-    printf("Run IPC test tasks\n");
     vga_set_color(0, 7);
     
     printf("  uptime               ");
@@ -379,52 +374,8 @@ static void cmd_ls(const char *path) {
     
     printf("\n");
     vga_set_color(0, 8);
-    printf("  %d files\n  %d catalogues\n  %d items in total\n\n", count-dirs, dirs, count);
+    printf("  %d files, %d catalogues\n  %d items in total\n\n", count-dirs, dirs, count);
     vga_set_color(0, 7);
-}
-
-static void ipc_sender(void) {
-    uint32_t my_tid = sys_getpid();
-    char msg[64];
-    
-    for (int i = 0; i < 5; i++) {
-        snprintf(msg, sizeof(msg), "Message #%d from task %u", i, my_tid);
-        
-        uint32_t receiver_tid = (my_tid == 1) ? 2 : 1;
-        int ret = sys_send_msg(receiver_tid, msg, strlen_s(msg) + 1);
-        
-        if (ret == 0) {
-            sys_write("[SENDER] OK Sent\n");
-        } else {
-            sys_write("[SENDER] X Failed\n");
-        }
-        
-        sys_sleep(1000);
-    }
-    
-    sys_write("[SENDER] Done\n");
-    sys_exit();
-}
-
-static void ipc_receiver(void) {
-    message_t msg;
-    
-    sys_write("[RECEIVER] Waiting...\n");
-    
-    for (int i = 0; i < 5; i++) {
-        int ret = sys_recv_msg(&msg);
-        
-        if (ret == 0) {
-            char buf[256];
-            snprintf(buf, sizeof(buf), "[RECEIVER] <- %s\n", msg.data);
-            sys_write(buf);
-        } else {
-            sys_write("[RECEIVER] X Failed\n");
-        }
-    }
-    
-    sys_write("[RECEIVER] Done\n");
-    sys_exit();
 }
 
 void shell_init(void) {
@@ -512,17 +463,7 @@ void shell_run(void) {
             rtc_print_time();
             continue;
         }
-        
-        if (!strcmp_s(line, "test")) {
-            vga_set_color(COLOR_INFO_BG, COLOR_INFO_FG);
-            printf("Starting IPC test...\n");
-            vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-            uint32_t t1 = task_create(ipc_sender, "sender", PRIORITY_NORMAL);
-            uint32_t t2 = task_create(ipc_receiver, "receiver", PRIORITY_NORMAL);
-            printf("Created TID %u (sender) and TID %u (receiver)\n", t1, t2);
-            continue;
-        }
-        
+              
         /* Parse arguments */
         char *argv[MAX_ARGS] = {};
         int argc = parse_args(line, argv, MAX_ARGS);

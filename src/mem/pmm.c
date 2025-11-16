@@ -205,3 +205,11 @@ void pmm_print_stats(void) {
            (unsigned)(total - free),
            (unsigned)total);
 }
+
+size_t pmm_count_free_frames(void) {
+    size_t free = 0;
+    for (size_t f = 0; f < nframes; ++f) {
+        if (!bitmap_test(f)) ++free;
+    }
+    return free;
+}

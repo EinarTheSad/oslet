@@ -107,10 +107,15 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     task->esp = (uint32_t)sp;
     
     __asm__ volatile ("cli");
-    task_t *t = task_list;
-    while (t->next != task_list) t = t->next;
-    t->next = task;
-    task->next = task_list;
+    if (!task_list) {
+        task_list = task;
+        task->next = task;
+    } else {
+        task_t *t = task_list;
+        while (t->next != task_list) t = t->next;
+        t->next = task;
+        task->next = task_list;
+    }
     __asm__ volatile ("sti");
     
     return task->tid;
@@ -174,14 +179,18 @@ uint32_t task_create_user(void (*entry)(void), const char *name,
 void task_exit(void) {
     __asm__ volatile ("cli");
     
-    if (!current_task || current_task == task_list) {
-        printf("Cannot exit kernel task\n");
+    if (!current_task) {
         __asm__ volatile ("sti");
         return;
     }
     
-    current_task->state = TASK_TERMINATED;
+    if (current_task == task_list) {
+        printf("Cannot exit kernel task\n");
+        __asm__ volatile ("sti");
+        for (;;) __asm__ volatile ("hlt");
+    }
     
+    current_task->state = TASK_TERMINATED;
     __asm__ volatile ("sti");
     task_yield();
     for (;;) __asm__ volatile ("hlt");
