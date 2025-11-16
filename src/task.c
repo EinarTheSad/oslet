@@ -288,7 +288,7 @@ void schedule(void) {
     
     wakeup_sleeping_tasks();
     cleanup_terminated_tasks();
-    
+
     task_t *next = pick_next_task();
     
     if (next == current_task) {
@@ -309,7 +309,7 @@ void schedule(void) {
         uint32_t kernel_esp = (uint32_t)current_task->kernel_stack + TASK_STACK_SIZE;
         tss_set_kernel_stack(kernel_esp);
     }
-    
+
     switch (current_task->priority) {
         case PRIORITY_HIGH:   current_task->quantum_remaining = QUANTUM_HIGH; break;
         case PRIORITY_NORMAL: current_task->quantum_remaining = QUANTUM_NORMAL; break;
@@ -352,7 +352,7 @@ void task_yield(void) {
     current_task->esp = esp_save;
     
     __asm__ volatile ("sti");
-    
+
     schedule();
 }
 
