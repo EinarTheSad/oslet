@@ -4,6 +4,7 @@ SRC     = src
 BIN     = $(SRC)/bin
 LIB     = $(SRC)/lib
 LNK     = linker.ld
+MNT		= mnt
 DISK    = disk.img
 DISK_SIZE = 16
 
@@ -24,7 +25,7 @@ KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all run clean disk install-kernel fetchlet
+.PHONY: all run clean disk install fetchlet
 
 all: $(BUILD)/$(TARGET)
 
@@ -40,31 +41,35 @@ $(BUILD)/%.o: $(SRC)/%.S
 	$(CC) -m32 -c $< -o $@
 
 $(DISK):
-	@echo "Creating $(DISK_SIZE)MB disk with MBR..."
+	@echo "Creating disk image..."
 	dd if=/dev/zero of=$(DISK) bs=1M count=$(DISK_SIZE)
-	echo -e "o\nn\np\n1\n2048\n\na\nw\n" | fdisk $(DISK)
 	@echo "Setting up loop device..."
-	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	sudo losetup -Pf $(DISK)
+	LOOP=$$(losetup -a | grep "$(DISK)" | cut -d: -f1); \
 	echo "Loop: $$LOOP"; \
-	sleep 1; \
-	echo "Formatting partition..."; \
+	echo "Creating MBR table..."; \
+	sudo parted $$LOOP mklabel msdos; \
+	echo "Creating FAT32 partition..."; \
+	sudo parted $$LOOP mkpart primary fat32 1MiB 100%; \
+	echo "Formatting..."; \
 	sudo mkfs.vfat -F 32 $${LOOP}p1; \
 	echo "Mounting..."; \
-	mkdir -p mnt; \
-	sudo mount $${LOOP}p1 mnt; \
-	echo "Creating directories..."; \
-	sudo mkdir -p mnt/boot/grub; \
-	echo "Copying GRUB config..."; \
-	sudo cp grub.cfg mnt/boot/grub/grub.cfg; \
+	mkdir -p $(MNT); \
+	sudo mount $${LOOP}p1 $(MNT); \
+	echo "Creating catalogues..."; \
+	sudo mkdir -p $(MNT)/boot/grub; \
+	echo "Copying grub.cfg..."; \
+	sudo cp grub.cfg $(MNT)/boot/grub/grub.cfg; \
 	echo "Installing GRUB..."; \
-	sudo grub-install --target=i386-pc --boot-directory=mnt/boot --force $$LOOP; \
+	sudo grub-install --target=i386-pc --boot-directory=$(MNT)/boot $$LOOP; \
 	echo "Unmounting..."; \
-	sudo umount mnt; \
-	sudo losetup -d $$LOOP; \
-	rmdir mnt
-	@echo "Disk ready!"
+	sudo umount $(MNT); \
+	rmdir $(MNT); \
+	echo "Disengaging loop..."; \
+	sudo losetup -d $$LOOP
+	@echo "Ready to run `make install`"
 
-install-kernel: $(BUILD)/$(TARGET)
+install: $(BUILD)/$(TARGET)
 	@if [ ! -f "$(DISK)" ]; then \
 		echo "Error: $(DISK) not found. Run 'make disk' first."; \
 		exit 1; \
@@ -85,7 +90,7 @@ run: $(BUILD)/$(TARGET)
 	@if [ ! -f "$(DISK)" ]; then \
 		$(MAKE) disk; \
 	fi
-	@$(MAKE) install-kernel
+	@$(MAKE) install
 	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -rtc base=localtime
 
 clean:
