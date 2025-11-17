@@ -4,9 +4,8 @@ SRC     = src
 BIN     = $(SRC)/bin
 LIB     = $(SRC)/lib
 LNK     = linker.ld
-MNT		= mnt
 DISK    = disk.img
-DISK_SIZE = 16
+DISK_SIZE = 128
 
 CC      = gcc
 LD      = ld
@@ -41,33 +40,29 @@ $(BUILD)/%.o: $(SRC)/%.S
 	$(CC) -m32 -c $< -o $@
 
 $(DISK):
-	@echo "Creating disk image..."
+	@echo "Creating $(DISK_SIZE)MB disk with MBR..."
 	dd if=/dev/zero of=$(DISK) bs=1M count=$(DISK_SIZE)
+	echo -e "o\nn\np\n1\n2048\n\na\nw" | fdisk $(DISK)
 	@echo "Setting up loop device..."
-	sudo losetup -Pf $(DISK)
-	LOOP=$$(losetup -a | grep "$(DISK)" | cut -d: -f1); \
+	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	echo "Loop: $$LOOP"; \
-	echo "Creating MBR table..."; \
-	sudo parted $$LOOP mklabel msdos; \
-	echo "Creating FAT32 partition..."; \
-	sudo parted $$LOOP mkpart primary fat32 1MiB 100%; \
-	echo "Formatting..."; \
+	sleep 1; \
+	echo "Formatting partition..."; \
 	sudo mkfs.vfat -F 32 $${LOOP}p1; \
 	echo "Mounting..."; \
-	mkdir -p $(MNT); \
-	sudo mount $${LOOP}p1 $(MNT); \
-	echo "Creating catalogues..."; \
-	sudo mkdir -p $(MNT)/boot/grub; \
-	echo "Copying grub.cfg..."; \
-	sudo cp grub.cfg $(MNT)/boot/grub/grub.cfg; \
+	mkdir -p mnt; \
+	sudo mount $${LOOP}p1 mnt; \
+	echo "Creating directories..."; \
+	sudo mkdir -p mnt/boot/grub; \
+	echo "Copying GRUB config..."; \
+	sudo cp grub.cfg mnt/boot/grub/grub.cfg; \
 	echo "Installing GRUB..."; \
-	sudo grub-install --target=i386-pc --boot-directory=$(MNT)/boot $$LOOP; \
+	sudo grub-install --target=i386-pc --boot-directory=mnt/boot --force $$LOOP; \
 	echo "Unmounting..."; \
-	sudo umount $(MNT); \
-	rmdir $(MNT); \
-	echo "Disengaging loop..."; \
-	sudo losetup -d $$LOOP
-	@echo "Ready to run `make install`"
+	sudo umount mnt; \
+	sudo losetup -d $$LOOP; \
+	rmdir mnt
+	@echo "Disk ready!"
 
 install: $(BUILD)/$(TARGET)
 	@if [ ! -f "$(DISK)" ]; then \
