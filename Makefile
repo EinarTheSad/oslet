@@ -1,11 +1,11 @@
 TARGET  = kernel.elf
 BUILD   = build
 SRC     = src
-ISO     = iso
 BIN     = $(SRC)/bin
 LIB     = $(SRC)/lib
-GRUB    = $(ISO)/boot/grub
 LNK     = linker.ld
+DISK    = disk.img
+DISK_SIZE = 16
 
 CC      = gcc
 LD      = ld
@@ -13,21 +13,18 @@ LD      = ld
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector
 LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
 
-# Kernel source directories (excluding lib and bin)
 KERNEL_SRC_DIRS := \
 	$(SRC) \
 	$(SRC)/drivers \
 	$(SRC)/mem
 
-# Kernel sources
 KERNEL_SRC_C := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.c))
 KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 
-# Kernel objects (go to build directory)
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all iso run clean binary
+.PHONY: all run clean disk install-kernel fetchlet
 
 all: $(BUILD)/$(TARGET)
 
@@ -42,49 +39,76 @@ $(BUILD)/%.o: $(SRC)/%.S
 	@mkdir -p $(dir $@)
 	$(CC) -m32 -c $< -o $@
 
-iso: $(BUILD)/$(TARGET)
-	@mkdir -p $(ISO)/boot
-	@mkdir -p $(GRUB)
-	@cp $(BUILD)/$(TARGET) $(ISO)/boot/$(TARGET)
-	@if command -v grub-mkrescue >/dev/null 2>&1; then \
-	   grub-mkrescue -o $(ISO)/oslet.iso $(ISO); \
-	else \
-	   echo "grub-mkrescue not found; skipping ISO creation."; \
-	fi
+$(DISK):
+	@echo "Creating $(DISK_SIZE)MB disk with MBR..."
+	dd if=/dev/zero of=$(DISK) bs=1M count=$(DISK_SIZE)
+	echo -e "o\nn\np\n1\n2048\n\na\nw\n" | fdisk $(DISK)
+	@echo "Setting up loop device..."
+	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	echo "Loop: $$LOOP"; \
+	sleep 1; \
+	echo "Formatting partition..."; \
+	sudo mkfs.vfat -F 32 $${LOOP}p1; \
+	echo "Mounting..."; \
+	mkdir -p mnt; \
+	sudo mount $${LOOP}p1 mnt; \
+	echo "Creating directories..."; \
+	sudo mkdir -p mnt/boot/grub; \
+	echo "Copying GRUB config..."; \
+	sudo cp grub.cfg mnt/boot/grub/grub.cfg; \
+	echo "Installing GRUB..."; \
+	sudo grub-install --target=i386-pc --boot-directory=mnt/boot --force $$LOOP; \
+	echo "Unmounting..."; \
+	sudo umount mnt; \
+	sudo losetup -d $$LOOP; \
+	rmdir mnt
+	@echo "Disk ready!"
 
-run:
-	@if [ ! -f "$(ISO)/oslet.iso" ]; then \
-		$(MAKE) iso; \
-	else \
-		echo "ISO already exists, skipping rebuild."; \
+install-kernel: $(BUILD)/$(TARGET)
+	@if [ ! -f "$(DISK)" ]; then \
+		echo "Error: $(DISK) not found. Run 'make disk' first."; \
+		exit 1; \
 	fi
-	rm -rf $(BUILD)
-	qemu-system-i386 -cdrom $(ISO)/oslet.iso -m 32M -net none -rtc base=localtime \
-	    -drive file=disk.img,format=raw,index=0,media=disk \
-	    -boot d
+	@echo "Installing kernel..."
+	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	mkdir -p mnt; \
+	sudo mount $${LOOP}p1 mnt; \
+	sudo cp $(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
+	sudo umount mnt; \
+	sudo losetup -d $$LOOP; \
+	rmdir mnt
+	@echo "Kernel installed!"
+
+disk: $(DISK)
+
+run: $(BUILD)/$(TARGET)
+	@if [ ! -f "$(DISK)" ]; then \
+		$(MAKE) disk; \
+	fi
+	@$(MAKE) install-kernel
+	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -rtc base=localtime
 
 clean:
-	@echo "Cleaning project..."
-	rm -rf $(ISO)/boot/$(TARGET) $(ISO)/oslet.iso
+	@echo "Cleaning..."
+	rm -rf $(BUILD)
 	rm -f $(BIN)/*.bin
-	find $(ISO)/boot -type d -empty -delete
 
-# Binary build: one .bin per .c in src/bin, linked with src/lib/*.c
-# All C sources for libraries
-LIB_SRCS    := $(wildcard $(LIB)/*.c)
-LIB_OBJS    := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(LIB_SRCS))
+clean-all: clean
+	rm -f $(DISK)
 
-# All C sources for standalone binaries
-BIN_SRCS    := $(wildcard $(BIN)/*.c)
+# Binaries
+LIB_SRCS := $(wildcard $(LIB)/*.c)
+LIB_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(LIB_SRCS))
 
-# One .bin per bin/*.c
-BIN_TARGETS := $(patsubst $(BIN)/%.c,$(BIN)/%.bin,$(BIN_SRCS))
+fetchlet: $(BIN)/fetchlet.bin
 
-# Use a different linker script for these binaries
-binary: LNK := $(BIN)/binary.ld
-binary: $(BIN_TARGETS)
+$(BIN)/fetchlet.bin: $(BUILD)/bin/fetchlet.o $(LIB_OBJS)
+	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
 
-$(BIN)/%.bin: $(BUILD)/bin/%.o $(LIB_OBJS)
-	@echo "Linking $@..."
-	$(LD) $(LDFLAGS) -o $@ $^
-	@echo "Binary created: $@"
+$(BUILD)/bin/%.o: $(BIN)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/lib/%.o: $(LIB)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
