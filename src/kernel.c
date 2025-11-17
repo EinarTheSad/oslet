@@ -24,7 +24,7 @@ static void boot_sequence(void) {
     vga_use_as_console();
     vga_clear();
     
-    vga_set_color(1, 15); printf("Codename osLET v0.3\n");
+    vga_set_color(1, 15); printf("Codename osLET v0.3.2\n");
     vga_set_color(0, 7);
     printf("Starting boot sequence...\n\n");
         
@@ -120,9 +120,10 @@ static void boot_sequence(void) {
     printf(" ] Multitasking\n");
     
     vga_set_color(0, 8);
-    printf("[ .. ] Attempting to mount drive C at 0...\n");
+    int lba = 2048;
+    printf("[ .. ] Attempting to mount drive C at LBA=%d...\n",lba);
     vga_set_color(0, 7);
-    if (fat32_mount_drive('C', 0) == 0) {
+    if (fat32_mount_drive('C', lba) == 0) {
         printf("[");
         vga_set_color(0, 10);
         printf(" OK");
