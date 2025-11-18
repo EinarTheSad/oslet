@@ -6,11 +6,37 @@
 
 static uint8_t* backbuffer = NULL;
 static int graphics_active = 0;
-void gfx_reset_ega_palette(void);
-void gfx_reset_palette(void);
 
-/* 8x8 bitmap font (subset: printable ASCII) */
+static const uint8_t mode_640x480x16[] = {
+    0xE3,
+    0x03, 0x01, 0x0F, 0x00, 0x06,
+    0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0x0B, 0x3E,
+    0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0xEA, 0x8C, 0xDF, 0x28, 0x00, 0xE7, 0x04, 0xE3,
+    0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x0F,
+    0xFF,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
+    0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,
+    0x01, 0x00, 0x0F, 0x00, 0x00
+};
+
+static const uint8_t mode_80x25_text[] = {
+    0x67,
+    0x03, 0x00, 0x03, 0x00, 0x02,
+    0x5F, 0x4F, 0x50, 0x82, 0x55, 0x81, 0xBF, 0x1F,
+    0x00, 0x4F, 0x0D, 0x0E, 0x00, 0x00, 0x00, 0x00,
+    0x9C, 0x8E, 0x8F, 0x28, 0x1F, 0x96, 0xB9, 0xA3,
+    0xFF,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x0E, 0x00,
+    0xFF,
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
+    0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,
+    0x0C, 0x00, 0x0F, 0x08, 0x00
+};
+
 static const uint8_t font8x8[128][8] = {
+    [0x00] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
     [' '] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
     ['!'] = {0x18, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x18, 0x00},
     ['"'] = {0x36, 0x36, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
@@ -79,9 +105,9 @@ static const uint8_t font8x8[128][8] = {
     ['a'] = {0x00, 0x00, 0x1E, 0x30, 0x3E, 0x33, 0x6E, 0x00},
     ['b'] = {0x07, 0x06, 0x06, 0x3E, 0x66, 0x66, 0x3B, 0x00},
     ['c'] = {0x00, 0x00, 0x1E, 0x33, 0x03, 0x33, 0x1E, 0x00},
-    ['d'] = {0x38, 0x30, 0x30, 0x3e, 0x33, 0x33, 0x6E, 0x00},
-    ['e'] = {0x00, 0x00, 0x1E, 0x33, 0x3f, 0x03, 0x1E, 0x00},
-    ['f'] = {0x1C, 0x36, 0x06, 0x0f, 0x06, 0x06, 0x0F, 0x00},
+    ['d'] = {0x38, 0x30, 0x30, 0x3E, 0x33, 0x33, 0x6E, 0x00},
+    ['e'] = {0x00, 0x00, 0x1E, 0x33, 0x3F, 0x03, 0x1E, 0x00},
+    ['f'] = {0x1C, 0x36, 0x06, 0x0F, 0x06, 0x06, 0x0F, 0x00},
     ['g'] = {0x00, 0x00, 0x6E, 0x33, 0x33, 0x3E, 0x30, 0x1F},
     ['h'] = {0x07, 0x06, 0x36, 0x6E, 0x66, 0x66, 0x67, 0x00},
     ['i'] = {0x0C, 0x00, 0x0E, 0x0C, 0x0C, 0x0C, 0x1E, 0x00},
@@ -108,118 +134,93 @@ static const uint8_t font8x8[128][8] = {
     ['~'] = {0x6E, 0x3B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
 };
 
+static const uint8_t gfx_palette[16][3] = {
+    {0x00, 0x00, 0x00},  /* 0: Black */
+    {0x00, 0x00, 0x80},  /* 1: Navy Blue */
+    {0x00, 0x80, 0x00},  /* 2: Green */
+    {0x00, 0x80, 0x80},  /* 3: Teal */
+    {0x80, 0x00, 0x00},  /* 4: Maroon */
+    {0x80, 0x00, 0x80},  /* 5: Purple */
+    {0x80, 0x80, 0x00},  /* 6: Olive */
+    {0xC0, 0xC0, 0xC0},  /* 7: Silver (Light Gray) */
+    {0x80, 0x80, 0x80},  /* 8: Gray */
+    {0x00, 0x00, 0xFF},  /* 9: Blue */
+    {0x00, 0xFF, 0x00},  /* 10: Lime */
+    {0x00, 0xFF, 0xFF},  /* 11: Cyan/Aqua */
+    {0xFF, 0x00, 0x00},  /* 12: Red */
+    {0xFF, 0x00, 0xFF},  /* 13: Fuchsia/Magenta */
+    {0xFF, 0xFF, 0x00},  /* 14: Yellow */
+    {0xFF, 0xFF, 0xFF},  /* 15: White */
+};
+
+static void vga_write_regs(const uint8_t* regs) {
+    outb(0x3C2, *regs++);
+    
+    for (uint8_t i = 0; i < 5; i++) {
+        outb(0x3C4, i);
+        outb(0x3C5, *regs++);
+    }
+    
+    outb(0x3D4, 0x03);
+    outb(0x3D5, inb(0x3D5) | 0x80);
+    outb(0x3D4, 0x11);
+    outb(0x3D5, inb(0x3D5) & 0x7F);
+    
+    for (uint8_t i = 0; i < 25; i++) {
+        outb(0x3D4, i);
+        outb(0x3D5, *regs++);
+    }
+    
+    for (uint8_t i = 0; i < 9; i++) {
+        outb(0x3CE, i);
+        outb(0x3CF, *regs++);
+    }
+    
+    (void)inb(0x3DA);
+    for (uint8_t i = 0; i < 21; i++) {
+        outb(0x3C0, i);
+        outb(0x3C0, *regs++);
+    }
+    outb(0x3C0, 0x20);
+}
+
+static void wait_vretrace(void) {
+    while (inb(0x3DA) & 0x08);
+    while (!(inb(0x3DA) & 0x08));
+}
+
+void gfx_load_palette(void) {
+    for (int i = 0; i < 16; i++) {
+        outb(0x3C8, i);
+        outb(0x3C9, gfx_palette[i][0] >> 2);  /* R (6-bit) */
+        outb(0x3C9, gfx_palette[i][1] >> 2);  /* G (6-bit) */
+        outb(0x3C9, gfx_palette[i][2] >> 2);  /* B (6-bit) */
+    }
+}
+
 void gfx_init(void) {
     if (!backbuffer) {
-        backbuffer = kmalloc(GFX_WIDTH * GFX_HEIGHT);
+        backbuffer = kmalloc(GFX_BUFFER_SIZE);
         if (!backbuffer) {
             printf("Graphics: Failed to allocate backbuffer\n");
             return;
         }
     }
-    memset_s(backbuffer, 0, GFX_WIDTH * GFX_HEIGHT);
+    memset_s(backbuffer, 0, GFX_BUFFER_SIZE);
 }
 
 void gfx_enter_mode(void) {
-    // Prostsze ustawienie trybu 13h
-    outb(0x3C2, 0x63); // Misc Output
-
-    // Sekwencer
-    outb(0x3C4, 0x00); outb(0x3C5, 0x01); // Reset
-    outb(0x3C4, 0x01); outb(0x3C5, 0x01); // Clocking Mode
-    outb(0x3C4, 0x02); outb(0x3C5, 0x0F); // Map Mask
-    outb(0x3C4, 0x03); outb(0x3C5, 0x00); // Character Map
-    outb(0x3C4, 0x04); outb(0x3C5, 0x02); // Memory Mode
-    outb(0x3C4, 0x00); outb(0x3C5, 0x03); // End Reset
-
-    // CRTC
-    outb(0x3D4, 0x11); outb(0x3D5, inb(0x3D5) & 0x7F); // Odblokuj CRTC
-    outb(0x3D4, 0x00); outb(0x3D5, 0x5F);
-    outb(0x3D4, 0x01); outb(0x3D5, 0x4F);
-    outb(0x3D4, 0x02); outb(0x3D5, 0x50);
-    outb(0x3D4, 0x03); outb(0x3D5, 0x82);
-    outb(0x3D4, 0x04); outb(0x3D5, 0x54);
-    outb(0x3D4, 0x05); outb(0x3D5, 0x80);
-    outb(0x3D4, 0x06); outb(0x3D5, 0xBF);
-    outb(0x3D4, 0x07); outb(0x3D5, 0x1F);
-    outb(0x3D4, 0x08); outb(0x3D5, 0x00);
-    outb(0x3D4, 0x09); outb(0x3D5, 0x41);
-    outb(0x3D4, 0x10); outb(0x3D5, 0x9C);
-    outb(0x3D4, 0x11); outb(0x3D5, 0x8E);
-    outb(0x3D4, 0x12); outb(0x3D5, 0x8F);
-    outb(0x3D4, 0x13); outb(0x3D5, 0x28);
-    outb(0x3D4, 0x14); outb(0x3D5, 0x40);
-    outb(0x3D4, 0x15); outb(0x3D5, 0x96);
-    outb(0x3D4, 0x16); outb(0x3D5, 0xB9);
-    outb(0x3D4, 0x17); outb(0x3D5, 0xA3);
-
-    // Graphics Controller
-    outb(0x3CE, 0x05); outb(0x3CF, 0x40); // Graphics Mode
-    outb(0x3CE, 0x06); outb(0x3CF, 0x05); // Memory Map
-
-    // Attribute Controller
-    (void)inb(0x3DA); // Reset flip-flop
-    outb(0x3C0, 0x10); outb(0x3C0, 0x41); // Mode Control
-    outb(0x3C0, 0x13); outb(0x3C0, 0x00); // Pixel Panning
-    outb(0x3C0, 0x20); // End
-
+    vga_save_state();
+    vga_write_regs(mode_640x480x16);
+    gfx_load_palette();
     graphics_active = 1;
-    gfx_init();
-    /* gfx_reset_palette();
-    gfx_clear(COLOR_BLACK); */
-    memset_s(GFX_VRAM, COLOR_BLACK, GFX_WIDTH * GFX_HEIGHT);
+    if (!backbuffer) gfx_init();
 }
 
 void gfx_exit_mode(void) {
-    // Prostsze ustawienie trybu tekstowego 80x25
-    outb(0x3C2, 0x67); // Misc Output
-
-    // Sekwencer
-    outb(0x3C4, 0x00); outb(0x3C5, 0x01); // Reset
-    outb(0x3C4, 0x01); outb(0x3C5, 0x01); // Clocking Mode
-    outb(0x3C4, 0x02); outb(0x3C5, 0x03); // Map Mask
-    outb(0x3C4, 0x03); outb(0x3C5, 0x00); // Character Map
-    outb(0x3C4, 0x04); outb(0x3C5, 0x02); // Memory Mode
-    outb(0x3C4, 0x00); outb(0x3C5, 0x03); // End Reset
-
-    // CRTC
-    outb(0x3D4, 0x11); outb(0x3D5, inb(0x3D5) & 0x7F); // Odblokuj CRTC
-    outb(0x3D4, 0x00); outb(0x3D5, 0x5F);
-    outb(0x3D4, 0x01); outb(0x3D5, 0x4F);
-    outb(0x3D4, 0x02); outb(0x3D5, 0x50);
-    outb(0x3D4, 0x03); outb(0x3D5, 0x82);
-    outb(0x3D4, 0x04); outb(0x3D5, 0x55);
-    outb(0x3D4, 0x05); outb(0x3D5, 0x81);
-    outb(0x3D4, 0x06); outb(0x3D5, 0xBF);
-    outb(0x3D4, 0x07); outb(0x3D5, 0x1F);
-    outb(0x3D4, 0x08); outb(0x3D5, 0x00);
-    outb(0x3D4, 0x09); outb(0x3D5, 0x4F);
-    outb(0x3D4, 0x10); outb(0x3D5, 0x9C);
-    outb(0x3D4, 0x11); outb(0x3D5, 0x8E);
-    outb(0x3D4, 0x12); outb(0x3D5, 0x8F);
-    outb(0x3D4, 0x13); outb(0x3D5, 0x28);
-    outb(0x3D4, 0x14); outb(0x3D5, 0x1F);
-    outb(0x3D4, 0x15); outb(0x3D5, 0x96);
-    outb(0x3D4, 0x16); outb(0x3D5, 0xB9);
-    outb(0x3D4, 0x17); outb(0x3D5, 0xA3);
-
-    // Graphics Controller
-    outb(0x3CE, 0x05); outb(0x3CF, 0x10); // Graphics Mode (text)
-    outb(0x3CE, 0x06); outb(0x3CF, 0x0E); // Memory Map (text)
-
-    // Attribute Controller
-    (void)inb(0x3DA); // Reset flip-flop
-    for (uint8_t i = 0; i < 16; i++) {
-        outb(0x3C0, i);
-        outb(0x3C0, i);
-    }
-    outb(0x3C0, 0x10); outb(0x3C0, 0x0C); // Mode Control (text)
-    outb(0x3C0, 0x13); outb(0x3C0, 0x08); // Pixel Panning
-    outb(0x3C0, 0x20); // End
-
     graphics_active = 0;
-
-    // Wyczyść ekran tekstowy
-    vga_set_color(0,7);
+    vga_restore_state();   
+    vga_use_as_console();
     vga_clear();
 }
 
@@ -229,44 +230,79 @@ int gfx_is_active(void) {
 
 void gfx_clear(uint8_t color) {
     if (!backbuffer) return;
-    memset_s(backbuffer, color, GFX_WIDTH * GFX_HEIGHT);
+    
+    uint8_t pattern = (color & 0x0F) | ((color & 0x0F) << 4);
+    memset_s(backbuffer, pattern, GFX_BUFFER_SIZE);
 }
 
 void gfx_swap_buffers(void) {
     if (!backbuffer) return;
+    __asm__ volatile("cli");
+    wait_vretrace();
     
-    // Bezpośrednie kopiowanie
-    uint8_t* vram = GFX_VRAM;
-    for (int i = 0; i < GFX_WIDTH * GFX_HEIGHT; i++) {
-        vram[i] = backbuffer[i];
+    volatile uint8_t* vram = GFX_VRAM;
+    
+    for (int y = 0; y < GFX_HEIGHT; y++) {
+        for (int x = 0; x < GFX_WIDTH; x += 8) {
+            uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
+            
+            uint8_t pixels[8];
+            for (int i = 0; i < 4; i++) {
+                uint8_t byte = backbuffer[offset + i];
+                pixels[i * 2] = (byte >> 4) & 0x0F;
+                pixels[i * 2 + 1] = byte & 0x0F;
+            }
+            
+            uint32_t vram_offset = y * 80 + (x / 8);
+            
+            for (uint8_t plane = 0; plane < 4; plane++) {
+                outb(0x3C4, 0x02);
+                outb(0x3C5, 1 << plane);
+                
+                uint8_t plane_byte = 0;
+                for (int bit = 0; bit < 8; bit++) {
+                    if (pixels[bit] & (1 << plane)) {
+                        plane_byte |= (0x80 >> bit);
+                    }
+                }
+                
+                vram[vram_offset] = plane_byte;
+            }
+        }
     }
-}
 
-void gfx_putpixel_direct(int x, int y, uint8_t color) {
-    if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
-    
-    // W trybie 13h nie potrzebujemy ustawiać map mask - bezpośredni zapis
-    GFX_VRAM[y * GFX_WIDTH + x] = color;
-}
-
-uint8_t* gfx_get_backbuffer(void) {
-    return backbuffer;
+    outb(0x3C4, 0x02);
+    outb(0x3C5, 0x0F);
+    __asm__ volatile("sti");
 }
 
 void gfx_putpixel(int x, int y, uint8_t color) {
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
-    backbuffer[y * GFX_WIDTH + x] = color;
+    
+    uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
+    
+    if (x & 1) {
+        backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+    } else {
+        backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+    }
 }
 
 uint8_t gfx_getpixel(int x, int y) {
     if (!backbuffer) return 0;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return 0;
-    return backbuffer[y * GFX_WIDTH + x];
+    
+    uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
+    
+    if (x & 1) {
+        return backbuffer[offset] & 0x0F;
+    } else {
+        return (backbuffer[offset] >> 4) & 0x0F;
+    }
 }
 
 void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
-    /* Bresenham's line algorithm */
     int dx = x1 - x0;
     int dy = y1 - y0;
     
@@ -310,7 +346,6 @@ void gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
 }
 
 void gfx_circle(int cx, int cy, int r, uint8_t color) {
-    /* Midpoint circle algorithm */
     int x = r;
     int y = 0;
     int err = 0;
@@ -337,15 +372,13 @@ void gfx_circle(int cx, int cy, int r, uint8_t color) {
     }
 }
 
-void gfx_putchar(int x, int y, char c, uint8_t fg, uint8_t bg) {
-    if (c < 0 || c >= 127) return;
-    
+void gfx_putchar(int x, int y, char c, uint8_t fg, uint8_t bg) {  
     const uint8_t* glyph = font8x8[(unsigned char)c];
     
     for (int row = 0; row < 8; row++) {
         uint8_t bits = glyph[row];
         for (int col = 0; col < 8; col++) {
-            uint8_t color = (bits & (1 << (7 - col))) ? fg : bg;
+            uint8_t color = (bits & (1 << col)) ? fg : bg;
             gfx_putpixel(x + col, y + row, color);
         }
     }
@@ -371,55 +404,6 @@ void gfx_print(int x, int y, const char* str, uint8_t fg, uint8_t bg) {
     }
 }
 
-void gfx_set_palette(uint8_t index, uint8_t r, uint8_t g, uint8_t b) {
-    outb(0x3C8, index);
-    outb(0x3C9, r >> 2);
-    outb(0x3C9, g >> 2);
-    outb(0x3C9, b >> 2);
-}
-
-void gfx_get_palette(uint8_t index, uint8_t* r, uint8_t* g, uint8_t* b) {
-    outb(0x3C7, index);
-    *r = inb(0x3C9) << 2;
-    *g = inb(0x3C9) << 2;
-    *b = inb(0x3C9) << 2;
-}
-
-void gfx_reset_palette(void) {
-    // Prosta paleta VGA
-    for (int i = 0; i < 256; i++) {
-        outb(0x3C8, i);
-        outb(0x3C9, (i >> 2) & 0x3F);
-        outb(0x3C9, (i >> 4) & 0x3F);
-        outb(0x3C9, (i >> 6) & 0x3F);
-    }
-}
-
-void gfx_reset_ega_palette(void) {
-    // Standardowa paleta EGA (16 kolorów)
-    static const uint8_t ega_colors[16][3] = {
-        {0x00, 0x00, 0x00}, // 0: Black
-        {0x00, 0x00, 0xAA}, // 1: Blue
-        {0x00, 0xAA, 0x00}, // 2: Green
-        {0x00, 0xAA, 0xAA}, // 3: Cyan
-        {0xAA, 0x00, 0x00}, // 4: Red
-        {0xAA, 0x00, 0xAA}, // 5: Magenta
-        {0xAA, 0x55, 0x00}, // 6: Brown
-        {0xAA, 0xAA, 0xAA}, // 7: Light Gray
-        {0x55, 0x55, 0x55}, // 8: Dark Gray
-        {0x55, 0x55, 0xFF}, // 9: Light Blue
-        {0x55, 0xFF, 0x55}, // 10: Light Green
-        {0x55, 0xFF, 0xFF}, // 11: Light Cyan
-        {0xFF, 0x55, 0x55}, // 12: Light Red
-        {0xFF, 0x55, 0xFF}, // 13: Light Magenta
-        {0xFF, 0xFF, 0x55}, // 14: Yellow
-        {0xFF, 0xFF, 0xFF}  // 15: White
-    };
-    
-    for (int i = 0; i < 16; i++) {
-        outb(0x3C8, i);
-        outb(0x3C9, ega_colors[i][0] >> 2);
-        outb(0x3C9, ega_colors[i][1] >> 2);
-        outb(0x3C9, ega_colors[i][2] >> 2);
-    }
+uint8_t* gfx_get_backbuffer(void) {
+    return backbuffer;
 }

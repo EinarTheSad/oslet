@@ -254,6 +254,11 @@ static void cmd_help(void) {
     vga_set_color(0, 8);
     printf("Write text to file\n");
     vga_set_color(0, 7);
+
+    printf("  gfx                  ");
+    vga_set_color(0, 8);
+    printf("Run a VGA graphics demo\n");
+    vga_set_color(0, 7);
    
     printf("  help                 ");
     vga_set_color(0, 8);
@@ -472,16 +477,39 @@ void shell_run(void) {
         }
 
         if (!strcmp_s(line, "gfx")) {
-            printf("Entering graphics mode...\n");
+            printf("Switching to 640x480x16 graphics mode...\n");
             timer_wait(20);
             gfx_enter_mode();
-            gfx_clear(COLOR_GREEN);
-            // Test bezpośredniego rysowania
-            gfx_putpixel_direct(50, 50, COLOR_RED);
-            gfx_putpixel_direct(51, 50, COLOR_YELLOW);
-            gfx_putpixel_direct(52, 50, COLOR_BLUE);
+            /* Test 1: Clear screen to blue */
+            gfx_clear(COLOR_BLUE);
             gfx_swap_buffers();
-            timer_wait(40);
+
+            /* Test 2: Draw some shapes */
+            gfx_clear(COLOR_BLACK);
+            
+            /* White rectangle border */
+            gfx_rect(50, 50, 540, 380, COLOR_WHITE);
+            
+            /* Colored circles */
+            gfx_circle(160, 240, 80, COLOR_RED);
+            gfx_circle(320, 240, 80, COLOR_GREEN);
+            gfx_circle(480, 240, 80, COLOR_YELLOW);
+            
+            /* Lines from corners */
+            gfx_line(0, 0, 639, 479, COLOR_LIGHT_CYAN);
+            gfx_line(639, 0, 0, 479, COLOR_LIGHT_MAGENTA);
+            
+            /* Text */
+            gfx_print(160, 20, "This is a DEMO of osLET Graphics Mode!", COLOR_YELLOW, COLOR_BLACK);
+            gfx_print(250, 450, "Press any key...", COLOR_WHITE, COLOR_BLACK);
+            
+            gfx_swap_buffers();
+            
+            /* Wait for keypress */
+            char ch = kbd_getchar();
+            (void)ch;
+            
+            /* Return to text mode */
             gfx_exit_mode();
             continue;
         }

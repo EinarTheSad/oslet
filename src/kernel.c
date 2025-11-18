@@ -1,5 +1,6 @@
 #include "console.h"
 #include "drivers/vga.h"
+#include "drivers/graphics.h"
 #include "drivers/keyboard.h"
 #include "mem/early_alloc.h"
 #include "io.h"
