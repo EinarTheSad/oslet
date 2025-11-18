@@ -120,10 +120,9 @@ static void boot_sequence(void) {
     printf(" ] Multitasking\n");
     
     vga_set_color(0, 8);
-    int lba = 2048;
-    printf("[ .. ] Attempting to mount drive C at LBA=%d...\n",lba);
+    printf("[ .. ] Attempting to auto-mount drive C...\n");
     vga_set_color(0, 7);
-    if (fat32_mount_drive('C', lba) == 0) {
+    if (fat32_mount_auto('C') == 0) {
         printf("[");
         vga_set_color(0, 10);
         printf(" OK");
@@ -134,7 +133,7 @@ static void boot_sequence(void) {
         vga_set_color(0, 12);
         printf("FAIL");
         vga_set_color(0, 7);
-        printf(" ] No filesystem!\n");
+        printf("] No filesystem!\n");
     }
     vga_set_color(0, 7);
     printf("\n");
