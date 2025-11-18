@@ -62,6 +62,15 @@ typedef struct {
     uint16_t name3[2];
 } __attribute__((packed)) lfn_entry_t;
 
+typedef struct {
+    uint8_t  status;
+    uint8_t  chs_first[3];
+    uint8_t  type;
+    uint8_t  chs_last[3];
+    uint32_t lba_first;
+    uint32_t sectors_total;
+} __attribute__((packed)) mbr_partition_t;
+
 static fat32_volume_t volumes[FAT32_MAX_VOLUMES];
 static fat32_file_t open_files[FAT32_MAX_OPEN_FILES];
 static char current_dir[FAT32_MAX_PATH] = "C:/";
@@ -1294,4 +1303,80 @@ int fat32_chdir(const char *path) {
     }
     
     return 0;
+}
+
+static int is_valid_fat32_bpb(const uint8_t *sector) {
+    if (!sector) return 0;
+
+    if (sector[510] != 0x55 || sector[511] != 0xAA)
+        return 0;
+
+    if (sector[0] != 0xEB && sector[0] != 0xE9)
+        return 0;
+
+    const fat32_bpb_t *bpb = (const fat32_bpb_t*)sector;
+
+    if (bpb->bytes_per_sector == 0)
+        return 0;
+    if (bpb->sectors_per_cluster == 0)
+        return 0;
+    if (bpb->sectors_per_fat_32 == 0)
+        return 0;
+    if (bpb->root_cluster < 2)
+        return 0;
+
+    return 1;
+}
+
+static int find_fat32_start_lba(uint32_t *out_start_lba) {
+    if (!out_start_lba) return -1;
+
+    uint8_t *sector = kmalloc(512);
+    if (!sector) return -1;
+
+    if (ata_read_sectors(0, 1, sector) != 0) {
+        kfree(sector);
+        return -1;
+    }
+
+    if (is_valid_fat32_bpb(sector)) {
+        *out_start_lba = 0;
+        kfree(sector);
+        return 0;
+    }
+
+    if (sector[510] != 0x55 || sector[511] != 0xAA) {
+        kfree(sector);
+        return -1;
+    }
+
+    mbr_partition_t *parts = (mbr_partition_t *)(sector + 446);
+
+    for (int i = 0; i < 4; i++) {
+        uint32_t p_lba = parts[i].lba_first;
+        uint32_t p_sectors = parts[i].sectors_total;
+
+        if (p_lba == 0 || p_sectors == 0)
+            continue;
+
+        if (ata_read_sectors(p_lba, 1, sector) != 0)
+            continue;
+
+        if (is_valid_fat32_bpb(sector)) {
+            *out_start_lba = p_lba;
+            kfree(sector);
+            return 0;
+        }
+    }
+
+    kfree(sector);
+    return -1;
+}
+
+int fat32_mount_auto(uint8_t drive_letter) {
+    uint32_t start_lba;
+    if (find_fat32_start_lba(&start_lba) != 0) {
+        return -1;
+    }
+    return fat32_mount_drive(drive_letter, start_lba);
 }
