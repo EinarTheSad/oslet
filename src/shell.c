@@ -358,16 +358,22 @@ static void cmd_ls(const char *path) {
     for (int i = 0; i < count; i++) {
         if (entries[i].is_directory) {
             vga_set_color(0, COLOR_DIR_FG);
-            printf("  %-22s ", entries[i].name);
+            printf("  %-43s ", entries[i].name);
             vga_set_color(0, 8);
             printf("<DIR>\n");
             vga_set_color(0, 7);
             dirs++;
         } else {
             vga_set_color(0, 15);
-            printf("  %-13s ", entries[i].name);
+            printf("  %-34s ", entries[i].name);
             vga_set_color(0, 8);
-            printf("%8u bytes\n", entries[i].size);
+            if (entries[i].size > 1024) {
+                printf("  %8u KiB\n", entries[i].size / 1024);
+            }
+            else if (entries[i].size > 1024 * 1024) {
+                printf("  %8u MiB\n", entries[i].size / 1024 * 1024);
+            }
+            else { printf("%8u bytes\n", entries[i].size); }
             vga_set_color(0, 7);
         }
     }
