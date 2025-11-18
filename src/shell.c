@@ -11,6 +11,7 @@
 #include "rtc.h"
 #include "syscall.h"
 #include "exec.h"
+#include "drivers/graphics.h"
 
 /* Color schemes */
 #define COLOR_PROMPT_BG    0
@@ -467,6 +468,21 @@ void shell_run(void) {
         
         if (!strcmp_s(line, "rtc")) {
             rtc_print_time();
+            continue;
+        }
+
+        if (!strcmp_s(line, "gfx")) {
+            printf("Entering graphics mode...\n");
+            timer_wait(20);
+            gfx_enter_mode();
+            gfx_clear(COLOR_GREEN);
+            // Test bezpośredniego rysowania
+            gfx_putpixel_direct(50, 50, COLOR_RED);
+            gfx_putpixel_direct(51, 50, COLOR_YELLOW);
+            gfx_putpixel_direct(52, 50, COLOR_BLUE);
+            gfx_swap_buffers();
+            timer_wait(40);
+            gfx_exit_mode();
             continue;
         }
               
