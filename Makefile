@@ -5,7 +5,7 @@ BIN     = $(SRC)/bin
 LIB     = $(SRC)/lib
 LNK     = linker.ld
 DISK    = disk.img
-DISK_SIZE = 128
+DISK_SIZE = 32
 
 CC      = gcc
 LD      = ld
