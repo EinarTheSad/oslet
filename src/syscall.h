@@ -47,6 +47,18 @@
 #define SYS_INFO_MEM        0x0800
 #define SYS_INFO_TASKS      0x0801
 
+/* AH = 09h - Graphics */
+#define SYS_GFX_ENTER       0x0900
+#define SYS_GFX_EXIT        0x0901
+#define SYS_GFX_CLEAR       0x0902
+#define SYS_GFX_SWAP        0x0903
+#define SYS_GFX_PUTPIXEL    0x0904
+#define SYS_GFX_LINE        0x0905
+#define SYS_GFX_RECT        0x0906
+#define SYS_GFX_FILLRECT    0x0907
+#define SYS_GFX_CIRCLE      0x0908
+#define SYS_GFX_PRINT       0x0909
+
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
 

@@ -8,6 +8,7 @@
 #include "mem/pmm.h"
 #include "mem/heap.h"
 #include <stddef.h>
+#include "drivers/graphics.h"
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
 extern void vga_clear(void);
@@ -355,6 +356,21 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
     }
 }
 
+static uint32_t handle_graphics(uint32_t al, uint32_t ebx, 
+                                uint32_t ecx, uint32_t edx) {
+    switch (al) {
+        case 0x00: gfx_enter_mode(); return 0;
+        case 0x01: gfx_exit_mode(); return 0;
+        case 0x02: gfx_clear((uint8_t)ebx); return 0;
+        case 0x03: gfx_swap_buffers(); return 0;
+        case 0x04: 
+            gfx_putpixel((int)ebx, (int)ecx, (uint8_t)edx);
+            return 0;
+        /* ... etc */
+    }
+    return -1;
+}
+
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     uint32_t ah = (eax >> 8) & 0xFF;
     uint32_t al = eax & 0xFF;
@@ -367,6 +383,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x05: return handle_ipc(al, ebx, ecx, edx);
         case 0x07: return handle_time(al, ebx, ecx, edx);
         case 0x08: return handle_info(al, ebx, ecx, edx);
+        case 0x09: return handle_graphics(al, ebx, ecx, edx);
         
         default:
             printf("Unknown syscall: AH=%02Xh AL=%02Xh\n", ah, al);
