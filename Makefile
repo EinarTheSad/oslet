@@ -42,13 +42,13 @@ $(BUILD)/%.o: $(SRC)/%.S
 $(DISK):
 	@echo "Creating $(DISK_SIZE)MB disk with MBR..."
 	dd if=/dev/zero of=$(DISK) bs=1M count=$(DISK_SIZE)
-	echo -e "o\nn\np\n1\n2048\n\na\nw" | fdisk $(DISK)
+	echo -e "o\nn\np\n1\n2048\n\nt\nc\na\nw\n" | fdisk $(DISK)
 	@echo "Setting up loop device..."
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	echo "Loop: $$LOOP"; \
 	sleep 1; \
 	echo "Formatting partition..."; \
-	sudo mkfs.vfat -F 32 $${LOOP}p1; \
+	sudo mkfs.vfat -F 32 -n BOOTPART $${LOOP}p1; \
 	echo "Mounting..."; \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
@@ -86,7 +86,7 @@ run: $(BUILD)/$(TARGET)
 		$(MAKE) disk; \
 	fi
 	@$(MAKE) install
-	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -rtc base=localtime
+	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -vga std -rtc base=localtime
 
 clean:
 	@echo "Cleaning..."
