@@ -98,6 +98,15 @@ typedef struct {
     uint8_t user_mode;
 } sys_taskinfo_t;
 
+typedef struct {
+    int x0, y0, x1, y1;
+} gfx_line_params_t;
+
+typedef struct {
+    int x, y, w, h;
+} gfx_rect_params_t;
+
+
 void syscall_init(void);
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx);
 
@@ -109,6 +118,12 @@ static inline void sys_write(const char *str) {
 static inline int sys_getchar(void) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_CONSOLE_GETCHAR));
+    return ret;
+}
+
+static inline int sys_readline(char *buf, uint32_t size) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_CONSOLE_IN), "b"(buf), "c"(size));
     return ret;
 }
 
@@ -232,4 +247,49 @@ static inline uint32_t sys_uptime(void) {
     uint32_t ticks;
     __asm__ volatile("int $0x80" : "=a"(ticks) : "a"(SYS_TIME_UPTIME));
     return ticks;
+}
+
+static inline void sys_gfx_enter(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_ENTER));
+}
+
+static inline void sys_gfx_exit(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_EXIT));
+}
+
+static inline void sys_gfx_clear(uint8_t color) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_CLEAR), "b"(color));
+}
+
+static inline void sys_gfx_swap(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_SWAP));
+}
+
+static inline void sys_gfx_putpixel(int x, int y, uint8_t color) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_PUTPIXEL), "b"(x), "c"(y), "d"(color));
+}
+
+static inline void sys_gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
+    gfx_line_params_t params = {x0, y0, x1, y1};
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_LINE), "b"(&params), "c"(color));
+}
+
+static inline void sys_gfx_rect(int x, int y, int w, int h, uint8_t color) {
+    gfx_rect_params_t params = {x, y, w, h};
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_RECT), "b"(&params), "c"(color));
+}
+
+static inline void sys_gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
+    gfx_rect_params_t params = {x, y, w, h};
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FILLRECT), "b"(&params), "c"(color));
+}
+
+static inline void sys_gfx_circle(int cx, int cy, int r, uint8_t color) {
+    uint32_t packed = ((uint32_t)r << 8) | color;
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_CIRCLE), "b"(cx), "c"(cy), "d"(packed));
+}
+
+static inline void sys_gfx_print(int x, int y, const char *text, uint8_t fg) {
+    uint32_t packed = ((uint32_t)y << 16) | ((uint32_t)fg << 8);
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_PRINT), "b"(x), "c"(packed), "d"(text));
 }

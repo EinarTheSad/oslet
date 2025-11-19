@@ -277,14 +277,9 @@ static const console_t VGA_CONSOLE = {
 };
 
 void vga_use_as_console(void) {
-    vga_load_font();
-    void vga_reset_palette(void);
     console_set(&VGA_CONSOLE);
     enable_cursor(12, 12);
-}
-
-void vga_set_color(uint8_t background, uint8_t foreground) {
-    vga_color = (foreground & 0x0F) | ((background & 0x0F) << 4);
+    vga_clear();
 }
 
 static void vga_load_palette(const uint8_t palette[16][3]) {
@@ -298,4 +293,20 @@ static void vga_load_palette(const uint8_t palette[16][3]) {
 
 void vga_reset_palette(void) {
     vga_load_palette(default_palette);
+}
+
+void vga_reset_textmode(void) {
+    vga_load_font();
+    vga_reset_palette();
+    (void)inb(0x3DA);
+    for (int i = 0; i < 16; ++i) {
+        outb(0x3C0, i);
+        outb(0x3C0, i);
+    }
+    outb(0x3C0, 0x20);
+    vga_clear();
+}
+
+void vga_set_color(uint8_t background, uint8_t foreground) {
+    vga_color = (foreground & 0x0F) | ((background & 0x0F) << 4);
 }

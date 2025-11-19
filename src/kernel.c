@@ -23,8 +23,7 @@ extern uint8_t __kernel_end;
 
 static void boot_sequence(void) {
     vga_use_as_console();
-    vga_clear();
-    
+    vga_reset_textmode();
     vga_set_color(1, 15); printf("Codename osLET v0.3.2\n");
     vga_set_color(0, 7);
     printf("Starting boot sequence...\n\n");
