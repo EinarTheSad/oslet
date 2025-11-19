@@ -24,7 +24,7 @@ KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all run clean disk install fetchlet
+.PHONY: all run clean disk install fetchlet systest
 
 all: $(BUILD)/$(TARGET)
 
@@ -100,9 +100,37 @@ clean-all: clean
 LIB_SRCS := $(wildcard $(LIB)/*.c)
 LIB_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(LIB_SRCS))
 
+binstall:
+	@if [ ! -f "$(DISK)" ]; then \
+		echo "Error: $(DISK) not found. Run 'make disk' first."; \
+		exit 1; \
+	fi
+	@echo "Installing binaries..."
+	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	mkdir -p mnt; \
+	sudo mount $${LOOP}p1 mnt; \
+	sudo cp $(BIN)/*.bin mnt/; \
+	sudo umount mnt; \
+	sudo losetup -d $$LOOP; \
+	rmdir mnt
+	@echo "Binaries installed!"
+
 fetchlet: $(BIN)/fetchlet.bin
 
 $(BIN)/fetchlet.bin: $(BUILD)/bin/fetchlet.o $(LIB_OBJS)
+	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
+
+$(BUILD)/bin/%.o: $(BIN)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/lib/%.o: $(LIB)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+systest: $(BIN)/systest.bin
+
+$(BIN)/systest.bin: $(BUILD)/bin/systest.o $(LIB_OBJS)
 	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
