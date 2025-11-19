@@ -24,7 +24,7 @@ KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all run clean disk install fetchlet systest
+.PHONY: all iso run clean disk install fetchlet systest
 
 all: $(BUILD)/$(TARGET)
 
@@ -61,7 +61,7 @@ $(DISK):
 	echo "Unmounting..."; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
-	rmdir mnt
+	rmdir mnt; \
 	@echo "Disk ready!"
 
 install: $(BUILD)/$(TARGET)
@@ -76,10 +76,21 @@ install: $(BUILD)/$(TARGET)
 	sudo cp $(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
-	rmdir mnt
-	@echo "Kernel installed!"
+	rmdir mnt; \
+	echo "Kernel installed!"
 
 disk: $(DISK)
+
+iso: $(BUILD)/$(TARGET)
+	@mkdir -p mnt/boot/grub
+	@cp $(BUILD)/$(TARGET) mnt/boot/$(TARGET)
+	@cp grub.cfg mnt/boot/grub
+	@if command -v grub-mkrescue >/dev/null 2>&1; then \
+		grub-mkrescue -o oslet.iso mnt; \
+	else \
+		echo "grub-mkrescue not found; skipping ISO creation."; \
+	fi
+	@rm -rf mnt
 
 run: $(BUILD)/$(TARGET)
 	@if [ ! -f "$(DISK)" ]; then \
@@ -95,6 +106,7 @@ clean:
 
 clean-all: clean
 	rm -f $(DISK)
+	rm -f oslet.iso
 
 # Binaries
 LIB_SRCS := $(wildcard $(LIB)/*.c)
