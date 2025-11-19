@@ -5,3 +5,5 @@ iso/boot/*.elf
 disk.img
 src/bin/*.bin
 src/bin/*.o
+mnt/
+oslet.iso
