@@ -8,6 +8,10 @@
 static uint8_t* backbuffer = NULL;
 static int graphics_active = 0;
 
+/* Scheduler protection */
+#define GFX_LOCK() __asm__ volatile("cli")
+#define GFX_UNLOCK() __asm__ volatile("sti")
+
 static const uint8_t mode_640x480x16[] = {
     0xE3,
     0x03, 0x01, 0x0F, 0x00, 0x06,
@@ -37,22 +41,22 @@ static const uint8_t mode_80x25_text[] = {
 };
 
 static const uint8_t gfx_palette[16][3] = {
-    {0x00, 0x00, 0x00},  /* 0: Black */
-    {0x00, 0x00, 0x80},  /* 1: Navy Blue */
-    {0x00, 0x80, 0x00},  /* 2: Green */
-    {0x00, 0x80, 0x80},  /* 3: Teal */
-    {0x80, 0x00, 0x00},  /* 4: Maroon */
-    {0x80, 0x00, 0x80},  /* 5: Purple */
-    {0x80, 0x80, 0x00},  /* 6: Olive */
-    {0xC0, 0xC0, 0xC0},  /* 7: Silver (Light Gray) */
-    {0x80, 0x80, 0x80},  /* 8: Gray */
-    {0x00, 0x00, 0xFF},  /* 9: Blue */
-    {0x00, 0xFF, 0x00},  /* 10: Lime */
-    {0x00, 0xFF, 0xFF},  /* 11: Cyan/Aqua */
-    {0xFF, 0x00, 0x00},  /* 12: Red */
-    {0xFF, 0x00, 0xFF},  /* 13: Fuchsia/Magenta */
-    {0xFF, 0xFF, 0x00},  /* 14: Yellow */
-    {0xFF, 0xFF, 0xFF},  /* 15: White */
+    {0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x80},
+    {0x00, 0x80, 0x00},
+    {0x00, 0x80, 0x80},
+    {0x80, 0x00, 0x00},
+    {0x80, 0x00, 0x80},
+    {0x80, 0x80, 0x00},
+    {0xC0, 0xC0, 0xC0},
+    {0x80, 0x80, 0x80},
+    {0x00, 0x00, 0xFF},
+    {0x00, 0xFF, 0x00},
+    {0x00, 0xFF, 0xFF},
+    {0xFF, 0x00, 0x00},
+    {0xFF, 0x00, 0xFF},
+    {0xFF, 0xFF, 0x00},
+    {0xFF, 0xFF, 0xFF},
 };
 
 static void vga_write_regs(const uint8_t* regs) {
@@ -94,9 +98,9 @@ static void wait_vretrace(void) {
 void gfx_load_palette(void) {
     for (int i = 0; i < 16; i++) {
         outb(0x3C8, i);
-        outb(0x3C9, gfx_palette[i][0] >> 2);  /* R (6-bit) */
-        outb(0x3C9, gfx_palette[i][1] >> 2);  /* G (6-bit) */
-        outb(0x3C9, gfx_palette[i][2] >> 2);  /* B (6-bit) */
+        outb(0x3C9, gfx_palette[i][0] >> 2);
+        outb(0x3C9, gfx_palette[i][1] >> 2);
+        outb(0x3C9, gfx_palette[i][2] >> 2);
     }
 }
 
@@ -133,13 +137,16 @@ int gfx_is_active(void) {
 void gfx_clear(uint8_t color) {
     if (!backbuffer) return;
     
+    GFX_LOCK();
     uint8_t pattern = (color & 0x0F) | ((color & 0x0F) << 4);
     memset_s(backbuffer, pattern, GFX_BUFFER_SIZE);
+    GFX_UNLOCK();
 }
 
 void gfx_swap_buffers(void) {
     if (!backbuffer) return;
-    __asm__ volatile("cli");
+    
+    GFX_LOCK();
     wait_vretrace();
     
     volatile uint8_t* vram = GFX_VRAM;
@@ -175,13 +182,14 @@ void gfx_swap_buffers(void) {
 
     outb(0x3C4, 0x02);
     outb(0x3C5, 0x0F);
-    __asm__ volatile("sti");
+    GFX_UNLOCK();
 }
 
 void gfx_putpixel(int x, int y, uint8_t color) {
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
     
+    GFX_LOCK();
     uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
     
     if (x & 1) {
@@ -189,22 +197,30 @@ void gfx_putpixel(int x, int y, uint8_t color) {
     } else {
         backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
     }
+    GFX_UNLOCK();
 }
 
 uint8_t gfx_getpixel(int x, int y) {
     if (!backbuffer) return 0;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return 0;
     
+    GFX_LOCK();
     uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
+    uint8_t result;
     
     if (x & 1) {
-        return backbuffer[offset] & 0x0F;
+        result = backbuffer[offset] & 0x0F;
     } else {
-        return (backbuffer[offset] >> 4) & 0x0F;
+        result = (backbuffer[offset] >> 4) & 0x0F;
     }
+    GFX_UNLOCK();
+    
+    return result;
 }
 
 void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
+    GFX_LOCK();
+    
     int dx = x1 - x0;
     int dy = y1 - y0;
     
@@ -216,7 +232,14 @@ void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
     int err = dx - dy;
     
     while (1) {
-        gfx_putpixel(x0, y0, color);
+        if (x0 >= 0 && x0 < GFX_WIDTH && y0 >= 0 && y0 < GFX_HEIGHT) {
+            uint32_t offset = y0 * (GFX_WIDTH / 2) + (x0 / 2);
+            if (x0 & 1) {
+                backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            } else {
+                backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+            }
+        }
         
         if (x0 == x1 && y0 == y1) break;
         
@@ -230,37 +253,95 @@ void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
             y0 += sy;
         }
     }
+    
+    GFX_UNLOCK();
 }
 
 void gfx_rect(int x, int y, int w, int h, uint8_t color) {
+    GFX_LOCK();
     gfx_line(x, y, x + w - 1, y, color);
     gfx_line(x + w - 1, y, x + w - 1, y + h - 1, color);
     gfx_line(x + w - 1, y + h - 1, x, y + h - 1, color);
     gfx_line(x, y + h - 1, x, y, color);
+    GFX_UNLOCK();
 }
 
 void gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
+    if (!backbuffer) return;
+    
+    GFX_LOCK();
     for (int dy = 0; dy < h; dy++) {
         for (int dx = 0; dx < w; dx++) {
-            gfx_putpixel(x + dx, y + dy, color);
+            int px = x + dx;
+            int py = y + dy;
+            if (px >= 0 && px < GFX_WIDTH && py >= 0 && py < GFX_HEIGHT) {
+                uint32_t offset = py * (GFX_WIDTH / 2) + (px / 2);
+                if (px & 1) {
+                    backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+                } else {
+                    backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+                }
+            }
         }
     }
+    GFX_UNLOCK();
 }
 
 void gfx_circle(int cx, int cy, int r, uint8_t color) {
+    GFX_LOCK();
+    
     int x = r;
     int y = 0;
     int err = 0;
     
     while (x >= y) {
-        gfx_putpixel(cx + x, cy + y, color);
-        gfx_putpixel(cx + y, cy + x, color);
-        gfx_putpixel(cx - y, cy + x, color);
-        gfx_putpixel(cx - x, cy + y, color);
-        gfx_putpixel(cx - x, cy - y, color);
-        gfx_putpixel(cx - y, cy - x, color);
-        gfx_putpixel(cx + y, cy - x, color);
-        gfx_putpixel(cx + x, cy - y, color);
+        if (cx + x >= 0 && cx + x < GFX_WIDTH && cy + y >= 0 && cy + y < GFX_HEIGHT) {
+            uint32_t offset = (cy + y) * (GFX_WIDTH / 2) + ((cx + x) / 2);
+            if ((cx + x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx + y >= 0 && cx + y < GFX_WIDTH && cy + x >= 0 && cy + x < GFX_HEIGHT) {
+            uint32_t offset = (cy + x) * (GFX_WIDTH / 2) + ((cx + y) / 2);
+            if ((cx + y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx - y >= 0 && cx - y < GFX_WIDTH && cy + x >= 0 && cy + x < GFX_HEIGHT) {
+            uint32_t offset = (cy + x) * (GFX_WIDTH / 2) + ((cx - y) / 2);
+            if ((cx - y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx - x >= 0 && cx - x < GFX_WIDTH && cy + y >= 0 && cy + y < GFX_HEIGHT) {
+            uint32_t offset = (cy + y) * (GFX_WIDTH / 2) + ((cx - x) / 2);
+            if ((cx - x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx - x >= 0 && cx - x < GFX_WIDTH && cy - y >= 0 && cy - y < GFX_HEIGHT) {
+            uint32_t offset = (cy - y) * (GFX_WIDTH / 2) + ((cx - x) / 2);
+            if ((cx - x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx - y >= 0 && cx - y < GFX_WIDTH && cy - x >= 0 && cy - x < GFX_HEIGHT) {
+            uint32_t offset = (cy - x) * (GFX_WIDTH / 2) + ((cx - y) / 2);
+            if ((cx - y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx + y >= 0 && cx + y < GFX_WIDTH && cy - x >= 0 && cy - x < GFX_HEIGHT) {
+            uint32_t offset = (cy - x) * (GFX_WIDTH / 2) + ((cx + y) / 2);
+            if ((cx + y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx + x >= 0 && cx + x < GFX_WIDTH && cy - y >= 0 && cy - y < GFX_HEIGHT) {
+            uint32_t offset = (cy - y) * (GFX_WIDTH / 2) + ((cx + x) / 2);
+            if ((cx + x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
         
         if (err <= 0) {
             y += 1;
@@ -272,21 +353,37 @@ void gfx_circle(int cx, int cy, int r, uint8_t color) {
             err -= 2*x + 1;
         }
     }
+    
+    GFX_UNLOCK();
 }
 
-void gfx_putchar(int x, int y, char c, uint8_t fg, uint8_t bg) {  
+void gfx_putchar(int x, int y, char c, uint8_t fg) {  
     const uint8_t* glyph = font8x8[(unsigned char)c];
     
+    GFX_LOCK();
     for (int row = 0; row < 8; row++) {
         uint8_t bits = glyph[row];
         for (int col = 0; col < 8; col++) {
-            uint8_t color = (bits & (1 << col)) ? fg : bg;
-            gfx_putpixel(x + col, y + row, color);
+            int px = x + col;
+            int py = y + row;
+            
+            if (px >= 0 && px < GFX_WIDTH && py >= 0 && py < GFX_HEIGHT) {
+                /* Transparent background: only draw foreground pixels */
+                if (bits & (1 << col)) {
+                    uint32_t offset = py * (GFX_WIDTH / 2) + (px / 2);
+                    if (px & 1) {
+                        backbuffer[offset] = (backbuffer[offset] & 0xF0) | (fg & 0x0F);
+                    } else {
+                        backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((fg & 0x0F) << 4);
+                    }
+                }
+            }
         }
     }
+    GFX_UNLOCK();
 }
 
-void gfx_print(int x, int y, const char* str, uint8_t fg, uint8_t bg) {
+void gfx_print(int x, int y, const char* str, uint8_t fg) {
     int cx = x;
     int cy = y;
     
@@ -295,7 +392,7 @@ void gfx_print(int x, int y, const char* str, uint8_t fg, uint8_t bg) {
             cx = x;
             cy += 8;
         } else {
-            gfx_putchar(cx, cy, *str, fg, bg);
+            gfx_putchar(cx, cy, *str, fg);
             cx += 8;
             if (cx >= GFX_WIDTH) {
                 cx = x;
