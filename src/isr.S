@@ -138,21 +138,18 @@ syscall_handler_idt:
     call syscall_handler
     addl $16, %esp
     
-    /* Result in eax - save it */
-    movl %eax, %ebx
+    /* Store result in place of saved eax */
+    movl %eax, (%esp)
     
-    /* Restore registers */
+    /* Restore registers (eax will have return value) */
     popl %eax
     popl %ecx
     popl %edx
-    addl $4, %esp  /* skip saved ebx */
-    addl $4, %esp  /* skip saved esp */
+    popl %ebx
+    popl %esp  /* dummy pop */
     popl %ebp
     popl %esi
     popl %edi
-    
-    /* Put result in eax */
-    movl %ebx, %eax
     
     sti
     iret

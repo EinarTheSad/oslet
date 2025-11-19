@@ -195,10 +195,9 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             if (!validate_ptr(ebx)) return -1;
             return fat32_chdir((const char*)ebx);
             
-        case 0x01: { /* Getcwd */
-            if (!validate_ptr(ebx)) return 0;
+        case 0x01: /* Getcwd */
+            if (!validate_ptr(ebx)) return -1;
             char *result = fat32_getcwd((char*)ebx, ecx);
-            /* If getcwd returns NULL or empty, set default */
             if (!result || ((char*)ebx)[0] == '\0') {
                 if (ecx >= 4) {
                     memcpy_s((void*)ebx, "C:/", 4);
@@ -206,7 +205,6 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
                 }
             }
             return (uint32_t)result;
-        }
         
         case 0x02: /* Mkdir */
             if (!validate_ptr(ebx)) return -1;
@@ -288,7 +286,7 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             }
             
             message_t *msg = &q->msgs[q->tail];
-            memcpy_s((message_t*)ebx, msg, sizeof(message_t));
+            memcpy_s((void*)ebx, msg, sizeof(message_t));
             
             q->tail = (q->tail + 1) % MSG_QUEUE_SIZE;
             q->count--;
