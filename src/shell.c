@@ -478,38 +478,25 @@ void shell_run(void) {
 
         if (!strcmp_s(line, "gfx")) {
             printf("Switching to 640x480x16 graphics mode...\n");
+            const char* msg = "This is a graphical demo running in VGA mode (640x480) in 16 colours";
+            int msg_len = strlen_s(msg);
+            int text_width = msg_len * 8;
+            int text_x = (640 - text_width) / 2;
+            
             timer_wait(20);
             gfx_enter_mode();
-            /* Test 1: Clear screen to blue */
-            gfx_clear(COLOR_BLUE);
-            gfx_swap_buffers();
-
-            /* Test 2: Draw some shapes */
-            gfx_clear(COLOR_BLACK);
             
-            /* White rectangle border */
-            gfx_rect(50, 50, 540, 380, COLOR_WHITE);
+            gfx_clear(COLOR_LIGHT_GRAY);
+            gfx_fillrect(8, 8, 624, 24, COLOR_YELLOW);
+            gfx_rect(8, 8, 624, 24, COLOR_BROWN);
             
-            /* Colored circles */
-            gfx_circle(160, 240, 80, COLOR_RED);
-            gfx_circle(320, 240, 80, COLOR_GREEN);
-            gfx_circle(480, 240, 80, COLOR_YELLOW);
-            
-            /* Lines from corners */
-            gfx_line(0, 0, 639, 479, COLOR_LIGHT_CYAN);
-            gfx_line(639, 0, 0, 479, COLOR_LIGHT_MAGENTA);
-            
-            /* Text */
-            gfx_print(160, 20, "This is a DEMO of osLET Graphics Mode!", COLOR_YELLOW, COLOR_BLACK);
-            gfx_print(250, 450, "Press any key...", COLOR_WHITE, COLOR_BLACK);
+            gfx_print(text_x, 16, msg, COLOR_BLACK);
             
             gfx_swap_buffers();
             
-            /* Wait for keypress */
             char ch = kbd_getchar();
             (void)ch;
             
-            /* Return to text mode */
             gfx_exit_mode();
             continue;
         }
