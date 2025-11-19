@@ -9,10 +9,7 @@
 #include "mem/heap.h"
 #include <stddef.h>
 #include "drivers/graphics.h"
-
-extern void vga_set_color(uint8_t background, uint8_t foreground);
-extern void vga_clear(void);
-extern char kbd_getchar(void);
+#include "drivers/keyboard.h"
 
 /* File descriptor table - kernel side */
 #define MAX_OPEN_FILES 32
@@ -53,12 +50,6 @@ static void fd_free(int fd) {
     fd_table[fd].file = NULL;
 }
 
-static void memcpy_safe(void *dst, const void *src, size_t n) {
-    char *d = dst;
-    const char *s = src;
-    while (n--) *d++ = *s++;
-}
-
 static int validate_ptr(uint32_t ptr) {
     task_t *current = task_get_current();
     if (!current) return 0;
@@ -78,7 +69,11 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             if (!validate_ptr(ebx)) return -1;
             printf("%s", (const char*)ebx);
             return 0;
-            
+
+        case 0x01: /* Read string */
+            /* Not yet */
+            return 0;
+
         case 0x02: /* Set color */
             vga_set_color((uint8_t)ebx, (uint8_t)ecx);
             return 0;
@@ -132,54 +127,65 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
 
 static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: { /* Open - FIXED */
-            if (!validate_ptr(ebx) || !validate_ptr(ecx)) return -1;
+        case 0x00: { /* Open */
+            if (!validate_ptr(ebx) || !validate_ptr(ecx)) return (uint32_t)-1;
             
             fat32_file_t *file = fat32_open((const char*)ebx, (const char*)ecx);
-            if (!file) return -1;
+            if (!file) return (uint32_t)-1;
             
             int fd = fd_alloc(file);
             if (fd < 0) {
                 fat32_close(file);
-                return -1;
+                return (uint32_t)-1;
             }
-            
-            return fd; /* Return file descriptor, not pointer! */
+            return (uint32_t)fd;
         }
             
-        case 0x01: { /* Close - FIXED */
-            fat32_file_t *file = fd_get(ebx);
-            if (file) {
-                fat32_close(file);
-                fd_free(ebx);
-            }
+        case 0x01: { /* Close */
+            fat32_file_t *file = fd_get((int)ebx);
+            if (!file) return (uint32_t)-1;
+            
+            fat32_close(file);
+            fd_free((int)ebx);
             return 0;
         }
             
-        case 0x02: { /* Read - FIXED */
-            if (!validate_ptr(ecx)) return -1;
+        case 0x02: { /* Read */
+            if (!validate_ptr(ecx)) return (uint32_t)-1;
             
-            fat32_file_t *file = fd_get(ebx);
-            if (!file) return -1;
+            fat32_file_t *file = fd_get((int)ebx);
+            if (!file) return (uint32_t)-1;
             
-            return fat32_read(file, (void*)ecx, edx);
+            int result = fat32_read(file, (void*)ecx, (size_t)edx);
+            return (uint32_t)result;
         }
             
-        case 0x03: { /* Write - FIXED */
-            if (!validate_ptr(ecx)) return -1;
+        case 0x03: { /* Write */
+            if (!validate_ptr(ecx)) return (uint32_t)-1;
             
-            fat32_file_t *file = fd_get(ebx);
-            if (!file) return -1;
+            fat32_file_t *file = fd_get((int)ebx);
+            if (!file) return (uint32_t)-1;
             
-            return fat32_write(file, (const void*)ecx, edx);
+            int result = fat32_write(file, (const void*)ecx, (size_t)edx);
+            return (uint32_t)result;
+        }
+            
+        case 0x04: { /* Seek */
+            fat32_file_t *file = fd_get((int)ebx);
+            if (!file) return (uint32_t)-1;
+            
+            int result = fat32_seek(file, ecx);
+            return (uint32_t)result;
         }
         
-        case 0x05: /* Delete/Unlink */
-            if (!validate_ptr(ebx)) return -1;
-            return fat32_unlink((const char*)ebx);
+        case 0x05: { /* Delete/Unlink */
+            if (!validate_ptr(ebx)) return (uint32_t)-1;
+            int result = fat32_unlink((const char*)ebx);
+            return (uint32_t)result;
+        }
             
         default:
-            return -1;
+            return (uint32_t)-1;
     }
 }
 
@@ -195,7 +201,7 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             /* If getcwd returns NULL or empty, set default */
             if (!result || ((char*)ebx)[0] == '\0') {
                 if (ecx >= 4) {
-                    memcpy_safe((void*)ebx, "C:/", 4);
+                    memcpy_s((void*)ebx, "C:/", 4);
                     return (uint32_t)ebx;
                 }
             }
@@ -221,7 +227,7 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             if (count > 0) {
                 sys_dirent_t *sys_entries = (sys_dirent_t*)ecx;
                 for (int i = 0; i < count; i++) {
-                    memcpy_safe(sys_entries[i].name, fat_entries[i].name, 13);
+                    memcpy_s(sys_entries[i].name, fat_entries[i].name, 13);
                     sys_entries[i].size = fat_entries[i].size;
                     sys_entries[i].first_cluster = fat_entries[i].first_cluster;
                     sys_entries[i].is_directory = fat_entries[i].is_directory;
@@ -257,7 +263,7 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             msg->from_tid = sender->tid;
             msg->to_tid = ebx;
             msg->size = edx;
-            memcpy_safe(msg->data, (const void*)ecx, edx);
+            memcpy_s(msg->data, (const void*)ecx, edx);
             
             q->head = (q->head + 1) % MSG_QUEUE_SIZE;
             q->count++;
@@ -282,7 +288,7 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             }
             
             message_t *msg = &q->msgs[q->tail];
-            memcpy_safe((message_t*)ebx, msg, sizeof(message_t));
+            memcpy_s((message_t*)ebx, msg, sizeof(message_t));
             
             q->tail = (q->tail + 1) % MSG_QUEUE_SIZE;
             q->count--;
@@ -339,7 +345,7 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
                 if (count >= max) break;
                 
                 tasks[count].tid = t->tid;
-                memcpy_safe(tasks[count].name, t->name, 32);
+                memcpy_s(tasks[count].name, t->name, 32);
                 tasks[count].state = (uint8_t)t->state;
                 tasks[count].priority = (uint8_t)t->priority;
                 tasks[count].user_mode = t->user_mode;
@@ -359,16 +365,62 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
 static uint32_t handle_graphics(uint32_t al, uint32_t ebx, 
                                 uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: gfx_enter_mode(); return 0;
-        case 0x01: gfx_exit_mode(); return 0;
-        case 0x02: gfx_clear((uint8_t)ebx); return 0;
-        case 0x03: gfx_swap_buffers(); return 0;
-        case 0x04: 
+        case 0x00: /* Enter mode */
+            gfx_enter_mode();
+            return 0;
+            
+        case 0x01: /* Exit mode */
+            gfx_exit_mode();
+            return 0;
+            
+        case 0x02: /* Clear */
+            gfx_clear((uint8_t)ebx);
+            return 0;
+            
+        case 0x03: /* Swap buffers */
+            gfx_swap_buffers();
+            return 0;
+            
+        case 0x04: /* Putpixel */
             gfx_putpixel((int)ebx, (int)ecx, (uint8_t)edx);
             return 0;
-        /* ... etc */
+            
+        case 0x05: { /* Line - używa struktury */
+            if (!validate_ptr(ebx)) return (uint32_t)-1;
+            int *coords = (int*)ebx;
+            gfx_line(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
+            return 0;
+        }
+            
+        case 0x06: { /* Rect */
+            if (!validate_ptr(ebx)) return (uint32_t)-1;
+            int *coords = (int*)ebx;
+            gfx_rect(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
+            return 0;
+        }
+            
+        case 0x07: { /* Fillrect */
+            if (!validate_ptr(ebx)) return (uint32_t)-1;
+            int *coords = (int*)ebx;
+            gfx_fillrect(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
+            return 0;
+        }
+            
+        case 0x08: { /* Circle */
+            gfx_circle((int)ebx, (int)ecx, (int)(edx >> 8), (uint8_t)(edx & 0xFF));
+            return 0;
+        }
+            
+        case 0x09: { /* Print text */
+            if (!validate_ptr(edx)) return (uint32_t)-1;
+            gfx_print((int)ebx, (int)(ecx >> 16), (const char*)edx, 
+                     (uint8_t)((ecx >> 8) & 0xFF));
+            return 0;
+        }
+            
+        default:
+            return (uint32_t)-1;
     }
-    return -1;
 }
 
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {

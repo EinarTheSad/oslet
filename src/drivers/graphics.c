@@ -125,9 +125,9 @@ void gfx_enter_mode(void) {
 
 void gfx_exit_mode(void) {
     graphics_active = 0;
-    vga_restore_state();   
-    vga_use_as_console();
-    vga_clear();
+    vga_write_regs(mode_80x25_text);
+    vga_reset_textmode();
+    vga_restore_state();
 }
 
 int gfx_is_active(void) {
