@@ -51,14 +51,15 @@ static void fd_free(int fd) {
 }
 
 static int validate_ptr(uint32_t ptr) {
-    task_t *current = task_get_current();
+    /* task_t *current = task_get_current();
     if (!current) return 0;
     
     if (!current->user_mode) {
         return (ptr != 0);
     }
     
-    return (ptr >= EXEC_LOAD_ADDR && ptr < 0xC0000000);
+    return (ptr >= EXEC_LOAD_ADDR && ptr < 0xC0000000); */
+    return (ptr != 0);
 }
 
 static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
