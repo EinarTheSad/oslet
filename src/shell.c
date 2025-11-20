@@ -28,6 +28,8 @@
 
 #define MAX_ARGS 8
 
+extern void graphics_demo();
+
 static char current_path[FAT32_MAX_PATH];
 
 int parse_args(char *line, char *argv[], int max_args) {
@@ -90,7 +92,7 @@ static void print_banner(void) {
     printf(" |_____|  _____| |_____ |______    |    \n");
     printf("                                        \n");
     vga_set_color(0, 8);
-    printf("Kernel 0.3.2            EinarTheSad 2025\n\n");
+    printf("Kernel 0.3.3            EinarTheSad 2025\n\n");
     vga_set_color(0, 7);
 }
 
@@ -477,27 +479,7 @@ void shell_run(void) {
         }
 
         if (!strcmp_s(line, "gfx")) {
-            printf("Switching to 640x480x16 graphics mode...\n");
-            const char* msg = "This is a graphical demo running in VGA mode (640x480) in 16 colours";
-            int msg_len = strlen_s(msg);
-            int text_width = msg_len * 8;
-            int text_x = (640 - text_width) / 2;
-            
-            timer_wait(20);
-            gfx_enter_mode();
-            
-            gfx_clear(COLOR_LIGHT_GRAY);
-            gfx_fillrect(8, 8, 624, 24, COLOR_YELLOW);
-            gfx_rect(8, 8, 624, 24, COLOR_BROWN);
-            
-            gfx_print(text_x, 16, msg, COLOR_BLACK);
-            
-            gfx_swap_buffers();
-            
-            char ch = kbd_getchar();
-            (void)ch;
-            
-            gfx_exit_mode();
+            graphics_demo();
             continue;
         }
               

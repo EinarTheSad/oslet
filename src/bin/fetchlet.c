@@ -22,7 +22,7 @@ void _start(void) {
     sys_setcolor(0, 9);
     printf("  Kernel");
     sys_setcolor(0, 7);
-    printf(": Development Kernel 0.3.2\n");
+    printf(": Development Kernel 0.3.3\n");
     
     sys_setcolor(0, 9);
     printf("  Shell");

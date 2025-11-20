@@ -18,12 +18,8 @@ For more specific information, please consult the Makefile.
 
 ## Screenshots
 
-### Kernel 0.3.2
+### Kernel 0.3.3
 
-<img width="640" height="480" alt="Version 0.3.2" src="https://github.com/user-attachments/assets/470a8f00-969b-4aa5-9844-2e1a13210eb0" />
-
-### Kernel 0.3
-
-<img width="720" height="400" alt="Version 0.3" src="https://github.com/user-attachments/assets/5631222b-3028-4a0f-94fa-80565d5245f2" />
+<img width="640" height="480" alt="Graphics demo" src="https://github.com/user-attachments/assets/7c15191a-ddf9-4278-876a-66bb72a66e70" />
 
 ------------------------------------------------------------------------
