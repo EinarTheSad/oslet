@@ -4,10 +4,6 @@
 #include <stdint.h>
 #include "early_alloc.h"
 
-#define PAGE_SIZE 4096u
-#define P_PRESENT (1u << 0)
-#define P_RW (1u << 1)
-
 extern void vga_set_color(uint8_t background, uint8_t foreground);
 
 static uintptr_t current_pd_phys = 0;

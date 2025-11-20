@@ -5,7 +5,6 @@
 
 #define HEAP_START 0xC0000000
 #define HEAP_INITIAL_SIZE (4 * 1024 * 1024)
-#define PAGE_SIZE 4096
 #define ALIGN_UP(x, a) ((((uintptr_t)(x)) + ((a) - 1)) & ~((a) - 1))
 
 typedef struct block {

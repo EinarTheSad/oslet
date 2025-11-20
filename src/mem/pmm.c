@@ -1,7 +1,3 @@
-#define FRAME_SIZE 4096u
-#define PAGE_SIZE 4096u
-#define P_PRESENT 0x1
-#define P_RW 0x2
 #define ALIGN_UP(x, a)   ((((uintptr_t)(x)) + ((a) - 1)) & ~((a) - 1))
 
 #include "pmm.h"

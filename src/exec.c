@@ -7,11 +7,6 @@
 #include "task.h"
 #include "gdt.h"
 
-#define P_PRESENT 0x1
-#define P_RW 0x2
-#define P_USER 0x4
-#define PAGE_SIZE 4096
-
 extern void enter_usermode(uint32_t entry, uint32_t user_stack);
 
 static int map_user_memory(uintptr_t vaddr, size_t size) {
