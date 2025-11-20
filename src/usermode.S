@@ -8,22 +8,27 @@ enter_usermode:
     mov 4(%esp), %ecx   /* entry point */
     mov 8(%esp), %edx   /* user stack */
     
-    mov $0x23, %ax      /* User data segment (0x20 | 0x03) */
+    /* Set data segments to USER data (0x23 = 0x20 | 0x3 for ring 3) */
+    mov $0x23, %ax
     mov %ax, %ds
     mov %ax, %es
     mov %ax, %fs
     mov %ax, %gs
     
-    /* Prepare for iret: SS, ESP, EFLAGS, CS, EIP */
-    push $0x23          /* User data segment (SS) */
-    push %edx           /* User ESP */
+    /* Prepare stack for iret to ring 3 */
+    /* Stack order (bottom to top): SS, ESP, EFLAGS, CS, EIP */
     
-    pushf               /* Current EFLAGS */
+    push $0x23          /* User data segment (SS) - ring 3 */
+    push %edx           /* User stack pointer (ESP) */
+    
+    /* Load EFLAGS, set IF bit to enable interrupts in ring 3 */
+    pushf
     pop %eax
-    or $0x200, %eax     /* Set IF (interrupts enabled) */
-    push %eax           /* Modified EFLAGS */
+    or $0x200, %eax     /* Set IF flag */
+    push %eax
     
-    push $0x1B          /* User code segment (0x18 | 0x03) */
-    push %ecx           /* EIP (entry point) */
+    push $0x1B          /* User code segment (0x18 | 0x3 for ring 3) (CS) */
+    push %ecx           /* Entry point (EIP) */
     
-    iret                /* Jump to ring 3 */
+    sti
+    iret                /* Jump to ring 3 with proper privilege level */

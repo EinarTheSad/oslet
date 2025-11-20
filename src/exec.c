@@ -19,15 +19,14 @@ static int map_user_memory(uintptr_t vaddr, size_t size) {
             continue;
         }
         
-        /* Allocate physical frame */
         uintptr_t phys = pmm_alloc_frame();
         if (!phys) {
             printf("Cannot allocate frame for 0x%x\n", addr);
             return -1;
         }
         
-        /* Map with USER permissions */
-        if (paging_map_page(addr, phys, P_PRESENT | P_RW | P_USER) != 0) {
+        /* Use P_USER flag so ring 3 code can access it */
+        if (paging_map_page_user(addr, phys, P_PRESENT | P_RW) != 0) {
             printf("Cannot map 0x%x -> 0x%x\n", addr, phys);
             pmm_free_frame(phys);
             return -1;
