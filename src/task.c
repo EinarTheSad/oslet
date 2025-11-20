@@ -313,7 +313,7 @@ void schedule(void) {
     current_task = next;
     current_task->state = TASK_RUNNING;
     
-    /* Update TSS with kernel stack for user tasks */
+    /* For user mode tasks: update TSS with kernel stack for ring 3 -> ring 0 transition */
     if (current_task->user_mode && current_task->kernel_stack) {
         uint32_t kernel_esp = (uint32_t)current_task->kernel_stack + TASK_STACK_SIZE;
         tss_set_kernel_stack(kernel_esp);

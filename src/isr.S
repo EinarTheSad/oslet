@@ -118,8 +118,8 @@ MAKE_IRQ 15
     .extern syscall_handler
     .globl syscall_handler_idt
 syscall_handler_idt:
+    /* When ring 3 code calls int 0x80, CPU automatically switches stack to kernel stack (via TSS) */
     cli
-    
     /* Save all registers */
     pushl %edi
     pushl %esi
@@ -130,7 +130,7 @@ syscall_handler_idt:
     pushl %ecx
     pushl %eax
     
-    /* Call handler: syscall_handler(eax, ebx, ecx, edx) */
+    /* Arguments for syscall_handler(eax, ebx, ecx, edx) */
     pushl %edx
     pushl %ecx
     pushl %ebx
@@ -138,18 +138,20 @@ syscall_handler_idt:
     call syscall_handler
     addl $16, %esp
     
-    /* Store result in place of saved eax */
+    /* Save return value */
     movl %eax, (%esp)
     
-    /* Restore registers (eax will have return value) */
+    /* Restore registers */
     popl %eax
     popl %ecx
     popl %edx
     popl %ebx
-    popl %esp  /* dummy pop */
+    popl %esp
     popl %ebp
     popl %esi
     popl %edi
     
     sti
+    
+    /* iret will automatically restore ring 3 context including CS with ring bits */
     iret
