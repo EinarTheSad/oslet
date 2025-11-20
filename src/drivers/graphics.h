@@ -25,6 +25,9 @@
 #define COLOR_YELLOW        0x0E
 #define COLOR_WHITE         0x0F
 
+#define GRADIENT_H 0
+#define GRADIENT_V 1
+
 void gfx_init(void);
 void gfx_enter_mode(void);
 void gfx_exit_mode(void);
@@ -48,7 +51,9 @@ void gfx_print(int x, int y, const char* str, uint8_t fg);
 void gfx_hline(int x, int y, int w, uint8_t color);
 void gfx_vline(int x, int y, int h, uint8_t color);
 void gfx_floodfill(int x, int y, uint8_t new_color);
-void gfx_fillrect_vgradient_dither(int x, int y, int w, int h, uint8_t c_start, uint8_t c_end);
-void gfx_fillrect_hgradient_dither(int x, int y, int w, int h, uint8_t c_start, uint8_t c_end);
-void gfx_fill_vgradient(int x, int y, uint8_t c_start, uint8_t c_end);
-void gfx_fill_hgradient(int x, int y, uint8_t c_start, uint8_t c_end);
+void gfx_floodfill_gradient(int x, int y,
+                            uint8_t c_start, uint8_t c_end,
+                            int orientation);
+void gfx_fillrect_gradient(int x, int y, int w, int h,
+                           uint8_t c_start, uint8_t c_end,
+                           int orientation);

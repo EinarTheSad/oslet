@@ -4,10 +4,7 @@
 void graphics_demo(void) {
     gfx_enter_mode();
 
-    gfx_fill_vgradient(
-        GFX_WIDTH/2, GFX_HEIGHT/2,
-        COLOR_BLUE, COLOR_LIGHT_BLUE
-    );
+    gfx_fillrect_gradient(0,0,GFX_WIDTH,GFX_HEIGHT,COLOR_BLACK,COLOR_BLUE,GRADIENT_V);
 
     int wx = 100;
     int wy = 80;
@@ -17,11 +14,7 @@ void graphics_demo(void) {
     gfx_rect(wx, wy, ww, wh, COLOR_BLACK);
     gfx_rect(wx+1, wy+1, ww-2, wh-2, COLOR_WHITE);
 
-    gfx_fillrect_hgradient_dither(
-        wx + 2, wy + 2,
-        ww - 4, 24,
-        COLOR_BLUE, COLOR_LIGHT_BLUE
-    );
+    gfx_fillrect(wx + 2, wy + 2,ww - 4, 24, COLOR_CYAN);
 
     gfx_rect(wx+2, wy+2, ww-4, 24, COLOR_BLACK);
 

@@ -5,13 +5,6 @@
 #include "vga.h"
 #include "../fonts/mono8x8.h"
 
-static const uint8_t bayer4[4][4] = {
-    {  0,  8,  2, 10 },
-    { 12,  4, 14,  6 },
-    {  3, 11,  1,  9 },
-    { 15,  7, 13,  5 }
-};
-
 static const uint8_t bayer8[8][8] = {
     {  0, 48, 12, 60,  3, 51, 15, 63 },
     { 32, 16, 44, 28, 35, 19, 47, 31 },
@@ -76,13 +69,6 @@ static const uint8_t gfx_palette[16][3] = {
     {0xFF, 0xFF, 0x00},
     {0xFF, 0xFF, 0xFF},
 };
-
-static inline uint8_t dither_rand4(int x, int y) {
-    uint32_t v = (uint32_t)x * 73856093u ^ (uint32_t)y * 19349663u;
-    v ^= v >> 13;
-    v *= 1274126177u;
-    return (uint8_t)((v >> 28) & 0x0F); /* 0..15 */
-}
 
 static void vga_write_regs(const uint8_t* regs) {
     outb(0x3C2, *regs++);
@@ -453,363 +439,6 @@ void gfx_floodfill(int x, int y, uint8_t new_color) {
     GFX_UNLOCK();
 }
 
-void gfx_fill_hgradient(int x, int y, uint8_t c_start, uint8_t c_end) {
-    if (!backbuffer) return;
-    if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
-
-    GFX_LOCK();
-
-    uint8_t target = getpixel_raw(x, y);
-
-    uint8_t placeholder = 0xFF;
-    for (int i = 0; i < 16; i++) {
-        if (i != target && i != c_start && i != c_end) {
-            placeholder = (uint8_t)i;
-            break;
-        }
-    }
-    if (placeholder == 0xFF) {
-        GFX_UNLOCK();
-        return;
-    }
-
-    size_t max_pixels = (size_t)GFX_WIDTH * (size_t)GFX_HEIGHT;
-    uint32_t* stack = (uint32_t*)kmalloc(max_pixels * sizeof(uint32_t));
-    if (!stack) {
-        GFX_UNLOCK();
-        return;
-    }
-
-    int min_x = x, max_x = x;
-    int min_y = y, max_y = y;
-
-    size_t sp = 0;
-    stack[sp++] = ((uint32_t)y << 16) | (uint16_t)(x & 0xFFFF);
-
-    while (sp > 0) {
-        uint32_t v = stack[--sp];
-        int cy = (int)(v >> 16);
-        int cx = (int)(int16_t)(v & 0xFFFF);
-
-        if (cx < 0 || cx >= GFX_WIDTH || cy < 0 || cy >= GFX_HEIGHT)
-            continue;
-
-        if (getpixel_raw(cx, cy) != target)
-            continue;
-
-        int lx = cx;
-        int rx = cx;
-
-        while (lx - 1 >= 0 && getpixel_raw(lx - 1, cy) == target) {
-            lx--;
-        }
-        while (rx + 1 < GFX_WIDTH && getpixel_raw(rx + 1, cy) == target) {
-            rx++;
-        }
-
-        for (int px = lx; px <= rx; px++) {
-            putpixel_raw(px, cy, placeholder);
-        }
-
-        if (lx < min_x) min_x = lx;
-        if (rx > max_x) max_x = rx;
-        if (cy < min_y) min_y = cy;
-        if (cy > max_y) max_y = cy;
-
-        for (int ny = cy - 1; ny <= cy + 1; ny += 2) {
-            if (ny < 0 || ny >= GFX_HEIGHT)
-                continue;
-
-            int nx = lx;
-            while (nx <= rx) {
-                while (nx <= rx && getpixel_raw(nx, ny) != target) {
-                    nx++;
-                }
-                if (nx > rx) break;
-
-                int start = nx;
-                while (nx <= rx && getpixel_raw(nx, ny) == target) {
-                    nx++;
-                }
-
-                int seed_x = (start + nx - 1) / 2;
-                if (sp < max_pixels) {
-                    stack[sp++] = ((uint32_t)ny << 16) | (uint16_t)(seed_x & 0xFFFF);
-                }
-            }
-        }
-    }
-
-    kfree(stack);
-
-    int width = max_x - min_x;
-    int denom = (width > 0) ? width : 1;
-
-    for (int py = min_y; py <= max_y; py++) {
-        for (int px = min_x; px <= max_x; px++) {
-            if (getpixel_raw(px, py) != placeholder)
-                continue;
-
-            int pos = px - min_x;         /* 0 .. width */
-            int frac16 = (pos * 16) / denom; /* 0..16 */
-
-            int bx = px & 7;
-            int by = py & 7;
-            int threshold = bayer8[by][bx] >> 2;
-
-            uint8_t final_col = c_start;
-            if (frac16 > threshold) {
-                final_col = c_end;
-            }
-
-            putpixel_raw(px, py, final_col);
-        }
-    }
-
-    GFX_UNLOCK();
-}
-
-
-void gfx_fill_vgradient(int x, int y, uint8_t c_start, uint8_t c_end) {
-    if (!backbuffer) return;
-    if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
-
-    GFX_LOCK();
-
-    uint8_t target = getpixel_raw(x, y);
-
-    uint8_t placeholder = 0xFF;
-    for (int i = 0; i < 16; i++) {
-        if (i != target && i != c_start && i != c_end) {
-            placeholder = (uint8_t)i;
-            break;
-        }
-    }
-    if (placeholder == 0xFF) {
-        GFX_UNLOCK();
-        return;
-    }
-
-    size_t max_pixels = (size_t)GFX_WIDTH * (size_t)GFX_HEIGHT;
-    uint32_t* stack = (uint32_t*)kmalloc(max_pixels * sizeof(uint32_t));
-    if (!stack) {
-        GFX_UNLOCK();
-        return;
-    }
-
-    int min_x = x, max_x = x;
-    int min_y = y, max_y = y;
-
-    size_t sp = 0;
-    stack[sp++] = ((uint32_t)y << 16) | (uint16_t)(x & 0xFFFF);
-
-    while (sp > 0) {
-        uint32_t v = stack[--sp];
-        int cy = (int)(v >> 16);
-        int cx = (int)(int16_t)(v & 0xFFFF);
-
-        if (cx < 0 || cx >= GFX_WIDTH || cy < 0 || cy >= GFX_HEIGHT)
-            continue;
-
-        if (getpixel_raw(cx, cy) != target)
-            continue;
-
-        int lx = cx;
-        int rx = cx;
-
-        while (lx - 1 >= 0 && getpixel_raw(lx - 1, cy) == target) {
-            lx--;
-        }
-        while (rx + 1 < GFX_WIDTH && getpixel_raw(rx + 1, cy) == target) {
-            rx++;
-        }
-
-        for (int px = lx; px <= rx; px++) {
-            putpixel_raw(px, cy, placeholder);
-        }
-
-        if (lx < min_x) min_x = lx;
-        if (rx > max_x) max_x = rx;
-        if (cy < min_y) min_y = cy;
-        if (cy > max_y) max_y = cy;
-
-        for (int ny = cy - 1; ny <= cy + 1; ny += 2) {
-            if (ny < 0 || ny >= GFX_HEIGHT)
-                continue;
-
-            int nx = lx;
-            while (nx <= rx) {
-                while (nx <= rx && getpixel_raw(nx, ny) != target) {
-                    nx++;
-                }
-                if (nx > rx) break;
-
-                int start = nx;
-                while (nx <= rx && getpixel_raw(nx, ny) == target) {
-                    nx++;
-                }
-
-                int seed_x = (start + nx - 1) / 2;
-                if (sp < max_pixels) {
-                    stack[sp++] = ((uint32_t)ny << 16) | (uint16_t)(seed_x & 0xFFFF);
-                }
-            }
-        }
-    }
-
-    kfree(stack);
-
-    int height = max_y - min_y;
-    int denom = (height > 0) ? height : 1;
-
-    for (int py = min_y; py <= max_y; py++) {
-        int pos = py - min_y;              /* 0 .. height */
-        int frac16 = (pos * 16) / denom;   /* 0..16 */
-
-        for (int px = min_x; px <= max_x; px++) {
-            if (getpixel_raw(px, py) != placeholder)
-                continue;
-
-            int bx = px & 7;
-            int by = py & 7;
-            int threshold = bayer8[by][bx] >> 2;
-
-            uint8_t final_col = c_start;
-            if (frac16 > threshold) {
-                final_col = c_end;
-            }
-
-            putpixel_raw(px, py, final_col);
-        }
-    }
-
-    GFX_UNLOCK();
-}
-
-void gfx_fillrect_vgradient_dither(int x, int y, int w, int h,
-                                   uint8_t c_start, uint8_t c_end) {
-    if (!backbuffer) return;
-    if (w <= 0 || h <= 0) return;
-
-    /* Proste przycięcie do ekranu */
-    int x0 = x;
-    int y0 = y;
-    int x1 = x + w - 1;
-    int y1 = y + h - 1;
-
-    if (x0 >= GFX_WIDTH || y0 >= GFX_HEIGHT) return;
-    if (x1 < 0 || y1 < 0) return;
-
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 >= GFX_WIDTH)  x1 = GFX_WIDTH - 1;
-    if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
-
-    int eff_w = x1 - x0 + 1;
-    int eff_h = y1 - y0 + 1;
-
-    if (eff_w <= 0 || eff_h <= 0) return;
-
-    /* Jeśli wysokość 1, nie kombinujemy z dzieleniem przez zero */
-    int denom = (eff_h > 1) ? (eff_h - 1) : 1;
-
-    GFX_LOCK();
-
-    for (int py = 0; py < eff_h; py++) {
-        int screen_y = y0 + py;
-
-        /* interpolacja w przestrzeni indeksów, z 4-bitową frakcją */
-        int start16 = (int)c_start << 4;
-        int end16   = (int)c_end   << 4;
-        int val16   = (start16 * (denom - py) + end16 * py) / denom;
-
-        int base_col = val16 >> 4;        /* część całkowita 0..15 */
-        int frac     = val16 & 0x0F;      /* część ułamkowa 0..15 */
-
-        if (base_col < 0)   base_col = 0;
-        if (base_col > 15)  base_col = 15;
-
-        for (int px = 0; px < eff_w; px++) {
-            int screen_x = x0 + px;
-
-            /* Bayer 4x4 */
-            int bx = screen_x & 3;
-            int by = screen_y & 3;
-            int threshold = bayer4[by][bx];
-
-            uint8_t final_col = (uint8_t)base_col;
-            if (frac > threshold && base_col < 15) {
-                final_col = (uint8_t)(base_col + 1);
-            }
-
-            putpixel_raw(screen_x, screen_y, final_col);
-        }
-    }
-
-    GFX_UNLOCK();
-}
-
-void gfx_fillrect_hgradient_dither(int x, int y, int w, int h,
-                                   uint8_t c_start, uint8_t c_end) {
-    if (!backbuffer) return;
-    if (w <= 0 || h <= 0) return;
-
-    /* Clipping */
-    int x0 = x;
-    int y0 = y;
-    int x1 = x + w - 1;
-    int y1 = y + h - 1;
-
-    if (x0 >= GFX_WIDTH || y0 >= GFX_HEIGHT) return;
-    if (x1 < 0 || y1 < 0) return;
-
-    if (x0 < 0) x0 = 0;
-    if (y0 < 0) y0 = 0;
-    if (x1 >= GFX_WIDTH)  x1 = GFX_WIDTH - 1;
-    if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
-
-    int eff_w = x1 - x0 + 1;
-    int eff_h = y1 - y0 + 1;
-
-    if (eff_w <= 0 || eff_h <= 0) return;
-
-    int denom = (eff_w > 1) ? (eff_w - 1) : 1;
-
-    GFX_LOCK();
-
-    for (int px = 0; px < eff_w; px++) {
-        int screen_x = x0 + px;
-
-        int start16 = (int)c_start << 4;
-        int end16   = (int)c_end   << 4;
-        int val16   = (start16 * (denom - px) + end16 * px) / denom;
-
-        int base_col = val16 >> 4;
-        int frac     = val16 & 0x0F;
-
-        if (base_col < 0)  base_col = 0;
-        if (base_col > 15) base_col = 15;
-
-        for (int py = 0; py < eff_h; py++) {
-            int screen_y = y0 + py;
-
-            /* Bayer 4×4 dithering */
-            int bx = screen_x & 3;
-            int by = screen_y & 3;
-            int threshold = bayer4[by][bx];
-
-            uint8_t final_col = (uint8_t)base_col;
-            if (frac > threshold && base_col < 15) {
-                final_col = (uint8_t)(base_col + 1);
-            }
-
-            putpixel_raw(screen_x, screen_y, final_col);
-        }
-    }
-
-    GFX_UNLOCK();
-}
-
 void gfx_circle(int cx, int cy, int r, uint8_t color) {
     GFX_LOCK();
     
@@ -928,4 +557,184 @@ void gfx_print(int x, int y, const char* str, uint8_t fg) {
 
 uint8_t* gfx_get_backbuffer(void) {
     return backbuffer;
+}
+
+static inline int clamp4(int v) {
+    if (v < 0) return 0;
+    if (v > 15) return 15;
+    return v;
+}
+
+static uint8_t calculate_gradient_color(int pos, int denom, 
+                                       uint8_t c_start, uint8_t c_end,
+                                       int bx, int by) {
+    int mix = (16 * pos) / denom;  // 0-16
+    
+    int threshold = bayer8[by][bx] >> 2;
+    
+    if (mix > threshold) {
+        return c_end;
+    } else {
+        return c_start;
+    }
+}
+
+void gfx_fillrect_gradient(int x, int y, int w, int h,
+                           uint8_t c_start, uint8_t c_end,
+                           int orientation) {
+    if (!backbuffer) return;
+    if (w <= 0 || h <= 0) return;
+
+    int x0 = x;
+    int y0 = y;
+    int x1 = x + w - 1;
+    int y1 = y + h - 1;
+
+    if (x0 >= GFX_WIDTH || y0 >= GFX_HEIGHT) return;
+    if (x1 < 0 || y1 < 0) return;
+
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= GFX_WIDTH)  x1 = GFX_WIDTH - 1;
+    if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
+
+    int eff_w = x1 - x0 + 1;
+    int eff_h = y1 - y0 + 1;
+
+    if (eff_w <= 0 || eff_h <= 0) return;
+
+    int denom = (orientation == GRADIENT_V)
+                ? ((eff_h > 1) ? (eff_h - 1) : 1)
+                : ((eff_w > 1) ? (eff_w - 1) : 1);
+
+    GFX_LOCK();
+
+    for (int py = 0; py < eff_h; py++) {
+        int sy = y0 + py;
+        for (int px = 0; px < eff_w; px++) {
+            int sx = x0 + px;
+
+            int pos = (orientation == GRADIENT_V) ? py : px;
+            int bx = sx & 7;
+            int by = sy & 7;
+
+            uint8_t final_col = calculate_gradient_color(pos, denom, c_start, c_end, bx, by);
+            putpixel_raw(sx, sy, final_col);
+        }
+    }
+
+    GFX_UNLOCK();
+}
+
+void gfx_floodfill_gradient(int x, int y,
+                            uint8_t c_start, uint8_t c_end,
+                            int orientation) {
+    if (!backbuffer) return;
+    if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
+
+    GFX_LOCK();
+
+    uint8_t target = getpixel_raw(x, y);
+
+    if (target == c_start || target == c_end) {
+        GFX_UNLOCK();
+        return;
+    }
+
+    uint8_t placeholder = 0xFF;
+    for (int i = 0; i < 16; i++) {
+        if ((uint8_t)i != target && (uint8_t)i != c_start && (uint8_t)i != c_end) {
+            placeholder = (uint8_t)i;
+            break;
+        }
+    }
+    if (placeholder == 0xFF) {
+        GFX_UNLOCK();
+        return;
+    }
+
+    size_t max_pixels = (size_t)GFX_WIDTH * (size_t)GFX_HEIGHT;
+    uint32_t *stack = (uint32_t*)kmalloc(max_pixels * sizeof(uint32_t));
+    if (!stack) {
+        GFX_UNLOCK();
+        return;
+    }
+
+    int min_x = x, max_x = x;
+    int min_y = y, max_y = y;
+
+    size_t sp = 0;
+    stack[sp++] = ((uint32_t)y << 16) | (uint16_t)(x & 0xFFFF);
+
+    while (sp > 0) {
+        uint32_t v = stack[--sp];
+        int cy = (int)(v >> 16);
+        int cx = (int)(int16_t)(v & 0xFFFF);
+
+        if (cx < 0 || cx >= GFX_WIDTH || cy < 0 || cy >= GFX_HEIGHT)
+            continue;
+
+        if (getpixel_raw(cx, cy) != target)
+            continue;
+
+        int lx = cx;
+        int rx = cx;
+
+        while (lx - 1 >= 0 && getpixel_raw(lx - 1, cy) == target) lx--;
+        while (rx + 1 < GFX_WIDTH && getpixel_raw(rx + 1, cy) == target) rx++;
+
+        for (int px = lx; px <= rx; px++)
+            putpixel_raw(px, cy, placeholder);
+
+        if (lx < min_x) min_x = lx;
+        if (rx > max_x) max_x = rx;
+        if (cy < min_y) min_y = cy;
+        if (cy > max_y) max_y = cy;
+
+        for (int ny = cy - 1; ny <= cy + 1; ny += 2) {
+            if (ny < 0 || ny >= GFX_HEIGHT) continue;
+
+            int nx = lx;
+            while (nx <= rx) {
+                while (nx <= rx && getpixel_raw(nx, ny) != target) nx++;
+                if (nx > rx) break;
+                int start = nx;
+                while (nx <= rx && getpixel_raw(nx, ny) == target) nx++;
+                int seed_x = (start + nx - 1) / 2;
+                if (sp < max_pixels)
+                    stack[sp++] = ((uint32_t)ny << 16) | (uint16_t)(seed_x & 0xFFFF);
+            }
+        }
+    }
+
+    kfree(stack);
+
+    int eff_w = max_x - min_x + 1;
+    int eff_h = max_y - min_y + 1;
+    if (eff_w <= 0 || eff_h <= 0) {
+        GFX_UNLOCK();
+        return;
+    }
+
+    int denom = (orientation == GRADIENT_V)
+                ? ((eff_h > 1) ? (eff_h - 1) : 1)
+                : ((eff_w > 1) ? (eff_w - 1) : 1);
+
+    for (int py = min_y; py <= max_y; py++) {
+        for (int px = min_x; px <= max_x; px++) {
+            if (getpixel_raw(px, py) != placeholder) continue;
+
+            int pos = (orientation == GRADIENT_V)
+                      ? (py - min_y)
+                      : (px - min_x);
+
+            int bx = px & 7;
+            int by = py & 7;
+
+            uint8_t final_col = calculate_gradient_color(pos, denom, c_start, c_end, bx, by);
+            putpixel_raw(px, py, final_col);
+        }
+    }
+
+    GFX_UNLOCK();
 }

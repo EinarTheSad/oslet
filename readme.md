@@ -18,8 +18,12 @@ For more specific information, please consult the Makefile.
 
 ## Screenshots
 
-### Kernel 0.3.3
+### Command prompt
 
-<img width="640" height="480" alt="Graphics demo" src="https://github.com/user-attachments/assets/7c15191a-ddf9-4278-876a-66bb72a66e70" />
+<img width="720" height="400" alt="prompt" src="https://github.com/user-attachments/assets/a56700c4-d5b1-4a18-97c2-5f51391b20a8" />
+
+### VGA graphics
+
+<img width="640" height="480" alt="graphics" src="https://github.com/user-attachments/assets/f6c793a4-18c7-43cb-b1e1-d5c49b65c0db" />
 
 ------------------------------------------------------------------------
