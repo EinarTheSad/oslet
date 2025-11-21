@@ -16,7 +16,8 @@ LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
 KERNEL_SRC_DIRS := \
 	$(SRC) \
 	$(SRC)/drivers \
-	$(SRC)/mem
+	$(SRC)/mem \
+	$(SRC)/fonts
 
 KERNEL_SRC_C := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.c))
 KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
@@ -74,6 +75,8 @@ install: $(BUILD)/$(TARGET)
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
 	sudo cp $(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
+	sudo mkdir -p mnt/FONTS; \
+	sudo cp src/fonts/*.ttf mnt/FONTS/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt; \
