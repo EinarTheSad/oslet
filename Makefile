@@ -62,7 +62,7 @@ $(DISK):
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt; \
-	@echo "Disk ready!"
+	echo "Disk ready!"
 
 install: $(BUILD)/$(TARGET)
 	@if [ ! -f "$(DISK)" ]; then \
