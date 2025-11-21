@@ -1,9 +1,8 @@
-build/
-iso/*.iso
-iso/boot/*.elf
 .vscode/settings.json
-disk.img
+build/
+*.img
+*.iso
 src/bin/*.bin
 src/bin/*.o
 mnt/
-oslet.iso
+src/fonts/*.ttf
