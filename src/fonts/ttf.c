@@ -111,11 +111,38 @@ typedef struct {
     uint8_t on_curve;
 } ttf_point_t;
 
-/* Simple, clean scanline rasterization */
-static void rasterize_glyph(uint8_t *glyph_data, float scale,
-                           int16_t x_min, int16_t y_min,
-                           int16_t x_max, int16_t y_max,
-                           ttf_glyph_t *out) {
+typedef struct {
+    float x, y;
+} vec2_t;
+
+/* Dodaj punkt do listy segmentów */
+static void add_segment_point(vec2_t *segments, int *count, int max, float x, float y) {
+    if (*count < max) {
+        segments[*count].x = x;
+        segments[*count].y = y;
+        (*count)++;
+    }
+}
+
+/* Interpolacja krzywej kwadratowej Béziera */
+static void flatten_bezier(vec2_t *segments, int *count, int max,
+                           float x0, float y0, float x1, float y1, float x2, float y2) {
+    /* Dziel krzywą na proste segmenty */
+    int steps = 8;
+    for (int i = 0; i <= steps; i++) {
+        float t = (float)i / (float)steps;
+        float t1 = 1.0f - t;
+        float x = t1 * t1 * x0 + 2.0f * t1 * t * x1 + t * t * x2;
+        float y = t1 * t1 * y0 + 2.0f * t1 * t * y1 + t * t * y2;
+        add_segment_point(segments, count, max, x, y);
+    }
+}
+
+/* Ulepszone rasteryzowanie z antyaliasingiem */
+static void rasterize_glyph_aa(uint8_t *glyph_data, float scale,
+                               int16_t x_min, int16_t y_min,
+                               int16_t x_max, int16_t y_max,
+                               ttf_glyph_t *out) {
     
     int16_t num_contours = read_i16(glyph_data);
     if (num_contours <= 0) return;
@@ -127,8 +154,18 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
     
     uint8_t *bitmap = kmalloc(gw * gh);
     if (!bitmap) return;
-    
     memset_s(bitmap, 0, gw * gh);
+    
+    /* Supersampling 4x dla AA */
+    int ss_w = gw * 4;
+    int ss_h = gh * 4;
+    uint8_t *ss_bitmap = kmalloc(ss_w * ss_h);
+    if (!ss_bitmap) {
+        kfree(bitmap);
+        return;
+    }
+    memset_s(ss_bitmap, 0, ss_w * ss_h);
+    float ss_scale = scale * 4.0f;
     
     /* Parse contours */
     uint8_t *ptr = glyph_data + 10;
@@ -151,6 +188,7 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
     if (!points || !flags) {
         if (points) kfree(points);
         if (flags) kfree(flags);
+        kfree(ss_bitmap);
         kfree(bitmap);
         return;
     }
@@ -181,7 +219,7 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
             x += read_i16(ptr);
             ptr += 2;
         }
-        points[i].x = (x - x_min) * scale + 0.5f;
+        points[i].x = (x - x_min) * ss_scale;
     }
     
     /* Read Y coordinates */
@@ -195,43 +233,111 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
             y += read_i16(ptr);
             ptr += 2;
         }
-        points[i].y = (y_max - y) * scale + 0.5f;
+        points[i].y = (y_max - y) * ss_scale;
     }
     
-    /* Simple scanline fill - even-odd rule */
-    for (int py = 0; py < gh; py++) {
+    /* Konwertuj kontury na liniowe segmenty (rozwiń krzywe) */
+    vec2_t *segments = kmalloc(4096 * sizeof(vec2_t));
+    int *segment_starts = kmalloc(num_contours * sizeof(int));
+    int *segment_counts = kmalloc(num_contours * sizeof(int));
+    
+    if (!segments || !segment_starts || !segment_counts) {
+        if (segments) kfree(segments);
+        if (segment_starts) kfree(segment_starts);
+        if (segment_counts) kfree(segment_counts);
+        kfree(flags);
+        kfree(points);
+        kfree(ss_bitmap);
+        kfree(bitmap);
+        return;
+    }
+    
+    int total_segments = 0;
+    uint16_t pt_idx = 0;
+    
+    for (int16_t c = 0; c < num_contours; c++) {
+        uint16_t pt_end = read_u16(end_pts + c * 2);
+        uint16_t pt_count = pt_end - pt_idx + 1;
+        
+        segment_starts[c] = total_segments;
+        int seg_count = 0;
+        
+        for (uint16_t i = 0; i < pt_count; i++) {
+            uint16_t curr = pt_idx + i;
+            uint16_t next = pt_idx + ((i + 1) % pt_count);
+            
+            if (points[curr].on_curve) {
+                if (points[next].on_curve) {
+                    /* Prosta linia: on -> on */
+                    add_segment_point(segments, &total_segments, 4096,
+                                    points[curr].x, points[curr].y);
+                    seg_count++;
+                } else {
+                    /* Początek krzywej: on -> off */
+                    uint16_t next2 = pt_idx + ((i + 2) % pt_count);
+                    
+                    float x0 = points[curr].x;
+                    float y0 = points[curr].y;
+                    float x1 = points[next].x;
+                    float y1 = points[next].y;
+                    float x2, y2;
+                    
+                    if (points[next2].on_curve) {
+                        /* off -> on */
+                        x2 = points[next2].x;
+                        y2 = points[next2].y;
+                    } else {
+                        /* off -> off: wstaw implied on-curve point */
+                        x2 = (x1 + points[next2].x) * 0.5f;
+                        y2 = (y1 + points[next2].y) * 0.5f;
+                    }
+                    
+                    int before = total_segments;
+                    flatten_bezier(segments, &total_segments, 4096,
+                                 x0, y0, x1, y1, x2, y2);
+                    seg_count += (total_segments - before);
+                }
+            }
+        }
+        
+        segment_counts[c] = seg_count;
+        pt_idx = pt_end + 1;
+    }
+    
+    /* Scanline rasterization */
+    for (int py = 0; py < ss_h; py++) {
         float scan_y = py + 0.5f;
         
-        /* Collect intersections */
-        float intersections[256];
+        float intersections[512];
         int num_intersections = 0;
         
-        uint16_t pt_start = 0;
+        int seg_idx = 0;
         for (int16_t c = 0; c < num_contours; c++) {
-            uint16_t pt_end = read_u16(end_pts + c * 2);
+            int start = segment_starts[c];
+            int count = segment_counts[c];
             
-            for (uint16_t i = pt_start; i <= pt_end; i++) {
-                uint16_t next = (i == pt_end) ? pt_start : (i + 1);
+            for (int i = 0; i < count; i++) {
+                int curr = start + i;
+                int next = start + ((i + 1) % count);
                 
-                float y0 = points[i].y;
-                float y1 = points[next].y;
+                if (curr >= 4096 || next >= 4096) continue;
                 
-                /* Does edge cross this scanline? */
-                if ((y0 <= scan_y && y1 > scan_y) || (y1 <= scan_y && y0 > scan_y)) {
-                    float x0 = points[i].x;
-                    float x1 = points[next].x;
+                float y0 = segments[curr].y;
+                float y1 = segments[next].y;
+                
+                if ((y0 <= scan_y && y1 > scan_y) || 
+                    (y1 <= scan_y && y0 > scan_y)) {
+                    float x0 = segments[curr].x;
+                    float x1 = segments[next].x;
                     
-                    /* Calculate intersection X */
                     float t = (scan_y - y0) / (y1 - y0);
                     float x_int = x0 + t * (x1 - x0);
                     
-                    if (num_intersections < 256) {
+                    if (num_intersections < 512) {
                         intersections[num_intersections++] = x_int;
                     }
                 }
             }
-            
-            pt_start = pt_end + 1;
         }
         
         /* Sort intersections */
@@ -245,22 +351,44 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
             }
         }
         
-        /* Fill between pairs */
+        /* Fill (even-odd) */
         for (int i = 0; i < num_intersections - 1; i += 2) {
             int x_start = (int)(intersections[i] + 0.5f);
             int x_end = (int)(intersections[i + 1] + 0.5f);
             
             if (x_start < 0) x_start = 0;
-            if (x_end > gw) x_end = gw;
+            if (x_end > ss_w) x_end = ss_w;
             
             for (int px = x_start; px < x_end; px++) {
-                bitmap[py * gw + px] = 0xFF;
+                ss_bitmap[py * ss_w + px] = 0xFF;
             }
         }
     }
     
+    kfree(segments);
+    kfree(segment_starts);
+    kfree(segment_counts);
     kfree(flags);
     kfree(points);
+    
+    /* Downsample 4x4 -> 1x1 */
+    for (int y = 0; y < gh; y++) {
+        for (int x = 0; x < gw; x++) {
+            int sum = 0;
+            for (int sy = 0; sy < 4; sy++) {
+                for (int sx = 0; sx < 4; sx++) {
+                    int ss_x = x * 4 + sx;
+                    int ss_y = y * 4 + sy;
+                    if (ss_x < ss_w && ss_y < ss_h) {
+                        sum += ss_bitmap[ss_y * ss_w + ss_x] ? 1 : 0;
+                    }
+                }
+            }
+            bitmap[y * gw + x] = (sum * 255) / 16;
+        }
+    }
+    
+    kfree(ss_bitmap);
     
     out->bitmap = bitmap;
     out->width = gw;
@@ -423,8 +551,8 @@ ttf_glyph_t *ttf_render_glyph(ttf_font_t *font, uint16_t codepoint, uint8_t size
     }
     
     if (num_contours > 0) {
-        rasterize_glyph(glyph_data, scale, x_min, y_min, x_max, y_max,
-                       &entry->glyph);
+        rasterize_glyph_aa(glyph_data, scale, x_min, y_min, x_max, y_max,
+                          &entry->glyph);
     }
     
     return &entry->glyph;
@@ -472,7 +600,7 @@ void ttf_print(int x, int y, const char *text, ttf_font_t *font, uint8_t size, u
                 for (int gx = 0; gx < glyph->width; gx++) {
                     uint8_t alpha = glyph->bitmap[gy * glyph->width + gx];
                     
-                    if (!alpha) continue;
+                    if (alpha < 32) continue;
                     
                     int px = draw_x + gx;
                     int py = draw_y + gy;
@@ -480,10 +608,29 @@ void ttf_print(int x, int y, const char *text, ttf_font_t *font, uint8_t size, u
                     if (px >= 0 && px < GFX_WIDTH && py >= 0 && py < GFX_HEIGHT) {
                         uint32_t offset = py * (GFX_WIDTH / 2) + (px / 2);
                         
-                        if (px & 1) {
-                            backbuf[offset] = (backbuf[offset] & 0xF0) | (color & 0x0F);
+                        if (alpha > 223) {
+                            /* Pełne pokrycie - po prostu narysuj */
+                            if (px & 1) {
+                                backbuf[offset] = (backbuf[offset] & 0xF0) | (color & 0x0F);
+                            } else {
+                                backbuf[offset] = (backbuf[offset] & 0x0F) | ((color & 0x0F) << 4);
+                            }
                         } else {
-                            backbuf[offset] = (backbuf[offset] & 0x0F) | ((color & 0x0F) << 4);
+                            /* Alpha blending */
+                            uint8_t old_pixel;
+                            if (px & 1) {
+                                old_pixel = backbuf[offset] & 0x0F;
+                            } else {
+                                old_pixel = (backbuf[offset] >> 4) & 0x0F;
+                            }
+                            
+                            uint8_t blend = ((color & 0x0F) * alpha + old_pixel * (255 - alpha)) / 255;
+                            
+                            if (px & 1) {
+                                backbuf[offset] = (backbuf[offset] & 0xF0) | (blend & 0x0F);
+                            } else {
+                                backbuf[offset] = (backbuf[offset] & 0x0F) | ((blend & 0x0F) << 4);
+                            }
                         }
                     }
                 }
