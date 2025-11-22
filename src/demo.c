@@ -1,5 +1,7 @@
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
+#include "fonts/ttf.h"
+#include "timer.h"
 
 void graphics_demo(void) {
     gfx_enter_mode();
@@ -11,6 +13,10 @@ void graphics_demo(void) {
     int ww = 440;
     int wh = 280;
 
+    
+    ttf_init();
+    ttf_font_t* font = ttf_load("C:/FONTS/arial.ttf");
+
     gfx_rect(wx, wy, ww, wh, COLOR_BLACK);
     gfx_rect(wx+1, wy+1, ww-2, wh-2, COLOR_WHITE);
 
@@ -18,7 +24,7 @@ void graphics_demo(void) {
 
     gfx_rect(wx+2, wy+2, ww-4, 24, COLOR_BLACK);
 
-    gfx_print(wx + 10, wy + 10, "Demo Window - osLET Kernel 0.3.3", COLOR_WHITE);
+    ttf_print(wx + 10, wy + 6, "Demo Window - osLET Kernel 0.3.3", font, 12, COLOR_WHITE);
 
     gfx_fillrect(wx + 2, wy + 26, ww - 4, wh - 28, COLOR_LIGHT_GRAY);
 
@@ -27,7 +33,7 @@ void graphics_demo(void) {
         "Shape rendering, gradients & dithering all present.\n\n"
         "Press any key to exit...";
 
-    gfx_print(wx + 12, wy + 40, msg, COLOR_BLACK);
+    ttf_print(wx + 12, wy + 40, msg, font, 12, COLOR_BLACK);
     gfx_swap_buffers();
     kbd_getchar();
 
