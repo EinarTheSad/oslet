@@ -15,7 +15,8 @@ void graphics_demo(void) {
 
     
     ttf_init();
-    ttf_font_t* font = ttf_load("C:/FONTS/arial.ttf");
+    ttf_font_t* font = ttf_load("C:/FONTS/osans.ttf");
+    ttf_font_t* font2 = ttf_load("C:/FONTS/arial.ttf");
 
     gfx_rect(wx, wy, ww, wh, COLOR_BLACK);
     gfx_rect(wx+1, wy+1, ww-2, wh-2, COLOR_WHITE);
@@ -34,8 +35,12 @@ void graphics_demo(void) {
         "Press any key to exit...";
 
     ttf_print(wx + 12, wy + 40, msg, font, 12, COLOR_BLACK);
+    ttf_print(wx + 12, wy + 100, "This is a TEST of size 16.", font, 16, COLOR_RED);
+    ttf_print(wx + 12, wy + 120, "This is a TEST of size 24.", font, 24, COLOR_BLUE);
+    ttf_print(wx + 12, wy + 160, msg, font2, 12, COLOR_BLACK);
     gfx_swap_buffers();
     kbd_getchar();
-
+    ttf_free(font);
+    ttf_free(font2);
     gfx_exit_mode();
 }
