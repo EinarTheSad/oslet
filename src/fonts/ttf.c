@@ -107,11 +107,11 @@ static uint8_t *get_glyph_data(ttf_font_t *font, uint32_t glyph_idx) {
 }
 
 typedef struct {
-    int x, y;
+    float x, y;
     uint8_t on_curve;
 } ttf_point_t;
 
-/* Subpixel antialiased rasterization */
+/* Simple, clean scanline rasterization */
 static void rasterize_glyph(uint8_t *glyph_data, float scale,
                            int16_t x_min, int16_t y_min,
                            int16_t x_max, int16_t y_max,
@@ -129,9 +129,6 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
     if (!bitmap) return;
     
     memset_s(bitmap, 0, gw * gh);
-    out->bitmap = bitmap;
-    out->width = gw;
-    out->height = gh;
     
     /* Parse contours */
     uint8_t *ptr = glyph_data + 10;
@@ -155,11 +152,10 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
         if (points) kfree(points);
         if (flags) kfree(flags);
         kfree(bitmap);
-        out->bitmap = NULL;
         return;
     }
     
-    /* Read flags + repeat */
+    /* Read flags */
     for (uint16_t i = 0; i < total_pts; i++) {
         uint8_t flag = *ptr++;
         flags[i] = flag;
@@ -174,7 +170,7 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
         }
     }
     
-    /* Read X */
+    /* Read X coordinates */
     int16_t x = 0;
     for (uint16_t i = 0; i < total_pts; i++) {
         uint8_t flag = flags[i];
@@ -185,10 +181,10 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
             x += read_i16(ptr);
             ptr += 2;
         }
-        points[i].x = (int)((x - x_min) * scale + 1);
+        points[i].x = (x - x_min) * scale + 0.5f;
     }
     
-    /* Read Y */
+    /* Read Y coordinates */
     int16_t y = 0;
     for (uint16_t i = 0; i < total_pts; i++) {
         uint8_t flag = flags[i];
@@ -199,49 +195,76 @@ static void rasterize_glyph(uint8_t *glyph_data, float scale,
             y += read_i16(ptr);
             ptr += 2;
         }
-        points[i].y = (int)((y_max - y) * scale + 1);
+        points[i].y = (y_max - y) * scale + 0.5f;
     }
     
-    /* Scanline fill with subpixel antialiasing */
+    /* Simple scanline fill - even-odd rule */
     for (int py = 0; py < gh; py++) {
-        uint16_t pt_start = 0;
+        float scan_y = py + 0.5f;
         
+        /* Collect intersections */
+        float intersections[256];
+        int num_intersections = 0;
+        
+        uint16_t pt_start = 0;
         for (int16_t c = 0; c < num_contours; c++) {
             uint16_t pt_end = read_u16(end_pts + c * 2);
             
             for (uint16_t i = pt_start; i <= pt_end; i++) {
-                uint16_t j = (i == pt_end) ? pt_start : (i + 1);
+                uint16_t next = (i == pt_end) ? pt_start : (i + 1);
                 
-                int y0 = points[i].y;
-                int y1 = points[j].y;
-                int x0 = points[i].x;
-                int x1 = points[j].x;
+                float y0 = points[i].y;
+                float y1 = points[next].y;
                 
-                if ((y0 <= py && y1 > py) || (y1 <= py && y0 > py)) {
-                    if (y1 != y0) {
-                        int x_int = x0 + ((py - y0) * (x1 - x0)) / (y1 - y0);
-                        
-                        if (x_int >= 0 && x_int < gw) {
-                            for (int px = x_int; px < gw; px++) {
-                                bitmap[py * gw + px] ^= 0x80;
-                            }
-                        }
+                /* Does edge cross this scanline? */
+                if ((y0 <= scan_y && y1 > scan_y) || (y1 <= scan_y && y0 > scan_y)) {
+                    float x0 = points[i].x;
+                    float x1 = points[next].x;
+                    
+                    /* Calculate intersection X */
+                    float t = (scan_y - y0) / (y1 - y0);
+                    float x_int = x0 + t * (x1 - x0);
+                    
+                    if (num_intersections < 256) {
+                        intersections[num_intersections++] = x_int;
                     }
                 }
             }
             
             pt_start = pt_end + 1;
         }
-    }
-    
-    /* Collapse coverage to alpha */
-    for (int i = 0; i < gw * gh; i++) {
-        uint8_t coverage = bitmap[i] & 0x80 ? 0xFF : 0x00;
-        bitmap[i] = coverage;
+        
+        /* Sort intersections */
+        for (int i = 0; i < num_intersections - 1; i++) {
+            for (int j = i + 1; j < num_intersections; j++) {
+                if (intersections[j] < intersections[i]) {
+                    float tmp = intersections[i];
+                    intersections[i] = intersections[j];
+                    intersections[j] = tmp;
+                }
+            }
+        }
+        
+        /* Fill between pairs */
+        for (int i = 0; i < num_intersections - 1; i += 2) {
+            int x_start = (int)(intersections[i] + 0.5f);
+            int x_end = (int)(intersections[i + 1] + 0.5f);
+            
+            if (x_start < 0) x_start = 0;
+            if (x_end > gw) x_end = gw;
+            
+            for (int px = x_start; px < x_end; px++) {
+                bitmap[py * gw + px] = 0xFF;
+            }
+        }
     }
     
     kfree(flags);
     kfree(points);
+    
+    out->bitmap = bitmap;
+    out->width = gw;
+    out->height = gh;
 }
 
 void ttf_init(void) {
@@ -389,14 +412,14 @@ ttf_glyph_t *ttf_render_glyph(ttf_font_t *font, uint16_t codepoint, uint8_t size
     int16_t x_max = read_i16(glyph_data + 6);
     int16_t y_max = read_i16(glyph_data + 8);
     
-    entry->glyph.bearing_x = (int)(x_min * scale);
-    entry->glyph.bearing_y = (int)(y_max * scale);
+    entry->glyph.bearing_x = (int)(x_min * scale + 0.5f);
+    entry->glyph.bearing_y = (int)(y_max * scale + 0.5f);
     
     if (font->hmtx_table && glyph_idx < font->num_glyphs) {
         uint16_t advance = read_u16(font->hmtx_table + glyph_idx * 4);
-        entry->glyph.advance = (int)(advance * scale);
+        entry->glyph.advance = (int)(advance * scale + 0.5f);
     } else {
-        entry->glyph.advance = (int)((x_max - x_min) * scale);
+        entry->glyph.advance = (int)((x_max - x_min) * scale + 0.5f);
     }
     
     if (num_contours > 0) {
@@ -420,7 +443,7 @@ void ttf_print(int x, int y, const char *text, ttf_font_t *font, uint8_t size, u
     uint8_t *backbuf = gfx_get_backbuffer();
     if (!backbuf) return;
     
-    int baseline = (int)(font->ascent * size / font->units_per_em);
+    int baseline = (int)(font->ascent * size / font->units_per_em + 0.5f);
     int cx = x;
     int cy = y;
     
@@ -449,10 +472,12 @@ void ttf_print(int x, int y, const char *text, ttf_font_t *font, uint8_t size, u
                 for (int gx = 0; gx < glyph->width; gx++) {
                     uint8_t alpha = glyph->bitmap[gy * glyph->width + gx];
                     
+                    if (!alpha) continue;
+                    
                     int px = draw_x + gx;
                     int py = draw_y + gy;
                     
-                    if (alpha && px >= 0 && px < GFX_WIDTH && py >= 0 && py < GFX_HEIGHT) {
+                    if (px >= 0 && px < GFX_WIDTH && py >= 0 && py < GFX_HEIGHT) {
                         uint32_t offset = py * (GFX_WIDTH / 2) + (px / 2);
                         
                         if (px & 1) {
