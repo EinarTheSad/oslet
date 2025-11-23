@@ -92,7 +92,7 @@ static void print_banner(void) {
     printf(" |_____|  _____| |_____ |______    |    \n");
     printf("                                        \n");
     vga_set_color(0, 8);
-    printf("Kernel 0.3.3            EinarTheSad 2025\n\n");
+    printf("Kernel %s%-14sEinarTheSad 2025\n\n",VERSION);
     vga_set_color(0, 7);
 }
 

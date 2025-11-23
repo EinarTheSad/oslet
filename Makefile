@@ -25,7 +25,7 @@ KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all iso run clean disk install fetchlet systest
+.PHONY: all iso run clean disk install fetchlet shell
 
 all: $(BUILD)/$(TARGET)
 
@@ -143,9 +143,9 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-systest: $(BIN)/systest.bin
+shell: $(BIN)/shell.bin
 
-$(BIN)/systest.bin: $(BUILD)/bin/systest.o $(LIB_OBJS)
+$(BIN)/shell.bin: $(BUILD)/bin/shell.o $(LIB_OBJS)
 	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c

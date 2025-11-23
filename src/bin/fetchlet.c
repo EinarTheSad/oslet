@@ -2,10 +2,9 @@
 
 #include "../syscall.h"
 #include "../lib/stdio.h"
+#include "../console.h"
 
 #define YEAR 2025
-
-static int mem = 32;
 
 void _start(void) {
     sys_setcolor(0, 9);
@@ -22,7 +21,7 @@ void _start(void) {
     sys_setcolor(0, 9);
     printf("  Kernel");
     sys_setcolor(0, 7);
-    printf(": Development Kernel 0.3.3\n");
+    printf(": Development Kernel %s\n", VERSION);
     
     sys_setcolor(0, 9);
     printf("  Shell");
@@ -37,7 +36,9 @@ void _start(void) {
     sys_setcolor(0, 9);
     printf("  Memory");
     sys_setcolor(0, 7);
-    printf(": %d MiB\n", mem);
+    sys_meminfo_t meminfo;
+    sys_get_meminfo(&meminfo);
+    printf(": %d MiB\n", meminfo.total_kb / 1024);
     
     sys_setcolor(0, 9);
     printf("  Author");
