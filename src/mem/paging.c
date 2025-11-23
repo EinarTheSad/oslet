@@ -5,7 +5,6 @@
 #include "early_alloc.h"
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
-
 static uintptr_t current_pd_phys = 0;
 
 static inline uint32_t pd_index(uintptr_t a) { return (a >> 22) & 0x3FF; }
@@ -17,7 +16,7 @@ static inline void memzero(void *dst, size_t n) {
 
 static uintptr_t alloc_zeroed_frame(void) {
     uintptr_t f = pmm_alloc_frame();
-    if (!f || (f & 0xFFFu)) return 0;
+    if (!f || (f & 0xFFFu)) return 0;   
     memzero((void*)f, PAGE_SIZE);
     return f;
 }

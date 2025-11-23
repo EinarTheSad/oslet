@@ -332,16 +332,43 @@ static void cmd_help(void) {
 
 static void cmd_ls(const char *path) {
     const char *target = check_path(path);
-    
-    fat32_dirent_t entries[64];
-    int count = fat32_list_dir(target, entries, 64);
 
-    for (int i = 0; i < count - 1; ++i) {
-        for (int j = 0; j < count - i - 1; ++j) {
-            if (compare_entries(&entries[j], &entries[j + 1]) > 0) {
-                fat32_dirent_t tmp = entries[j];
-                entries[j] = entries[j + 1];
-                entries[j + 1] = tmp;
+    fat32_dirent_t *entries = (fat32_dirent_t*)kmalloc(sizeof(fat32_dirent_t) * 64);
+    if (!entries) {
+        printf("Error: Out of memory\n");
+        return;
+    }
+    
+    int count = fat32_list_dir(target, entries, 64);
+    
+    if (count < 0) {
+        vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: ");
+        vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        printf("Cannot list '%s'\n", target);
+        kfree(entries);
+        return;
+    }
+    
+    if (count > 64) count = 64;
+    
+    if (count == 0) {
+        vga_set_color(0, 8);
+        printf("(empty)\n");
+        vga_set_color(0, 7);
+        kfree(entries);
+        return;
+    }
+    
+    // Bubble sort (tylko jeśli count > 1)
+    if (count > 1) {
+        for (int i = 0; i < count - 1; ++i) {
+            for (int j = 0; j < count - i - 1; ++j) {
+                if (compare_entries(&entries[j], &entries[j + 1]) > 0) {
+                    fat32_dirent_t tmp = entries[j];
+                    entries[j] = entries[j + 1];
+                    entries[j + 1] = tmp;
+                }
             }
         }
     }
@@ -390,6 +417,7 @@ static void cmd_ls(const char *path) {
     vga_set_color(0, 8);
     printf("  %d files, %d catalogues\n  %d items in total\n\n", count-dirs, dirs, count);
     vga_set_color(0, 7);
+    kfree(entries);
 }
 
 void shell_init(void) {
