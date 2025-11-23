@@ -58,6 +58,7 @@ def generate_bmf_from_ttf(ttf_path, sizes, output_path, name="Default"):
             try:
                 ascent, descent = font.getmetrics()
                 baseline = ascent
+                height = ascent + descent
             except:
                 # Fallback: measure from top to baseline
                 bbox_base = test_draw.textbbox((0, 0), 'Hx', font=font)
