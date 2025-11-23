@@ -37,9 +37,47 @@ uint32_t timer_get_ticks(void) {
 }
 
 void timer_wait(uint32_t ticks) {
-    uint32_t target = timer_ticks + ticks;
-    while (timer_ticks < target) {
-        __asm__ volatile ("hlt");
+    if (!scheduling_enabled) {
+        /* Scheduler off, busy-wait */
+        uint32_t target = timer_ticks + ticks;
+        while (timer_ticks < target) {
+            __asm__ volatile ("hlt");
+        }
+        return;
+    }
+    
+    /* Scheduler on, check other tasks */
+    task_t *current = task_get_current();
+    if (!current) {
+        /* Fallback to busy-wait */
+        uint32_t target = timer_ticks + ticks;
+        while (timer_ticks < target) {
+            __asm__ volatile ("hlt");
+        }
+        return;
+    }
+    
+    /* Count other tasks */
+    int other_tasks = 0;
+    task_t *t = current->next;
+    int safety = 0;
+    
+    while (t != current && safety < 100) {
+        if (t && (t->state == TASK_READY || t->state == TASK_RUNNING)) {
+            other_tasks++;
+        }
+        if (t) t = t->next;
+        safety++;
+    }
+    
+    if (other_tasks > 0) {
+        uint32_t ms = (ticks * 1000) / 100;
+        task_sleep(ms);
+    } else {
+        uint32_t target = timer_ticks + ticks;
+        while (timer_ticks < target) {
+            __asm__ volatile ("hlt");
+        }
     }
 }
 

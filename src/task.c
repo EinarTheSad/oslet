@@ -217,10 +217,14 @@ void task_sleep(uint32_t milliseconds) {
 static void wakeup_sleeping_tasks(void) {
     uint32_t current_ticks = timer_get_ticks();
     task_t *t = task_list;
+    int woken = 0;
     
     do {
-        if (t->state == TASK_SLEEPING && current_ticks >= t->sleep_until_ticks) {
-            t->state = TASK_READY;
+        if (t->state == TASK_SLEEPING) {
+            if (current_ticks >= t->sleep_until_ticks) {
+                t->state = TASK_READY;
+                woken++;
+            }
         }
         t = t->next;
     } while (t != task_list);
@@ -274,7 +278,7 @@ static task_t *pick_next_task(void) {
         }
         t = t->next;
     } while (t != start);
-    
+
     t = current_task->next;
     do {
         if (t->state == TASK_READY) {
@@ -287,7 +291,14 @@ static task_t *pick_next_task(void) {
         return current_task;
     }
     
-    return task_list;
+    /* Wake up kernel if everything is dead */
+    if (task_list->state != TASK_TERMINATED) {
+        task_list->state = TASK_READY;
+        return task_list;
+    }
+    
+    /* Total fallback */
+    return current_task;
 }
 
 void schedule(void) {

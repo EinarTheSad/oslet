@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define VERSION "0.4"
+
 typedef struct {
     // Write a chunk; return bytes written.
     size_t (*write)(const char* s, size_t n, void* ctx);

@@ -5,11 +5,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-static char printf_buf[1024];
+#define PRINTF_BUF_SIZE 1024
 typedef long ssize_t;
 
 
 int putchar(int c) {
+    char printf_buf[PRINTF_BUF_SIZE];  /* Stack allocation */
     char ch = (char)c;
     printf_buf[0] = ch;
     printf_buf[1] = '\0';
@@ -517,6 +518,8 @@ int snprintf(char *buf, size_t size, const char *fmt, ...) {
 }
 
 int vprintf(const char *fmt, va_list ap) {
+    char printf_buf[PRINTF_BUF_SIZE];  /* Stack allocation */
+    
     int len = vsnprintf(printf_buf, sizeof(printf_buf), fmt, ap);
     printf_buf[sizeof(printf_buf) - 1] = '\0';
     sys_write(printf_buf);
@@ -524,6 +527,8 @@ int vprintf(const char *fmt, va_list ap) {
 }
 
 int printf(const char *fmt, ...) {
+    char printf_buf[PRINTF_BUF_SIZE];  /* Stack allocation */
+    
     va_list ap;
     va_start(ap, fmt);
     int len = vsnprintf(printf_buf, sizeof(printf_buf), fmt, ap);
