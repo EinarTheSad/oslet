@@ -5,40 +5,32 @@
 #include "console.h"
 
 void graphics_demo(void) {    
-    static bmf_font_t arial;
-    bmf_import(&arial, "C:/FONTS/arial.bmf");
+    static bmf_font_t osans;
+    static bmf_font_t osans_bi;
+    static bmf_font_t osans_b;
+
+    bmf_import(&osans, "C:/FONTS/OSANS.BMF");
+    bmf_import(&osans_bi, "C:/FONTS/OSANS_BI.BMF");
+    bmf_import(&osans_b, "C:/FONTS/OSANS_B.BMF");
 
     gfx_enter_mode();
 
     gfx_fillrect_gradient(0,0,GFX_WIDTH,GFX_HEIGHT,COLOR_BLACK,COLOR_BLUE,GRADIENT_V);
 
-    /* Transparentne tło (domyślnie) */
-    bmf_printf(10, 10, &arial, 10, COLOR_WHITE,
-               "The quick brown fox jumps over the lazy dog. 0123456789 !@#$%^&*()-=");
-    
-    /* Z wybranym tłem */
-    bmf_printf_bg(10, 30, &arial, 10, COLOR_YELLOW, COLOR_BLUE,
-                  "The quick brown fox jumps over the lazy dog. 0123456789 !@#$%^&*()-=");
-    
-    /* Różne rozmiary */
-    bmf_printf(10, 60, &arial, 10, COLOR_GREEN,
-               "The quick brown fox jumps over the lazy dog. 0123456789 !@#$%^&*()-=");
-    
-    bmf_printf(10, 80, &arial, 14, COLOR_CYAN,
-               "The quick brown fox jumps over the lazy dog. 0123456789 !@#$%^&*()-=");
-    
-    bmf_printf(10, 110, &arial, 18, COLOR_RED,
-               "The quick brown fox jumps over the lazy dog. 0123456789 !@#$%^&*()-=");
+    bmf_printf(20, 20, &osans_bi, 32, COLOR_WHITE, "Welcome to %s", "Codename osLET 0.4");
 
-    bmf_printf(10, 130, &arial, 24, COLOR_LIGHT_BLUE,
-               "The quick brown fox jumps over the lazy dog. 0123456789 !@#$%^&*()-=");
+    const char *msg = "Thank you for cloning this repository. osLET is a hobby project written to show the\n"
+                      "author's love and appreciation for the early 1990s operating system aesthetics.\n"
+                      "The project is licensed under GPL 2.0. Please use the code to do good for the world.";
+    bmf_printf(20, 75, &osans, 12, COLOR_WHITE, msg);
 
-    bmf_printf(10, 160, &arial, 32, COLOR_LIGHT_CYAN,
-               "The quick brown fox jumps over the lazy dog. 0123456789 !@#$%^&*()-=");
+    bmf_printf(20, 143, &osans_b, 12, COLOR_YELLOW, "Please press any key to go back to the command prompt...");
     
     gfx_swap_buffers();
     kbd_getchar();
     
-    bmf_free(&arial);
+    bmf_free(&osans);
+    bmf_free(&osans_bi);
+    bmf_free(&osans_b);
     gfx_exit_mode();
 }
