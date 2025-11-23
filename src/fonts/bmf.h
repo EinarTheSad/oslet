@@ -13,6 +13,7 @@
 typedef struct {
     uint8_t height;
     uint8_t baseline;
+    uint8_t point_size;
     uint16_t glyph_count;
     uint8_t *glyph_data;
 } bmf_sequence_t;
@@ -54,4 +55,3 @@ int bmf_printf_bg(int x, int y, bmf_font_t *font, uint8_t height, uint8_t fg, ui
 
 /* Convenience */
 #define bmf_print(x, y, font, height, fg, text) bmf_printf(x, y, font, height, fg, "%s", text)
-void bmf_test(bmf_font_t *font);
