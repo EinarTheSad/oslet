@@ -75,6 +75,7 @@ def generate_bmf_from_ttf(ttf_path, sizes, output_path, name="Default"):
             # Sequence header
             out.write(struct.pack('<B', height))
             out.write(struct.pack('<B', baseline))
+            out.write(struct.pack('<B', size))
             out.write(struct.pack('<H', 256))  # glyph count
             
             glyph_count = 0
@@ -157,6 +158,7 @@ def generate_bmf_from_image(image_path, glyph_width, glyph_height,
         baseline = glyph_height - 2
         out.write(struct.pack('<B', glyph_height))
         out.write(struct.pack('<B', baseline))
+        out.write(struct.pack('<B', glyph_height))
         out.write(struct.pack('<H', 256))
         
         pitch = (glyph_width + 7) // 8

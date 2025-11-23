@@ -15,15 +15,13 @@ static inline uint16_t read_u16(const uint8_t **p) {
     return (uint16_t)(lo | (hi << 8));
 }
 
-static inline void bmf_memcpy(void *dst, const void *src, size_t n) {
-    char *d = dst;
-    const char *s = src;
-    while (n--) *d++ = *s++;
-}
-
-static inline void bmf_memset(void *dst, int val, size_t n) {
-    char *d = dst;
-    while (n--) *d++ = (char)val;
+static int bmf_find_sequence_for_size(bmf_font_t *font, uint8_t point_size) {
+    if (!font) return -1;
+    for (int i = 0; i < font->size_count; i++) {
+        if (font->sequences[i].point_size == point_size)
+            return i;
+    }
+    return -1;
 }
 
 static int bmf_load_from_memory(bmf_font_t *font, const uint8_t *data, size_t size) {
@@ -38,7 +36,7 @@ static int bmf_load_from_memory(bmf_font_t *font, const uint8_t *data, size_t si
     p += 4;
     
     /* Read font name */
-    bmf_memcpy(font->name, p, BMF_MAX_NAME);
+    memcpy_s(font->name, p, BMF_MAX_NAME);
     font->name[BMF_MAX_NAME - 1] = 0;
     p += BMF_MAX_NAME;
     
@@ -54,7 +52,7 @@ static int bmf_load_from_memory(bmf_font_t *font, const uint8_t *data, size_t si
     /* Allocate copy of data */
     font->data = kmalloc(size);
     if (!font->data) return -1;
-    bmf_memcpy(font->data, data, size);
+    memcpy_s(font->data, data, size);
     
     /* Parse all sequences */
     p = font->data + 36;
@@ -63,6 +61,7 @@ static int bmf_load_from_memory(bmf_font_t *font, const uint8_t *data, size_t si
         
         seq->height = read_u8(&p);
         seq->baseline = read_u8(&p);
+        seq->point_size = read_u8(&p);
         seq->glyph_count = read_u16(&p);
         seq->glyph_data = (uint8_t*)p;
         
@@ -83,7 +82,7 @@ static int bmf_load_from_memory(bmf_font_t *font, const uint8_t *data, size_t si
     }
     
     /* Clear cache */
-    bmf_memset(font->cache, 0, sizeof(font->cache));
+    memset_s(font->cache, 0, sizeof(font->cache));
     font->cache_height = 0xFF;
     
     return 0;
@@ -128,53 +127,40 @@ void bmf_free(bmf_font_t *font) {
     }
 }
 
-const bmf_glyph_t* bmf_get_glyph(bmf_font_t *font, uint8_t height, uint8_t ascii) {
+const bmf_glyph_t* bmf_get_glyph(bmf_font_t *font, uint8_t point_size, uint8_t ascii) {
     if (!font || !font->data) return NULL;
-    
-    /* Find sequence with matching height */
-    int seq_idx = -1;
-    for (int i = 0; i < font->size_count; i++) {
-        if (font->sequences[i].height == height) {
-            seq_idx = i;
-            break;
-        }
-    }
-    
+
+    int seq_idx = bmf_find_sequence_for_size(font, point_size);
     if (seq_idx < 0) return NULL;
-    
+
+    bmf_sequence_t *seq = &font->sequences[seq_idx];
+
     /* Check cache */
-    if (font->cache_height == height && ascii < BMF_CACHE_SIZE) {
+    if (font->cache_height == seq->height && ascii < BMF_CACHE_SIZE) {
         bmf_glyph_t *cached = &font->cache[ascii];
         if (cached->bitmap) return cached;
-    } else if (font->cache_height != height) {
-        /* Clear cache when height changes */
-        bmf_memset(font->cache, 0, sizeof(font->cache));
-        font->cache_height = height;
+    } else if (font->cache_height != seq->height) {
+        memset_s(font->cache, 0, sizeof(font->cache));
+        font->cache_height = seq->height;
     }
-    
-    bmf_sequence_t *seq = &font->sequences[seq_idx];
+
     const uint8_t *p = seq->glyph_data;
-    
-    /* Linear search through glyphs in this sequence */
     for (uint16_t i = 0; i < seq->glyph_count; i++) {
         uint8_t code = *p++;
         uint8_t width = *p++;
         uint8_t pitch = *p++;
-        
+
         size_t bitmap_size = pitch * seq->height;
-        
+
         if (code == ascii) {
-            /* Cache hit - store in cache */
             if (ascii < BMF_CACHE_SIZE) {
-                font->cache_height = height;
                 font->cache[ascii].ascii = code;
                 font->cache[ascii].width = width;
                 font->cache[ascii].pitch = pitch;
                 font->cache[ascii].bitmap = p;
                 return &font->cache[ascii];
             }
-            
-            /* Return temporary (not cached) */
+
             static bmf_glyph_t temp;
             temp.ascii = code;
             temp.width = width;
@@ -182,32 +168,30 @@ const bmf_glyph_t* bmf_get_glyph(bmf_font_t *font, uint8_t height, uint8_t ascii
             temp.bitmap = p;
             return &temp;
         }
-        
+
         p += bitmap_size;
     }
-    
+
     return NULL;
 }
 
 void bmf_draw_glyph(int x, int y, const bmf_glyph_t *glyph, uint8_t height, uint8_t baseline, uint8_t fg, uint8_t bg) {
     if (!glyph || !glyph->bitmap) return;
     if (glyph->width > 100 || height > 100) return;
-    
+
     const uint8_t *bitmap = glyph->bitmap;
-    
-    /* Adjust y position based on baseline */
     int y_base = y - (height - baseline);
-    
+
     for (uint8_t row = 0; row < height; row++) {
         for (uint8_t col = 0; col < glyph->width; col++) {
             uint8_t byte_idx = col / 8;
             uint8_t bit_idx = 7 - (col % 8);
-            
+
             if (row * glyph->pitch + byte_idx >= height * glyph->pitch) continue;
-            
+
             uint8_t byte = bitmap[row * glyph->pitch + byte_idx];
             uint8_t pixel = (byte >> bit_idx) & 1;
-            
+
             if (pixel) {
                 gfx_putpixel(x + col, y_base + row, fg);
             } else if (bg != BMF_TRANSPARENT) {
@@ -217,12 +201,15 @@ void bmf_draw_glyph(int x, int y, const bmf_glyph_t *glyph, uint8_t height, uint
     }
 }
 
-int bmf_measure_text(bmf_font_t *font, uint8_t height, const char *text) {
+int bmf_measure_text(bmf_font_t *font, uint8_t point_size, const char *text) {
     if (!font || !text) return 0;
-    
+
+    int seq_idx = bmf_find_sequence_for_size(font, point_size);
+    if (seq_idx < 0) return 0;
+
     int width = 0;
     while (*text) {
-        const bmf_glyph_t *g = bmf_get_glyph(font, height, (uint8_t)*text);
+        const bmf_glyph_t *g = bmf_get_glyph(font, point_size, (uint8_t)*text);
         if (g) width += g->width + 1;
         text++;
     }
@@ -233,9 +220,11 @@ int bmf_measure_text(bmf_font_t *font, uint8_t height, const char *text) {
 
 typedef struct {
     bmf_font_t *font;
+    uint8_t point_size;
     uint8_t height;
     uint8_t baseline;
     int x;
+    int line_start_x;
     int y;
     uint8_t fg;
     uint8_t bg;
@@ -244,21 +233,21 @@ typedef struct {
 
 static void bmf_emit(char ch, void *user) {
     bmf_ctx_t *ctx = (bmf_ctx_t*)user;
-    
+
     if (ch == '\n') {
-        ctx->x = 0;
+        ctx->x = ctx->line_start_x;
         ctx->y += ctx->height + 2;
         return;
     }
-    
+
     if (ch == '\t') {
         const bmf_glyph_t *space = bmf_get_glyph(ctx->font, ctx->height, ' ');
         int tab_width = space ? space->width * 4 : 16;
         ctx->x = ((ctx->x + tab_width) / tab_width) * tab_width;
         return;
     }
-    
-    const bmf_glyph_t *glyph = bmf_get_glyph(ctx->font, ctx->height, (uint8_t)ch);
+
+    const bmf_glyph_t *glyph = bmf_get_glyph(ctx->font, ctx->point_size, (uint8_t)ch);
     if (glyph) {
         bmf_draw_glyph(ctx->x, ctx->y, glyph, ctx->height, ctx->baseline, ctx->fg, ctx->bg);
         ctx->x += glyph->width + 1;
@@ -266,37 +255,36 @@ static void bmf_emit(char ch, void *user) {
     }
 }
 
-int bmf_vprintf_bg(int x, int y, bmf_font_t *font, uint8_t height,
+int bmf_vprintf_bg(int x, int y, bmf_font_t *font, uint8_t point_size,
                    uint8_t fg, uint8_t bg, const char *fmt, va_list ap) {
     if (!font || !fmt) return -1;
-    
-    /* Find baseline for this height */
-    uint8_t baseline = 0;
-    for (int i = 0; i < font->size_count; i++) {
-        if (font->sequences[i].height == height) {
-            baseline = font->sequences[i].baseline;
-            break;
-        }
-    }
-    
+
+    int seq_idx = bmf_find_sequence_for_size(font, point_size);
+    if (seq_idx < 0) return -1;
+
+    uint8_t height = font->sequences[seq_idx].height;
+    uint8_t baseline = font->sequences[seq_idx].baseline;
+
     bmf_ctx_t ctx = {
         .font = font,
+        .point_size = point_size,
         .height = height,
         .baseline = baseline,
         .x = x,
+        .line_start_x = x,
         .y = y,
         .fg = fg,
         .bg = bg,
         .written = 0
     };
-    
+
     extern int kvprintf(const char *fmt, va_list ap, void (*emit)(char, void*), void *user);
-    
+
     va_list cp;
     va_copy(cp, ap);
     kvprintf(fmt, cp, bmf_emit, &ctx);
     va_end(cp);
-    
+
     return ctx.written;
 }
 
