@@ -76,7 +76,9 @@ install: $(BUILD)/$(TARGET)
 	sudo mount $${LOOP}p1 mnt; \
 	sudo cp $(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
 	sudo mkdir -p mnt/FONTS; \
+	sudo rm mnt/FONTS/*; \
 	sudo cp src/fonts/*.ttf mnt/FONTS/; \
+	sudo cp src/fonts/*.bmf mnt/FONTS/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt; \
