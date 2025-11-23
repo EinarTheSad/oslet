@@ -995,9 +995,10 @@ int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries) {
         uint8_t lfn_checksum_val = 0;
         
         for (uint32_t i = 0; i < entries_count && count < max_entries; i++) {
+            if (count >= max_entries) break;
+
             if (dir_entries[i].name[0] == 0x00) {
-                kfree(cluster_buf);
-                return count;
+                break;
             }
             
             if ((uint8_t)dir_entries[i].name[0] == 0xE5) {

@@ -7,12 +7,6 @@
 #define HEAP_INITIAL_SIZE (4 * 1024 * 1024)
 #define ALIGN_UP(x, a) ((((uintptr_t)(x)) + ((a) - 1)) & ~((a) - 1))
 
-typedef struct block {
-    size_t size;
-    struct block *next;
-    int free;
-} block_t;
-
 static block_t *heap_start = NULL;
 static uintptr_t heap_end = 0;
 static size_t total_allocated = 0;
@@ -58,7 +52,7 @@ void heap_init(void) {
     
     if (expand_heap(HEAP_INITIAL_SIZE) != 0) {
         vga_set_color(12,15);
-        printf("FAILED to initialize heap\n");
+        printf("[FAIL] Heap could not be initialised\n");
         vga_set_color(0,7);
         return;
     }

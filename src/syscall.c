@@ -221,12 +221,12 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             fat32_dirent_t *fat_entries = (fat32_dirent_t*)kmalloc(sizeof(fat32_dirent_t) * edx);
             if (!fat_entries) return -1;
             
-            int count = fat32_list_dir((const char*)ebx, fat_entries, edx);
+            int count = fat32_list_dir((const char*)ebx, fat_entries, (int)edx);
             
             if (count > 0) {
                 sys_dirent_t *sys_entries = (sys_dirent_t*)ecx;
                 for (int i = 0; i < count; i++) {
-                    memcpy_s(sys_entries[i].name, fat_entries[i].name, 13);
+                    memcpy_s(sys_entries[i].name, fat_entries[i].name, sizeof(sys_entries[i].name));
                     sys_entries[i].size = fat_entries[i].size;
                     sys_entries[i].first_cluster = fat_entries[i].first_cluster;
                     sys_entries[i].is_directory = fat_entries[i].is_directory;
