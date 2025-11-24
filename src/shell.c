@@ -247,7 +247,7 @@ static void cmd_help(void) {
     printf("Change directory\n");
     vga_set_color(0, 7);
     
-    printf("  cls                ");
+    printf("  cls                  ");
     vga_set_color(0, 8);
     printf("Clear screen\n");
     vga_set_color(0, 7);
@@ -450,7 +450,7 @@ void shell_run(void) {
             continue;
         }
         
-        if (!strcmp_s(line, "cls") || !strcmp_s(line, "cls")) {
+        if (!strcmp_s(line, "cls")) {
             vga_clear();
             continue;
         }
