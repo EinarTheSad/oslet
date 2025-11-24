@@ -308,5 +308,5 @@ void vga_reset_textmode(void) {
 }
 
 void vga_set_color(uint8_t background, uint8_t foreground) {
-    vga_color = (foreground & 0x0F) | ((background & 0x0F) << 4);
+    vga_color = (foreground & 0x0F) | ((background & 0x07) << 4); /* or 0x0F */
 }

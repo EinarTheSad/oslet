@@ -4,6 +4,8 @@
 #define LONG_MIN (-2147483647L - 1)
 #define LONG_MAX 2147483647L
 
+const char *kernel_version = "0.4";
+
 static const console_t* CURRENT;
 
 void console_set(const console_t* c) { CURRENT = c; }
