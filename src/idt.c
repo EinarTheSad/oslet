@@ -73,7 +73,7 @@ void irq_invoke_from_stub(int vector) {
 
 void isr_common_stub(int vector, int error_code) {
     vga_set_color(12,15);
-    printf("[EXCEPTION] Vector=%d Error=0x%x\n", vector, (unsigned)error_code);
+    printf("[EXCEPTION] Vector=%d Error=0x%X\n", vector, (unsigned)error_code);
     for (;;) __asm__ volatile ("hlt");
 }
 
