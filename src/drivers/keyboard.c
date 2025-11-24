@@ -100,7 +100,7 @@ void keyboard_init(void) {
 }
 
 char kbd_getchar(void) {
-    while (buf_empty()) __asm__ volatile("hlt");
+    while (buf_empty()) __asm__ volatile("sti; hlt");
     return buf_pop();
 }
 

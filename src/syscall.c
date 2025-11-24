@@ -72,8 +72,8 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             return 0;
 
         case 0x01: /* Read string */
-            /* Not yet */
-            return 0;
+            if (!validate_ptr(ebx)) return -1;
+            return (uint32_t)kbd_getline((char*)ebx, ecx);
 
         case 0x02: /* Set color */
             vga_set_color((uint8_t)ebx, (uint8_t)ecx);
