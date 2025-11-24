@@ -69,7 +69,7 @@ int parse_args(char *line, char *argv[], int max_args) {
 static void print_prompt(void) {
     fat32_getcwd(current_path, sizeof(current_path));
     vga_set_color(COLOR_PROMPT_BG, COLOR_PROMPT_FG);
-    printf("%s>", current_path);
+    printf("kernel@%s>", current_path);
     vga_set_color(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
 }
 
@@ -92,7 +92,7 @@ static void print_banner(void) {
     printf(" |_____|  _____| |_____ |______    |    \n");
     printf("                                        \n");
     vga_set_color(0, 8);
-    printf("Kernel %s%-14sEinarTheSad 2025\n\n",VERSION);
+    printf("Kernel %s%-14sEinarTheSad 2025\n\n",kernel_version);
     vga_set_color(0, 7);
 }
 

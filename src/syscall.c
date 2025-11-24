@@ -217,7 +217,7 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
         
         case 0x04: { /* List directory */
             if (!validate_ptr(ebx) || !validate_ptr(ecx)) return -1;
-            
+            if (edx > 256) edx = 256;
             fat32_dirent_t *fat_entries = (fat32_dirent_t*)kmalloc(sizeof(fat32_dirent_t) * edx);
             if (!fat_entries) return -1;
             
@@ -355,6 +355,9 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             
             return count;
         }
+
+        case 0x02: /* Kernel version info */
+            return kernel_version;
         
         default:
             return -1;

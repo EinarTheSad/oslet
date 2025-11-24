@@ -46,6 +46,7 @@
 /* AH = 08h - System Info */
 #define SYS_INFO_MEM        0x0800
 #define SYS_INFO_TASKS      0x0801
+#define SYS_INFO_VERSION    0x0802
 
 /* AH = 09h - Graphics */
 #define SYS_GFX_ENTER       0x0900
@@ -240,6 +241,12 @@ static inline int sys_get_meminfo(sys_meminfo_t *info) {
 static inline int sys_get_tasks(sys_taskinfo_t *tasks, int max) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_TASKS), "b"(tasks), "c"(max));
+    return ret;
+}
+
+static inline int sys_version(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_VERSION));
     return ret;
 }
 

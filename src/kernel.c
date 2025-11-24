@@ -24,7 +24,7 @@ extern uint8_t __kernel_end;
 static void boot_sequence(void) {
     vga_use_as_console();
     vga_reset_textmode();
-    vga_set_color(1, 15); printf("Codename osLET %s\n", VERSION);
+    vga_set_color(1, 15); printf("Codename osLET %s\n", kernel_version);
     vga_set_color(0, 7);
     printf("Starting boot sequence...\n\n");
         

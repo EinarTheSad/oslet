@@ -2,7 +2,6 @@
 
 #include "../syscall.h"
 #include "../lib/stdio.h"
-#include "../console.h"
 
 #define YEAR 2025
 
@@ -21,7 +20,7 @@ void _start(void) {
     sys_setcolor(0, 9);
     printf("  Kernel");
     sys_setcolor(0, 7);
-    printf(": Development Kernel %s\n", VERSION);
+    printf(": Development Kernel %s\n", sys_version());
     
     sys_setcolor(0, 9);
     printf("  Shell");

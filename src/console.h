@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define VERSION "0.4"
+extern const char *kernel_version;
 
 typedef struct {
     // Write a chunk; return bytes written.
