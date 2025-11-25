@@ -31,6 +31,8 @@ typedef struct {
 } Command;
 
 static void cmd_help(void);
+static void cmd_exit(void);
+static void cmd_mem(void);
 
 static const Command commands[] = {
     { "cat",    "cat <file>",          "Display file contents",      NULL },
@@ -41,7 +43,7 @@ static const Command commands[] = {
     { "heap",   "heap",                "Show heap statistics",       NULL },
     { "help",   "help",                "Show this help",             cmd_help },
     { "ls",     "ls <path>",           "List directory",             NULL },
-    { "mem",    "mem",                 "Show memory statistics",     NULL },
+    { "mem",    "mem",                 "Show memory statistics",     cmd_mem },
     { "mkdir",  "mkdir <dir>",         "Create directory",           NULL },
     { "mount",  "mount <drive> <lba>", "Mount FAT32 drive",          NULL },
     { "ps",     "ps",                  "List running tasks",         NULL },
@@ -50,13 +52,11 @@ static const Command commands[] = {
     { "rtc",    "rtc",                 "Show current time",          NULL },
     { "run",    "run <file>",          "Execute a binary file",      NULL },
     { "uptime", "uptime",              "Show system uptime",         NULL },
-    { "exit",   "exit",                "Exit system",                sys_exit }
+    { "exit",   "exit",                "Exit system",                cmd_exit }
 };
 
 static char current_path[FAT32_MAX_PATH];
 static int parse_args(char *line, char *argv[], int max_args);
-
-static void cmd_help(void);
 
 static void sort_commands(Command* arr, int count) {
     for (int i = 0; i < count - 1; i++) {
@@ -165,16 +165,39 @@ static void cmd_help(void) {
 
     sort_commands(sorted, COMMAND_COUNT);
 
-    sys_setcolor(COLOR_PROMPT_BG, COLOR_DIR_FG);
+    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
     printf("\nAvailable commands:\n\n");
 
     for (int i = 0; i < COMMAND_COUNT; i++) {
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        sys_setcolor(COLOR_INFO_BG, COLOR_INFO_FG);
         printf("  %-22s", sorted[i].name);
 
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_INFO_FG);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         printf("%s\n", sorted[i].desc);
     }
 
     printf("\n");
+}
+
+static void cmd_exit(void) {
+    printf("This action will return you to the kernel shell.\nMake sure you know what you are doing! Proceed? (Y/N) ");
+    char conf[2];
+    sys_readline(conf,2);
+    if (!strcmp(conf,"Y") || !strcmp(conf,"y")) sys_exit();
+    else {};
+}
+
+static void cmd_mem(void) {
+    sys_meminfo_t meminfo;
+    sys_get_meminfo(&meminfo);
+    printf("\nMemory statistics:\n\n");
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);
+    printf("  Total installed:");
+    sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
+                    printf(" %.2f MiB (%u KiB)", meminfo.total_kb / 1024, meminfo.total_kb);
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);
+    printf("\n  Free:");
+    sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
+                    printf(" %.2f MiB (%u KiB)", meminfo.free_kb / 1024, meminfo.free_kb);
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG); printf("\n\n");
 }
