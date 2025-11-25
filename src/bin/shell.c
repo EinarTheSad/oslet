@@ -33,6 +33,7 @@ typedef struct {
 static void cmd_help(void);
 static void cmd_exit(void);
 static void cmd_mem(void);
+static void cmd_rtc(void);
 
 static const Command commands[] = {
     { "cat",    "cat <file>",          "Display file contents",      NULL },
@@ -49,10 +50,10 @@ static const Command commands[] = {
     { "ps",     "ps",                  "List running tasks",         NULL },
     { "rm",     "rm <file>",           "Delete file",                NULL },
     { "rmdir",  "rmdir <dir>",         "Remove directory",           NULL },
-    { "rtc",    "rtc",                 "Show current time",          NULL },
+    { "time",   "time",                "Show current time and date", cmd_rtc },
     { "run",    "run <file>",          "Execute a binary file",      NULL },
     { "uptime", "uptime",              "Show system uptime",         NULL },
-    { "exit",   "exit",                "Exit system",                cmd_exit }
+    { "exit",   "exit",                "Exit shell",                 cmd_exit }
 };
 
 static char current_path[FAT32_MAX_PATH];
@@ -181,8 +182,8 @@ static void cmd_help(void) {
 
 static void cmd_exit(void) {
     printf("This action will return you to the kernel shell.\nMake sure you know what you are doing! Proceed? (Y/N) ");
-    char conf[2];
-    sys_readline(conf,2);
+    char conf[80];
+    sys_readline(conf,strlen(conf));
     if (!strcmp(conf,"Y") || !strcmp(conf,"y")) sys_exit();
     else {};
 }
@@ -190,14 +191,28 @@ static void cmd_exit(void) {
 static void cmd_mem(void) {
     sys_meminfo_t meminfo;
     sys_get_meminfo(&meminfo);
+    const double total = (double)meminfo.total_kb;
+    const double free = (double)meminfo.free_kb;
     printf("\nMemory statistics:\n\n");
     sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);
     printf("  Total installed:");
     sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
-                    printf(" %.2f MiB (%u KiB)", meminfo.total_kb / 1024, meminfo.total_kb);
+                    printf(" %.2f MiB", (total / 1024));
     sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);
     printf("\n  Free:");
     sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
-                    printf(" %.2f MiB (%u KiB)", meminfo.free_kb / 1024, meminfo.free_kb);
+                    printf(" %.2f MiB (%.1f%)", (free / 1024), (free / total)*100);
     sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG); printf("\n\n");
+}
+
+static void cmd_rtc(void) {
+    sys_time_t current;
+    sys_get_time(&current);
+
+    printf("Current time: ");
+    sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
+    printf("%02u/%02u/%04u %02u:%02u:%02u",
+       current.day, current.month, current.year,
+       current.hour, current.minute, current.second);
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG); printf("\n");
 }

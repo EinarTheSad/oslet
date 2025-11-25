@@ -303,6 +303,13 @@ static uint32_t handle_time(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
     (void)ebx; (void)ecx; (void)edx;
     
     switch (al) {
+        case 0x00: {/* RTC */
+            if (!validate_ptr(ebx)) return -1;
+            
+            sys_time_t *time = (sys_time_t*)ebx;
+            rtc_read_time(time);
+            return 0;
+        }
         case 0x01: /* Uptime */
             return timer_get_ticks();
         

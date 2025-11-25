@@ -36,48 +36,71 @@ void rtc_init(void) {
     rtc_read_time(&boot_time);
 }
 
-void rtc_read_time(rtc_time_t *time) {
+void rtc_read_time(rtc_time_t *time)
+{
     if (!time) return;
-    
-    uint8_t last_second, last_minute, last_hour;
-    uint8_t last_day, last_month, last_year;
-    
+
+    rtc_time_t t1, t2;
+
+    // Stabilizacja: dwa kompletne odczyty, aż wartości się pokryją.
     do {
         while (rtc_is_updating());
-        
-        last_second = cmos_read(RTC_SECOND);
-        last_minute = cmos_read(RTC_MINUTE);
-        last_hour   = cmos_read(RTC_HOUR);
-        last_day    = cmos_read(RTC_DAY);
-        last_month  = cmos_read(RTC_MONTH);
-        last_year   = cmos_read(RTC_YEAR);
-        
-    } while (last_second != cmos_read(RTC_SECOND));
-    
+
+        t1.second = cmos_read(RTC_SECOND);
+        t1.minute = cmos_read(RTC_MINUTE);
+        t1.hour   = cmos_read(RTC_HOUR);
+        t1.day    = cmos_read(RTC_DAY);
+        t1.month  = cmos_read(RTC_MONTH);
+        t1.year   = cmos_read(RTC_YEAR);
+
+        while (rtc_is_updating());
+
+        t2.second = cmos_read(RTC_SECOND);
+        t2.minute = cmos_read(RTC_MINUTE);
+        t2.hour   = cmos_read(RTC_HOUR);
+        t2.day    = cmos_read(RTC_DAY);
+        t2.month  = cmos_read(RTC_MONTH);
+        t2.year   = cmos_read(RTC_YEAR);
+
+    } while (
+        t1.second != t2.second ||
+        t1.minute != t2.minute ||
+        t1.hour   != t2.hour   ||
+        t1.day    != t2.day    ||
+        t1.month  != t2.month  ||
+        t1.year   != t2.year
+    );
+
     uint8_t status_b = cmos_read(RTC_STATUS_B);
     int binary_mode = status_b & 0x04;
-    
+
+    uint8_t sec   = t1.second;
+    uint8_t min   = t1.minute;
+    uint8_t hr    = t1.hour;
+    uint8_t day   = t1.day;
+    uint8_t month = t1.month;
+    uint8_t year  = t1.year;
+
     if (!binary_mode) {
-        time->second = bcd_to_bin(last_second);
-        time->minute = bcd_to_bin(last_minute);
-        time->hour   = bcd_to_bin(last_hour);
-        time->day    = bcd_to_bin(last_day);
-        time->month  = bcd_to_bin(last_month);
-        time->year   = bcd_to_bin(last_year);
-    } else {
-        time->second = last_second;
-        time->minute = last_minute;
-        time->hour   = last_hour;
-        time->day    = last_day;
-        time->month  = last_month;
-        time->year   = last_year;
+        sec   = bcd_to_bin(sec);
+        min   = bcd_to_bin(min);
+        hr    = bcd_to_bin(hr);
+        day   = bcd_to_bin(day);
+        month = bcd_to_bin(month);
+        year  = bcd_to_bin(year);
     }
-    
+
+    time->second = sec;
+    time->minute = min;
+    time->hour   = hr;
+    time->day    = day;
+    time->month  = month;
+    time->year   = (uint16_t)year;
+
     time->year += 2000;
-    
-    /* Check if need to convert to 24h (bit 1 in status_b) */
+
     int is_12h = !(status_b & 0x02);
-    if (is_12h && (last_hour & 0x80)) {
+    if (is_12h && (hr & 0x80)) {
         time->hour = ((time->hour & 0x7F) + 12) % 24;
     }
 }

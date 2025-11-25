@@ -92,6 +92,15 @@ typedef struct {
 } sys_meminfo_t;
 
 typedef struct {
+    uint8_t second;
+    uint8_t minute;
+    uint8_t hour;
+    uint8_t day;
+    uint8_t month;
+    uint16_t year;
+} sys_time_t;
+
+typedef struct {
     uint32_t tid;
     char name[32];
     uint8_t state;
@@ -299,4 +308,10 @@ static inline void sys_gfx_circle(int cx, int cy, int r, uint8_t color) {
 static inline void sys_gfx_print(int x, int y, const char *text, uint8_t fg) {
     uint32_t packed = ((uint32_t)y << 16) | ((uint32_t)fg << 8);
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_PRINT), "b"(x), "c"(packed), "d"(text));
+}
+
+static inline int sys_get_time(sys_time_t *time) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_TIME_GET), "b"(time));
+    return ret;
 }
