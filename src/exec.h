@@ -2,9 +2,9 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define EXEC_LOAD_ADDR   0x200000  /* 2MB - user programs load here */
-#define EXEC_USER_STACK  0x300000  /* 3MB - user stack top */
-#define EXEC_STACK_SIZE  8192
+#define EXEC_LOAD_ADDR   0x200000  /* 2MB  - user programs load here */
+#define EXEC_USER_STACK  0x400000  /* 4MB  - user stack top */
+#define EXEC_STACK_SIZE  65536     /* 64kB - user stack size */
 
 typedef struct {
     uint32_t entry_point;

@@ -20,6 +20,7 @@
 #define FAT32_MAX_PATH 256
 
 static char current_path[FAT32_MAX_PATH];
+int parse_args(char *line, char *argv[], int max_args);
 
 static void print_prompt(void) {
     sys_getcwd(current_path, sizeof(current_path));
@@ -34,7 +35,8 @@ void _start(void) {
     printf("Warning: this is highly unstable and under current development.\nPlease do not use it on your important data!\n");
 
     char line[128];
-    char *argv[MAX_ARGS] = {0};
+    char *argv[MAX_ARGS];
+    memset(argv, 0, sizeof(argv));
     int argc;
 
     for (;;) {
@@ -50,8 +52,9 @@ void _start(void) {
             line[--n] = '\0';
         
         if (line[0] == '\0') continue;
-        
+
         argc = parse_args(line, argv, MAX_ARGS);
+
         if (argc == 0)
             continue;
 
@@ -74,47 +77,27 @@ void _start(void) {
 }
 
 int parse_args(char *line, char *argv[], int max_args) {
-    if (!line || !argv || max_args <= 0)
+    int argc = 0;
+    
+    if (!line || max_args <= 0)
         return 0;
 
-    int argc = 0;
-    int in_quote = 0;
     char *p = line;
 
     while (*p && argc < max_args - 1) {
-        
-        while (*p == ' ' || *p == '\t') {
-            p++;
-        }
+        /* while (*p && (*p == ' ' || *p == '\t'))
+            p++; */
 
-        if (*p == '\0') {
+        if (!*p)
             break;
-        }
 
-        /* if (*p == '"') {
-            in_quote = 1;
+        argv[argc++] = p;
+
+        while (*p && *p != ' ' && *p != '\t')
             p++;
-            argv[argc++] = p;
-            
-            while (*p && in_quote) {
-                if (*p == '"') {
-                    *p = '\0';
-                    in_quote = 0;
-                }
-                p++;
-            }
-        } 
-        else {
-            argv[argc++] = p;
-            
-            while (*p && *p != ' ' && *p != '\t') {
-                p++;
-            }
-            
-            if (*p) {
-                *p++ = '\0';
-            }
-        } */
+
+        if (*p)
+            *p++ = '\0';
     }
 
     argv[argc] = NULL;

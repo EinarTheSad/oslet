@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include "syscall.h"
 
-#define TASK_STACK_SIZE 8192
+#define TASK_STACK_SIZE 65536 /* 64 kB */
 
 typedef enum {
     TASK_READY,

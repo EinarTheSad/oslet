@@ -107,6 +107,12 @@ int exec_run(exec_image_t *image) {
         return -1;
     }
 
+    task_t *user_task = task_find_by_tid(tid);
+    if (user_task && user_task->kernel_stack) {
+        uint32_t kernel_esp = (uint32_t)user_task->kernel_stack + TASK_STACK_SIZE;
+        tss_set_kernel_stack(kernel_esp);
+    }
+    
     task_yield();
     return 0;
 }
