@@ -19,34 +19,42 @@
 #define MAX_ARGS 8
 #define FAT32_MAX_PATH 256
 
+#define COMMAND_COUNT (sizeof(commands) / sizeof((commands)[0]))
+
+typedef void (*CommandFunc)(void);
+
 typedef struct {
+    const char* comm;
     const char* name;
     const char* desc;
+    CommandFunc func;
 } Command;
 
+static void cmd_help(void);
+
 static const Command commands[] = {
-    { "cat <file>",          "Display file contents" },
-    { "cd <dir>",            "Change directory" },
-    { "cls",                 "Clear screen" },
-    { "echo <text> <file>",  "Write text to file" },
-    { "gfx",                 "Run a VGA graphics demo" },
-    { "heap",                "Show heap statistics" },
-    { "help",                "Show this help" },
-    { "ls <path>",           "List directory" },
-    { "mem",                 "Show memory statistics" },
-    { "mkdir <dir>",         "Create directory" },
-    { "mount <drive> <lba>", "Mount FAT32 drive" },
-    { "ps",                  "List running tasks" },
-    { "rm <file>",           "Delete file" },
-    { "rmdir <dir>",         "Remove directory" },
-    { "rtc",                 "Show current time" },
-    { "run <file>",          "Execute a binary file" },
-    { "uptime",              "Show system uptime" }
+    { "cat",    "cat <file>",          "Display file contents",      NULL },
+    { "cd",     "cd <dir>",            "Change directory",           NULL },
+    { "cls",    "cls",                 "Clear screen",               sys_clear },
+    { "echo",   "echo <text> <file>",  "Write text to file",         NULL },
+    { "gfx",    "gfx",                 "Run a VGA graphics demo",    NULL },
+    { "heap",   "heap",                "Show heap statistics",       NULL },
+    { "help",   "help",                "Show this help",             cmd_help },
+    { "ls",     "ls <path>",           "List directory",             NULL },
+    { "mem",    "mem",                 "Show memory statistics",     NULL },
+    { "mkdir",  "mkdir <dir>",         "Create directory",           NULL },
+    { "mount",  "mount <drive> <lba>", "Mount FAT32 drive",          NULL },
+    { "ps",     "ps",                  "List running tasks",         NULL },
+    { "rm",     "rm <file>",           "Delete file",                NULL },
+    { "rmdir",  "rmdir <dir>",         "Remove directory",           NULL },
+    { "rtc",    "rtc",                 "Show current time",          NULL },
+    { "run",    "run <file>",          "Execute a binary file",      NULL },
+    { "uptime", "uptime",              "Show system uptime",         NULL },
+    { "exit",   "exit",                "Exit system",                sys_exit }
 };
 
 static char current_path[FAT32_MAX_PATH];
-int parse_args(char *line, char *argv[], int max_args);
-int command_count = sizeof(commands) / sizeof(commands[0]);
+static int parse_args(char *line, char *argv[], int max_args);
 
 static void cmd_help(void);
 
@@ -69,6 +77,7 @@ static void print_prompt(void) {
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
 }
 
+__attribute__((section(".entry"), used))
 void _start(void) {
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
     printf("Developmental osLET standalone shell %s\n", sys_version());
@@ -100,15 +109,21 @@ void _start(void) {
 
         char *cmd = argv[0];
 
-        if (!strcmp(cmd, "exit")) {
-            sys_exit();
-        } else if (!strcmp(cmd, "cls")) {
-            sys_clear();
-            continue;
-        } else if (!strcmp(cmd, "help")) {
-            cmd_help();
-            continue;
-        } else {
+        int found = 0;
+
+        for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); i++) {
+            if (!strcmp(cmd, commands[i].comm)) {
+                found = 1;
+                if (commands[i].func) {
+                    commands[i].func();
+                } else {
+                    /* This is for the NULL-pointed non-implemented functions */
+                }
+                break;
+            }
+        }
+
+        if (!found) {
             sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
             printf("Unknown command: ");
             sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
@@ -117,7 +132,7 @@ void _start(void) {
     }
 }
 
-int parse_args(char *line, char *argv[], int max_args) {
+static int parse_args(char *line, char *argv[], int max_args) {
     int argc = 0;
     
     if (!line || max_args <= 0)
@@ -145,15 +160,15 @@ int parse_args(char *line, char *argv[], int max_args) {
 
 static void cmd_help(void) {
     Command sorted[sizeof(commands) / sizeof(commands[0])];
-    for (int i = 0; i < command_count; i++)
+    for (int i = 0; i < COMMAND_COUNT; i++)
         sorted[i] = commands[i];
 
-    sort_commands(sorted, command_count);
+    sort_commands(sorted, COMMAND_COUNT);
 
     sys_setcolor(COLOR_PROMPT_BG, COLOR_DIR_FG);
     printf("\nAvailable commands:\n\n");
 
-    for (int i = 0; i < command_count; i++) {
+    for (int i = 0; i < COMMAND_COUNT; i++) {
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         printf("  %-22s", sorted[i].name);
 
