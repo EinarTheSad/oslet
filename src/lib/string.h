@@ -6,3 +6,5 @@ void *memset(void *dst, int val, size_t n);
 size_t strlen(const char *s);
 int strcmp(const char *a, const char *b);
 char *strcpy(char *dst, const char *src);
+char *strchr(const char *s, int c);
+char *strrchr(const char *s, int c);
