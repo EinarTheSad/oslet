@@ -80,9 +80,6 @@ void gfx_fillrect(int x, int y, int w, int h, uint8_t color);
 void gfx_circle(int cx, int cy, int r, uint8_t color);
 void gfx_load_palette(void);
 
-void gfx_putchar(int x, int y, char c, uint8_t fg);
-void gfx_print(int x, int y, const char* str, uint8_t fg);
-
 void gfx_hline(int x, int y, int w, uint8_t color);
 void gfx_vline(int x, int y, int h, uint8_t color);
 void gfx_floodfill(int x, int y, uint8_t new_color);

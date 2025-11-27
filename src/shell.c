@@ -257,11 +257,6 @@ static void cmd_help(void) {
     printf("Write text to file\n");
     vga_set_color(0, 7);
 
-    printf("  gfx                  ");
-    vga_set_color(0, 8);
-    printf("Run a VGA graphics demo\n");
-    vga_set_color(0, 7);
-   
     printf("  help                 ");
     vga_set_color(0, 8);
     printf("Show this help\n");
@@ -503,11 +498,6 @@ void shell_run(void) {
         
         if (!strcmp_s(line, "rtc")) {
             rtc_print_time();
-            continue;
-        }
-
-        if (!strcmp_s(line, "gfx")) {
-            graphics_demo();
             continue;
         }
               

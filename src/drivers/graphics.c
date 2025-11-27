@@ -3,7 +3,6 @@
 #include "../mem/heap.h"
 #include "../io.h"
 #include "vga.h"
-#include "../fonts/mono8x8.h"
 #include "../drivers/fat32.h"
 
 static uint8_t* backbuffer = NULL;
@@ -466,52 +465,6 @@ void gfx_circle(int cx, int cy, int r, uint8_t color) {
     }
     
     GFX_UNLOCK();
-}
-
-void gfx_putchar(int x, int y, char c, uint8_t fg) {  
-    const uint8_t* glyph = font8x8[(unsigned char)c];
-    
-    GFX_LOCK();
-    for (int row = 0; row < 8; row++) {
-        uint8_t bits = glyph[row];
-        for (int col = 0; col < 8; col++) {
-            int px = x + col;
-            int py = y + row;
-            
-            if (px >= 0 && px < GFX_WIDTH && py >= 0 && py < GFX_HEIGHT) {
-                /* Transparent background: only draw foreground pixels */
-                if (bits & (1 << col)) {
-                    uint32_t offset = py * (GFX_WIDTH / 2) + (px / 2);
-                    if (px & 1) {
-                        backbuffer[offset] = (backbuffer[offset] & 0xF0) | (fg & 0x0F);
-                    } else {
-                        backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((fg & 0x0F) << 4);
-                    }
-                }
-            }
-        }
-    }
-    GFX_UNLOCK();
-}
-
-void gfx_print(int x, int y, const char* str, uint8_t fg) {
-    int cx = x;
-    int cy = y;
-    
-    while (*str) {
-        if (*str == '\n') {
-            cx = x;
-            cy += 8;
-        } else {
-            gfx_putchar(cx, cy, *str, fg);
-            cx += 8;
-            if (cx >= GFX_WIDTH) {
-                cx = x;
-                cy += 8;
-            }
-        }
-        str++;
-    }
 }
 
 uint8_t* gfx_get_backbuffer(void) {
