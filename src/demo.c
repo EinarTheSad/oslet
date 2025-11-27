@@ -25,6 +25,12 @@ void graphics_demo(void) {
     bmf_printf(20, 75, &osans, 12, COLOR_WHITE, msg);
 
     bmf_printf(20, 143, &osans_b, 12, COLOR_YELLOW, "Please press any key to go back to the command prompt...");
+
+    for (int i = 0; i < 16; i++) { /* palette test */
+        gfx_fillrect(20+i*36, 175, 32, 16, i);
+        gfx_fillrect(20+i*36, 191, 32, 16, i+8);
+        gfx_fillrect_gradient(20+i*36, 207, 32, 16, i, i+8, GRADIENT_H);
+    }
     
     gfx_swap_buffers();
     kbd_getchar();
