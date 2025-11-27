@@ -3,6 +3,20 @@
 #include "paging.h"
 #include "../console.h"
 
+static volatile int heap_lock = 0;
+
+static inline void heap_acquire(void) {
+    __asm__ volatile("cli");
+    while (__sync_lock_test_and_set(&heap_lock, 1)) {
+        __asm__ volatile("pause");
+    }
+}
+
+static inline void heap_release(void) {
+    __sync_lock_release(&heap_lock);
+    __asm__ volatile("sti");
+}
+
 block_t *heap_start = NULL;
 uintptr_t heap_end = 0;
 size_t total_allocated = 0;
@@ -86,7 +100,7 @@ static void merge_free_blocks(void) {
 
 void *kmalloc(size_t size) {
     if (size == 0) return NULL;
-    __asm__ volatile ("cli");
+    heap_acquire();
     size = ALIGN_UP(size, 8);
     block_t *curr = heap_start;
     
@@ -95,13 +109,16 @@ void *kmalloc(size_t size) {
             split_block(curr, size);
             curr->free = 0;
             total_allocated += size;
+            heap_release();
             return (void*)((char*)curr + sizeof(block_t));
         }
         
         if (!curr->next) {
             size_t need = size + sizeof(block_t);
-            if (expand_heap(need) != 0)
+            if (expand_heap(need) != 0) {
+                heap_release();
                 return NULL;
+            }
             
             block_t *new_block = (block_t*)((char*)curr + sizeof(block_t) + curr->size);
             size_t expanded = heap_end - ((uintptr_t)new_block);
@@ -113,29 +130,31 @@ void *kmalloc(size_t size) {
         
         curr = curr->next;
     }
-    __asm__ volatile ("sti");
+    heap_release();
     return NULL;
 }
 
 void kfree(void *ptr) {
     if (!ptr) return;
-    __asm__ volatile ("cli");
+    heap_acquire();
     block_t *b = (block_t*)((char*)ptr - sizeof(block_t));
     
     if ((uintptr_t)b < HEAP_START || (uintptr_t)b >= heap_end) {
         printf("Invalid free heap at %p\n", ptr);
+        heap_release();
         return;
     }
     
     if (b->free) {
         printf("Double free heap detected at %p\n", ptr);
+        heap_release();
         return;
     }
     
     total_freed += b->size;
     b->free = 1;
     merge_free_blocks();
-    __asm__ volatile ("sti");
+    heap_release();
 }
 
 void heap_print_stats(void) {
