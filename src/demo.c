@@ -34,6 +34,12 @@ void graphics_demo(void) {
     
     gfx_swap_buffers();
     kbd_getchar();
+
+    gfx_clear(COLOR_BROWN);
+    gfx_load_bmp_4bit("C:/bitmap.bmp",0,0);
+    gfx_swap_buffers();
+    
+    kbd_getchar();
     
     bmf_free(&osans);
     bmf_free(&osans_bi);

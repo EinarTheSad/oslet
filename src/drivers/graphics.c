@@ -4,17 +4,7 @@
 #include "../io.h"
 #include "vga.h"
 #include "../fonts/mono8x8.h"
-
-static const uint8_t bayer8[8][8] = {
-    {  0, 48, 12, 60,  3, 51, 15, 63 },
-    { 32, 16, 44, 28, 35, 19, 47, 31 },
-    {  8, 56,  4, 52, 11, 59,  7, 55 },
-    { 40, 24, 36, 20, 43, 27, 39, 23 },
-    {  2, 50, 14, 62,  1, 49, 13, 61 },
-    { 34, 18, 46, 30, 33, 17, 45, 29 },
-    { 10, 58,  6, 54,  9, 57,  5, 53 },
-    { 42, 26, 38, 22, 41, 25, 37, 21 }
-};
+#include "../drivers/fat32.h"
 
 static uint8_t* backbuffer = NULL;
 static int graphics_active = 0;
@@ -51,7 +41,7 @@ static const uint8_t mode_80x25_text[] = {
     0x0C, 0x00, 0x0F, 0x08, 0x00
 };
 
-static const uint8_t gfx_palette[16][3] = {
+const uint8_t gfx_palette[16][3] = {
     {0x00, 0x00, 0x00}, // 0  black
     {0x00, 0x00, 0xA8}, // 1  dark blue
     {0x00, 0xA8, 0x54}, // 2  dark green
@@ -69,37 +59,6 @@ static const uint8_t gfx_palette[16][3] = {
     {0xFC, 0xFC, 0x00}, // 14 yellow
     {0xFC, 0xFC, 0xFC}, // 15 white
 };
-
-static void vga_write_regs(const uint8_t* regs) {
-    outb(0x3C2, *regs++);
-    
-    for (uint8_t i = 0; i < 5; i++) {
-        outb(0x3C4, i);
-        outb(0x3C5, *regs++);
-    }
-    
-    outb(0x3D4, 0x03);
-    outb(0x3D5, inb(0x3D5) | 0x80);
-    outb(0x3D4, 0x11);
-    outb(0x3D5, inb(0x3D5) & 0x7F);
-    
-    for (uint8_t i = 0; i < 25; i++) {
-        outb(0x3D4, i);
-        outb(0x3D5, *regs++);
-    }
-    
-    for (uint8_t i = 0; i < 9; i++) {
-        outb(0x3CE, i);
-        outb(0x3CF, *regs++);
-    }
-    
-    (void)inb(0x3DA);
-    for (uint8_t i = 0; i < 21; i++) {
-        outb(0x3C0, i);
-        outb(0x3C0, *regs++);
-    }
-    outb(0x3C0, 0x20);
-}
 
 static void wait_vretrace(void) {
     while (inb(0x3DA) & 0x08);
@@ -737,4 +696,74 @@ void gfx_floodfill_gradient(int x, int y,
     }
 
     GFX_UNLOCK();
+}
+
+int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y) {
+    fat32_file_t *f = fat32_open(path, "r");
+    if (!f) return -1;
+    
+    bmp_header_t header;
+    bmp_info_t info;
+    
+    if (fat32_read(f, &header, sizeof(header)) != sizeof(header)) {
+        fat32_close(f);
+        return -1;
+    }
+    
+    if (header.type != 0x4D42) { /* "BM" */
+        fat32_close(f);
+        return -1;
+    }
+    
+    if (fat32_read(f, &info, sizeof(info)) != sizeof(info)) {
+        fat32_close(f);
+        return -1;
+    }
+    
+    if (info.bpp != 4 || info.compression != 0) {
+        fat32_close(f);
+        return -1;
+    }
+    
+    int width = info.width;
+    int height = info.height > 0 ? info.height : -info.height;
+    int bottom_up = info.height > 0;
+    
+    /* Calculate row size (4-byte aligned) */
+    int row_size = ((width + 1) / 2 + 3) & ~3;
+    
+    /* Seek to pixel data */
+    fat32_seek(f, header.offset);
+    
+    uint8_t *row_buf = kmalloc(row_size);
+    if (!row_buf) {
+        fat32_close(f);
+        return -1;
+    }
+    
+    GFX_LOCK();
+    
+    for (int y = 0; y < height; y++) {
+        if (fat32_read(f, row_buf, row_size) != row_size) break;
+        
+        int screen_y = bottom_up ? (dest_y + height - 1 - y) : (dest_y + y);
+        
+        for (int x = 0; x < width; x++) {
+            int byte_idx = x / 2;
+            uint8_t pixel = (x & 1) ? (row_buf[byte_idx] & 0x0F) : (row_buf[byte_idx] >> 4);
+            
+            int screen_x = dest_x + x;
+            
+            if (screen_x >= 0 && screen_x < GFX_WIDTH && 
+                screen_y >= 0 && screen_y < GFX_HEIGHT) {
+                putpixel_raw(screen_x, screen_y, pixel);
+            }
+        }
+    }
+    
+    GFX_UNLOCK();
+    
+    kfree(row_buf);
+    fat32_close(f);
+    return 0;
 }
