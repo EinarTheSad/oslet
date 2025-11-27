@@ -1,6 +1,9 @@
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
+#include "rtc.h"
+
+typedef rtc_time_t sys_time_t;
 
 /* AH = 01h - Console I/O */
 #define SYS_CONSOLE_OUT     0x0100
@@ -103,15 +106,6 @@ typedef struct {
     uint32_t total_allocated;
     uint32_t total_freed;
 } sys_heapinfo_t;
-
-typedef struct {
-    uint8_t second;
-    uint8_t minute;
-    uint8_t hour;
-    uint8_t day;
-    uint8_t month;
-    uint16_t year;
-} sys_time_t;
 
 typedef struct {
     uint32_t tid;

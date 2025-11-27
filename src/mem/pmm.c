@@ -36,6 +36,7 @@ static uintptr_t phys_base = 0;
 static uintptr_t phys_top  = 0;
 static size_t nframes = 0;
 static size_t bitmap_bytes = 0;
+static size_t last_free_hint = 0;
 
 static inline size_t addr_to_frame_index(uintptr_t addr) {
     return (addr - phys_base) >> 12;
@@ -95,13 +96,22 @@ uintptr_t pmm_alloc_frame(void) {
         return 0;
     }
 
-    for (size_t f = 0; f < nframes; ++f) {
+    for (size_t f = last_free_hint; f < nframes; ++f) {
         if (!bitmap_test(f)) {
             bitmap_set(f);
-            uintptr_t addr = frame_index_to_addr(f);
-            return addr;
+            last_free_hint = f + 1;
+            return frame_index_to_addr(f);
         }
     }
+    
+    for (size_t f = 0; f < last_free_hint; ++f) {
+        if (!bitmap_test(f)) {
+            bitmap_set(f);
+            last_free_hint = f + 1;
+            return frame_index_to_addr(f);
+        }
+    }
+    
     return 0;
 }
 
@@ -109,7 +119,10 @@ void pmm_free_frame(uintptr_t paddr) {
     if (!frame_bitmap) return;
     if (paddr < phys_base || paddr >= phys_top) return;
     size_t f = addr_to_frame_index(paddr);
-    if (f < nframes) bitmap_clear(f);
+    if (f < nframes) {
+        bitmap_clear(f);
+        if (f < last_free_hint) last_free_hint = f;
+    }
 }
 
 size_t pmm_total_frames(void) { return nframes; }
