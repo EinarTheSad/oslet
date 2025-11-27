@@ -34,24 +34,22 @@ static void cmd_help(void);
 static void cmd_exit(void);
 static void cmd_mem(void);
 static void cmd_rtc(void);
+static void cmd_heap(void);
 
 static const Command commands[] = {
     { "cat",    "cat <file>",          "Display file contents",      NULL },
     { "cd",     "cd <dir>",            "Change directory",           NULL },
     { "cls",    "cls",                 "Clear screen",               sys_clear },
     { "echo",   "echo <text> <file>",  "Write text to file",         NULL },
-    { "gfx",    "gfx",                 "Run a VGA graphics demo",    NULL },
-    { "heap",   "heap",                "Show heap statistics",       NULL },
-    { "help",   "help",                "Show this help",             cmd_help },
+    { "heap",   "heap",                "Show heap statistics",       cmd_heap },
+    { "help",   "help",                "Show this command list",     cmd_help },
     { "ls",     "ls <path>",           "List directory",             NULL },
     { "mem",    "mem",                 "Show memory statistics",     cmd_mem },
     { "mkdir",  "mkdir <dir>",         "Create directory",           NULL },
-    { "mount",  "mount <drive> <lba>", "Mount FAT32 drive",          NULL },
     { "ps",     "ps",                  "List running tasks",         NULL },
     { "rm",     "rm <file>",           "Delete file",                NULL },
     { "rmdir",  "rmdir <dir>",         "Remove directory",           NULL },
     { "time",   "time",                "Show current time and date", cmd_rtc },
-    { "run",    "run <file>",          "Execute a binary file",      NULL },
     { "uptime", "uptime",              "Show system uptime",         NULL },
     { "exit",   "exit",                "Exit shell",                 cmd_exit }
 };
@@ -194,7 +192,6 @@ static void cmd_mem(void) {
     const double total = (double)meminfo.total_kb;
     const double free = (double)meminfo.free_kb;
     printf("\nMemory statistics:\n\n");
-    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);
     printf("  Total installed:");
     sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
                     printf(" %.2f MiB", (total / 1024));
@@ -214,5 +211,34 @@ static void cmd_rtc(void) {
     printf("%02u/%02u/%04u %02u:%02u:%02u",
        current.day, current.month, current.year,
        current.hour, current.minute, current.second);
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG); printf("\n");
+}
+
+static void cmd_heap(void) {
+    sys_heapinfo_t info;
+    if (sys_get_heapinfo(&info) != 0) {
+        printf("Error getting heap info\n");
+        return;
+    }
+    printf("\nHeap statistics:\n\n");
+    printf("  Total heap size: ");
+    sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
+                        printf("%u KiB\n", info.total_kb);
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);
+    printf("  Used: ");
+    sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
+                        printf("%u KiB\n", info.used_bytes / 1024);
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);
+    printf("  Free: ");
+    sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
+                        printf("%u KiB\n", info.free_bytes / 1024);
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);                    
+    printf("  Total allocated: ");
+    sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
+                        printf("%u KiB\n", info.total_allocated / 1024);
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG);                    
+    printf("  Total freed: ");
+    sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
+                        printf("%u KiB\n", info.total_freed / 1024);
     sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG); printf("\n");
 }

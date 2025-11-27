@@ -47,6 +47,7 @@
 #define SYS_INFO_MEM        0x0800
 #define SYS_INFO_TASKS      0x0801
 #define SYS_INFO_VERSION    0x0802
+#define SYS_INFO_HEAP       0x0803
 
 /* AH = 09h - Graphics */
 #define SYS_GFX_ENTER       0x0900
@@ -90,6 +91,16 @@ typedef struct {
     uint32_t free_kb;
     uint32_t used_kb;
 } sys_meminfo_t;
+
+typedef struct {
+    uint32_t total_kb;
+    uint32_t used_bytes;
+    uint32_t free_bytes;
+    uint32_t used_blocks;
+    uint32_t free_blocks;
+    uint32_t total_allocated;
+    uint32_t total_freed;
+} sys_heapinfo_t;
 
 typedef struct {
     uint8_t second;
@@ -243,6 +254,12 @@ static inline int sys_recv_msg(message_t *msg) {
 static inline int sys_get_meminfo(sys_meminfo_t *info) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_MEM), "b"(info));
+    return ret;
+}
+
+static inline int sys_get_heapinfo(sys_heapinfo_t *info) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_HEAP), "b"(info));
     return ret;
 }
 

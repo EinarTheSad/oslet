@@ -637,6 +637,58 @@ void shell_run(void) {
             continue;
         }
         
+        /* Try to execute as binary */
+        char bin_path[FAT32_MAX_PATH];
+        int found = 0;
+        
+        /* Check if command contains path separator or extension */
+        int has_path = 0;
+        int has_ext = 0;
+        for (int i = 0; cmd[i]; i++) {
+            if (cmd[i] == '/' || cmd[i] == ':') has_path = 1;
+            if (cmd[i] == '.') has_ext = 1;
+        }
+        
+        /* Try original name first */
+        strcpy_s(bin_path, cmd, sizeof(bin_path));
+        fat32_dirent_t test;
+        if (fat32_stat(bin_path, &test) == 0 && !test.is_directory) {
+            found = 1;
+        }
+        
+        /* If not found and no extension, try adding .bin */
+        if (!found && !has_ext) {
+            snprintf(bin_path, sizeof(bin_path), "%s.bin", cmd);
+            if (fat32_stat(bin_path, &test) == 0 && !test.is_directory) {
+                found = 1;
+            }
+        }
+        
+        /* If not found and no path, try current directory */
+        if (!found && !has_path) {
+            char cwd[FAT32_MAX_PATH];
+            fat32_getcwd(cwd, sizeof(cwd));
+            
+            if (!has_ext) {
+                snprintf(bin_path, sizeof(bin_path), "%s%s.bin", cwd, cmd);
+                if (fat32_stat(bin_path, &test) == 0 && !test.is_directory) {
+                    found = 1;
+                }
+            }
+            
+            if (!found) {
+                snprintf(bin_path, sizeof(bin_path), "%s%s", cwd, cmd);
+                if (fat32_stat(bin_path, &test) == 0 && !test.is_directory) {
+                    found = 1;
+                }
+            }
+        }
+        
+        if (found) {
+            cmd_run(bin_path);
+            continue;
+        }
+        
         /* Unknown command */
         vga_set_color(COLOR_ERROR_BG, COLOR_ERROR_FG);
         printf("Unknown command: ");
