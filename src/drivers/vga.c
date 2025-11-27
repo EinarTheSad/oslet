@@ -310,3 +310,34 @@ void vga_reset_textmode(void) {
 void vga_set_color(uint8_t background, uint8_t foreground) {
     vga_color = (foreground & 0x0F) | ((background & 0x07) << 4); /* or 0x0F */
 }
+
+void vga_write_regs(const uint8_t* regs) {
+    outb(0x3C2, *regs++);
+    
+    for (uint8_t i = 0; i < 5; i++) {
+        outb(0x3C4, i);
+        outb(0x3C5, *regs++);
+    }
+    
+    outb(0x3D4, 0x03);
+    outb(0x3D5, inb(0x3D5) | 0x80);
+    outb(0x3D4, 0x11);
+    outb(0x3D5, inb(0x3D5) & 0x7F);
+    
+    for (uint8_t i = 0; i < 25; i++) {
+        outb(0x3D4, i);
+        outb(0x3D5, *regs++);
+    }
+    
+    for (uint8_t i = 0; i < 9; i++) {
+        outb(0x3CE, i);
+        outb(0x3CF, *regs++);
+    }
+    
+    (void)inb(0x3DA);
+    for (uint8_t i = 0; i < 21; i++) {
+        outb(0x3C0, i);
+        outb(0x3C0, *regs++);
+    }
+    outb(0x3C0, 0x20);
+}
