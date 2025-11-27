@@ -74,7 +74,7 @@ int ata_identify(void) {
     for (int i = 0; i < 256; i++) {
         identify[i] = inw(ATA_PRIMARY_IO + ATA_REG_DATA);
     }
-    
+    (void)identify;
     return 0;
 }
 
