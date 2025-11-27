@@ -11,7 +11,6 @@
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
 
-/* File descriptor table - kernel side */
 #define MAX_OPEN_FILES 32
 typedef struct {
     fat32_file_t *file;
@@ -28,7 +27,7 @@ static void fd_init(void) {
 }
 
 static int fd_alloc(fat32_file_t *file) {
-    for (int i = 3; i < MAX_OPEN_FILES; i++) { /* Reserve 0,1,2 for stdin/stdout/stderr */
+    for (int i = 3; i < MAX_OPEN_FILES; i++) {
         if (!fd_table[i].in_use) {
             fd_table[i].file = file;
             fd_table[i].in_use = 1;
@@ -50,39 +49,27 @@ static void fd_free(int fd) {
     fd_table[fd].file = NULL;
 }
 
-static int validate_ptr(uint32_t ptr) {
-    /* task_t *current = task_get_current();
-    if (!current) return 0;
-    
-    if (!current->user_mode) {
-        return (ptr != 0);
-    }
-    
-    return (ptr >= EXEC_LOAD_ADDR && ptr < 0xC0000000); */
-    return (ptr != 0);
-}
-
 static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     (void)edx;
     
     switch (al) {
-        case 0x00: /* Write string */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x00:
+            if (!ebx) return -1;
             printf("%s", (const char*)ebx);
             return 0;
 
-        case 0x01: /* Read string */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x01:
+            if (!ebx) return -1;
             return (uint32_t)kbd_getline((char*)ebx, ecx);
 
-        case 0x02: /* Set color */
+        case 0x02:
             vga_set_color((uint8_t)ebx, (uint8_t)ecx);
             return 0;
         
-        case 0x03: /* Get character */
+        case 0x03:
             return (uint32_t)kbd_getchar();
         
-        case 0x04: /* Clear screen */
+        case 0x04:
             vga_clear();
             return 0;
             
@@ -95,12 +82,12 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
     (void)ecx; (void)edx;
     
     switch (al) {
-        case 0x00: /* Exit */
+        case 0x00:
             task_exit();
             return 0;
             
-        case 0x01: { /* Exec */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x01: {
+            if (!ebx) return -1;
             exec_image_t image;
             if (exec_load((const char*)ebx, &image) != 0) return -1;
             if (exec_run(&image) != 0) return -1;
@@ -108,16 +95,16 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             return 0;
         }
             
-        case 0x02: { /* Get PID */
+        case 0x02: {
             task_t *current = task_get_current();
             return current ? current->tid : 0;
         }
             
-        case 0x03: /* Sleep */
+        case 0x03:
             task_sleep(ebx);
             return 0;
             
-        case 0x04: /* Yield */
+        case 0x04:
             task_yield();
             return 0;
             
@@ -128,8 +115,8 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
 
 static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: { /* Open */
-            if (!validate_ptr(ebx) || !validate_ptr(ecx)) return (uint32_t)-1;
+        case 0x00: {
+            if (!ebx || !ecx) return (uint32_t)-1;
             
             fat32_file_t *file = fat32_open((const char*)ebx, (const char*)ecx);
             if (!file) return (uint32_t)-1;
@@ -142,7 +129,7 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             return (uint32_t)fd;
         }
             
-        case 0x01: { /* Close */
+        case 0x01: {
             fat32_file_t *file = fd_get((int)ebx);
             if (!file) return (uint32_t)-1;
             
@@ -151,8 +138,8 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             return 0;
         }
             
-        case 0x02: { /* Read */
-            if (!validate_ptr(ecx)) return (uint32_t)-1;
+        case 0x02: {
+            if (!ecx) return (uint32_t)-1;
             
             fat32_file_t *file = fd_get((int)ebx);
             if (!file) return (uint32_t)-1;
@@ -161,8 +148,8 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             return (uint32_t)result;
         }
             
-        case 0x03: { /* Write */
-            if (!validate_ptr(ecx)) return (uint32_t)-1;
+        case 0x03: {
+            if (!ecx) return (uint32_t)-1;
             
             fat32_file_t *file = fd_get((int)ebx);
             if (!file) return (uint32_t)-1;
@@ -171,7 +158,7 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             return (uint32_t)result;
         }
             
-        case 0x04: { /* Seek */
+        case 0x04: {
             fat32_file_t *file = fd_get((int)ebx);
             if (!file) return (uint32_t)-1;
             
@@ -179,8 +166,8 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             return (uint32_t)result;
         }
         
-        case 0x05: { /* Delete/Unlink */
-            if (!validate_ptr(ebx)) return (uint32_t)-1;
+        case 0x05: {
+            if (!ebx) return (uint32_t)-1;
             int result = fat32_unlink((const char*)ebx);
             return (uint32_t)result;
         }
@@ -192,12 +179,12 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
 
 static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: /* Chdir */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x00:
+            if (!ebx) return -1;
             return fat32_chdir((const char*)ebx);
             
-        case 0x01: /* Getcwd */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x01:
+            if (!ebx) return -1;
             char *result = fat32_getcwd((char*)ebx, ecx);
             if (!result || ((char*)ebx)[0] == '\0') {
                 if (ecx >= 4) {
@@ -207,16 +194,16 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             }
             return (uint32_t)result;
         
-        case 0x02: /* Mkdir */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x02:
+            if (!ebx) return -1;
             return fat32_mkdir((const char*)ebx);
         
-        case 0x03: /* Rmdir */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x03:
+            if (!ebx) return -1;
             return fat32_rmdir((const char*)ebx);
         
-        case 0x04: { /* List directory */
-            if (!validate_ptr(ebx) || !validate_ptr(ecx)) return -1;
+        case 0x04: {
+            if (!ebx || !ecx) return -1;
             if (edx > 256) edx = 256;
             fat32_dirent_t *fat_entries = (fat32_dirent_t*)kmalloc(sizeof(fat32_dirent_t) * edx);
             if (!fat_entries) return -1;
@@ -245,8 +232,8 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
 
 static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: { /* send message */
-            if (!validate_ptr(ecx)) return -2;
+        case 0x00: {
+            if (!ecx) return -2;
             if (edx > MSG_MAX_SIZE) return -1;
             
             task_t *sender = task_get_current();
@@ -273,8 +260,8 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             return 0;
         }
             
-        case 0x01: { /* receive message */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x01: {
+            if (!ebx) return -1;
             
             task_t *current = task_get_current();
             if (!current) return -2;
@@ -300,17 +287,17 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
 }
 
 static uint32_t handle_time(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
-    (void)ebx; (void)ecx; (void)edx;
+    (void)ecx; (void)edx;
     
     switch (al) {
-        case 0x00: {/* RTC */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x00: {
+            if (!ebx) return -1;
             
             sys_time_t *time = (sys_time_t*)ebx;
             rtc_read_time(time);
             return 0;
         }
-        case 0x01: /* Uptime */
+        case 0x01:
             return timer_get_ticks();
         
         default:
@@ -322,8 +309,8 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
     (void)edx;
     
     switch (al) {
-        case 0x00: { /* Memory info */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x00: {
+            if (!ebx) return -1;
             
             sys_meminfo_t *info = (sys_meminfo_t*)ebx;
             size_t total = pmm_total_frames();
@@ -336,8 +323,8 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             return 0;
         }
         
-        case 0x01: { /* Task list */
-            if (!validate_ptr(ebx)) return -1;
+        case 0x01: {
+            if (!ebx) return -1;
             
             sys_taskinfo_t *tasks = (sys_taskinfo_t*)ebx;
             int max = (int)ecx;
@@ -354,7 +341,6 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
                 memcpy_s(tasks[count].name, t->name, 32);
                 tasks[count].state = (uint8_t)t->state;
                 tasks[count].priority = (uint8_t)t->priority;
-                tasks[count].user_mode = t->user_mode;
                 count++;
                 
                 t = t->next;
@@ -363,7 +349,7 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             return count;
         }
 
-        case 0x02: /* Kernel version info */
+        case 0x02:
             return kernel_version;
         
         default:
@@ -374,54 +360,54 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
 static uint32_t handle_graphics(uint32_t al, uint32_t ebx, 
                                 uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: /* Enter mode */
+        case 0x00:
             gfx_enter_mode();
             return 0;
             
-        case 0x01: /* Exit mode */
+        case 0x01:
             gfx_exit_mode();
             return 0;
             
-        case 0x02: /* Clear */
+        case 0x02:
             gfx_clear((uint8_t)ebx);
             return 0;
             
-        case 0x03: /* Swap buffers */
+        case 0x03:
             gfx_swap_buffers();
             return 0;
             
-        case 0x04: /* Putpixel */
+        case 0x04:
             gfx_putpixel((int)ebx, (int)ecx, (uint8_t)edx);
             return 0;
             
-        case 0x05: { /* Line - używa struktury */
-            if (!validate_ptr(ebx)) return (uint32_t)-1;
+        case 0x05: {
+            if (!ebx) return (uint32_t)-1;
             int *coords = (int*)ebx;
             gfx_line(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
             return 0;
         }
             
-        case 0x06: { /* Rect */
-            if (!validate_ptr(ebx)) return (uint32_t)-1;
+        case 0x06: {
+            if (!ebx) return (uint32_t)-1;
             int *coords = (int*)ebx;
             gfx_rect(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
             return 0;
         }
             
-        case 0x07: { /* Fillrect */
-            if (!validate_ptr(ebx)) return (uint32_t)-1;
+        case 0x07: {
+            if (!ebx) return (uint32_t)-1;
             int *coords = (int*)ebx;
             gfx_fillrect(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
             return 0;
         }
             
-        case 0x08: { /* Circle */
+        case 0x08: {
             gfx_circle((int)ebx, (int)ecx, (int)(edx >> 8), (uint8_t)(edx & 0xFF));
             return 0;
         }
             
-        case 0x09: { /* Print text */
-            if (!validate_ptr(edx)) return (uint32_t)-1;
+        case 0x09: {
+            if (!edx) return (uint32_t)-1;
             gfx_print((int)ebx, (int)(ecx >> 16), (const char*)edx, 
                      (uint8_t)((ecx >> 8) & 0xFF));
             return 0;

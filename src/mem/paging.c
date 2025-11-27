@@ -45,23 +45,6 @@ int paging_map_page(uintptr_t vaddr, uintptr_t paddr, uint32_t flags) {
     return 0;
 }
 
-int paging_map_page_user(uintptr_t vaddr, uintptr_t paddr, uint32_t flags) {
-    if (!current_pd_phys) return -1;
-    if (vaddr & 0xFFF || paddr & 0xFFF) return -3;
-    /* User pages must be between 0x00000000 and 0xBFFFFFFF */
-    if (vaddr >= 0xC0000000) return -4;
-    
-    uint32_t *pd = (uint32_t*)current_pd_phys;
-    
-    uintptr_t pt_phys = ensure_pt(pd, pd_index(vaddr));
-    if (!pt_phys) return -2;
-    
-    uint32_t *pt = (uint32_t*)pt_phys;
-    /* P_PRESENT | P_RW | P_USER (0x1 | 0x2 | 0x4) = 0x7 */
-    pt[pt_index(vaddr)] = (uint32_t)(paddr & 0xFFFFF000u) | ((flags & 0xFFFu) | 0x4);
-    return 0;
-}
-
 int paging_identity_enable(uintptr_t upto_phys) {
     if (!upto_phys) return -1;
     
@@ -111,7 +94,6 @@ int paging_unmap_page(uintptr_t vaddr) {
     uint32_t *pt = (uint32_t*)(pde & 0xFFFFF000u);
     pt[pt_index(vaddr)] = 0;
     
-    /* Flush TLB */
     __asm__ volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
     return 0;
 }
