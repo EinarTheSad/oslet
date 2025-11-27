@@ -105,7 +105,6 @@ typedef struct {
     char name[32];
     uint8_t state;
     uint8_t priority;
-    uint8_t user_mode;
 } sys_taskinfo_t;
 
 typedef struct {

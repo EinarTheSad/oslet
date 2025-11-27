@@ -86,7 +86,7 @@ static void boot_sequence(void) {
     vga_set_color(0, 10);
     printf("OK");
     vga_set_color(0, 7);
-    printf(" ] GDT & TSS\n");
+    printf(" ] GDT\n");
 
     heap_init();
     printf("[ ");

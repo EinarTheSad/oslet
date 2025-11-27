@@ -1,6 +1,5 @@
 .section .text
 .globl gdt_flush
-.globl tss_flush
 
 gdt_flush:
     mov 4(%esp), %eax
@@ -15,9 +14,4 @@ gdt_flush:
     
     ljmp $0x08, $flush_cs
 flush_cs:
-    ret
-
-tss_flush:
-    mov $0x28, %ax
-    ltr %ax
     ret
