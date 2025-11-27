@@ -3,14 +3,10 @@
 #include "paging.h"
 #include "../console.h"
 
-#define HEAP_START 0xC0000000
-#define HEAP_INITIAL_SIZE (4 * 1024 * 1024)
-#define ALIGN_UP(x, a) ((((uintptr_t)(x)) + ((a) - 1)) & ~((a) - 1))
-
-static block_t *heap_start = NULL;
-static uintptr_t heap_end = 0;
-static size_t total_allocated = 0;
-static size_t total_freed = 0;
+block_t *heap_start = NULL;
+uintptr_t heap_end = 0;
+size_t total_allocated = 0;
+size_t total_freed = 0;
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
 

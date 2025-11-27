@@ -351,6 +351,38 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
 
         case 0x02:
             return kernel_version;
+
+        case 0x03: {
+            if (!ebx) return -1;
+            sys_heapinfo_t *info = (sys_heapinfo_t*)ebx;
+            
+            size_t free_blocks = 0;
+            size_t used_blocks = 0;
+            size_t free_mem = 0;
+            size_t used_mem = 0;
+            
+            block_t *curr = heap_start;
+            while (curr) {
+                if (curr->free) {
+                    free_blocks++;
+                    free_mem += curr->size;
+                } else {
+                    used_blocks++;
+                    used_mem += curr->size;
+                }
+                curr = curr->next;
+            }
+            
+            info->total_kb = (heap_end - HEAP_START) / 1024;
+            info->used_bytes = used_mem;
+            info->free_bytes = free_mem;
+            info->used_blocks = used_blocks;
+            info->free_blocks = free_blocks;
+            info->total_allocated = total_allocated;
+            info->total_freed = total_freed;
+            
+            return 0;
+        }
         
         default:
             return -1;
