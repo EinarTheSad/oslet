@@ -196,7 +196,7 @@ static void cmd_rmdir(const char *dirname) {
 }
 
 /* First here, later will move to fat32.c */
-static char* check_path(const char *path) {
+static const char* check_path(const char *path) {
     fat32_getcwd(current_path, sizeof(current_path));
 
     if (!path || !path[0] || strcmp_s(path, ".") == 0) {
