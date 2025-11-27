@@ -92,6 +92,8 @@ static int volume_index(fat32_volume_t *vol) {
     return (int)idx;
 }
 
+static int write_cluster(fat32_volume_t *vol, uint32_t cluster, const void *buffer);
+
 static uint8_t lfn_checksum(const char *short_name) {
     uint8_t sum = 0;
     for (int i = 0; i < 11; i++) {
@@ -213,11 +215,26 @@ static void free_cluster_chain(fat32_volume_t *vol, uint32_t start) {
     uint32_t cluster = start;
     uint32_t safety = 0;
     
+    size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
+    uint8_t *zero_buf = kmalloc(cluster_size);
+    if (zero_buf) {
+        memset_s(zero_buf, 0, cluster_size);
+    }
+    
     while (cluster >= 2 && cluster < FAT32_EOC && safety < entries) {
         uint32_t next = get_next_cluster(vol, cluster);
+        
+        if (zero_buf) {
+            write_cluster(vol, cluster, zero_buf);
+        }
+        
         set_next_cluster(vol, cluster, 0);
         cluster = next;
         safety++;
+    }
+    
+    if (zero_buf) {
+        kfree(zero_buf);
     }
 }
 
