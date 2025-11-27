@@ -59,7 +59,9 @@
 #define SYS_GFX_RECT        0x0906
 #define SYS_GFX_FILLRECT    0x0907
 #define SYS_GFX_CIRCLE      0x0908
-#define SYS_GFX_PRINT       0x0909
+#define SYS_GFX_PRINT       0x0909 /* free */
+#define SYS_GFX_LOAD_BMP    0x090A
+#define SYS_GFX_FILLRECT_GRADIENT 0x090B
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -163,6 +165,16 @@ static inline int sys_exec(const char *path) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_EXEC), "b"(path));
     return ret;
+}
+
+static inline void* sys_malloc(size_t size) {
+    void* ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_MEM_ALLOC), "b"(size));
+    return ret;
+}
+
+static inline void sys_free(void* ptr) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_MEM_FREE), "b"(ptr));
 }
 
 static inline uint32_t sys_getpid(void) {
@@ -302,18 +314,21 @@ static inline void sys_gfx_putpixel(int x, int y, uint8_t color) {
 }
 
 static inline void sys_gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
-    gfx_line_params_t params = {x0, y0, x1, y1};
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_LINE), "b"(&params), "c"(color));
+    uint32_t start = ((uint32_t)x0 << 16) | (y0 & 0xFFFF);
+    uint32_t end = ((uint32_t)x1 << 16) | (y1 & 0xFFFF);
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_LINE), "b"(start), "c"(end), "d"(color));
 }
 
 static inline void sys_gfx_rect(int x, int y, int w, int h, uint8_t color) {
-    gfx_rect_params_t params = {x, y, w, h};
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_RECT), "b"(&params), "c"(color));
+    uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
+    uint32_t size = ((uint32_t)w << 16) | (h & 0xFFFF);
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_RECT), "b"(pos), "c"(size), "d"(color));
 }
 
 static inline void sys_gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
-    gfx_rect_params_t params = {x, y, w, h};
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FILLRECT), "b"(&params), "c"(color));
+    uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
+    uint32_t size = ((uint32_t)w << 16) | (h & 0xFFFF);
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FILLRECT), "b"(pos), "c"(size), "d"(color));
 }
 
 static inline void sys_gfx_circle(int cx, int cy, int r, uint8_t color) {
@@ -321,13 +336,23 @@ static inline void sys_gfx_circle(int cx, int cy, int r, uint8_t color) {
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_CIRCLE), "b"(cx), "c"(cy), "d"(packed));
 }
 
-static inline void sys_gfx_print(int x, int y, const char *text, uint8_t fg) {
-    uint32_t packed = ((uint32_t)y << 16) | ((uint32_t)fg << 8);
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_PRINT), "b"(x), "c"(packed), "d"(text));
+static inline void sys_gfx_fillrect_gradient(int x, int y, int w, int h,
+                                             uint8_t c_start, uint8_t c_end,
+                                             int orientation) {
+    uint32_t coords = ((uint32_t)w << 16) | (h & 0xFFFF);
+    uint32_t colors = ((uint32_t)c_start << 16) | ((uint32_t)c_end << 8) | orientation;
+    uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FILLRECT_GRADIENT), "b"(pos), "c"(coords), "d"(colors));
 }
 
 static inline int sys_get_time(sys_time_t *time) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_TIME_GET), "b"(time));
+    return ret;
+}
+
+static inline int sys_gfx_load_bmp(const char *path, int x, int y) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP), "b"(path), "c"(x), "d"(y));
     return ret;
 }

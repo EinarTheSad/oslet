@@ -10,6 +10,8 @@
 #include <stddef.h>
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
+#include "fonts/bmf.h"
+#include "rtc.h"
 
 #define MAX_OPEN_FILES 32
 typedef struct {
@@ -350,7 +352,7 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
         }
 
         case 0x02:
-            return kernel_version;
+            return (uint32_t)(uintptr_t)kernel_version;
 
         case 0x03: {
             if (!ebx) return -1;
@@ -389,6 +391,24 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
     }
 }
 
+static uint32_t handle_memory(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    (void)ecx; (void)edx;
+    
+    switch (al) {
+        case 0x00: {
+            void *ptr = kmalloc((size_t)ebx);
+            return (uint32_t)ptr;
+        }
+            
+        case 0x01:
+            kfree((void*)ebx);
+            return 0;
+            
+        default:
+            return (uint32_t)-1;
+    }
+}
+
 static uint32_t handle_graphics(uint32_t al, uint32_t ebx, 
                                 uint32_t ecx, uint32_t edx) {
     switch (al) {
@@ -412,24 +432,30 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             gfx_putpixel((int)ebx, (int)ecx, (uint8_t)edx);
             return 0;
             
-        case 0x05: {
-            if (!ebx) return (uint32_t)-1;
-            int *coords = (int*)ebx;
-            gfx_line(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
+        case 0x05: { /* Line */
+            int x0 = (int)(ebx >> 16);
+            int y0 = (int)(ebx & 0xFFFF);
+            int x1 = (int)(ecx >> 16);
+            int y1 = (int)(ecx & 0xFFFF);
+            gfx_line(x0, y0, x1, y1, (uint8_t)edx);
             return 0;
         }
             
-        case 0x06: {
-            if (!ebx) return (uint32_t)-1;
-            int *coords = (int*)ebx;
-            gfx_rect(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
+        case 0x06: { /* Rect */
+            int x = (int)(ebx >> 16);
+            int y = (int)(ebx & 0xFFFF);
+            int w = (int)(ecx >> 16);
+            int h = (int)(ecx & 0xFFFF);
+            gfx_rect(x, y, w, h, (uint8_t)edx);
             return 0;
         }
             
-        case 0x07: {
-            if (!ebx) return (uint32_t)-1;
-            int *coords = (int*)ebx;
-            gfx_fillrect(coords[0], coords[1], coords[2], coords[3], (uint8_t)ecx);
+        case 0x07: { /* Fillrect */
+            int x = (int)(ebx >> 16);
+            int y = (int)(ebx & 0xFFFF);
+            int w = (int)(ecx >> 16);
+            int h = (int)(ecx & 0xFFFF);
+            gfx_fillrect(x, y, w, h, (uint8_t)edx);
             return 0;
         }
             
@@ -439,9 +465,24 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
         }
             
         case 0x09: {
-            if (!edx) return (uint32_t)-1;
-            gfx_print((int)ebx, (int)(ecx >> 16), (const char*)edx, 
-                     (uint8_t)((ecx >> 8) & 0xFF));
+            /* free */
+            return 0;
+        }
+            
+        case 0x0A:
+            if (!ebx) return (uint32_t)-1;
+            return gfx_load_bmp_4bit((const char*)ebx, (int)ecx, (int)edx);
+
+        case 0x0B: { /* Fillrect gradient */
+            int x = (int)(ebx >> 16);
+            int y = (int)(ebx & 0xFFFF);
+            int w = (int)(ecx >> 16);
+            int h = (int)(ecx & 0xFFFF);
+            uint8_t c_start = (edx >> 16) & 0xFF;
+            uint8_t c_end = (edx >> 8) & 0xFF;
+            int orientation = edx & 0xFF;
+            
+            gfx_fillrect_gradient(x, y, w, h, c_start, c_end, orientation);
             return 0;
         }
             
@@ -460,6 +501,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x03: return handle_file(al, ebx, ecx, edx);
         case 0x04: return handle_dir(al, ebx, ecx, edx);
         case 0x05: return handle_ipc(al, ebx, ecx, edx);
+        case 0x06: return handle_memory(al, ebx, ecx, edx);
         case 0x07: return handle_time(al, ebx, ecx, edx);
         case 0x08: return handle_info(al, ebx, ecx, edx);
         case 0x09: return handle_graphics(al, ebx, ecx, edx);
