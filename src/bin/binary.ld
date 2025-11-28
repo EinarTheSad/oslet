@@ -1,43 +1,55 @@
-/* ELF executable linker script for user programs */
+/* PIE ELF linker script - relocatable */
 OUTPUT_FORMAT(elf32-i386)
 OUTPUT_ARCH(i386)
 ENTRY(_start)
 
-/* Base address - will be relocated by loader */
-PROVIDE(__base = 0x08000000);
-
 SECTIONS
 {
-    . = __base;
+    /* Start at 0 - will be relocated */
+    . = 0;
     
-    /* Code section */
     .text ALIGN(4K) : {
-        __text_start = .;
         *(.entry)
         *(.text .text.*)
-        __text_end = .;
     }
     
-    /* Read-only data */
     .rodata ALIGN(4K) : {
-        __rodata_start = .;
         *(.rodata .rodata.*)
-        __rodata_end = .;
     }
     
-    /* Initialized data */
     .data ALIGN(4K) : {
-        __data_start = .;
         *(.data .data.*)
-        __data_end = .;
     }
     
-    /* Uninitialized data (zeroed by loader) */
+    /* Relocation sections - KEEP these! */
+    .rel.dyn : {
+        *(.rel.dyn)
+        *(.rel.text)
+        *(.rel.rodata)
+        *(.rel.data)
+        *(.rel.got)
+        *(.rel.plt)
+    }
+    
+    .rel.plt : {
+        *(.rel.plt)
+    }
+    
+    .dynamic : {
+        *(.dynamic)
+    }
+    
+    .got : {
+        *(.got)
+    }
+    
+    .got.plt : {
+        *(.got.plt)
+    }
+    
     .bss ALIGN(4K) : {
-        __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
-        __bss_end = .;
     }
     
     __end = .;
@@ -47,5 +59,8 @@ SECTIONS
         *(.eh_frame)
         *(.note*)
         *(.gnu.hash)
+        *(.hash)
+        *(.dynsym)
+        *(.dynstr)
     }
 }
