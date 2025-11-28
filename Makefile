@@ -125,15 +125,15 @@ binstall:
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
-	sudo cp $(BIN)/*.bin mnt/; \
+	sudo cp $(BIN)/*.elf mnt/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt
 	@echo "Binaries installed!"
 
-fetchlet: $(BIN)/fetchlet.bin
+fetchlet: $(BIN)/fetchlet.elf
 
-$(BIN)/fetchlet.bin: $(BUILD)/bin/fetchlet.o $(LIB_OBJS)
+$(BIN)/fetchlet.elf: $(BUILD)/bin/fetchlet.o $(LIB_OBJS)
 	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
@@ -144,9 +144,9 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-shell: $(BIN)/shell.bin
+shell: $(BIN)/shell.elf
 
-$(BIN)/shell.bin: $(BUILD)/bin/shell.o $(LIB_OBJS)
+$(BIN)/shell.elf: $(BUILD)/bin/shell.o $(LIB_OBJS)
 	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
@@ -157,9 +157,9 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-demo: $(BIN)/demo.bin
+demo: $(BIN)/demo.elf
 
-$(BIN)/demo.bin: $(BUILD)/bin/demo.o $(LIB_OBJS)
+$(BIN)/demo.elf: $(BUILD)/bin/demo.o $(LIB_OBJS)
 	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c

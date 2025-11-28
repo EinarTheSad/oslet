@@ -648,7 +648,7 @@ void shell_run(void) {
         
         /* If not found and no extension, try adding .bin */
         if (!found && !has_ext) {
-            snprintf(bin_path, sizeof(bin_path), "%s.bin", cmd);
+            snprintf(bin_path, sizeof(bin_path), "%s.elf", cmd);
             if (fat32_stat(bin_path, &test) == 0 && !test.is_directory) {
                 found = 1;
             }
@@ -660,7 +660,7 @@ void shell_run(void) {
             fat32_getcwd(cwd, sizeof(cwd));
             
             if (!has_ext) {
-                snprintf(bin_path, sizeof(bin_path), "%s%s.bin", cwd, cmd);
+                snprintf(bin_path, sizeof(bin_path), "%s%s.elf", cwd, cmd);
                 if (fat32_stat(bin_path, &test) == 0 && !test.is_directory) {
                     found = 1;
                 }
