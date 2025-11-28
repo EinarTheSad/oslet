@@ -2,6 +2,6 @@
 build/
 *.img
 *.iso
-src/bin/*.bin
+src/bin/*.elf
 src/bin/*.o
 mnt/

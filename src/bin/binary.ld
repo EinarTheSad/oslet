@@ -1,31 +1,51 @@
-OUTPUT_FORMAT(binary)
+/* ELF executable linker script for user programs */
+OUTPUT_FORMAT(elf32-i386)
+OUTPUT_ARCH(i386)
 ENTRY(_start)
+
+/* Base address - will be relocated by loader */
+PROVIDE(__base = 0x08000000);
 
 SECTIONS
 {
-    . = 0x200000;
+    . = __base;
     
-    .text : {
+    /* Code section */
+    .text ALIGN(4K) : {
+        __text_start = .;
         *(.entry)
         *(.text .text.*)
+        __text_end = .;
     }
     
-    .rodata : {
+    /* Read-only data */
+    .rodata ALIGN(4K) : {
+        __rodata_start = .;
         *(.rodata .rodata.*)
+        __rodata_end = .;
     }
     
-    .data : {
+    /* Initialized data */
+    .data ALIGN(4K) : {
+        __data_start = .;
         *(.data .data.*)
+        __data_end = .;
     }
     
-    .bss : {
+    /* Uninitialized data (zeroed by loader) */
+    .bss ALIGN(4K) : {
+        __bss_start = .;
         *(.bss .bss.*)
         *(COMMON)
+        __bss_end = .;
     }
+    
+    __end = .;
     
     /DISCARD/ : {
         *(.comment)
         *(.eh_frame)
         *(.note*)
+        *(.gnu.hash)
     }
 }
