@@ -24,6 +24,6 @@ For more specific information, please consult the Makefile.
 
 ### VGA graphics
 
-<img width="640" height="480" alt="graphics" src="https://github.com/user-attachments/assets/f6c793a4-18c7-43cb-b1e1-d5c49b65c0db" />
+<img width="640" height="480" alt="vga" src="https://github.com/user-attachments/assets/db726fe7-633d-4976-a9bc-7732406eaaa5" />
 
 ------------------------------------------------------------------------
