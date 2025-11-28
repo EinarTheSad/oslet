@@ -11,6 +11,7 @@ CC      = gcc
 LD      = ld
 
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector
+BINCFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -fno-stack-protector -fPIE -fno-plt
 LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
 
 KERNEL_SRC_DIRS := \
@@ -138,11 +139,11 @@ $(BIN)/fetchlet.elf: $(BUILD)/bin/fetchlet.o $(LIB_OBJS)
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(BINCFLAGS) -c $< -o $@
 
 $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(BINCFLAGS) -c $< -o $@
 
 shell: $(BIN)/shell.elf
 
@@ -151,11 +152,11 @@ $(BIN)/shell.elf: $(BUILD)/bin/shell.o $(LIB_OBJS)
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(BINCFLAGS) -c $< -o $@
 
 $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(BINCFLAGS) -c $< -o $@
 
 demo: $(BIN)/demo.elf
 
@@ -164,8 +165,8 @@ $(BIN)/demo.elf: $(BUILD)/bin/demo.o $(LIB_OBJS)
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(BINCFLAGS) -c $< -o $@
 
 $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(BINCFLAGS) -c $< -o $@
