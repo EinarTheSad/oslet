@@ -5,18 +5,15 @@
 
 __attribute__((section(".entry"), used))
 void _start(void) {
-    sys_write("Demo started\n");
     
     static usr_bmf_font_t osans;
     static usr_bmf_font_t osans_bi;
     static usr_bmf_font_t osans_b;
 
-    sys_write("Loading osans...\n");
     if (usr_bmf_import(&osans, "C:/FONTS/OSANS.BMF") != 0) {
         sys_write("Failed to load osans\n");
         sys_exit();
     }
-    sys_write("osans loaded!\n");
     
     if (usr_bmf_import(&osans_bi, "C:/FONTS/OSANS_BI.BMF") != 0) {
         sys_write("Failed to load osans_bi\n");
@@ -29,7 +26,7 @@ void _start(void) {
     }
 
     sys_gfx_enter();
-    sys_gfx_fillrect_gradient(0, 0, 640, 480, 0, 1, 1);
+    sys_gfx_fillrect_gradient(0, 0, 640, 480, COLOR_BLACK, COLOR_BLUE, 1);
 
     usr_bmf_printf(20, 20, &osans_bi, 32, 15, "Welcome to Codename osLET 0.4");
 
