@@ -60,22 +60,32 @@ static void keyboard_irq(void) {
     int release = sc & 0x80;
     uint8_t code = sc & 0x7F;
 
-    /* modifiers */
-    if (!e0) {
-        if (code == 0x2A || code == 0x36) { /* LShift/RShift */
-            if (release) shift = 0; else shift = 1;
-            e0 = 0; return;
-        }
-        if (code == 0x3A && !release) {     /* CapsLock */
-            caps ^= 1;
-            e0 = 0; return;
-        }
-        if (code == 0x1D) {                 /* Ctrl (ignore for now) */
-            e0 = 0; return;
+    /* Extended arrow keys */
+    if (e0) {
+        e0 = 0;
+        if (release) return;
+        
+        switch(code) {
+            case 0x48: buf_push(0x80); return; /* Up */
+            case 0x50: buf_push(0x81); return; /* Down */
+            case 0x4B: buf_push(0x82); return; /* Left */
+            case 0x4D: buf_push(0x83); return; /* Right */
+            default: return;
         }
     }
 
-    e0 = 0;
+    /* modifiers */
+    if (code == 0x2A || code == 0x36) { /* LShift/RShift */
+        if (release) shift = 0; else shift = 1;
+        return;
+    }
+    if (code == 0x3A && !release) {     /* CapsLock */
+        caps ^= 1;
+        return;
+    }
+    if (code == 0x1D) {                 /* Ctrl (ignore for now) */
+        return;
+    }
 
     if (release) return;                    /* ignore key releases */
 
