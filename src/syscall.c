@@ -57,7 +57,10 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
     switch (al) {
         case 0x00:
             if (!ebx) return -1;
-            printf("%s", (const char*)ebx);
+            {
+                const char *s = (const char*)ebx;
+                while (*s) putchar(*s++);
+            }
             return 0;
 
         case 0x01:
