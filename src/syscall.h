@@ -160,7 +160,7 @@ static inline void sys_setcur(int x, int y) {
     __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_SETCUR), "b"(x), "c"(y));
 }
 
-static inline void sys_getcur(int x, int y) {
+static inline void sys_getcur(int *x, int *y) {
     __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_GETCUR), "b"(x), "c"(y));
 }
 
