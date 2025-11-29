@@ -139,7 +139,7 @@ static inline void sys_write(const char *str) {
 static inline int sys_getchar(void) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_CONSOLE_GETCHAR));
-    return ret;
+    return (unsigned char)ret; /* Force unsigned to prevent sign extension */
 }
 
 static inline int sys_readline(char *buf, uint32_t size) {
