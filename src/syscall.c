@@ -81,8 +81,8 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             return 0;
         
         case 0x06: /* Get cursor position */
-            if (!ebx) return -1;
-            vga_get_cursor((int)ebx, (int)ecx);
+            if (!ebx || !ecx) return -1;
+            vga_get_cursor((int*)ebx, (int*)ecx);
             return 0;
             
         default:
