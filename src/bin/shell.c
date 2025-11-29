@@ -2,7 +2,6 @@
 #include "../lib/stdio.h"
 #include "../lib/string.h"
 
-/* Color schemes */
 #define COLOR_PROMPT_BG    COLOR_BLACK
 #define COLOR_PROMPT_FG    COLOR_LIGHT_GREEN
 #define COLOR_NORMAL_BG    COLOR_BLACK
@@ -41,7 +40,7 @@ static int sys_stat(const char *path, sys_dirent_t *entry) {
     if (count < 0) return -1;
     
     for (int i = 0; i < count; i++) {
-        if (!strcmp(entries[i].name, filename)) {
+        if (!strcasecmp(entries[i].name, filename)) {
             if (entry) *entry = entries[i];
             return 0;
         }
@@ -229,25 +228,28 @@ void _start(void) {
                 if (cmd[i] == '.') has_ext = 1;
             }
             
+            /* Try original name first */
             strcpy(bin_path, cmd);
             sys_dirent_t test;
             if (sys_stat(bin_path, &test) == 0 && !test.is_directory) {
                 bin_found = 1;
             }
             
+            /* If not found and no extension, try adding .elf */
             if (!bin_found && !has_ext) {
-                snprintf(bin_path, sizeof(bin_path), "%s.bin", cmd);
+                snprintf(bin_path, sizeof(bin_path), "%s.elf", cmd);
                 if (sys_stat(bin_path, &test) == 0 && !test.is_directory) {
                     bin_found = 1;
                 }
             }
             
+            /* If not found and no path, try current directory */
             if (!bin_found && !has_path) {
                 char cwd[FAT32_MAX_PATH];
                 sys_getcwd(cwd, sizeof(cwd));
                 
                 if (!has_ext) {
-                    snprintf(bin_path, sizeof(bin_path), "%s%s.bin", cwd, cmd);
+                    snprintf(bin_path, sizeof(bin_path), "%s%s.elf", cwd, cmd);
                     if (sys_stat(bin_path, &test) == 0 && !test.is_directory) {
                         bin_found = 1;
                     }
@@ -760,7 +762,7 @@ static void cmd_ps(int argc, char *argv[]) {
 
     printf("\n");
     sys_setcolor(COLOR_NORMAL_BG, COLOR_INFO_FG);
-    printf("TID  NAME              STATE        PRIORITY\n");
+    printf("PID  NAME              STATE        PRIORITY\n");
     sys_setcolor(COLOR_NORMAL_BG, COLOR_INFO_FG);
     printf("---  ----------------  -----------  ---------\n");
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
