@@ -109,6 +109,10 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
         case 0x04:
             task_yield();
             return 0;
+        
+        case 0x05:
+            if (!ebx) return -1;
+            return task_spawn_and_wait((const char*)ebx);
             
         default:
             return -1;

@@ -5,7 +5,6 @@
 #include "mem/pmm.h"
 #include "console.h"
 #include "task.h"
-#include "lib/string.h"
 
 /* ELF Section Header (needed for relocations) */
 typedef struct {
@@ -253,11 +252,8 @@ int exec_load(const char *path, exec_image_t *image) {
     image->file_data = file_data;
     image->file_size = file_size;
     
-    /* Store slot in a reserved field (abuse file_size high bits or add field) */
-    /* For simplicity, we'll store in file_size since we free file_data anyway */
+    /* Store slot in file_size high bits */
     image->file_size = (slot << 24) | (file_size & 0x00FFFFFF);
-    
-    printf("[ELF] Slot %d: entry=0x%x delta=%d\n", slot, image->entry_point, delta);
     
     return 0;
 }
@@ -300,4 +296,11 @@ void exec_free(exec_image_t *image) {
     free_slot(slot);
     
     memset_s(image, 0, sizeof(exec_image_t));
+}
+
+void exec_cleanup_process(uint32_t base_addr, uint32_t end_addr, int slot) {
+    if (base_addr && end_addr > base_addr) {
+        unmap_region(base_addr, end_addr);
+    }
+    free_slot(slot);
 }

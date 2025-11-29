@@ -4,6 +4,7 @@
 #include "timer.h"
 #include <stddef.h>
 #include "syscall.h"
+#include "exec.h"
 
 static task_t *task_list = NULL;
 static task_t *current_task = NULL;
@@ -118,6 +119,14 @@ void task_exit(void) {
         for (;;) __asm__ volatile ("hlt");
     }
     
+    /* Unblock parent if waiting */
+    if (current_task->parent_tid) {
+        task_t *parent = task_find_by_tid(current_task->parent_tid);
+        if (parent && parent->state == TASK_BLOCKED && parent->child_tid == current_task->tid) {
+            parent->state = TASK_READY;
+        }
+    }
+    
     current_task->state = TASK_TERMINATED;
     __asm__ volatile ("sti");
     task_yield();
@@ -169,6 +178,11 @@ static void cleanup_terminated_tasks(void) {
             task_t *to_free = curr;
             prev->next = curr->next;
             curr = curr->next;
+            
+            /* Clean up exec resources if this was a spawned process */
+            if (to_free->exec_slot >= 0) {
+                exec_cleanup_process(to_free->exec_base, to_free->exec_end, to_free->exec_slot);
+            }
             
             if (to_free->stack) kfree(to_free->stack);
             kfree(to_free);
@@ -302,7 +316,7 @@ void task_list_print(void) {
     }
     
     vga_set_color(0, 11);
-    printf("TID  NAME              STATE        PRIORITY\n");
+    printf("PID  NAME              STATE        PRIORITY\n");
     vga_set_color(0, 8);
     printf("---  ----------------  -----------  ---------\n");
     vga_set_color(0, 7);
@@ -381,4 +395,63 @@ task_t *task_find_by_tid(uint32_t tid) {
     } while (t != task_list);
     
     return NULL;
+}
+
+int task_spawn_and_wait(const char *path) {
+    if (!path || !current_task) return -1;
+    
+    /* Load child process */
+    exec_image_t image;
+    if (exec_load(path, &image) != 0) return -1;
+    
+    /* Free file_data - it's been copied to process memory */
+    if (image.file_data) {
+        kfree(image.file_data);
+        image.file_data = NULL;
+    }
+    
+    /* Extract filename from path */
+    const char *filename = path;
+    for (const char *p = path; *p; p++) {
+        if (*p == '/' || *p == '\\') filename = p + 1;
+    }
+    
+    uint32_t child_tid = task_create((void (*)(void))image.entry_point,
+                                      filename,
+                                      PRIORITY_NORMAL);
+    if (!child_tid) {
+        /* Failed - clean up everything */
+        int slot = image.file_size >> 24;
+        exec_cleanup_process(image.base_addr, image.end_addr, slot);
+        return -1;
+    }
+    
+    /* Setup parent-child relationship */
+    task_t *child = task_find_by_tid(child_tid);
+    if (!child) {
+        int slot = image.file_size >> 24;
+        exec_cleanup_process(image.base_addr, image.end_addr, slot);
+        return -1;
+    }
+    
+    child->parent_tid = current_task->tid;
+    current_task->child_tid = child_tid;
+    
+    /* Store exec info for cleanup on exit */
+    child->exec_base = image.base_addr;
+    child->exec_end = image.end_addr;
+    child->exec_slot = image.file_size >> 24;
+    
+    /* Block parent and wait for child to finish */
+    __asm__ volatile ("cli");
+    current_task->state = TASK_BLOCKED;
+    __asm__ volatile ("sti");
+    
+    /* Yield to child */
+    task_yield();
+    
+    /* Child finished, we're back */
+    current_task->child_tid = 0;
+    
+    return 0;
 }

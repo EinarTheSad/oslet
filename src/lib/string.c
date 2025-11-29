@@ -47,3 +47,19 @@ char *strrchr(const char *s, int c) {
     if (c == '\0') return (char*)s;
     return (char*)last;
 }
+
+static inline char _toupper(char c) {
+    if (c >= 'a' && c <= 'z') return c - 32;
+    return c;
+}
+
+int strcasecmp(const char *a, const char *b) {
+    while (*a && *b) {
+        char ca = _toupper(*a);
+        char cb = _toupper(*b);
+        if (ca != cb) return ca - cb;
+        a++;
+        b++;
+    }
+    return _toupper(*a) - _toupper(*b);
+}

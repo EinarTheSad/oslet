@@ -85,6 +85,7 @@ int exec_init(void);
 int exec_load(const char *path, exec_image_t *image);
 int exec_run(exec_image_t *image);
 void exec_free(exec_image_t *image);
+void exec_cleanup_process(uint32_t base_addr, uint32_t end_addr, int slot);
 
 /* Utility */
 int elf_validate(const void *data, uint32_t size);
