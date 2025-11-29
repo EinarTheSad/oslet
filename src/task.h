@@ -44,7 +44,6 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
 void task_yield(void);
 void task_sleep(uint32_t milliseconds);
 void task_exit(void);
-void task_list_print(void);
 task_t *task_get_current(void);
 int task_spawn_and_wait(const char *path);
 

@@ -187,34 +187,6 @@ void pmm_identity_map_bitmap(void) {
         paging_map_page(p, p, P_PRESENT | P_RW);
 }
 
-void pmm_print_stats(void) {   
-    if (!frame_bitmap) {
-        printf("PMM not initialized\n");
-        return;
-    }
-
-    size_t total = pmm_total_frames();
-    size_t free = 0;
-
-    for (size_t f = 0; f < total; ++f)
-        if (!bitmap_test(f)) ++free;
-
-    uintptr_t total_bytes = total * FRAME_SIZE;
-    uintptr_t free_bytes  = free  * FRAME_SIZE;
-
-    printf("Total memory = %u KiB (%.2f MiB)\n",
-           (unsigned)(total_bytes / 1024),
-           (double)total_bytes / (1024.0 * 1024.0));
-
-    printf("Free memory  = %u KiB (%.2f MiB)\n",
-           (unsigned)(free_bytes / 1024),
-           (double)free_bytes / (1024.0 * 1024.0));
-
-    printf("Used frames = %u / %u\n",
-           (unsigned)(total - free),
-           (unsigned)total);
-}
-
 size_t pmm_count_free_frames(void) {
     size_t free = 0;
     for (size_t f = 0; f < nframes; ++f) {

@@ -156,28 +156,3 @@ void kfree(void *ptr) {
     merge_free_blocks();
     heap_release();
 }
-
-void heap_print_stats(void) {
-    size_t free_blocks = 0;
-    size_t used_blocks = 0;
-    size_t free_mem = 0;
-    size_t used_mem = 0;
-    
-    block_t *curr = heap_start;
-    while (curr) {
-        if (curr->free) {
-            free_blocks++;
-            free_mem += curr->size;
-        } else {
-            used_blocks++;
-            used_mem += curr->size;
-        }
-        curr = curr->next;
-    }
-    
-    printf("Total heap size: %u KB\n", (unsigned)((heap_end - HEAP_START) / 1024));
-    printf("Used: %u bytes (%u blocks)\n", (unsigned)used_mem, (unsigned)used_blocks);
-    printf("Free: %u bytes (%u blocks)\n", (unsigned)free_mem, (unsigned)free_blocks);
-    printf("Total allocated: %u bytes\n", (unsigned)total_allocated);
-    printf("Total freed: %u bytes\n", (unsigned)total_freed);
-}

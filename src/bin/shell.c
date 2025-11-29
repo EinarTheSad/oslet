@@ -789,7 +789,7 @@ static void cmd_ps(int argc, char *argv[]) {
                 state_color = 12;
                 break;
             default:
-                state_str = "UNKNOWN";
+                state_str = "TERMINATED";
                 state_color = 8;
                 break;
         }
