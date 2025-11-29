@@ -95,6 +95,22 @@ static void keyboard_irq(void) {
     if (code == 0x1D) {                 /* Ctrl (ignore for now) */
         return;
     }
+    
+    /* Function keys (no E0 prefix) */
+    if (!release) {
+        switch(code) {
+            case 0x3B: buf_push(0x85); return; /* F1 */
+            case 0x3C: buf_push(0x86); return; /* F2 */
+            case 0x3D: buf_push(0x87); return; /* F3 */
+            case 0x3E: buf_push(0x88); return; /* F4 */
+            case 0x3F: buf_push(0x89); return; /* F5 */
+            case 0x40: buf_push(0x8A); return; /* F6 */
+            case 0x41: buf_push(0x8B); return; /* F7 */
+            case 0x42: buf_push(0x8C); return; /* F8 */
+            case 0x43: buf_push(0x8D); return; /* F9 */
+            case 0x44: buf_push(0x8E); return; /* F10 */
+        }
+    }
 
     if (release) return;                    /* ignore key releases */
 
