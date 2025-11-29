@@ -11,6 +11,8 @@ typedef rtc_time_t sys_time_t;
 #define SYS_CONSOLE_SETCOL  0x0102
 #define SYS_CONSOLE_GETCHAR 0x0103
 #define SYS_CONSOLE_CLEAR   0x0104
+#define SYS_CONSOLE_SETCUR  0x0105
+#define SYS_CONSOLE_GETCUR  0x0106
 
 /* AH = 02h - Process Control */
 #define SYS_PROC_EXIT       0x0200
@@ -152,6 +154,14 @@ static inline void sys_clear(void) {
 
 static inline void sys_setcolor(uint8_t bg, uint8_t fg) {
     __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_SETCOL), "b"(bg), "c"(fg));
+}
+
+static inline void sys_setcur(int x, int y) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_SETCUR), "b"(x), "c"(y));
+}
+
+static inline void sys_getcur(int x, int y) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_GETCUR), "b"(x), "c"(y));
 }
 
 static inline void sys_exit(void) {
