@@ -169,18 +169,9 @@ static void cmd_run(const char *path) {
         return;
     }
     
-    exec_image_t image = {};
-    
-    if (exec_load(path, &image) != 0) {
-        printf("Failed to load binary\n");
-        return;
+    if (task_spawn_and_wait(path) != 0) {
+        printf("Failed to run: %s\n", path);
     }
-    
-    if (exec_run(&image) != 0) {
-        printf("Could not execute %s\n", path);
-    }
-    
-    exec_free(&image);
 }
 
 static void cmd_rmdir(const char *dirname) {
@@ -355,7 +346,7 @@ static void cmd_ls(const char *path) {
         return;
     }
     
-    // Bubble sort (tylko jeśli count > 1)
+    // Bubble sort (tylko jeÅ›li count > 1)
     if (count > 1) {
         for (int i = 0; i < count - 1; ++i) {
             for (int j = 0; j < count - i - 1; ++j) {

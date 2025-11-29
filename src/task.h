@@ -30,6 +30,12 @@ typedef struct task {
     uint32_t sleep_until_ticks;
     uint32_t quantum_remaining;
     msg_queue_t msg_queue;
+    uint32_t parent_tid;
+    uint32_t child_tid;
+    int exit_code;
+    uint32_t exec_base;
+    uint32_t exec_end;
+    int exec_slot;
     struct task *next;
 } task_t;
 
@@ -40,6 +46,7 @@ void task_sleep(uint32_t milliseconds);
 void task_exit(void);
 void task_list_print(void);
 task_t *task_get_current(void);
+int task_spawn_and_wait(const char *path);
 
 void schedule(void);
 void task_tick(void);

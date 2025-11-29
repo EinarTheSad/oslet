@@ -50,6 +50,17 @@ int strcmp_s(const char *a, const char *b) {
     return *(unsigned char*)a - *(unsigned char*)b;
 }
 
+int strcasecmp_s(const char *a, const char *b) {
+    while (*a && *b) {
+        char ca = toupper_s(*a);
+        char cb = toupper_s(*b);
+        if (ca != cb) return ca - cb;
+        a++;
+        b++;
+    }
+    return toupper_s(*a) - toupper_s(*b);
+}
+
 size_t strlen_s(const char *s) {
     size_t n = 0;
     while (s[n]) n++;

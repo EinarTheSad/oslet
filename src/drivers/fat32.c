@@ -358,7 +358,7 @@ static int find_in_dir(fat32_volume_t *vol, uint32_t dir_cluster, const char *na
             }
             
             if (lfn_valid && lfn_checksum(entries[i].name) == lfn_checksum_val) {
-                if (strcmp_s(lfn_buffer, name) == 0) {
+                if (strcasecmp_s(lfn_buffer, name) == 0) {
                     memcpy_s(out, &entries[i], sizeof(fat32_direntry_t));
                     if (out_cluster) *out_cluster = cluster;
                     if (out_offset) *out_offset = i * 32;
@@ -369,7 +369,9 @@ static int find_in_dir(fat32_volume_t *vol, uint32_t dir_cluster, const char *na
             
             int match = 1;
             for (int j = 0; j < 11; j++) {
-                if (entries[i].name[j] != search[j]) {
+                char a = toupper_s(entries[i].name[j]);
+                char b = toupper_s(search[j]);
+                if (a != b) {
                     match = 0;
                     break;
                 }

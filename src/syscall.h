@@ -18,6 +18,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_PROC_GETPID     0x0202
 #define SYS_PROC_SLEEP      0x0203
 #define SYS_PROC_YIELD      0x0204
+#define SYS_PROC_SPAWN      0x0205
 
 /* AH = 03h - File Operations */
 #define SYS_FILE_OPEN       0x0300
@@ -158,6 +159,12 @@ static inline void sys_exit(void) {
 static inline int sys_exec(const char *path) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_EXEC), "b"(path));
+    return ret;
+}
+
+static inline int sys_spawn(const char *path) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN), "b"(path));
     return ret;
 }
 

@@ -127,7 +127,7 @@ static void cmd_ps(int argc, char *argv[]);
 static void cmd_uptime(int argc, char *argv[]);
 static void cmd_cls(int argc, char *argv[]);
 
-static Command commands[] = {
+static const Command commands[] = {
     { "cat",    "cat <file>",          "Display file contents",      cmd_cat },
     { "cd",     "cd <dir>",            "Change directory",           cmd_cd },
     { "cls",    "cls",                 "Clear screen",               cmd_cls },
@@ -192,10 +192,6 @@ void _start(void) {
             __asm__ volatile ("hlt");
             continue;
         }
-        
-        if (n >= (int)sizeof(line))
-            n = sizeof(line) - 1;
-        line[n] = '\0';
         
         /* Trim newlines */
         while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
@@ -266,7 +262,7 @@ void _start(void) {
             }
             
             if (bin_found) {
-                if (sys_exec(bin_path) != 0) {
+                if (sys_spawn(bin_path) != 0) {
                     sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
                     printf("Could not execute %s\n", bin_path);
                     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
@@ -291,8 +287,6 @@ static int parse_args(char *line, char *argv[], int max_args) {
     char *p = line;
 
     while (*p && argc < max_args - 1) {
-        while (*p == ' ' || *p == '\t')
-            p++;
 
         if (!*p)
             break;
@@ -336,8 +330,9 @@ static void cmd_exit(int argc, char *argv[]) {
     (void)argc; (void)argv;
     printf("This action will return you to the kernel shell.\nMake sure you know what you are doing! Proceed? (Y/N) ");
     char conf[80];
-    sys_readline(conf, sizeof(conf));
+    sys_readline(conf,strlen(conf));
     if (!strcmp(conf,"Y") || !strcmp(conf,"y")) sys_exit();
+    else {};
 }
 
 static void cmd_mem(int argc, char *argv[]) {

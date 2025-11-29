@@ -34,6 +34,7 @@ int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user);
 void memcpy_s(void *dst, const void *src, size_t n);
 void memset_s(void *dst, int val, size_t n);
 int strcmp_s(const char *a, const char *b);
+int strcasecmp_s(const char *a, const char *b);
 size_t strlen_s(const char *s);
 void strcpy_s(char *dst, const char *src, size_t max);
 char toupper_s(char c);
