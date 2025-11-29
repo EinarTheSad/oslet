@@ -52,6 +52,8 @@ typedef rtc_time_t sys_time_t;
 #define SYS_INFO_TASKS      0x0801
 #define SYS_INFO_VERSION    0x0802
 #define SYS_INFO_HEAP       0x0803
+#define SYS_INFO_SHELL      0x0804
+#define SYS_INFO_SET_SHELL  0x0805
 
 /* AH = 09h - Graphics */
 #define SYS_GFX_ENTER       0x0900
@@ -285,6 +287,18 @@ static inline int sys_get_tasks(sys_taskinfo_t *tasks, int max) {
 static inline int sys_version(void) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_VERSION));
+    return ret;
+}
+
+static inline int sys_info_shell(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_SHELL));
+    return ret;
+}
+
+static inline int sys_shell_set(const char *version) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_SET_SHELL), "b"(version));
     return ret;
 }
 
