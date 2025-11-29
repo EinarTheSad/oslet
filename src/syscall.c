@@ -530,7 +530,6 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x09: return handle_graphics(al, ebx, ecx, edx);
         
         default:
-            printf("Unknown syscall: AH=%02Xh AL=%02Xh\n", ah, al);
             return (uint32_t)-1;
     }
 }
