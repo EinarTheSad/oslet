@@ -30,6 +30,13 @@ char *strcpy(char *dst, const char *src) {
     return ret;
 }
 
+char *strcat(char *dst, const char *src) {
+    char *ret = dst;
+    while (*dst) dst++;
+    while ((*dst++ = *src++));
+    return ret;
+}
+
 char *strchr(const char *s, int c) {
     while (*s) {
         if (*s == (char)c) return (char*)s;
