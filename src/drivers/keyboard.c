@@ -149,3 +149,85 @@ size_t kbd_getline(char* out, size_t maxlen) {
     out[n] = 0; /* NUL-terminate for convenience */
     return n;
 }
+
+/* Advanced line editor with cursor movement and insert/delete */
+size_t kbd_readline_edit(char* buf, size_t maxlen) {
+    extern void vga_get_cursor(int *x, int *y);
+    extern void vga_set_cursor(int x, int y);
+    
+    size_t len = 0;
+    size_t cursor_pos = 0;
+    int start_x, start_y;
+    
+    vga_get_cursor(&start_x, &start_y);
+    buf[0] = '\0';
+    
+    while (1) {
+        unsigned char ch = (unsigned char)kbd_getchar();
+        
+        if (ch == '\n' || ch == '\r') {
+            buf[len] = '\0';
+            putchar('\n');
+            return len;
+        }
+        
+        if (ch == KEY_LEFT) {
+            if (cursor_pos > 0) {
+                cursor_pos--;
+                vga_set_cursor(start_x + cursor_pos, start_y);
+            }
+            continue;
+        }
+        
+        if (ch == KEY_RIGHT) {
+            if (cursor_pos < len) {
+                cursor_pos++;
+                vga_set_cursor(start_x + cursor_pos, start_y);
+            }
+            continue;
+        }
+        
+        if (ch >= 0x80) {
+            continue;
+        }
+        
+        if (ch == '\b') {
+            if (cursor_pos > 0) {
+                /* Remove character at cursor_pos - 1 */
+                for (size_t i = cursor_pos - 1; i < len - 1; i++) {
+                    buf[i] = buf[i + 1];
+                }
+                len--;
+                cursor_pos--;
+                buf[len] = '\0';
+                
+                /* Redraw entire line */
+                vga_set_cursor(start_x, start_y);
+                for (size_t i = 0; i < len; i++) {
+                    putchar(buf[i]);
+                }
+                putchar(' ');
+                vga_set_cursor(start_x + cursor_pos, start_y);
+            }
+            continue;
+        }
+        
+        if (ch >= 32 && ch < 127 && len < maxlen - 1) {
+            /* Insert character at cursor position */
+            for (size_t i = len; i > cursor_pos; i--) {
+                buf[i] = buf[i - 1];
+            }
+            buf[cursor_pos] = (char)ch;
+            cursor_pos++;
+            len++;
+            buf[len] = '\0';
+            
+            /* Redraw from cursor position */
+            vga_set_cursor(start_x, start_y);
+            for (size_t i = 0; i < len; i++) {
+                putchar(buf[i]);
+            }
+            vga_set_cursor(start_x + cursor_pos, start_y);
+        }
+    }
+}
