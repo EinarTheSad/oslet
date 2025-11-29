@@ -13,6 +13,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_CONSOLE_CLEAR   0x0104
 #define SYS_CONSOLE_SETCUR  0x0105
 #define SYS_CONSOLE_GETCUR  0x0106
+#define SYS_CONSOLE_READLINE_EDIT 0x0107
 
 /* AH = 02h - Process Control */
 #define SYS_PROC_EXIT       0x0200
@@ -145,6 +146,12 @@ static inline int sys_getchar(void) {
 static inline int sys_readline(char *buf, uint32_t size) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_CONSOLE_IN), "b"(buf), "c"(size));
+    return ret;
+}
+
+static inline int sys_readline_edit(char *buf, uint32_t size) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_CONSOLE_READLINE_EDIT), "b"(buf), "c"(size));
     return ret;
 }
 

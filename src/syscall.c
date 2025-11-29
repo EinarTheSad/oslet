@@ -87,6 +87,10 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             if (!ebx || !ecx) return -1;
             vga_get_cursor((int*)ebx, (int*)ecx);
             return 0;
+        
+        case 0x07: /* Readline with edit */
+            if (!ebx) return -1;
+            return (uint32_t)kbd_readline_edit((char*)ebx, ecx);
             
         default:
             return -1;
