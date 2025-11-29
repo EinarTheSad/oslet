@@ -311,6 +311,17 @@ void vga_set_color(uint8_t background, uint8_t foreground) {
     vga_color = (foreground & 0x0F) | ((background & 0x07) << 4); /* or 0x0F */
 }
 
+void vga_set_cursor(int x, int y) {
+    if (x >= 0 && x < VGA_WIDTH) cx = x;
+    if (y >= 0 && y < VGA_HEIGHT) cy = y;
+    move_hw_cursor();
+}
+
+void vga_get_cursor(int *x, int *y) {
+    if (x) *x = cx;
+    if (y) *y = cy;
+}
+
 void vga_write_regs(const uint8_t* regs) {
     outb(0x3C2, *regs++);
     
