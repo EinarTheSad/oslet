@@ -19,6 +19,8 @@
 
 #define COMMAND_COUNT (sizeof(commands) / sizeof((commands)[0]))
 
+const char *shell_version = "oslet-v04";
+
 static int sys_stat(const char *path, sys_dirent_t *entry) {
     sys_dirent_t entries[64];
     char *last_slash = strrchr(path, '/');
@@ -175,10 +177,8 @@ static void print_prompt(void) {
 
 __attribute__((section(".entry"), used))
 void _start(void) {
+    sys_shell_set(shell_version);
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-    printf("Developmental osLET standalone shell %s\n", sys_version());
-    printf("Warning: this is highly unstable and under current development.\nPlease do not use it on your important data!\n");
-
     char line[128];
     char *argv[MAX_ARGS];
     memset(argv, 0, sizeof(argv));

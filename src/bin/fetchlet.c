@@ -25,7 +25,7 @@ void _start(void) {
     sys_setcolor(0, 9);
     printf("  Shell");
     sys_setcolor(0, 7);
-    printf(": oslet-v03\n");
+    printf(": %s\n", sys_info_shell());
     
     sys_setcolor(0, 9);
     printf("  CPU");

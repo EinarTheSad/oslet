@@ -389,6 +389,12 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             
             return 0;
         }
+
+        case 0x04:
+            return (uint32_t)(uintptr_t)shell_version;
+
+        case 0x05:
+            shell_version = (const char*)ebx;
         
         default:
             return -1;
