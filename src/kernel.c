@@ -13,12 +13,12 @@
 #include "syscall.h"
 #include "drivers/ata.h"
 #include "drivers/fat32.h"
-#include "shell.h"
 #include "gdt.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
-extern void gdt_flush(uint32_t gdt_ptr_addr);
+extern void shell_init(void);
+extern void shell_run(void);
 extern uint8_t __kernel_end;
 
 static void boot_sequence(void) {
