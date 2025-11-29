@@ -107,7 +107,7 @@ run: $(BUILD)/$(TARGET)
 clean:
 	@echo "Cleaning..."
 	rm -rf $(BUILD)
-	rm -f $(BIN)/*.bin
+	rm -f $(BIN)/*.elf
 
 clean-all: clean
 	rm -f $(DISK)
@@ -135,7 +135,7 @@ binstall:
 fetchlet: $(BIN)/fetchlet.elf
 
 $(BIN)/fetchlet.elf: $(BUILD)/bin/fetchlet.o $(LIB_OBJS)
-	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
+	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
 	@mkdir -p $(dir $@)
@@ -148,7 +148,7 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 shell: $(BIN)/shell.elf
 
 $(BIN)/shell.elf: $(BUILD)/bin/shell.o $(LIB_OBJS)
-	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
+	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
 	@mkdir -p $(dir $@)
@@ -161,7 +161,7 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 demo: $(BIN)/demo.elf
 
 $(BIN)/demo.elf: $(BUILD)/bin/demo.o $(LIB_OBJS)
-	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -o $@ $^
+	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
 	@mkdir -p $(dir $@)
