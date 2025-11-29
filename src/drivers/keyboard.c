@@ -5,10 +5,18 @@
 #include "../console.h"
 #include "../irq.h"
 
-/* --- ring buffer for chars produced by IRQ --- */
 #define KBD_BUF_SZ 128
+#define HISTORY_SIZE 16
+#define HISTORY_LINE_MAX 128
+
+/* --- ring buffer for chars produced by IRQ --- */
 static volatile char kbuf[KBD_BUF_SZ];
 static volatile unsigned khead = 0, ktail = 0;
+
+/* --- command history --- */
+static char history[HISTORY_SIZE][HISTORY_LINE_MAX];
+static int history_count = 0;
+static int history_pos = 0;
 
 static inline int buf_empty(void){ return khead == ktail; }
 static inline void buf_push(char c){
@@ -114,6 +122,40 @@ char kbd_getchar(void) {
     return buf_pop();
 }
 
+/* History management */
+static void history_add(const char *line) {
+    if (!line || line[0] == '\0') return;
+    
+    /* Don't add if same as last command */
+    if (history_count > 0) {
+        int last_idx = (history_count - 1) % HISTORY_SIZE;
+        if (strcmp_s(history[last_idx], line) == 0) return;
+    }
+    
+    int idx = history_count % HISTORY_SIZE;
+    size_t len = 0;
+    while (line[len] && len < HISTORY_LINE_MAX - 1) {
+        history[idx][len] = line[len];
+        len++;
+    }
+    history[idx][len] = '\0';
+    history_count++;
+}
+
+static const char* history_get(int offset) {
+    if (history_count == 0) return NULL;
+    if (offset < 0 || offset >= history_count) return NULL;
+    if (offset >= HISTORY_SIZE) return NULL;
+    
+    int actual_count = history_count < HISTORY_SIZE ? history_count : HISTORY_SIZE;
+    if (offset >= actual_count) return NULL;
+    
+    int idx = (history_count - 1 - offset) % HISTORY_SIZE;
+    if (idx < 0) idx += HISTORY_SIZE;
+    
+    return history[idx];
+}
+
 /* crude line editor: backspace editing, stops on '\n' or buffer full-1, echoes */
 size_t kbd_getline(char* out, size_t maxlen) {
     size_t n = 0;
@@ -158,6 +200,8 @@ size_t kbd_readline_edit(char* buf, size_t maxlen) {
     size_t len = 0;
     size_t cursor_pos = 0;
     int start_x, start_y;
+    int history_offset = -1;
+    char temp_buf[HISTORY_LINE_MAX] = {0};
     
     vga_get_cursor(&start_x, &start_y);
     buf[0] = '\0';
@@ -168,7 +212,97 @@ size_t kbd_readline_edit(char* buf, size_t maxlen) {
         if (ch == '\n' || ch == '\r') {
             buf[len] = '\0';
             putchar('\n');
+            
+            /* Add to history if not empty */
+            if (len > 0) {
+                history_add(buf);
+            }
+            
             return len;
+        }
+        
+        if (ch == KEY_UP) {
+            /* Navigate history backwards */
+            history_offset++;
+            const char *hist = history_get(history_offset);
+            
+            if (hist) {
+                /* Save current line to temp if first time */
+                if (history_offset == 0) {
+                    for (size_t i = 0; i < len && i < HISTORY_LINE_MAX - 1; i++) {
+                        temp_buf[i] = buf[i];
+                    }
+                    temp_buf[len] = '\0';
+                }
+                
+                /* Load history */
+                len = 0;
+                while (hist[len] && len < maxlen - 1) {
+                    buf[len] = hist[len];
+                    len++;
+                }
+                buf[len] = '\0';
+                cursor_pos = len;
+                
+                /* Redraw */
+                vga_set_cursor(start_x, start_y);
+                for (size_t i = 0; i < len; i++) {
+                    putchar(buf[i]);
+                }
+                /* Clear rest of line */
+                for (int i = 0; i < 60; i++) putchar(' ');
+                vga_set_cursor(start_x + cursor_pos, start_y);
+            } else {
+                history_offset--;
+            }
+            continue;
+        }
+        
+        if (ch == KEY_DOWN) {
+            /* Navigate history forwards */
+            if (history_offset > 0) {
+                history_offset--;
+                const char *hist = history_get(history_offset);
+                
+                if (hist) {
+                    len = 0;
+                    while (hist[len] && len < maxlen - 1) {
+                        buf[len] = hist[len];
+                        len++;
+                    }
+                    buf[len] = '\0';
+                } else {
+                    len = 0;
+                    buf[0] = '\0';
+                }
+                
+                cursor_pos = len;
+                
+                vga_set_cursor(start_x, start_y);
+                for (size_t i = 0; i < len; i++) {
+                    putchar(buf[i]);
+                }
+                for (int i = 0; i < 60; i++) putchar(' ');
+                vga_set_cursor(start_x + cursor_pos, start_y);
+            } else if (history_offset == 0) {
+                /* Restore temp buffer */
+                history_offset = -1;
+                len = 0;
+                while (temp_buf[len] && len < maxlen - 1) {
+                    buf[len] = temp_buf[len];
+                    len++;
+                }
+                buf[len] = '\0';
+                cursor_pos = len;
+                
+                vga_set_cursor(start_x, start_y);
+                for (size_t i = 0; i < len; i++) {
+                    putchar(buf[i]);
+                }
+                for (int i = 0; i < 60; i++) putchar(' ');
+                vga_set_cursor(start_x + cursor_pos, start_y);
+            }
+            continue;
         }
         
         if (ch == KEY_LEFT) {
@@ -190,6 +324,9 @@ size_t kbd_readline_edit(char* buf, size_t maxlen) {
         if (ch >= 0x80) {
             continue;
         }
+        
+        /* Any edit resets history navigation */
+        history_offset = -1;
         
         if (ch == '\b') {
             if (cursor_pos > 0) {
