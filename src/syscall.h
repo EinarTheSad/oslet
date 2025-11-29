@@ -133,7 +133,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
 
 /* Inline syscall wrappers */
 static inline void sys_write(const char *str) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_OUT), "b"(str));
+    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_OUT), "b"(str) : "memory");
 }
 
 static inline int sys_getchar(void) {
@@ -157,11 +157,11 @@ static inline void sys_setcolor(uint8_t bg, uint8_t fg) {
 }
 
 static inline void sys_setcur(int x, int y) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_SETCUR), "b"(x), "c"(y));
+    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_SETCUR), "b"(x), "c"(y) : "memory");
 }
 
 static inline void sys_getcur(int *x, int *y) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_GETCUR), "b"(x), "c"(y));
+    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_GETCUR), "b"(x), "c"(y) : "memory");
 }
 
 static inline void sys_exit(void) {
