@@ -1,6 +1,7 @@
 #include "../syscall.h"
 #include "../lib/stdio.h"
 #include "../lib/string.h"
+#include "../drivers/keyboard.h"
 
 #define COLOR_PROMPT_BG    COLOR_BLACK
 #define COLOR_PROMPT_FG    COLOR_LIGHT_GREEN
@@ -175,6 +176,94 @@ static void print_prompt(void) {
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
 }
 
+static int readline_edit(char *buf, int max_len) {
+    int len = 0;
+    int cursor_pos = 0;
+    int start_x, start_y;
+    
+    sys_getcur(&start_x, &start_y);
+    buf[0] = '\0';
+    
+    while (1) {
+        int ch = sys_getchar();
+        
+        if (ch == '\n' || ch == '\r') {
+            buf[len] = '\0';
+            sys_write("\n");
+            return len;
+        }
+        
+        if (ch == KEY_LEFT) {
+            if (cursor_pos > 0) {
+                cursor_pos--;
+                sys_setcur(start_x + cursor_pos, start_y);
+            }
+            continue;
+        }
+        
+        if (ch == KEY_RIGHT) {
+            if (cursor_pos < len) {
+                cursor_pos++;
+                sys_setcur(start_x + cursor_pos, start_y);
+            }
+            continue;
+        }
+        
+        if (ch >= 0x80) {
+            continue;
+        }
+        
+        if (ch == '\b') {
+            if (cursor_pos > 0) {
+                /* Remove character at cursor_pos - 1 */
+                for (int i = cursor_pos - 1; i < len - 1; i++) {
+                    buf[i] = buf[i + 1];
+                }
+                len--;
+                cursor_pos--;
+                buf[len] = '\0';
+                
+                /* Redraw entire line */
+                sys_setcur(start_x, start_y);
+                
+                /* Write updated buffer */
+                for (int i = 0; i < len; i++) {
+                    char tmp[2] = {buf[i], '\0'};
+                    sys_write(tmp);
+                }
+                
+                /* Clear last position */
+                sys_write(" ");
+                
+                /* Move cursor back to edit position */
+                sys_setcur(start_x + cursor_pos, start_y);
+            }
+            continue;
+        }
+        
+        if (ch >= 32 && ch < 127 && len < max_len - 1) {
+            /* Insert character at cursor position */
+            for (int i = len; i > cursor_pos; i--) {
+                buf[i] = buf[i - 1];
+            }
+            buf[cursor_pos] = (char)ch;
+            cursor_pos++;
+            len++;
+            buf[len] = '\0';
+            
+            /* Redraw from cursor position */
+            sys_setcur(start_x, start_y);
+            
+            for (int i = 0; i < len; i++) {
+                char tmp[2] = {buf[i], '\0'};
+                sys_write(tmp);
+            }
+            
+            sys_setcur(start_x + cursor_pos, start_y);
+        }
+    }
+}
+
 __attribute__((section(".entry"), used))
 void _start(void) {
     sys_shell_set(shell_version);
@@ -186,7 +275,7 @@ void _start(void) {
 
     for (;;) {
         print_prompt();
-        int n = sys_readline(line, sizeof(line));
+        int n = readline_edit(line, sizeof(line));
         if (n <= 0) {
             __asm__ volatile ("hlt");
             continue;
