@@ -78,6 +78,7 @@ static void keyboard_irq(void) {
             case 0x50: buf_push(0x81); return; /* Down */
             case 0x4B: buf_push(0x82); return; /* Left */
             case 0x4D: buf_push(0x83); return; /* Right */
+            case 0x53: buf_push(0x84); return; /* Delete */
             default: return;
         }
     }
@@ -156,44 +157,8 @@ static const char* history_get(int offset) {
     return history[idx];
 }
 
-/* crude line editor: backspace editing, stops on '\n' or buffer full-1, echoes */
-size_t kbd_getline(char* out, size_t maxlen) {
-    size_t n = 0;
-    if (maxlen == 0) return 0;
-
-    for (;;) {
-        char c = kbd_getchar();
-
-        if (c == '\b') {
-            if (n > 0) {
-                /* erase on screen */
-                putchar('\b'); putchar(' '); putchar('\b');
-                n--;
-            }
-            continue;
-        }
-
-        putchar(c);  /* echo */
-
-        if (c == '\n') {
-            break;
-        }
-
-        if (n < maxlen - 1) {
-            out[n++] = c;
-        } else {
-            /* buffer full: finish line visually and break */
-            putchar('\n');
-            break;
-        }
-    }
-
-    out[n] = 0; /* NUL-terminate for convenience */
-    return n;
-}
-
-/* Advanced line editor with cursor movement and insert/delete */
-size_t kbd_readline_edit(char* buf, size_t maxlen) {
+/* Advanced line editor with cursor movement, insert/delete, and history */
+size_t kbd_getline(char* buf, size_t maxlen) {
     extern void vga_get_cursor(int *x, int *y);
     extern void vga_set_cursor(int x, int y);
     
@@ -321,14 +286,38 @@ size_t kbd_readline_edit(char* buf, size_t maxlen) {
             continue;
         }
         
+        if (ch == KEY_DELETE) {
+            /* Any edit resets history navigation */
+            history_offset = -1;
+            
+            /* Delete character at cursor position (not before it like backspace) */
+            if (cursor_pos < len) {
+                /* Remove character at cursor_pos */
+                for (size_t i = cursor_pos; i < len - 1; i++) {
+                    buf[i] = buf[i + 1];
+                }
+                len--;
+                buf[len] = '\0';
+                
+                /* Redraw entire line */
+                vga_set_cursor(start_x, start_y);
+                for (size_t i = 0; i < len; i++) {
+                    putchar(buf[i]);
+                }
+                putchar(' ');
+                vga_set_cursor(start_x + cursor_pos, start_y);
+            }
+            continue;
+        }
+        
         if (ch >= 0x80) {
             continue;
         }
         
-        /* Any edit resets history navigation */
-        history_offset = -1;
-        
         if (ch == '\b') {
+            /* Any edit resets history navigation */
+            history_offset = -1;
+            
             if (cursor_pos > 0) {
                 /* Remove character at cursor_pos - 1 */
                 for (size_t i = cursor_pos - 1; i < len - 1; i++) {
@@ -350,6 +339,9 @@ size_t kbd_readline_edit(char* buf, size_t maxlen) {
         }
         
         if (ch >= 32 && ch < 127 && len < maxlen - 1) {
+            /* Any edit resets history navigation */
+            history_offset = -1;
+            
             /* Insert character at cursor position */
             for (size_t i = len; i > cursor_pos; i--) {
                 buf[i] = buf[i - 1];

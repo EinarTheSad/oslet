@@ -186,7 +186,7 @@ void _start(void) {
 
     for (;;) {
         print_prompt();
-        int n = sys_readline_edit(line, sizeof(line));
+        int n = sys_readline(line, sizeof(line));
         if (n <= 0) {
             __asm__ volatile ("hlt");
             continue;
@@ -332,9 +332,8 @@ static void cmd_exit(int argc, char *argv[]) {
     (void)argc; (void)argv;
     printf("This action will return you to the kernel shell.\nMake sure you know what you are doing! Proceed? (Y/N) ");
     char conf[80];
-    sys_readline(conf,strlen(conf));
+    sys_readline(conf, sizeof(conf));
     if (!strcmp(conf,"Y") || !strcmp(conf,"y")) sys_exit();
-    else {};
 }
 
 static void cmd_mem(int argc, char *argv[]) {

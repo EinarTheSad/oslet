@@ -5,9 +5,9 @@
 #define KEY_DOWN  0x81
 #define KEY_LEFT  0x82
 #define KEY_RIGHT 0x83
+#define KEY_DELETE 0x84
 
 void keyboard_init(void);
 
 char kbd_getchar(void);
 size_t kbd_getline(char* buf, size_t maxlen);
-size_t kbd_readline_edit(char* buf, size_t maxlen);
