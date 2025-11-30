@@ -3,7 +3,7 @@
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
 #include "mem/early_alloc.h"
-#include "io.h"
+#include "irq/io.h"
 #include "mem/pmm.h"
 #include "mem/paging.h"
 #include "mem/heap.h"

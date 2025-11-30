@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "../console.h"
-#include "../io.h"
+#include "../irq/io.h"
 #include "../fonts/mono8x16.h"
 
 #define VGA_ADDRESS 0xB8000u

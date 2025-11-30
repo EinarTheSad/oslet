@@ -1,6 +1,6 @@
 #include "timer.h"
-#include "io.h"
-#include "irq.h"
+#include "irq/io.h"
+#include "irq/irq.h"
 #include "console.h"
 #include "task.h"
 

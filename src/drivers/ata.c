@@ -1,5 +1,5 @@
 #include "ata.h"
-#include "../io.h"
+#include "../irq/io.h"
 #include "../console.h"
 
 #define ATA_PRIMARY_IO      0x1F0

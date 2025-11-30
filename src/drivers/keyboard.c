@@ -1,9 +1,9 @@
 #include <stdint.h>
 #include <stddef.h>
-#include "../io.h"
+#include "../irq/io.h"
 #include "keyboard.h"
 #include "../console.h"
-#include "../irq.h"
+#include "../irq/irq.h"
 
 /* Ring buffer for keys (int to support extended keys) */
 #define KBD_BUF_SZ 128

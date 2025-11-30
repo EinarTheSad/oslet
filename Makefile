@@ -18,6 +18,7 @@ KERNEL_SRC_DIRS := \
 	$(SRC) \
 	$(SRC)/drivers \
 	$(SRC)/mem \
+	$(SRC)/irq \
 	$(SRC)/fonts
 
 KERNEL_SRC_C := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.c))
