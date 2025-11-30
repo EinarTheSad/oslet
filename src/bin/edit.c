@@ -22,7 +22,7 @@
 #define COL_MENU      ((0 << 4) | 7)   /* Black bg, light gray fg */
 #define COL_MENU_HOT  ((0 << 4) | 15)  /* Black bg, white (hotkey) */
 #define COL_MENU_SEL  ((7 << 4) | 0)   /* Gray bg, black fg (selected) */
-#define COL_EDIT      ((1 << 4) | 7)  /* Blue bg, light grey fg */
+#define COL_EDIT      ((1 << 4) | 7)   /* Blue bg, light grey fg */
 #define COL_BORDER    ((1 << 4) | 11)  /* Blue bg, cyan fg */
 #define COL_TITLE     ((7 << 4) | 0)   /* Light grey bg, black fg */
 #define COL_STATUS    ((3 << 4) | 0)   /* Cyan bg, black fg */
