@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "../io.h"
+#include "../irq/io.h"
 #include "../console.h"
 #include "paging.h"
 

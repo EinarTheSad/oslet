@@ -1,7 +1,7 @@
 #include "graphics.h"
 #include "../console.h"
 #include "../mem/heap.h"
-#include "../io.h"
+#include "../irq/io.h"
 #include "vga.h"
 #include "../drivers/fat32.h"
 
