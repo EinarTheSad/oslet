@@ -1,3 +1,7 @@
+/* osLET Editor */
+/* Claude by Anthropic, 2025 */
+/* Revised by EinarTheSad */
+
 #include "../syscall.h"
 #include "../lib/stdio.h"
 #include "../lib/string.h"
@@ -5,288 +9,357 @@
 #include <stdint.h>
 
 #define MAX_LINES 200
-#define MAX_LINE_LEN 80
+#define MAX_LINE_LEN 79
 #define SCREEN_HEIGHT 25
 #define SCREEN_WIDTH 80
-#define MENU_HEIGHT 1
-#define STATUS_HEIGHT 1
-#define EDIT_HEIGHT (SCREEN_HEIGHT - MENU_HEIGHT - STATUS_HEIGHT)
-#define EDIT_START_Y MENU_HEIGHT
+#define EDIT_HEIGHT 22
+#define EDIT_START_Y 2
+#define EDIT_START_X 1
+#define EDIT_WIDTH 78
+
+/* VGA colors */
+#define COL_MENU      ((0 << 4) | 7)   /* Black bg, light gray fg */
+#define COL_MENU_HOT  ((0 << 4) | 15)  /* Black bg, white (hotkey) */
+#define COL_MENU_SEL  ((7 << 4) | 0)   /* Gray bg, black fg (selected) */
+#define COL_EDIT      ((1 << 4) | 14)  /* Blue bg, yellow fg */
+#define COL_BORDER    ((1 << 4) | 11)  /* Blue bg, cyan fg */
+#define COL_TITLE     ((7 << 4) | 0)   /* Light grey bg, black fg */
+#define COL_STATUS    ((3 << 4) | 0)   /* Cyan bg, black fg */
+#define COL_DROPDOWN  ((7 << 4) | 0)   /* Gray bg, black fg */
+#define COL_DROP_HOT  ((7 << 4) | 1)   /* Gray bg, blue (hotkey) */
+#define COL_DROP_SEL  ((0 << 4) | 7)   /* Black bg, white (selected) */
+
+/* Box drawing characters (CP437) */
+#define CHAR_HLINE    196
+#define CHAR_VLINE    179
+#define CHAR_TL       218
+#define CHAR_TR       191
+#define CHAR_BL       192
+#define CHAR_BR       217
 
 typedef struct {
-    char lines[MAX_LINES][MAX_LINE_LEN];
+    char lines[MAX_LINES][MAX_LINE_LEN + 1];
     int line_count;
     int cursor_x;
     int cursor_y;
     int scroll_offset;
     int dirty;
-    char filename[256];
-    int dirty_lines[MAX_LINES];
-    int full_redraw;
+    char filename[64];
 } editor_t;
 
-static editor_t editor;
+/* Menu structure */
+typedef struct {
+    const char *title;
+    char hotkey;
+    int x_pos;
+} menu_item_t;
+
+typedef struct {
+    const char *text;
+    char hotkey;
+    int key_code;
+    const char *shortcut;
+} dropdown_item_t;
+
+static editor_t ed;
+static volatile uint16_t *vga = (uint16_t*)0xB8000;
+
+/* Menus */
+static menu_item_t menus[] = {
+    {"File",   'F', 1},
+    {"Edit",   'E', 7},
+    {"Help",   'H', 14},
+};
+#define NUM_MENUS 3
+
+static dropdown_item_t file_menu[] = {
+    {"New",       'N', KEY_ALT_N, ""},
+    {"Open...",   'O', KEY_F3,    "F3"},
+    {"Save",      'S', KEY_F2,    "F2"},
+    {"Save As...", 'A', 0,        ""},
+    {"Exit",      'x', KEY_ALT_X, "Alt+X"},
+};
+#define FILE_MENU_SIZE 5
+
+static dropdown_item_t edit_menu[] = {
+    {"Clear",  'l', 0, "Del"},
+};
+#define EDIT_MENU_SIZE 1
+
+static dropdown_item_t help_menu[] = {
+    {"About...", 'A', 0, ""},
+};
+#define HELP_MENU_SIZE 1
 
 /* Forward declarations */
-static void insert_newline(void);
+static void draw_all(void);
+static void draw_menu_bar(void);
+static void draw_border(void);
+static void draw_edit_area(void);
+static void draw_status(void);
+static void update_cursor(void);
 static void adjust_scroll(void);
-static void mark_line_dirty(int line);
-static void mark_all_dirty(void);
+static void insert_char(char c);
+static void delete_char(void);
+static void backspace_char(void);
+static void insert_newline(void);
+static void move_cursor(int dx, int dy);
+static int load_file(const char *filename);
+static int save_file(void);
+static void prompt_filename(const char *prompt, char *buf, int maxlen);
+static void show_dropdown(int menu_idx);
+static void show_about(void);
+static void new_file(void);
 
-static void mark_line_dirty(int line) {
-    if (line >= 0 && line < MAX_LINES) {
-        editor.dirty_lines[line] = 1;
+static void vga_putc(int x, int y, char c, uint8_t attr) {
+    if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT)
+        vga[y * SCREEN_WIDTH + x] = ((uint16_t)attr << 8) | (uint8_t)c;
+}
+
+static void vga_puts(int x, int y, const char *s, uint8_t attr) {
+    while (*s && x < SCREEN_WIDTH) {
+        vga_putc(x++, y, *s++, attr);
     }
 }
 
-static void mark_all_dirty(void) {
-    editor.full_redraw = 1;
-    for (int i = 0; i < MAX_LINES; i++) {
-        editor.dirty_lines[i] = 1;
+static void vga_fill(int x, int y, int w, int h, char c, uint8_t attr) {
+    for (int j = 0; j < h; j++) {
+        for (int i = 0; i < w; i++) {
+            vga_putc(x + i, y + j, c, attr);
+        }
     }
 }
 
-static void draw_menu(void) {
-    /* Write directly to VGA memory at line 0 for SPEED */
-    volatile uint16_t *vga = (uint16_t*)0xB8000;
-    uint16_t color = ((7 << 4) | 0) << 8; /* Gray bg (7), black fg (0) */
+static void draw_menu_bar(void) {
+    /* Clear menu line with black bg */
+    vga_fill(0, 0, SCREEN_WIDTH, 1, ' ', COL_MENU);
     
-    char menu[SCREEN_WIDTH + 1];
-    int pos = 0;
+    /* Draw menu items */
+    for (int i = 0; i < NUM_MENUS; i++) {
+        int x = menus[i].x_pos;
+        const char *t = menus[i].title;
+        
+        /* First letter is hotkey - show brighter */
+        vga_putc(x, 0, t[0], COL_MENU_HOT);
+        vga_puts(x + 1, 0, t + 1, COL_MENU);
+    }
+}
+
+static void draw_border(void) {
+    /* Top border (row 1) */
+    vga_putc(0, 1, CHAR_TL, COL_BORDER);
+    for (int x = 1; x < SCREEN_WIDTH - 1; x++)
+        vga_putc(x, 1, CHAR_HLINE, COL_BORDER);
+    vga_putc(SCREEN_WIDTH - 1, 1, CHAR_TR, COL_BORDER);
     
-    pos += snprintf(menu + pos, SCREEN_WIDTH - pos, "  %s - osLET Editor", 
-        editor.filename[0] ? editor.filename : "UNTITLED.TXT");
-    
-    while (pos < SCREEN_WIDTH - 30) {
-        menu[pos++] = ' ';
+    /* Side borders and edit area background */
+    for (int y = EDIT_START_Y; y < EDIT_START_Y + EDIT_HEIGHT; y++) {
+        vga_putc(0, y, CHAR_VLINE, COL_BORDER);
+        for (int x = 1; x < SCREEN_WIDTH - 1; x++)
+            vga_putc(x, y, ' ', COL_EDIT);
+        vga_putc(SCREEN_WIDTH - 1, y, CHAR_VLINE, COL_BORDER);
     }
     
-    pos += snprintf(menu + pos, SCREEN_WIDTH - pos, "F2 Save   F3 Open   F10 Quit");
+    /* Bottom border (row 24) */
+    vga_putc(0, SCREEN_HEIGHT - 1, CHAR_BL, COL_BORDER);
+    for (int x = 1; x < SCREEN_WIDTH - 1; x++)
+        vga_putc(x, SCREEN_HEIGHT - 1, CHAR_HLINE, COL_BORDER);
+    vga_putc(SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, CHAR_BR, COL_BORDER);
     
-    while (pos < SCREEN_WIDTH) {
-        menu[pos++] = ' ';
-    }
-    menu[SCREEN_WIDTH] = '\0';
+    /* Filename in title bar (centered on row 1) */
+    char title[40];
+    if (ed.filename[0])
+        snprintf(title, sizeof(title), " %s ", ed.filename);
+    else
+        snprintf(title, sizeof(title), " Untitled ");
     
-    /* Write to VGA line 0 */
-    for (int i = 0; i < SCREEN_WIDTH; i++) {
-        vga[i] = color | (unsigned char)menu[i];
+    int title_x = (SCREEN_WIDTH - strlen(title)) / 2;
+    vga_puts(title_x, 1, title, COL_TITLE);
+}
+
+static void draw_edit_area(void) {
+    for (int i = 0; i < EDIT_HEIGHT; i++) {
+        int line_idx = i + ed.scroll_offset;
+        int screen_y = EDIT_START_Y + i;
+        
+        /* Clear line first */
+        for (int x = 1; x < SCREEN_WIDTH - 1; x++)
+            vga_putc(x, screen_y, ' ', COL_EDIT);
+        
+        /* Draw line content if exists */
+        if (line_idx < ed.line_count) {
+            char *line = ed.lines[line_idx];
+            int len = strlen(line);
+            for (int x = 0; x < len && x < EDIT_WIDTH; x++) {
+                vga_putc(EDIT_START_X + x, screen_y, line[x], COL_EDIT);
+            }
+        }
     }
 }
 
 static void draw_status(void) {
-    /* Write directly to VGA memory at last line, also for SPEED*/
-    volatile uint16_t *vga = (uint16_t*)0xB8000;
-    volatile uint16_t *status_line = vga + (SCREEN_HEIGHT - 1) * SCREEN_WIDTH;
-    uint16_t color = ((7 << 4) | 0) << 8; /* Gray bg (7), black fg (0) */
+    /* Status bar at bottom - inside border area */
+    char status[SCREEN_WIDTH];
+    snprintf(status, sizeof(status), " %c  Line:%d Column:%d",
+             ed.dirty ? '*' : ' ', ed.cursor_y + 1, ed.cursor_x + 1);
     
-    char status[SCREEN_WIDTH + 1];
-    int pos = 0;
+    /* Pad to width */
+    int len = strlen(status);
+    while (len < SCREEN_WIDTH - 2) status[len++] = ' ';
+    status[SCREEN_WIDTH - 2] = '\0';
     
-    if (editor.dirty) {
-        pos += snprintf(status + pos, SCREEN_WIDTH - pos, " *");
-    } else {
-        pos += snprintf(status + pos, SCREEN_WIDTH - pos, "  ");
-    }
-    
-    while (pos < SCREEN_WIDTH - 25) {
-        status[pos++] = ' ';
-    }
-    
-    pos += snprintf(status + pos, SCREEN_WIDTH - pos, "Line: %d Column: %d", 
-        editor.cursor_y + 1, editor.cursor_x + 1);
-    
-    while (pos < SCREEN_WIDTH) {
-        status[pos++] = ' ';
-    }
-    status[SCREEN_WIDTH] = '\0';
-    
-    /* Write to VGA last line */
-    for (int i = 0; i < SCREEN_WIDTH; i++) {
-        status_line[i] = color | (unsigned char)status[i];
-    }
+    /* Write over bottom border line */
+    vga_puts(1, SCREEN_HEIGHT - 1, status, COL_STATUS);
 }
 
-static void redraw_screen(void) {
-    volatile uint16_t *vga = (uint16_t*)0xB8000;
-    uint16_t normal_color = ((0 << 4) | 7) << 8;
-    
-    /* Full clear only if needed */
-    if (editor.full_redraw) {
-        for (int y = 0; y < SCREEN_HEIGHT; y++) {
-            for (int x = 0; x < SCREEN_WIDTH; x++) {
-                vga[y * SCREEN_WIDTH + x] = normal_color | ' ';
-            }
-        }
-        draw_menu();
-        editor.full_redraw = 0;
-    }
-    
-    /* Draw only dirty lines */
-    for (int i = 0; i < EDIT_HEIGHT && (i + editor.scroll_offset) < editor.line_count; i++) {
-        int line_idx = i + editor.scroll_offset;
-        
-        if (editor.dirty_lines[line_idx]) {
-            int screen_line = EDIT_START_Y + i;
-            char *line = editor.lines[line_idx];
-            int len = strlen(line);
-            
-            for (int x = 0; x < SCREEN_WIDTH; x++) {
-                char ch = (x < len) ? line[x] : ' ';
-                vga[screen_line * SCREEN_WIDTH + x] = normal_color | (unsigned char)ch;
-            }
-            
-            editor.dirty_lines[line_idx] = 0;
-        }
-    }
-    
+static void draw_all(void) {
+    draw_menu_bar();
+    draw_border();
+    draw_edit_area();
     draw_status();
-    
-    /* Position cursor */
-    int screen_y = EDIT_START_Y + (editor.cursor_y - editor.scroll_offset);
-    if (screen_y < EDIT_START_Y) screen_y = EDIT_START_Y;
-    if (screen_y >= SCREEN_HEIGHT - STATUS_HEIGHT) screen_y = SCREEN_HEIGHT - STATUS_HEIGHT - 1;
-    
-    sys_setcur(editor.cursor_x, screen_y);
+    update_cursor();
+}
+
+static void update_cursor(void) {
+    int screen_x = EDIT_START_X + ed.cursor_x;
+    int screen_y = EDIT_START_Y + (ed.cursor_y - ed.scroll_offset);
+    sys_setcur(screen_x, screen_y);
 }
 
 static void adjust_scroll(void) {
-    if (editor.cursor_y >= editor.scroll_offset + EDIT_HEIGHT) {
-        editor.scroll_offset = editor.cursor_y - EDIT_HEIGHT + 1;
+    if (ed.cursor_y >= ed.scroll_offset + EDIT_HEIGHT) {
+        ed.scroll_offset = ed.cursor_y - EDIT_HEIGHT + 1;
+        draw_edit_area();
     }
-    
-    if (editor.cursor_y < editor.scroll_offset) {
-        editor.scroll_offset = editor.cursor_y;
+    if (ed.cursor_y < ed.scroll_offset) {
+        ed.scroll_offset = ed.cursor_y;
+        draw_edit_area();
     }
 }
 
 static void insert_char(char c) {
-    int y = editor.cursor_y;
-    int x = editor.cursor_x;
+    int y = ed.cursor_y;
+    int x = ed.cursor_x;
     
-    if (x >= MAX_LINE_LEN - 1) {
-        insert_newline();
-        y = editor.cursor_y;
-        x = 0;
+    int len = strlen(ed.lines[y]);
+    
+    /* If at end of line and line is full, wrap to next line */
+    if (len >= MAX_LINE_LEN - 1) {
+        /* Auto-wrap: create new line and put char there */
+        if (ed.line_count < MAX_LINES) {
+            insert_newline();
+            y = ed.cursor_y;
+            x = 0;
+            len = 0;
+        } else {
+            return; /* Can't add more */
+        }
     }
     
-    int len = strlen(editor.lines[y]);
+    /* Shift right */
+    for (int i = len; i > x; i--)
+        ed.lines[y][i] = ed.lines[y][i - 1];
     
-    for (int i = len; i > x; i--) {
-        editor.lines[y][i] = editor.lines[y][i - 1];
+    ed.lines[y][x] = c;
+    ed.lines[y][len + 1] = '\0';
+    ed.cursor_x++;
+    
+    /* If cursor went past line width, wrap */
+    if (ed.cursor_x >= MAX_LINE_LEN) {
+        if (ed.line_count < MAX_LINES) {
+            insert_newline();
+        } else {
+            ed.cursor_x = MAX_LINE_LEN - 1;
+        }
     }
     
-    editor.lines[y][x] = c;
-    editor.lines[y][len + 1] = '\0';
-    editor.cursor_x++;
-    
-    if (editor.cursor_x >= MAX_LINE_LEN - 1) {
-        insert_newline();
-        adjust_scroll();
-    }
-    
-    editor.dirty = 1;
-    mark_line_dirty(y);
+    ed.dirty = 1;
 }
 
 static void delete_char(void) {
-    int y = editor.cursor_y;
-    int x = editor.cursor_x;
+    int y = ed.cursor_y;
+    int x = ed.cursor_x;
+    int len = strlen(ed.lines[y]);
     
-    int len = strlen(editor.lines[y]);
     if (x >= len) {
-        if (y < editor.line_count - 1) {
-            int next_len = strlen(editor.lines[y + 1]);
-            if (len + next_len < MAX_LINE_LEN - 1) {
-                strcat(editor.lines[y], editor.lines[y + 1]);
-                
-                for (int i = y + 1; i < editor.line_count - 1; i++) {
-                    strcpy(editor.lines[i], editor.lines[i + 1]);
-                }
-                editor.line_count--;
-                editor.lines[editor.line_count][0] = '\0';
-                editor.dirty = 1;
-                mark_line_dirty(y);
-                mark_all_dirty(); /* Lines shifted */
+        /* Join with next line */
+        if (y < ed.line_count - 1) {
+            int next_len = strlen(ed.lines[y + 1]);
+            if (len + next_len < MAX_LINE_LEN) {
+                strcat(ed.lines[y], ed.lines[y + 1]);
+                for (int i = y + 1; i < ed.line_count - 1; i++)
+                    strcpy(ed.lines[i], ed.lines[i + 1]);
+                ed.line_count--;
+                ed.dirty = 1;
             }
         }
         return;
     }
     
-    for (int i = x; i < len; i++) {
-        editor.lines[y][i] = editor.lines[y][i + 1];
-    }
-    
-    editor.dirty = 1;
-    mark_line_dirty(y);
+    /* Shift left */
+    for (int i = x; i < len; i++)
+        ed.lines[y][i] = ed.lines[y][i + 1];
+    ed.dirty = 1;
 }
 
 static void backspace_char(void) {
-    if (editor.cursor_x > 0) {
-        editor.cursor_x--;
+    if (ed.cursor_x > 0) {
+        ed.cursor_x--;
         delete_char();
-    } else if (editor.cursor_y > 0) {
-        int prev_y = editor.cursor_y - 1;
-        int prev_len = strlen(editor.lines[prev_y]);
-        int curr_len = strlen(editor.lines[editor.cursor_y]);
+    } else if (ed.cursor_y > 0) {
+        int prev_len = strlen(ed.lines[ed.cursor_y - 1]);
+        int curr_len = strlen(ed.lines[ed.cursor_y]);
         
-        if (prev_len + curr_len < MAX_LINE_LEN - 1) {
-            strcat(editor.lines[prev_y], editor.lines[editor.cursor_y]);
-            
-            for (int i = editor.cursor_y; i < editor.line_count - 1; i++) {
-                strcpy(editor.lines[i], editor.lines[i + 1]);
-            }
-            editor.line_count--;
-            editor.lines[editor.line_count][0] = '\0';
-            
-            editor.cursor_y--;
-            editor.cursor_x = prev_len;
-            editor.dirty = 1;
-            mark_all_dirty(); /* Lines shifted */
+        if (prev_len + curr_len < MAX_LINE_LEN) {
+            strcat(ed.lines[ed.cursor_y - 1], ed.lines[ed.cursor_y]);
+            for (int i = ed.cursor_y; i < ed.line_count - 1; i++)
+                strcpy(ed.lines[i], ed.lines[i + 1]);
+            ed.line_count--;
+            ed.cursor_y--;
+            ed.cursor_x = prev_len;
+            ed.dirty = 1;
         }
     }
 }
 
 static void insert_newline(void) {
-    if (editor.line_count >= MAX_LINES) return;
+    if (ed.line_count >= MAX_LINES) return;
     
-    int y = editor.cursor_y;
-    int x = editor.cursor_x;
+    int y = ed.cursor_y;
+    int x = ed.cursor_x;
     
-    char rest[MAX_LINE_LEN];
-    strcpy(rest, &editor.lines[y][x]);
-    editor.lines[y][x] = '\0';
+    /* Save remainder of current line */
+    char rest[MAX_LINE_LEN + 1];
+    strcpy(rest, &ed.lines[y][x]);
+    ed.lines[y][x] = '\0';
     
-    for (int i = editor.line_count; i > y + 1; i--) {
-        strcpy(editor.lines[i], editor.lines[i - 1]);
-    }
+    /* Shift lines down */
+    for (int i = ed.line_count; i > y + 1; i--)
+        strcpy(ed.lines[i], ed.lines[i - 1]);
     
-    editor.line_count++;
-    strcpy(editor.lines[y + 1], rest);
+    ed.line_count++;
+    strcpy(ed.lines[y + 1], rest);
     
-    editor.cursor_y++;
-    editor.cursor_x = 0;
-    editor.dirty = 1;
-    mark_line_dirty(y);
-    mark_line_dirty(y + 1);
-    mark_all_dirty(); /* Lines shifted */
+    ed.cursor_y++;
+    ed.cursor_x = 0;
+    ed.dirty = 1;
 }
 
 static void move_cursor(int dx, int dy) {
     if (dy != 0) {
-        editor.cursor_y += dy;
-        if (editor.cursor_y < 0) editor.cursor_y = 0;
-        if (editor.cursor_y >= editor.line_count) editor.cursor_y = editor.line_count - 1;
+        ed.cursor_y += dy;
+        if (ed.cursor_y < 0) ed.cursor_y = 0;
+        if (ed.cursor_y >= ed.line_count) ed.cursor_y = ed.line_count - 1;
         
-        int len = strlen(editor.lines[editor.cursor_y]);
-        if (editor.cursor_x > len) editor.cursor_x = len;
+        int len = strlen(ed.lines[ed.cursor_y]);
+        if (ed.cursor_x > len) ed.cursor_x = len;
     }
     
     if (dx != 0) {
-        editor.cursor_x += dx;
-        int len = strlen(editor.lines[editor.cursor_y]);
-        if (editor.cursor_x < 0) editor.cursor_x = 0;
-        if (editor.cursor_x > len) editor.cursor_x = len;
+        ed.cursor_x += dx;
+        int len = strlen(ed.lines[ed.cursor_y]);
+        if (ed.cursor_x < 0) ed.cursor_x = 0;
+        if (ed.cursor_x > len) ed.cursor_x = len;
     }
 }
 
@@ -294,239 +367,438 @@ static int load_file(const char *filename) {
     int fd = sys_open(filename, "r");
     if (fd < 0) return -1;
     
-    editor.line_count = 0;
-    int current_line = 0;
-    editor.lines[0][0] = '\0';
+    memset(&ed, 0, sizeof(ed));
+    ed.line_count = 1;
     
-    char buffer[1024];
+    char buffer[512];
     int bytes_read;
+    int current_line = 0;
     
     while ((bytes_read = sys_read(fd, buffer, sizeof(buffer))) > 0) {
         for (int i = 0; i < bytes_read; i++) {
             if (buffer[i] == '\n') {
-                /* End current line, start new one */
                 current_line++;
                 if (current_line >= MAX_LINES) break;
-                editor.lines[current_line][0] = '\0';
             } else if (buffer[i] != '\r') {
-                /* Add character to current line */
-                int len = strlen(editor.lines[current_line]);
-                if (len < MAX_LINE_LEN - 1) {
-                    editor.lines[current_line][len] = buffer[i];
-                    editor.lines[current_line][len + 1] = '\0';
+                int len = strlen(ed.lines[current_line]);
+                if (len < MAX_LINE_LEN) {
+                    ed.lines[current_line][len] = buffer[i];
+                    ed.lines[current_line][len + 1] = '\0';
                 }
             }
         }
         if (current_line >= MAX_LINES) break;
     }
     
-    /* Set line count */
-    editor.line_count = current_line + 1;
-    if (editor.line_count == 0) editor.line_count = 1;
+    ed.line_count = current_line + 1;
+    if (ed.line_count == 0) ed.line_count = 1;
     
     sys_close(fd);
-    strcpy(editor.filename, filename);
-    editor.dirty = 0;
-    editor.cursor_x = 0;
-    editor.cursor_y = 0;
-    editor.scroll_offset = 0;
-    mark_all_dirty();
     
+    /* Copy filename, truncate if needed */
+    int j = 0;
+    for (int i = 0; filename[i] && j < 63; i++) {
+        ed.filename[j++] = filename[i];
+    }
+    ed.filename[j] = '\0';
+    
+    ed.dirty = 0;
     return 0;
 }
 
-static void prompt_open_file(void) {
-    volatile uint16_t *vga = (uint16_t*)0xB8000;
-    volatile uint16_t *status_line = vga + (SCREEN_HEIGHT - 1) * SCREEN_WIDTH;
-    uint16_t color = ((7 << 4) | 0) << 8;
-    
-    /* Clear status line and write prompt */
-    const char *prompt = "Open file: ";
-    for (int i = 0; i < SCREEN_WIDTH; i++) {
-        char ch = (i < 11) ? prompt[i] : ' ';
-        status_line[i] = color | (unsigned char)ch;
-    }
-    
-    /* Position cursor for input */
-    sys_setcur(11, SCREEN_HEIGHT - 1);
-    
-    /* Read filename */
-    char filename[256];
-    sys_readline(filename, sizeof(filename));
-    
-    if (filename[0] != '\0') {
-        if (load_file(filename) != 0) {
-            /* Show error briefly */
-            const char *error = "Error: Cannot open file!";
-            for (int i = 0; i < SCREEN_WIDTH; i++) {
-                char ch = (i < 25) ? error[i] : ' ';
-                status_line[i] = (((12 << 4) | 15) << 8) | (unsigned char)ch; /* Red bg, white fg */
-            }
-            
-            /* Wait a moment */
-            for (volatile int i = 0; i < 10000000; i++);
-        }
-    }
-    
-    /* CRITICAL: Reset cursor to editor position before returning */
-    int screen_y = EDIT_START_Y + (editor.cursor_y - editor.scroll_offset);
-    sys_setcur(editor.cursor_x, screen_y);
-}
-
-static void prompt_filename(void) {
-    volatile uint16_t *vga = (uint16_t*)0xB8000;
-    volatile uint16_t *status_line = vga + (SCREEN_HEIGHT - 1) * SCREEN_WIDTH;
-    uint16_t color = ((7 << 4) | 0) << 8;
-    
-    /* Clear status line and write prompt */
-    const char *prompt = "Save as: ";
-    for (int i = 0; i < SCREEN_WIDTH; i++) {
-        char ch = (i < 9) ? prompt[i] : ' ';
-        status_line[i] = color | (unsigned char)ch;
-    }
-    
-    /* Position cursor for input */
-    sys_setcur(9, SCREEN_HEIGHT - 1);
-    
-    /* Read filename using sys_readline */
-    char filename[256];
-    sys_readline(filename, sizeof(filename));
-    
-    if (filename[0] != '\0') {
-        strcpy(editor.filename, filename);
-    }
-    
-    /* CRITICAL: Reset cursor to editor position before returning */
-    int screen_y = EDIT_START_Y + (editor.cursor_y - editor.scroll_offset);
-    sys_setcur(editor.cursor_x, screen_y);
-}
-
 static int save_file(void) {
-    if (!editor.filename[0]) return -1;
+    if (!ed.filename[0]) return -1;
     
-    int fd = sys_open(editor.filename, "w");
+    int fd = sys_open(ed.filename, "w");
     if (fd < 0) return -1;
     
-    for (int i = 0; i < editor.line_count; i++) {
-        int len = strlen(editor.lines[i]);
-        sys_write_file(fd, editor.lines[i], len);
+    for (int i = 0; i < ed.line_count; i++) {
+        int len = strlen(ed.lines[i]);
+        sys_write_file(fd, ed.lines[i], len);
         sys_write_file(fd, "\n", 1);
     }
     
     sys_close(fd);
-    editor.dirty = 0;
+    ed.dirty = 0;
     return 0;
 }
 
-__attribute__((section(".entry"), used))
-void _start(void) {
-    memset(&editor, 0, sizeof(editor));
-    editor.line_count = 1;
-    editor.lines[0][0] = '\0';
-    editor.cursor_x = 0;
-    editor.cursor_y = 0;
-    editor.scroll_offset = 0;
-    editor.full_redraw = 1;
-    mark_all_dirty();
+static void prompt_filename(const char *prompt, char *buf, int maxlen) {
+    /* Draw dialog box */
+    int box_w = 50;
+    int box_h = 5;
+    int box_x = (SCREEN_WIDTH - box_w) / 2;
+    int box_y = (SCREEN_HEIGHT - box_h) / 2;
     
-    sys_setcolor(0, 7);
-    redraw_screen();
+    /* Draw box */
+    vga_fill(box_x, box_y, box_w, box_h, ' ', COL_DROPDOWN);
     
-    sys_setcur(0, EDIT_START_Y);
+    /* Border */
+    vga_putc(box_x, box_y, CHAR_TL, COL_DROPDOWN);
+    vga_putc(box_x + box_w - 1, box_y, CHAR_TR, COL_DROPDOWN);
+    vga_putc(box_x, box_y + box_h - 1, CHAR_BL, COL_DROPDOWN);
+    vga_putc(box_x + box_w - 1, box_y + box_h - 1, CHAR_BR, COL_DROPDOWN);
+    for (int x = 1; x < box_w - 1; x++) {
+        vga_putc(box_x + x, box_y, CHAR_HLINE, COL_DROPDOWN);
+        vga_putc(box_x + x, box_y + box_h - 1, CHAR_HLINE, COL_DROPDOWN);
+    }
+    for (int y = 1; y < box_h - 1; y++) {
+        vga_putc(box_x, box_y + y, CHAR_VLINE, COL_DROPDOWN);
+        vga_putc(box_x + box_w - 1, box_y + y, CHAR_VLINE, COL_DROPDOWN);
+    }
+    
+    /* Prompt */
+    vga_puts(box_x + 2, box_y + 1, prompt, COL_DROPDOWN);
+    
+    /* Input field */
+    vga_fill(box_x + 2, box_y + 2, box_w - 4, 1, ' ', COL_EDIT);
+    sys_setcur(box_x + 2, box_y + 2);
+    
+    /* Read input */
+    int pos = 0;
+    buf[0] = '\0';
     
     while (1) {
         int ch = sys_getchar();
         
-        /* F2 = Save */
-        if (ch == KEY_F2) {
-            if (!editor.filename[0]) {
-                prompt_filename();
+        if (ch == '\n' || ch == '\r') break;
+        if (ch == KEY_ESC) { buf[0] = '\0'; break; }
+        
+        if (ch == '\b' && pos > 0) {
+            pos--;
+            buf[pos] = '\0';
+            vga_putc(box_x + 2 + pos, box_y + 2, ' ', COL_EDIT);
+            sys_setcur(box_x + 2 + pos, box_y + 2);
+        } else if (ch >= 32 && ch < 127 && pos < maxlen - 1) {
+            buf[pos] = ch;
+            buf[pos + 1] = '\0';
+            vga_putc(box_x + 2 + pos, box_y + 2, ch, COL_EDIT);
+            pos++;
+            sys_setcur(box_x + 2 + pos, box_y + 2);
+        }
+    }
+    
+    draw_all();
+}
+
+static void show_about(void) {
+    int box_w = 40;
+    int box_h = 7;
+    int box_x = (SCREEN_WIDTH - box_w) / 2;
+    int box_y = (SCREEN_HEIGHT - box_h) / 2;
+    
+    vga_fill(box_x, box_y, box_w, box_h, ' ', COL_DROPDOWN);
+    
+    /* Border */
+    vga_putc(box_x, box_y, CHAR_TL, COL_DROPDOWN);
+    vga_putc(box_x + box_w - 1, box_y, CHAR_TR, COL_DROPDOWN);
+    vga_putc(box_x, box_y + box_h - 1, CHAR_BL, COL_DROPDOWN);
+    vga_putc(box_x + box_w - 1, box_y + box_h - 1, CHAR_BR, COL_DROPDOWN);
+    for (int x = 1; x < box_w - 1; x++) {
+        vga_putc(box_x + x, box_y, CHAR_HLINE, COL_DROPDOWN);
+        vga_putc(box_x + x, box_y + box_h - 1, CHAR_HLINE, COL_DROPDOWN);
+    }
+    for (int y = 1; y < box_h - 1; y++) {
+        vga_putc(box_x, box_y + y, CHAR_VLINE, COL_DROPDOWN);
+        vga_putc(box_x + box_w - 1, box_y + y, CHAR_VLINE, COL_DROPDOWN);
+    }
+    
+    vga_puts(box_x + 12, box_y + 1, "About osLET Editor", COL_DROPDOWN);
+    vga_puts(box_x + 6, box_y + 3, "osLET Text Editor v0.2", COL_DROPDOWN);
+    vga_puts(box_x + 8, box_y + 4, "EinarTheSad, 2025", COL_DROPDOWN);
+    
+    sys_getchar();
+    draw_all();
+}
+
+static void new_file(void) {
+    if (ed.dirty) {
+        /* Ask to save */
+    }
+    memset(&ed, 0, sizeof(ed));
+    ed.line_count = 1;
+    draw_all();
+}
+
+static void show_dropdown(int menu_idx) {
+    dropdown_item_t *items;
+    int item_count;
+    int menu_x = menus[menu_idx].x_pos;
+    int menu_w;
+    
+    switch (menu_idx) {
+        case 0: items = file_menu;   item_count = FILE_MENU_SIZE;   menu_w = 20; break;
+        case 1: items = edit_menu;   item_count = EDIT_MENU_SIZE;   menu_w = 20; break;
+        case 2: items = help_menu;   item_count = HELP_MENU_SIZE;   menu_w = 16; break;
+        default: return;
+    }
+    
+    /* Highlight menu title */
+    vga_putc(menu_x - 1, 0, ' ', COL_MENU_SEL);
+    const char *t = menus[menu_idx].title;
+    int tx = menu_x;
+    while (*t) vga_putc(tx++, 0, *t++, COL_MENU_SEL);
+    vga_putc(tx, 0, ' ', COL_MENU_SEL);
+    
+    /* Draw dropdown */
+    int menu_y = 1;
+    int selected = 0;
+    
+    while (1) {
+        /* Draw menu items */
+        for (int i = 0; i < item_count; i++) {
+            uint8_t attr = (i == selected) ? COL_DROP_SEL : COL_DROPDOWN;
+            uint8_t hot_attr = (i == selected) ? COL_DROP_SEL : COL_DROP_HOT;
+            
+            vga_fill(menu_x - 1, menu_y + i, menu_w, 1, ' ', attr);
+            
+            /* Draw item text with hotkey */
+            const char *text = items[i].text;
+            int x = menu_x;
+            int found_hot = 0;
+            while (*text) {
+                if (!found_hot && *text == items[i].hotkey) {
+                    vga_putc(x, menu_y + i, *text, hot_attr);
+                    found_hot = 1;
+                } else {
+                    vga_putc(x, menu_y + i, *text, attr);
+                }
+                x++;
+                text++;
             }
-            if (editor.filename[0]) {
-                save_file();
+            
+            /* Draw shortcut */
+            if (items[i].shortcut[0]) {
+                int sx = menu_x + menu_w - strlen(items[i].shortcut) - 2;
+                vga_puts(sx, menu_y + i, items[i].shortcut, attr);
             }
-            redraw_screen();
-            continue;
         }
         
-        /* F3 = Open */
-        if (ch == KEY_F3) {
-            prompt_open_file();
-            redraw_screen();
-            continue;
-        }
-        
-        /* F10 = Exit */
-        if (ch == KEY_F10) {
-            if (editor.dirty) {
-                volatile uint16_t *vga = (uint16_t*)0xB8000;
-                volatile uint16_t *status_line = vga + (SCREEN_HEIGHT - 1) * SCREEN_WIDTH;
-                uint16_t color = ((1 << 4) | 15) << 8; /* Blue bg, white fg */
-                
-                const char *msg = "Unsaved changes! Press F10 again to quit";
-                for (int i = 0; i < SCREEN_WIDTH; i++) {
-                    char ch_msg = (i < 42) ? msg[i] : ' ';
-                    status_line[i] = color | (unsigned char)ch_msg;
-                }
-                
-                int ch2 = sys_getchar();
-                if (ch2 != KEY_F10) {
-                    redraw_screen();
-                    continue;
-                }
-            }
-            break;
-        }
+        int ch = sys_getchar();
         
         if (ch == KEY_UP) {
-            move_cursor(0, -1);
-            adjust_scroll();
-            redraw_screen();
-            continue;
+            selected--;
+            if (selected < 0) selected = item_count - 1;
+        } else if (ch == KEY_DOWN) {
+            selected++;
+            if (selected >= item_count) selected = 0;
+        } else if (ch == KEY_LEFT) {
+            draw_menu_bar();
+            draw_border();
+            draw_edit_area();
+            show_dropdown((menu_idx + NUM_MENUS - 1) % NUM_MENUS);
+            return;
+        } else if (ch == KEY_RIGHT) {
+            draw_menu_bar();
+            draw_border();
+            draw_edit_area();
+            show_dropdown((menu_idx + 1) % NUM_MENUS);
+            return;
+        } else if (ch == KEY_ESC) {
+            break;
+        } else if (ch == '\n' || ch == '\r') {
+            /* Execute selected item */
+            int key = items[selected].key_code;
+            draw_all();
+            
+            /* Handle action */
+            if (menu_idx == 0) { /* File menu */
+                switch (selected) {
+                    case 0: new_file(); break;
+                    case 1: { /* Open */
+                        char fname[64];
+                        prompt_filename("File to open:", fname, sizeof(fname));
+                        if (fname[0] && load_file(fname) != 0) {
+                            /* Error */
+                        }
+                        draw_all();
+                        break;
+                    }
+                    case 2: /* Save */
+                        if (!ed.filename[0]) {
+                            char fname[64];
+                            prompt_filename("Save as:", fname, sizeof(fname));
+                            if (fname[0]) {
+                                strcpy(ed.filename, fname);
+                                save_file();
+                            }
+                        } else {
+                            save_file();
+                        }
+                        draw_all();
+                        break;
+                    case 3: { /* Save As */
+                        char fname[64];
+                        prompt_filename("Save as:", fname, sizeof(fname));
+                        if (fname[0]) {
+                            strcpy(ed.filename, fname);
+                            save_file();
+                        }
+                        draw_all();
+                        break;
+                    }
+                    case 4: /* Exit */
+                        sys_clear();
+                        sys_exit();
+                        break;
+                }
+            } else if (menu_idx == 3 && selected == 0) {
+                show_about();
+            }
+            return;
+        } else {
+            /* Check for hotkey */
+            for (int i = 0; i < item_count; i++) {
+                if ((ch >= 'A' && ch <= 'Z' && ch == items[i].hotkey) ||
+                    (ch >= 'a' && ch <= 'z' && (ch - 32) == items[i].hotkey) ||
+                    (ch >= 'a' && ch <= 'z' && ch == items[i].hotkey)) {
+                    selected = i;
+                    /* Execute */
+                    break;
+                }
+            }
         }
-        if (ch == KEY_DOWN) {
-            move_cursor(0, 1);
-            adjust_scroll();
-            redraw_screen();
-            continue;
+    }
+    
+    draw_all();
+}
+
+__attribute__((section(".entry"), used))
+void _start(void) {
+    memset(&ed, 0, sizeof(ed));
+    ed.line_count = 1;
+    
+    draw_all();
+    
+    while (1) {
+        int ch = sys_getchar();
+        
+        /* Alt + key combinations for menus */
+        if (ch == KEY_ALT_F) { show_dropdown(0); continue; }
+        if (ch == KEY_ALT_E) { show_dropdown(1); continue; }
+        if (ch == KEY_ALT_S) { show_dropdown(2); continue; }
+        if (ch == KEY_ALT_H) { show_dropdown(3); continue; }
+        
+        /* Direct shortcuts */
+        if (ch == KEY_ALT_X) {
+            if (ed.dirty) {
+                /* Could ask to save */
+            }
+            sys_clear();
+            sys_exit();
         }
-        if (ch == KEY_LEFT) {
-            move_cursor(-1, 0);
-            redraw_screen();
-            continue;
-        }
-        if (ch == KEY_RIGHT) {
-            move_cursor(1, 0);
-            redraw_screen();
+        
+        if (ch == KEY_F2) {
+            if (!ed.filename[0]) {
+                char fname[64];
+                prompt_filename("Save as:", fname, sizeof(fname));
+                if (fname[0]) {
+                    strcpy(ed.filename, fname);
+                    save_file();
+                }
+            } else {
+                save_file();
+            }
+            draw_all();
             continue;
         }
         
+        if (ch == KEY_F3) {
+            char fname[64];
+            prompt_filename("File to open:", fname, sizeof(fname));
+            if (fname[0]) {
+                load_file(fname);
+            }
+            draw_all();
+            continue;
+        }
+        
+        if (ch == KEY_F10 || ch == KEY_ESC) {
+            /* Activate menu bar */
+            show_dropdown(0);
+            continue;
+        }
+        
+        /* Navigation */
+        if (ch == KEY_UP)    { move_cursor(0, -1); adjust_scroll(); draw_status(); update_cursor(); continue; }
+        if (ch == KEY_DOWN)  { move_cursor(0, 1);  adjust_scroll(); draw_status(); update_cursor(); continue; }
+        if (ch == KEY_LEFT)  { move_cursor(-1, 0); draw_status(); update_cursor(); continue; }
+        if (ch == KEY_RIGHT) { move_cursor(1, 0);  draw_status(); update_cursor(); continue; }
+        
+        if (ch == KEY_HOME) {
+            ed.cursor_x = 0;
+            draw_status();
+            update_cursor();
+            continue;
+        }
+        
+        if (ch == KEY_END) {
+            ed.cursor_x = strlen(ed.lines[ed.cursor_y]);
+            draw_status();
+            update_cursor();
+            continue;
+        }
+        
+        if (ch == KEY_PGUP) {
+            for (int i = 0; i < EDIT_HEIGHT; i++)
+                move_cursor(0, -1);
+            adjust_scroll();
+            draw_edit_area();
+            draw_status();
+            update_cursor();
+            continue;
+        }
+        
+        if (ch == KEY_PGDN) {
+            for (int i = 0; i < EDIT_HEIGHT; i++)
+                move_cursor(0, 1);
+            adjust_scroll();
+            draw_edit_area();
+            draw_status();
+            update_cursor();
+            continue;
+        }
+        
+        /* Editing */
         if (ch == KEY_DELETE) {
             delete_char();
-            redraw_screen();
+            draw_edit_area();
+            draw_status();
+            update_cursor();
             continue;
         }
         
         if (ch == '\b') {
             backspace_char();
             adjust_scroll();
-            redraw_screen();
+            draw_edit_area();
+            draw_status();
+            update_cursor();
             continue;
         }
         
         if (ch == '\n' || ch == '\r') {
             insert_newline();
             adjust_scroll();
-            redraw_screen();
+            draw_edit_area();
+            draw_status();
+            update_cursor();
             continue;
         }
         
+        /* Printable characters */
         if (ch >= 32 && ch < 127) {
             insert_char((char)ch);
-            redraw_screen();
+            /* Redraw only current line */
+            int screen_y = EDIT_START_Y + (ed.cursor_y - ed.scroll_offset);
+            char *line = ed.lines[ed.cursor_y];
+            int len = strlen(line);
+            for (int x = 0; x < EDIT_WIDTH; x++) {
+                char c = (x < len) ? line[x] : ' ';
+                vga_putc(EDIT_START_X + x, screen_y, c, COL_EDIT);
+            }
+            draw_status();
+            update_cursor();
         }
     }
-    
-    sys_clear();
-    sys_exit();
 }
