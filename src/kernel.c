@@ -21,12 +21,26 @@ extern void shell_init(void);
 extern void shell_run(void);
 extern uint8_t __kernel_end;
 
+uint32_t boot_device = 0xFFFFFFFF;
+
 static void boot_sequence(void) {
     vga_use_as_console();
     vga_reset_textmode();
     vga_set_color(1, 15); printf("Codename osLET %s\n", kernel_version);
     vga_set_color(0, 7);
     printf("Starting boot sequence...\n\n");
+    
+    typedef struct {
+        uint32_t flags;
+        uint32_t mem_lower;
+        uint32_t mem_upper;
+        uint32_t boot_device;
+    } multiboot_info_header_t;
+    
+    multiboot_info_header_t *mbi = (multiboot_info_header_t*)(uintptr_t)multiboot_info_ptr;
+    if (mbi && (mbi->flags & 0x02)) {
+        boot_device = mbi->boot_device;
+    }
         
     idt_init();
     pic_remap();

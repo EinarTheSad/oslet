@@ -1354,6 +1354,19 @@ static int find_fat32_start_lba(uint32_t *out_start_lba) {
     uint8_t *sector = kmalloc(512);
     if (!sector) return -1;
 
+    uint32_t boot_drive = 0x80;
+    uint32_t boot_part = 0;
+    
+    if (boot_device != 0xFFFFFFFF) {
+        boot_drive = (boot_device >> 24) & 0xFF;
+        boot_part = (boot_device >> 16) & 0xFF;
+    }
+    
+    if (boot_drive != 0x80) {
+        kfree(sector);
+        return -1;
+    }
+
     if (ata_read_sectors(0, 1, sector) != 0) {
         kfree(sector);
         return -1;
@@ -1371,6 +1384,22 @@ static int find_fat32_start_lba(uint32_t *out_start_lba) {
     }
 
     mbr_partition_t *parts = (mbr_partition_t *)(sector + 446);
+
+    if (boot_part > 0 && boot_part <= 4) {
+        int idx = boot_part - 1;
+        uint32_t p_lba = parts[idx].lba_first;
+        uint32_t p_sectors = parts[idx].sectors_total;
+        
+        if (p_lba != 0 && p_sectors != 0) {
+            if (ata_read_sectors(p_lba, 1, sector) == 0) {
+                if (is_valid_fat32_bpb(sector)) {
+                    *out_start_lba = p_lba;
+                    kfree(sector);
+                    return 0;
+                }
+            }
+        }
+    }
 
     for (int i = 0; i < 4; i++) {
         uint32_t p_lba = parts[i].lba_first;
