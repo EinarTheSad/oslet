@@ -6,3 +6,4 @@ void mouse_handler(void);
 int mouse_get_x(void);
 int mouse_get_y(void);
 uint8_t mouse_get_buttons(void);
+void mouse_draw_cursor(int x, int y, uint8_t color);

@@ -73,6 +73,7 @@ typedef rtc_time_t sys_time_t;
 
 /* AH = 0Ah - Mouse */
 #define SYS_MOUSE_GET_STATE  0x0A00
+#define SYS_MOUSE_DRAW_CURSOR 0x0A01
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -388,4 +389,8 @@ static inline int sys_gfx_load_bmp(const char *path, int x, int y) {
 static inline void sys_get_mouse_state(int *x, int *y, unsigned char *buttons) {
     int ret;
     asm volatile("int $0x80" : "=a"(ret) : "a"(SYS_MOUSE_GET_STATE), "b"(x), "c"(y), "d"(buttons));
+}
+
+static inline void sys_mouse_draw_cursor(int x, int y, uint8_t color) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(color));
 }

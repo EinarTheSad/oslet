@@ -184,16 +184,3 @@ $(BUILD)/bin/%.o: $(BIN)/%.c
 $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BINCFLAGS) -c $< -o $@
-
-mousetest: $(BIN)/mousetest.elf
-
-$(BIN)/mousetest.elf: $(BUILD)/bin/mousetest.o $(LIB_OBJS)
-	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
-
-$(BUILD)/bin/%.o: $(BIN)/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(BINCFLAGS) -c $< -o $@
-
-$(BUILD)/lib/%.o: $(LIB)/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(BINCFLAGS) -c $< -o $@
