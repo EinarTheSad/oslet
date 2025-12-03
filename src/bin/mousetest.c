@@ -1,15 +1,8 @@
 #include "../syscall.h"
 #include "../lib/stdio.h"
 
-#define SYS_MOUSE_GET_STATE  0x0A00
-
-static inline void get_mouse_state(int *x, int *y, unsigned char *buttons) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_GET_STATE), "b"(x), "c"(y), "d"(buttons) : "memory");
-}
-
 __attribute__((section(".entry"), used))
 void _start(void) {
-    sys_clear();
     
     int x = 0, y = 0;
     unsigned char buttons = 0;
@@ -17,7 +10,7 @@ void _start(void) {
     unsigned char last_buttons = 0xFF;
     
     while (1) {
-        get_mouse_state(&x, &y, &buttons);
+        sys_get_mouse_state(&x, &y, &buttons);
         
         if (x != last_x || y != last_y || buttons != last_buttons) {
             sys_setcur(0, 0);
