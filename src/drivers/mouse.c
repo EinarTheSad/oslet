@@ -53,7 +53,10 @@ void mouse_init(void) {
 
 void mouse_handler(void) {
     uint8_t status = inb(0x64);
-    if (!(status & 0x20)) return;
+    if (!(status & 0x20)) {
+        pic_send_eoi(12);
+        return;
+    }
     
     int8_t data = inb(0x60);
     
@@ -83,8 +86,8 @@ void mouse_handler(void) {
             
             if (mouse_x < 0) mouse_x = 0;
             if (mouse_y < 0) mouse_y = 0;
-            if (mouse_x > 799) mouse_x = 799;
-            if (mouse_y > 599) mouse_y = 599;
+            if (mouse_x > 639) mouse_x = 639;
+            if (mouse_y > 479) mouse_y = 479;
             break;
     }
     
