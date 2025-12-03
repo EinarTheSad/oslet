@@ -2,6 +2,7 @@
 #include "drivers/vga.h"
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
+#include "drivers/mouse.h"
 #include "mem/early_alloc.h"
 #include "irq/io.h"
 #include "mem/pmm.h"
@@ -56,6 +57,13 @@ static void boot_sequence(void) {
     printf("OK");
     vga_set_color(0, 7);
     printf(" ] Keyboard\n");
+
+    mouse_init();
+    printf("[ ");
+    vga_set_color(0, 10);
+    printf("OK");
+    vga_set_color(0, 7);
+    printf(" ] Mouse\n");
 
     timer_init(100);
     printf("[ ");
