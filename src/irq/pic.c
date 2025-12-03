@@ -23,9 +23,13 @@ void pic_remap(void) {
     outb(PIC1_DATA, a1);
     outb(PIC2_DATA, a2);
 
-    /* Unmask only IRQ0 (timer) and IRQ1 (keyboard) */
-    uint8_t new_a1 = a1 & ~((1 << 0) | (1 << 1));
+    /* Unmask IRQ0 (timer), IRQ1 (keyboard), IRQ2 (cascade) */
+    uint8_t new_a1 = a1 & ~((1 << 0) | (1 << 1) | (1 << 2));
     outb(PIC1_DATA, new_a1);
+    
+    /* Unmask IRQ12 (mouse) on slave PIC */
+    uint8_t new_a2 = a2 & ~(1 << 4);
+    outb(PIC2_DATA, new_a2);
 }
 
 void pic_send_eoi(int irq) {

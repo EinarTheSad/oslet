@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
+#include "drivers/mouse.h"
 #include "fonts/bmf.h"
 #include "rtc.h"
 
@@ -514,6 +515,22 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
     }
 }
 
+static uint32_t handle_mouse(uint32_t al, uint32_t ebx, 
+                                uint32_t ecx, uint32_t edx) {
+    switch (al) {
+        case 0x00: {
+            if (!ebx || !ecx || !edx) return (uint32_t)-1;
+            *(int*)ebx = mouse_get_x();
+            *(int*)ecx = mouse_get_y();
+            *(uint8_t*)edx = mouse_get_buttons();
+            return 0;
+        }
+        
+        default:
+            return (uint32_t)-1;
+    }
+}
+
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     uint32_t ah = (eax >> 8) & 0xFF;
     uint32_t al = eax & 0xFF;
@@ -528,6 +545,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x07: return handle_time(al, ebx, ecx, edx);
         case 0x08: return handle_info(al, ebx, ecx, edx);
         case 0x09: return handle_graphics(al, ebx, ecx, edx);
+        case 0x0A: return handle_mouse(al, ebx, ecx, edx);
         
         default:
             return (uint32_t)-1;

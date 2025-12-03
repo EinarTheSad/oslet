@@ -1,8 +1,10 @@
 #include <stdint.h>
 #include "console.h"
+#include "drivers/mouse.h"
 
 extern void vga_set_color(uint8_t background, uint8_t foreground);
 extern void syscall_handler_idt(void);
+extern void mouse_handler(void);
 
 struct idt_entry {
     uint16_t offset_low;
@@ -135,6 +137,7 @@ void idt_init(void) {
 
     /* Syscall gate for task switching (int 0x80) */
     idt_set_entry(0x80, (uint32_t)syscall_handler_idt, 0x08, 0x8E);
+    irq_install_handler(12, mouse_handler);
 
     load_idt();
 }
