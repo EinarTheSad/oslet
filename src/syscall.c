@@ -525,6 +525,10 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
             *(uint8_t*)edx = mouse_get_buttons();
             return 0;
         }
+        case 0x01: {
+            mouse_draw_cursor(ebx, ecx, edx);
+            return 0;
+        }
         
         default:
             return (uint32_t)-1;

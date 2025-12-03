@@ -97,3 +97,45 @@ void mouse_handler(void) {
 int mouse_get_x(void) { return mouse_x; }
 int mouse_get_y(void) { return mouse_y; }
 uint8_t mouse_get_buttons(void) { return mouse_buttons; }
+
+static const uint8_t cursor[19][11] = {
+    {2,0,0,0,0,0,0,0,0,0,0},
+	{2,2,0,0,0,0,0,0,0,0,0},
+	{2,1,2,0,0,0,0,0,0,0,0},
+	{2,1,1,2,0,0,0,0,0,0,0},
+	{2,1,1,1,2,0,0,0,0,0,0},
+	{2,1,1,1,1,2,0,0,0,0,0},
+	{2,1,1,1,1,1,2,0,0,0,0},
+	{2,1,1,1,1,1,1,2,0,0,0},
+	{2,1,1,1,1,1,1,1,2,0,0},
+	{2,1,1,1,1,1,1,1,1,2,0},
+	{2,1,1,1,1,1,2,2,2,2,2},
+	{2,1,1,2,1,1,2,0,0,0,0},
+	{2,1,2,0,2,1,1,2,0,0,0},
+	{2,2,0,0,2,1,1,2,0,0,0},
+	{2,0,0,0,0,2,1,1,2,0,0},
+	{0,0,0,0,0,2,1,1,2,0,0},
+	{0,0,0,0,0,0,2,1,1,2,0},
+	{0,0,0,0,0,0,2,1,1,2,0},
+	{0,0,0,0,0,0,0,2,2,0,0}
+};
+
+void mouse_draw_cursor(int x, int y, uint8_t color) {
+    extern void gfx_putpixel(int x, int y, uint8_t color);
+
+    for (int row = 0; row < 19; row++) {
+        for (int col = 0; col < 11; col++) {
+            uint8_t px = cursor[row][col];
+
+            if (px == 0)
+                continue;
+
+            if (px == 1)
+                gfx_putpixel(x + col, y + row, color);
+
+            if (px == 2)
+                gfx_putpixel(x + col, y + row, 0);
+        }
+    }
+}
+
