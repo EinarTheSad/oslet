@@ -1,8 +1,8 @@
 #include "mouse.h"
 #include "../irq/io.h"
 
-static int mouse_x = 0;
-static int mouse_y = 0;
+static int mouse_x = 320;
+static int mouse_y = 240;
 static uint8_t mouse_buttons = 0;
 static uint8_t mouse_cycle = 0;
 static int8_t mouse_byte[3];
