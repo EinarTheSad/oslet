@@ -6,6 +6,9 @@ static int mouse_y = 0;
 static uint8_t mouse_buttons = 0;
 static uint8_t mouse_cycle = 0;
 static int8_t mouse_byte[3];
+static uint8_t cursor_buffer[11 * 19];
+static int saved_x = -1, saved_y = -1;
+int buffer_valid = 0;
 
 static void mouse_wait(uint8_t type) {
     uint32_t timeout = 100000;
@@ -139,3 +142,27 @@ void mouse_draw_cursor(int x, int y, uint8_t color) {
     }
 }
 
+void mouse_save(int x, int y) {
+    extern uint8_t gfx_getpixel(int x, int y);
+    
+    for (int row = 0; row < 19; row++) {
+        for (int col = 0; col < 11; col++) {
+            cursor_buffer[row * 11 + col] = gfx_getpixel(x + col, y + row);
+        }
+    }
+    saved_x = x;
+    saved_y = y;
+    buffer_valid = 1;
+}
+
+void mouse_restore(void) {
+    extern void gfx_putpixel(int x, int y, uint8_t color);
+    
+    if (!buffer_valid) return;
+    
+    for (int row = 0; row < 19; row++) {
+        for (int col = 0; col < 11; col++) {
+            gfx_putpixel(saved_x + col, saved_y + row, cursor_buffer[row * 11 + col]);
+        }
+    }
+}
