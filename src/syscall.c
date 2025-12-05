@@ -526,7 +526,15 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
             return 0;
         }
         case 0x01: {
-            mouse_draw_cursor(ebx, ecx, edx);
+            int full_redraw = (edx >> 8) & 0xFF;
+            uint8_t color = edx & 0xFF;
+            extern int buffer_valid;
+            if (!full_redraw && buffer_valid) {
+                mouse_restore();
+            }
+            
+            mouse_save(ebx, ecx);
+            mouse_draw_cursor(ebx, ecx, color);
             return 0;
         }
         

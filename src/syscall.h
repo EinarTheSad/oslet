@@ -391,6 +391,7 @@ static inline void sys_get_mouse_state(int *x, int *y, unsigned char *buttons) {
     asm volatile("int $0x80" : "=a"(ret) : "a"(SYS_MOUSE_GET_STATE), "b"(x), "c"(y), "d"(buttons));
 }
 
-static inline void sys_mouse_draw_cursor(int x, int y, uint8_t color) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(color));
+static inline void sys_mouse_draw_cursor(int x, int y, uint8_t color, int full_redraw) {
+    uint32_t flags = (full_redraw << 8) | (color & 0xFF);
+    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(flags));
 }
