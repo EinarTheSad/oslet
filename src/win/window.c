@@ -37,7 +37,7 @@ void win_draw(window_t *win) {
     if (!win->is_visible) return;
     
     win_draw_frame(win->x, win->y, win->w, win->h);
-    win_draw_titlebar(win->x, win->y, win->w, win->title);
+    win_draw_titlebar(win->x+2, win->y+2, win->w-4, win->title);
 }
 
 void win_destroy(window_t *win) {
@@ -86,7 +86,6 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     int btn_len = 0;
     while (btn[btn_len]) btn_len++;
     
-    /* Measure actual text width with font */
     int msg_w = 0;
     int btn_text_w = 0;
     
@@ -98,16 +97,13 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
         btn_text_w = bmf_measure_text(&font_b, 12, btn);
     }
     
-    /* Button size: text width + padding */
-    int btn_w = btn_text_w + 24;  // 12px padding each side
+    int btn_w = btn_text_w + 24;
     int btn_h = 18;
     
-    /* Window size: wider of (message, button) + margins */
     int content_w = msg_w > btn_w ? msg_w : btn_w;
-    int win_w = content_w + 40;  // 20px margin each side
-    int win_h = 82;  // Fixed height for now
+    int win_w = content_w + 40;
+    int win_h = 82;
     
-    /* Minimum window width */
     if (win_w < 120) win_w = 120;
     
     int win_x = (640 - win_w) / 2;
@@ -130,8 +126,9 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     }
     box->button_text[i] = '\0';
     
-    box->button_x = win_x + (win_w - btn_w) / 2;
-    box->button_y = win_y + 57;
+    /* Store button offsets relative to window */
+    box->button_x = (win_w - btn_w) / 2;
+    box->button_y = 57;
     box->button_w = btn_w;
     box->button_h = btn_h;
 }
@@ -145,15 +142,46 @@ void win_msgbox_draw(msgbox_t *box) {
         bmf_printf(text_x, box->base.y + 31, &font_n, 12, 0, "%s", box->message);
     }
     
-    win_draw_button(box->button_x, box->button_y, 
+    /* Calculate absolute button position */
+    int abs_btn_x = box->base.x + box->button_x;
+    int abs_btn_y = box->base.y + box->button_y;
+    
+    win_draw_button(abs_btn_x, abs_btn_y, 
                     box->button_w, box->button_h, 
                     WIN_BUTTON_COLOR, box->button_text);
 }
 
 int win_msgbox_handle_click(msgbox_t *box, int mx, int my) {
-    if (mx >= box->button_x && mx < box->button_x + box->button_w &&
-        my >= box->button_y && my < box->button_y + box->button_h) {
+    /* Calculate absolute button position */
+    int abs_btn_x = box->base.x + box->button_x;
+    int abs_btn_y = box->base.y + box->button_y;
+    
+    if (mx >= abs_btn_x && mx < abs_btn_x + box->button_w &&
+        my >= abs_btn_y && my < abs_btn_y + box->button_h) {
         return 1;
     }
     return 0;
+}
+
+int win_is_titlebar(window_t *win, int mx, int my) {
+    int close_btn_x = win->x + win->w - 16;
+    
+    if (mx >= win->x && 
+        mx < close_btn_x &&
+        my >= win->y && 
+        my < win->y + 18) {
+        return 1;
+    }
+    return 0;
+}
+
+void win_move(window_t *win, int dx, int dy) {
+    win->x += dx;
+    win->y += dy;
+    
+    /* Keep window on screen */
+    if (win->x < 0) win->x = 0;
+    if (win->y < 0) win->y = 0;
+    if (win->x + win->w > 640) win->x = 640 - win->w;
+    if (win->y + win->h > 480) win->y = 480 - win->h;
 }

@@ -23,6 +23,8 @@ void win_init_fonts(void);
 void win_create(window_t *win, int x, int y, int w, int h, const char *title);
 void win_draw(window_t *win);
 void win_destroy(window_t *win);
+int win_is_titlebar(window_t *win, int mx, int my);
+void win_move(window_t *win, int dx, int dy);
 
 /* Drawing primitives */
 void win_draw_frame(int x, int y, int w, int h);
