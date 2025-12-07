@@ -19,7 +19,8 @@ KERNEL_SRC_DIRS := \
 	$(SRC)/drivers \
 	$(SRC)/mem \
 	$(SRC)/irq \
-	$(SRC)/fonts
+	$(SRC)/fonts \
+	$(SRC)/win
 
 KERNEL_SRC_C := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.c))
 KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
@@ -27,7 +28,7 @@ KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all iso run clean disk install fetchlet shell demo mousetest
+.PHONY: all iso run clean disk install fetchlet shell demo
 
 all: $(BUILD)/$(TARGET)
 

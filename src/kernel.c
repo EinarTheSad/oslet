@@ -157,7 +157,14 @@ static void boot_sequence(void) {
         vga_set_color(0, 7);
         printf("] No filesystem!\n");
     }
+
+    win_init_fonts();
+    printf("[ ");
+    vga_set_color(0, 10);
+    printf("OK");
     vga_set_color(0, 7);
+    printf(" ] Fonts\n");
+
     printf("\n");
     __asm__ volatile ("sti");
 }
