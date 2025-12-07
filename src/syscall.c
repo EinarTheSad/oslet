@@ -547,16 +547,45 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
 static uint32_t handle_window(uint32_t al, uint32_t ebx, 
                                uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: { /* MsgBox */
+        case 0x00: { /* SYS_WIN_MSGBOX */
             const char *msg = (const char*)ebx;
             const char *btn = (const char*)ecx;
             const char *title = (const char*)edx;
             
-            msgbox_t box;
+            static msgbox_t box;  /* Kernel-side storage */
             win_msgbox_create(&box, msg, btn, title);
             win_msgbox_draw(&box);
+            return (uint32_t)&box;  /* Return pointer */
+        }
+        
+        case 0x01: { /* SYS_WIN_IS_TITLEBAR */
+            window_t *win = (window_t*)ebx;
+            int mx = (int)(ecx >> 16);
+            int my = (int)(ecx & 0xFFFF);
+            return win_is_titlebar(win, mx, my);
+        }
+        
+        case 0x02: { /* SYS_WIN_MOVE */
+            window_t *win = (window_t*)ebx;
+            int16_t dx = (int16_t)(ecx >> 16);
+            int16_t dy = (int16_t)(ecx & 0xFFFF);
+            win_move(win, dx, dy);
             return 0;
         }
+        
+        case 0x03: { /* SYS_WIN_MSGBOX_CLICK */
+            msgbox_t *box = (msgbox_t*)ebx;
+            int mx = (int)(ecx >> 16);
+            int my = (int)(ecx & 0xFFFF);
+            return win_msgbox_handle_click(box, mx, my);
+        }
+        
+        case 0x04: { /* SYS_WIN_MSGBOX_DRAW */
+            msgbox_t *box = (msgbox_t*)ebx;
+            win_msgbox_draw(box);
+            return 0;
+        }
+        
         default:
             return (uint32_t)-1;
     }

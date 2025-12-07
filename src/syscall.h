@@ -76,7 +76,11 @@ typedef rtc_time_t sys_time_t;
 #define SYS_MOUSE_DRAW_CURSOR 0x0A01
 
 /* AH = 0Bh - Windows */
-#define SYS_WIN_MSGBOX      0xB00
+#define SYS_WIN_MSGBOX          0x0B00
+#define SYS_WIN_IS_TITLEBAR     0x0B01
+#define SYS_WIN_MOVE            0x0B02
+#define SYS_WIN_MSGBOX_CLICK    0x0B03
+#define SYS_WIN_MSGBOX_DRAW     0x0B04
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -399,6 +403,31 @@ static inline void sys_mouse_draw_cursor(int x, int y, uint8_t color, int full_r
     __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(flags));
 }
 
-static inline void sys_win_msgbox(const char *msg, const char *btn, const char *title) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_MSGBOX), "b"(msg), "c"(btn), "d"(title));
+static inline void* sys_win_msgbox(const char *msg, const char *btn, const char *title) {
+    void *ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MSGBOX), "b"(msg), "c"(btn), "d"(title));
+    return ret;
+}
+
+static inline int sys_win_is_titlebar(void *win, int mx, int my) {
+    int ret;
+    uint32_t coords = ((uint32_t)mx << 16) | (my & 0xFFFF);
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_IS_TITLEBAR), "b"(win), "c"(coords));
+    return ret;
+}
+
+static inline void sys_win_move(void *win, int dx, int dy) {
+    uint32_t delta = (((uint32_t)(int16_t)dx << 16) | ((uint16_t)(int16_t)dy));
+    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_MOVE), "b"(win), "c"(delta));
+}
+
+static inline int sys_win_msgbox_click(void *box, int mx, int my) {
+    int ret;
+    uint32_t coords = ((uint32_t)mx << 16) | (my & 0xFFFF);
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MSGBOX_CLICK), "b"(box), "c"(coords));
+    return ret;
+}
+
+static inline void sys_win_msgbox_draw(void *box) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_MSGBOX_DRAW), "b"(box));
 }
