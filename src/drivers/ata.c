@@ -24,12 +24,43 @@
 #define ATA_SR_DRQ   0x08
 #define ATA_SR_ERR   0x01
 
+static inline void ata_400ns_delay(void);
+
 static inline void ata_wait_bsy(void) {
     while (inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_BSY);
 }
 
+static int ata_wait_bsy_timeout(uint32_t timeout_ms) {
+    uint32_t ticks = timeout_ms * 10000; // ~100us per tick
+    while (ticks-- > 0) {
+        uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+        if (!(status & ATA_SR_BSY)) return 0;
+        for (volatile int i = 0; i < 10; i++);
+    }
+    return -1;
+}
+
 static inline void ata_wait_drq(void) {
     while (!(inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_DRQ));
+}
+
+static int ata_wait_drq_timeout(uint32_t timeout_ms) {
+    uint32_t ticks = timeout_ms * 10000;
+    while (ticks-- > 0) {
+        uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+        if (status & ATA_SR_ERR) return -2;
+        if (status & ATA_SR_DRQ) return 0;
+        for (volatile int i = 0; i < 10; i++);
+    }
+    return -1;
+}
+
+static void ata_soft_reset(void) {
+    outb(ATA_PRIMARY_CONTROL, 0x04); // SRST
+    ata_400ns_delay();
+    outb(ATA_PRIMARY_CONTROL, 0x00);
+    ata_400ns_delay();
+    for (volatile int i = 0; i < 100000; i++); // Wait ~10ms
 }
 
 static inline void ata_400ns_delay(void) {
@@ -38,17 +69,22 @@ static inline void ata_400ns_delay(void) {
 }
 
 void ata_init(void) {
-    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0); /* Select master */
-    ata_400ns_delay();
+    // Soft reset
+    outb(ATA_PRIMARY_CONTROL, 0x04);
+    for (volatile int i = 0; i < 100000; i++); // ~10ms
+    outb(ATA_PRIMARY_CONTROL, 0x00);
+    for (volatile int i = 0; i < 400000; i++); // ~40ms
     
-    outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, 0);
-    outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, 0);
-    outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, 0);
-    outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, 0);
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
+    for (volatile int i = 0; i < 10000; i++);
 }
 
 int ata_identify(void) {
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
+    outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, 0);
+    outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, 0);
+    outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, 0);
+    outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, 0);
     ata_400ns_delay();
     
     outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
@@ -56,37 +92,44 @@ int ata_identify(void) {
     
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
     if (status == 0) {
-        printf("ATA: No drive detected\n");
         return -1;
     }
     
-    ata_wait_bsy();
-    
-    status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
-    if (status & ATA_SR_ERR) {
-        printf("ATA: Identify error\n");
+    if (ata_wait_bsy_timeout(30000) != 0) {
         return -1;
     }
     
-    ata_wait_drq();
+    uint8_t lbamid = inb(ATA_PRIMARY_IO + ATA_REG_LBA_MID);
+    uint8_t lbahi = inb(ATA_PRIMARY_IO + ATA_REG_LBA_HI);
+    
+    if (lbamid != 0 || lbahi != 0) {
+        return -1;
+    }
+    
+    if (ata_wait_drq_timeout(30000) != 0) {
+        return -1;
+    }
     
     uint16_t identify[256];
     for (int i = 0; i < 256; i++) {
         identify[i] = inw(ATA_PRIMARY_IO + ATA_REG_DATA);
     }
-    (void)identify;
+    
     return 0;
 }
 
+
 int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
     if (!buffer || sector_count == 0) {
-        printf("ATA: Invalid parameters\n");
         return -1;
     }
     
-    ata_wait_bsy();
+    if (ata_wait_bsy_timeout(5000) != 0) {
+        return -1;
+    }
     
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));
+    ata_400ns_delay();
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sector_count);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, (uint8_t)lba);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (uint8_t)(lba >> 8));
@@ -96,11 +139,18 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
     uint16_t *buf = (uint16_t*)buffer;
     
     for (int s = 0; s < sector_count; s++) {
-        ata_wait_bsy();
-        ata_wait_drq();
+        if (ata_wait_bsy_timeout(5000) != 0) {
+            return -1;
+        }
         
-        for (int i = 0; i < 256; i++)
+        int drq_result = ata_wait_drq_timeout(5000);
+        if (drq_result != 0) {
+            return -1;
+        }
+        
+        for (int i = 0; i < 256; i++) {
             buf[s * 256 + i] = inw(ATA_PRIMARY_IO + ATA_REG_DATA);
+        }
         
         ata_400ns_delay();
     }
@@ -111,9 +161,12 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
 int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     if (!buffer || sector_count == 0) return -1;
     
-    ata_wait_bsy();
+    if (ata_wait_bsy_timeout(5000) != 0) {
+        return -1;
+    }
     
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));
+    ata_400ns_delay();
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sector_count);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, (uint8_t)lba);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (uint8_t)(lba >> 8));
@@ -123,18 +176,51 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     const uint16_t *buf = (const uint16_t*)buffer;
     
     for (int s = 0; s < sector_count; s++) {
-        ata_wait_bsy();
-        ata_wait_drq();
+        if (ata_wait_bsy_timeout(5000) != 0) {
+            return -1;
+        }
         
-        for (int i = 0; i < 256; i++)
+        int drq_result = ata_wait_drq_timeout(5000);
+        if (drq_result != 0) {
+            return -1;
+        }
+        
+        for (int i = 0; i < 256; i++) {
             outw(ATA_PRIMARY_IO + ATA_REG_DATA, buf[s * 256 + i]);
+        }
         
         ata_400ns_delay();
     }
     
-    /* Flush cache */
     outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, 0xE7);
-    ata_wait_bsy();
+    if (ata_wait_bsy_timeout(5000) != 0) {
+        return -1;
+    }
     
     return 0;
+}
+
+int ata_is_available(void) {
+    uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+    return (status != 0xFF && status != 0x00);
+}
+
+int ata_is_present(void) {
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
+    for (volatile int i = 0; i < 1000; i++);
+    
+    uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+    
+    if (status == 0xFF || status == 0x00) {
+        return 0;
+    }
+    
+    uint8_t lbamid = inb(ATA_PRIMARY_IO + ATA_REG_LBA_MID);
+    uint8_t lbahi = inb(ATA_PRIMARY_IO + ATA_REG_LBA_HI);
+    
+    if (lbamid == 0x14 && lbahi == 0xEB) {
+        return 0; // ATAPI (CD-ROM)
+    }
+    
+    return 1;
 }

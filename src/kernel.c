@@ -21,6 +21,7 @@ extern void pic_remap(void);
 extern void shell_init(void);
 extern void shell_run(void);
 extern uint8_t __kernel_end;
+extern void win_init_fonts(void);
 
 uint32_t boot_device = 0xFFFFFFFF;
 
@@ -141,21 +142,29 @@ static void boot_sequence(void) {
     vga_set_color(0, 7);
     printf(" ] Multitasking\n");
     
-    vga_set_color(0, 8);
-    printf("[ .. ] Attempting to auto-mount drive C...\n");
-    vga_set_color(0, 7);
-    if (fat32_mount_auto('C') == 0) {
-        printf("[");
-        vga_set_color(0, 10);
-        printf(" OK");
+    if (ata_identify() == 0) {
+        vga_set_color(0, 8);
+        printf("[ .. ] Attempting to auto-mount drive C...\n");
         vga_set_color(0, 7);
-        printf(" ] Mounted drive C\n");
+        if (fat32_mount_auto('C') == 0) {
+            printf("[");
+            vga_set_color(0, 10);
+            printf(" OK");
+            vga_set_color(0, 7);
+            printf(" ] Mounted drive C\n");
+        } else {
+            printf("[");
+            vga_set_color(0, 12);
+            printf("FAIL");
+            vga_set_color(0, 7);
+            printf("] No filesystem!\n");
+        }
     } else {
         printf("[");
         vga_set_color(0, 12);
         printf("FAIL");
         vga_set_color(0, 7);
-        printf("] No filesystem!\n");
+        printf("] No ATA drive detected\n");
     }
 
     win_init_fonts();
