@@ -75,6 +75,9 @@ typedef rtc_time_t sys_time_t;
 #define SYS_MOUSE_GET_STATE  0x0A00
 #define SYS_MOUSE_DRAW_CURSOR 0x0A01
 
+/* AH = 0Bh - Windows */
+#define SYS_WIN_MSGBOX      0xB00
+
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
 
@@ -394,4 +397,8 @@ static inline void sys_get_mouse_state(int *x, int *y, unsigned char *buttons) {
 static inline void sys_mouse_draw_cursor(int x, int y, uint8_t color, int full_redraw) {
     uint32_t flags = (full_redraw << 8) | (color & 0xFF);
     __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(flags));
+}
+
+static inline void sys_win_msgbox(const char *msg, const char *btn, const char *title) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_MSGBOX), "b"(msg), "c"(btn), "d"(title));
 }

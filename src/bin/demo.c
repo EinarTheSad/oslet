@@ -33,7 +33,7 @@ void _start(void) {
     
     /* First screen - welcome */
     sys_gfx_fillrect_gradient(0, 0, 640, 480, COLOR_BLACK, COLOR_BLUE, 1);
-    usr_bmf_printf(20, 20, &osans_bi, 32, 15, "Welcome to Codename osLET 0.4");
+    usr_bmf_printf(20, 20, &osans_bi, 32, 15, "Welcome to Codename osLET %s", sys_version());
 
     const char *msg = "Thank you for cloning this repository. osLET is a hobby project written to show the\n"
                       "author's love and appreciation for the early 1990s operating system aesthetics.\n"
@@ -45,6 +45,9 @@ void _start(void) {
             sys_gfx_fillrect(20+i*36, 175, 32, 16, i);
             sys_gfx_fillrect_gradient(20+i*36, 191, 32, 16, i, (i+8) & 0xF, 1);
         }
+
+    sys_win_msgbox("This is a test message box.", "OK", "Message Box");
+
     sys_mouse_draw_cursor(mx, my, COLOR_WHITE, 1);
 
     while (1) {
