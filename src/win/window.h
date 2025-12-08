@@ -6,6 +6,9 @@ typedef struct {
     char title[64];
     int is_visible;
     int is_modal;
+    int dirty;
+    int prev_x, prev_y;
+    uint8_t *saved_bg;
 } window_t;
 
 typedef struct {
@@ -25,6 +28,11 @@ void win_draw(window_t *win);
 void win_destroy(window_t *win);
 int win_is_titlebar(window_t *win, int mx, int my);
 void win_move(window_t *win, int dx, int dy);
+void win_mark_dirty(window_t *win);
+void win_clear_dirty(window_t *win);
+int win_needs_redraw(window_t *win);
+void win_save_background(window_t *win);
+void win_restore_background(window_t *win);
 
 /* Drawing primitives */
 void win_draw_frame(int x, int y, int w, int h);
