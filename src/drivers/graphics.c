@@ -12,6 +12,28 @@ static int graphics_active = 0;
 #define GFX_LOCK() __asm__ volatile("cli")
 #define GFX_UNLOCK() __asm__ volatile("sti")
 
+static int dirty_x0 = GFX_WIDTH, dirty_y0 = GFX_HEIGHT;
+static int dirty_x1 = -1, dirty_y1 = -1;
+static int full_redraw = 1;
+
+static inline void mark_dirty(int x, int y, int w, int h) {
+    int x1 = x + w - 1;
+    int y1 = y + h - 1;
+    
+    if (x < dirty_x0) dirty_x0 = x;
+    if (y < dirty_y0) dirty_y0 = y;
+    if (x1 > dirty_x1) dirty_x1 = x1;
+    if (y1 > dirty_y1) dirty_y1 = y1;
+}
+
+static inline void reset_dirty(void) {
+    dirty_x0 = GFX_WIDTH;
+    dirty_y0 = GFX_HEIGHT;
+    dirty_x1 = -1;
+    dirty_y1 = -1;
+    full_redraw = 0;
+}
+
 static const uint8_t mode_640x480x16[] = {
     0xE3,
     0x03, 0x01, 0x0F, 0x00, 0x06,
@@ -109,6 +131,7 @@ void gfx_clear(uint8_t color) {
     GFX_LOCK();
     uint8_t pattern = (color & 0x0F) | ((color & 0x0F) << 4);
     memset_s(backbuffer, pattern, GFX_BUFFER_SIZE);
+    full_redraw = 1;
     GFX_UNLOCK();
 }
 
@@ -120,37 +143,70 @@ void gfx_swap_buffers(void) {
     
     volatile uint8_t* vram = GFX_VRAM;
     
-    for (int y = 0; y < GFX_HEIGHT; y++) {
-        for (int x = 0; x < GFX_WIDTH; x += 8) {
-            uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
+    int y0, y1, x0_aligned, x1_aligned;
+    
+    if (full_redraw) {
+        y0 = 0;
+        y1 = GFX_HEIGHT - 1;
+        x0_aligned = 0;
+        x1_aligned = GFX_WIDTH - 1;
+    } else {
+        if (dirty_x1 < dirty_x0 || dirty_y1 < dirty_y0) {
+            GFX_UNLOCK();
+            return;
+        }
+        
+        y0 = dirty_y0;
+        y1 = dirty_y1;
+        x0_aligned = dirty_x0 & ~7;
+        x1_aligned = (dirty_x1 + 7) & ~7;
+        
+        if (x1_aligned > GFX_WIDTH) x1_aligned = GFX_WIDTH;
+    }
+    
+    /* Batch plane writes - 4 outb() per scanline instead of 4 per byte */
+    for (uint8_t plane = 0; plane < 4; plane++) {
+        outb(0x3C4, 0x02);
+        outb(0x3C5, 1 << plane);
+        
+        for (int y = y0; y <= y1; y++) {
+            uint32_t bb_row = y * (GFX_WIDTH / 2);
+            uint32_t vram_row = y * 80;
             
-            uint8_t pixels[8];
-            for (int i = 0; i < 4; i++) {
-                uint8_t byte = backbuffer[offset + i];
-                pixels[i * 2] = (byte >> 4) & 0x0F;
-                pixels[i * 2 + 1] = byte & 0x0F;
-            }
-            
-            uint32_t vram_offset = y * 80 + (x / 8);
-            
-            for (uint8_t plane = 0; plane < 4; plane++) {
-                outb(0x3C4, 0x02);
-                outb(0x3C5, 1 << plane);
+            for (int x = x0_aligned; x < x1_aligned; x += 8) {
+                uint32_t bb_offset = bb_row + (x / 2);
                 
+                /* Unpack 8 pixels (4 bytes) */
+                uint8_t pixels[8];
+                pixels[0] = backbuffer[bb_offset] >> 4;
+                pixels[1] = backbuffer[bb_offset] & 0x0F;
+                pixels[2] = backbuffer[bb_offset + 1] >> 4;
+                pixels[3] = backbuffer[bb_offset + 1] & 0x0F;
+                pixels[4] = backbuffer[bb_offset + 2] >> 4;
+                pixels[5] = backbuffer[bb_offset + 2] & 0x0F;
+                pixels[6] = backbuffer[bb_offset + 3] >> 4;
+                pixels[7] = backbuffer[bb_offset + 3] & 0x0F;
+                
+                /* Pack into plane byte */
                 uint8_t plane_byte = 0;
-                for (int bit = 0; bit < 8; bit++) {
-                    if (pixels[bit] & (1 << plane)) {
-                        plane_byte |= (0x80 >> bit);
-                    }
-                }
+                if (pixels[0] & (1 << plane)) plane_byte |= 0x80;
+                if (pixels[1] & (1 << plane)) plane_byte |= 0x40;
+                if (pixels[2] & (1 << plane)) plane_byte |= 0x20;
+                if (pixels[3] & (1 << plane)) plane_byte |= 0x10;
+                if (pixels[4] & (1 << plane)) plane_byte |= 0x08;
+                if (pixels[5] & (1 << plane)) plane_byte |= 0x04;
+                if (pixels[6] & (1 << plane)) plane_byte |= 0x02;
+                if (pixels[7] & (1 << plane)) plane_byte |= 0x01;
                 
-                vram[vram_offset] = plane_byte;
+                vram[vram_row + (x / 8)] = plane_byte;
             }
         }
     }
-
+    
     outb(0x3C4, 0x02);
     outb(0x3C5, 0x0F);
+    
+    reset_dirty();
     GFX_UNLOCK();
 }
 
@@ -158,7 +214,6 @@ void gfx_putpixel(int x, int y, uint8_t color) {
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
     
-    GFX_LOCK();
     uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
     
     if (x & 1) {
@@ -166,7 +221,8 @@ void gfx_putpixel(int x, int y, uint8_t color) {
     } else {
         backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
     }
-    GFX_UNLOCK();
+    
+    mark_dirty(x, y, 1, 1);
 }
 
 uint8_t gfx_getpixel(int x, int y) {
@@ -214,9 +270,7 @@ static inline uint8_t getpixel_raw(int x, int y) {
     }
 }
 
-void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
-    GFX_LOCK();
-    
+void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {   
     int dx = x1 - x0;
     int dy = y1 - y0;
     
@@ -226,6 +280,11 @@ void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
     int sx = x0 < x1 ? 1 : -1;
     int sy = y0 < y1 ? 1 : -1;
     int err = dx - dy;
+    
+    int min_x = x0 < x1 ? x0 : x1;
+    int max_x = x0 > x1 ? x0 : x1;
+    int min_y = y0 < y1 ? y0 : y1;
+    int max_y = y0 > y1 ? y0 : y1;
     
     while (1) {
         if (x0 >= 0 && x0 < GFX_WIDTH && y0 >= 0 && y0 < GFX_HEIGHT) {
@@ -250,96 +309,118 @@ void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
         }
     }
     
-    GFX_UNLOCK();
+    mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
 }
 
 void gfx_hline(int x, int y, int w, uint8_t color) {
     if (!backbuffer) return;
     if (y < 0 || y >= GFX_HEIGHT || w <= 0) return;
 
-    GFX_LOCK();
-
     int x0 = x;
     int x1 = x + w - 1;
 
     if (x0 < 0) x0 = 0;
     if (x1 >= GFX_WIDTH) x1 = GFX_WIDTH - 1;
+    
+    if (x0 > x1) return;
 
+    uint32_t row_offset = y * (GFX_WIDTH / 2);
+    
     for (int px = x0; px <= x1; px++) {
-        putpixel_raw(px, y, color);
+        uint32_t offset = row_offset + (px / 2);
+        if (px & 1) {
+            backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+        } else {
+            backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
     }
-
-    GFX_UNLOCK();
+    
+    mark_dirty(x0, y, x1 - x0 + 1, 1);
 }
 
 void gfx_vline(int x, int y, int h, uint8_t color) {
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || h <= 0) return;
 
-    GFX_LOCK();
-
     int y0 = y;
     int y1 = y + h - 1;
 
     if (y0 < 0) y0 = 0;
     if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
+    
+    if (y0 > y1) return;
 
     for (int py = y0; py <= y1; py++) {
-        putpixel_raw(x, py, color);
+        uint32_t offset = py * (GFX_WIDTH / 2) + (x / 2);
+        if (x & 1) {
+            backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+        } else {
+            backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
     }
-
-    GFX_UNLOCK();
+    
+    mark_dirty(x, y0, 1, y1 - y0 + 1);
 }
 
 
 void gfx_rect(int x, int y, int w, int h, uint8_t color) {
-    GFX_LOCK();
-    gfx_line(x, y, x + w - 1, y, color);
-    gfx_line(x + w - 1, y, x + w - 1, y + h - 1, color);
-    gfx_line(x + w - 1, y + h - 1, x, y + h - 1, color);
-    gfx_line(x, y + h - 1, x, y, color);
-    GFX_UNLOCK();
+    if (w <= 0 || h <= 0) return;
+    
+    gfx_hline(x, y, w, color);
+    gfx_hline(x, y + h - 1, w, color);
+    gfx_vline(x, y, h, color);
+    gfx_vline(x + w - 1, y, h, color);
 }
 
 void gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
     if (!backbuffer) return;
-    
-    GFX_LOCK();
-    for (int dy = 0; dy < h; dy++) {
-        for (int dx = 0; dx < w; dx++) {
-            int px = x + dx;
-            int py = y + dy;
-            if (px >= 0 && px < GFX_WIDTH && py >= 0 && py < GFX_HEIGHT) {
-                uint32_t offset = py * (GFX_WIDTH / 2) + (px / 2);
-                if (px & 1) {
-                    backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-                } else {
-                    backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-                }
+    if (w <= 0 || h <= 0) return;
+
+    int x0 = x;
+    int y0 = y;
+    int x1 = x + w - 1;
+    int y1 = y + h - 1;
+
+    if (x0 >= GFX_WIDTH || y0 >= GFX_HEIGHT) return;
+    if (x1 < 0 || y1 < 0) return;
+
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= GFX_WIDTH)  x1 = GFX_WIDTH - 1;
+    if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
+
+    for (int py = y0; py <= y1; py++) {
+        uint32_t row_offset = py * (GFX_WIDTH / 2);
+        for (int px = x0; px <= x1; px++) {
+            uint32_t offset = row_offset + (px / 2);
+            if (px & 1) {
+                backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            } else {
+                backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
             }
         }
     }
-    GFX_UNLOCK();
+    
+    mark_dirty(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
 }
 
 void gfx_floodfill(int x, int y, uint8_t new_color) {
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
 
-    GFX_LOCK();
-
     uint8_t target = getpixel_raw(x, y);
     if (target == new_color) {
-        GFX_UNLOCK();
         return;
     }
 
     size_t max_pixels = (size_t)GFX_WIDTH * (size_t)GFX_HEIGHT;
     uint32_t* stack = (uint32_t*)kmalloc(max_pixels * sizeof(uint32_t));
     if (!stack) {
-        GFX_UNLOCK();
         return;
     }
+
+    int min_x = x, max_x = x;
+    int min_y = y, max_y = y;
 
     size_t sp = 0;
     stack[sp++] = ((uint32_t)y << 16) | (uint16_t)(x & 0xFFFF);
@@ -368,6 +449,11 @@ void gfx_floodfill(int x, int y, uint8_t new_color) {
         for (int px = lx; px <= rx; px++) {
             putpixel_raw(px, cy, new_color);
         }
+        
+        if (lx < min_x) min_x = lx;
+        if (rx > max_x) max_x = rx;
+        if (cy < min_y) min_y = cy;
+        if (cy > max_y) max_y = cy;
 
         for (int ny = cy - 1; ny <= cy + 1; ny += 2) {
             if (ny < 0 || ny >= GFX_HEIGHT)
@@ -394,20 +480,44 @@ void gfx_floodfill(int x, int y, uint8_t new_color) {
     }
 
     kfree(stack);
-    GFX_UNLOCK();
+    mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
 }
 
 void gfx_circle(int cx, int cy, int r, uint8_t color) {
-    GFX_LOCK();
+    if (!backbuffer) return;
+    if (r < 0) return;
     
     int x = r;
     int y = 0;
     int err = 0;
     
+    int min_x = cx - r;
+    int max_x = cx + r;
+    int min_y = cy - r;
+    int max_y = cy + r;
+    
     while (x >= y) {
         if (cx + x >= 0 && cx + x < GFX_WIDTH && cy + y >= 0 && cy + y < GFX_HEIGHT) {
             uint32_t offset = (cy + y) * (GFX_WIDTH / 2) + ((cx + x) / 2);
             if ((cx + x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx - x >= 0 && cx - x < GFX_WIDTH && cy + y >= 0 && cy + y < GFX_HEIGHT) {
+            uint32_t offset = (cy + y) * (GFX_WIDTH / 2) + ((cx - x) / 2);
+            if ((cx - x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx + x >= 0 && cx + x < GFX_WIDTH && cy - y >= 0 && cy - y < GFX_HEIGHT) {
+            uint32_t offset = (cy - y) * (GFX_WIDTH / 2) + ((cx + x) / 2);
+            if ((cx + x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
+        }
+        
+        if (cx - x >= 0 && cx - x < GFX_WIDTH && cy - y >= 0 && cy - y < GFX_HEIGHT) {
+            uint32_t offset = (cy - y) * (GFX_WIDTH / 2) + ((cx - x) / 2);
+            if ((cx - x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
             else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
         }
         
@@ -423,33 +533,15 @@ void gfx_circle(int cx, int cy, int r, uint8_t color) {
             else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
         }
         
-        if (cx - x >= 0 && cx - x < GFX_WIDTH && cy + y >= 0 && cy + y < GFX_HEIGHT) {
-            uint32_t offset = (cy + y) * (GFX_WIDTH / 2) + ((cx - x) / 2);
-            if ((cx - x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx - x >= 0 && cx - x < GFX_WIDTH && cy - y >= 0 && cy - y < GFX_HEIGHT) {
-            uint32_t offset = (cy - y) * (GFX_WIDTH / 2) + ((cx - x) / 2);
-            if ((cx - x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx - y >= 0 && cx - y < GFX_WIDTH && cy - x >= 0 && cy - x < GFX_HEIGHT) {
-            uint32_t offset = (cy - x) * (GFX_WIDTH / 2) + ((cx - y) / 2);
-            if ((cx - y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
         if (cx + y >= 0 && cx + y < GFX_WIDTH && cy - x >= 0 && cy - x < GFX_HEIGHT) {
             uint32_t offset = (cy - x) * (GFX_WIDTH / 2) + ((cx + y) / 2);
             if ((cx + y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
             else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
         }
         
-        if (cx + x >= 0 && cx + x < GFX_WIDTH && cy - y >= 0 && cy - y < GFX_HEIGHT) {
-            uint32_t offset = (cy - y) * (GFX_WIDTH / 2) + ((cx + x) / 2);
-            if ((cx + x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+        if (cx - y >= 0 && cx - y < GFX_WIDTH && cy - x >= 0 && cy - x < GFX_HEIGHT) {
+            uint32_t offset = (cy - x) * (GFX_WIDTH / 2) + ((cx - y) / 2);
+            if ((cx - y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
             else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
         }
         
@@ -464,7 +556,7 @@ void gfx_circle(int cx, int cy, int r, uint8_t color) {
         }
     }
     
-    GFX_UNLOCK();
+    mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
 }
 
 uint8_t* gfx_get_backbuffer(void) {
@@ -519,8 +611,6 @@ void gfx_fillrect_gradient(int x, int y, int w, int h,
                 ? ((eff_h > 1) ? (eff_h - 1) : 1)
                 : ((eff_w > 1) ? (eff_w - 1) : 1);
 
-    GFX_LOCK();
-
     for (int py = 0; py < eff_h; py++) {
         int sy = y0 + py;
         for (int px = 0; px < eff_w; px++) {
@@ -535,7 +625,7 @@ void gfx_fillrect_gradient(int x, int y, int w, int h,
         }
     }
 
-    GFX_UNLOCK();
+    mark_dirty(x0, y0, eff_w, eff_h);
 }
 
 void gfx_floodfill_gradient(int x, int y,
@@ -544,12 +634,9 @@ void gfx_floodfill_gradient(int x, int y,
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
 
-    GFX_LOCK();
-
     uint8_t target = getpixel_raw(x, y);
 
     if (target == c_start || target == c_end) {
-        GFX_UNLOCK();
         return;
     }
 
@@ -561,14 +648,12 @@ void gfx_floodfill_gradient(int x, int y,
         }
     }
     if (placeholder == 0xFF) {
-        GFX_UNLOCK();
         return;
     }
 
     size_t max_pixels = (size_t)GFX_WIDTH * (size_t)GFX_HEIGHT;
     uint32_t *stack = (uint32_t*)kmalloc(max_pixels * sizeof(uint32_t));
     if (!stack) {
-        GFX_UNLOCK();
         return;
     }
 
@@ -624,7 +709,6 @@ void gfx_floodfill_gradient(int x, int y,
     int eff_w = max_x - min_x + 1;
     int eff_h = max_y - min_y + 1;
     if (eff_w <= 0 || eff_h <= 0) {
-        GFX_UNLOCK();
         return;
     }
 
@@ -648,7 +732,7 @@ void gfx_floodfill_gradient(int x, int y,
         }
     }
 
-    GFX_UNLOCK();
+    mark_dirty(min_x, min_y, eff_w, eff_h);
 }
 
 int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y) {
@@ -694,12 +778,21 @@ int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y) {
         return -1;
     }
     
-    GFX_LOCK();
+    /* Calculate actual dirty region */
+    int dirty_x0 = dest_x < 0 ? 0 : dest_x;
+    int dirty_y0 = dest_y < 0 ? 0 : dest_y;
+    int dirty_x1 = dest_x + width - 1;
+    int dirty_y1 = dest_y + height - 1;
+    
+    if (dirty_x1 >= GFX_WIDTH) dirty_x1 = GFX_WIDTH - 1;
+    if (dirty_y1 >= GFX_HEIGHT) dirty_y1 = GFX_HEIGHT - 1;
     
     for (int y = 0; y < height; y++) {
         if (fat32_read(f, row_buf, row_size) != row_size) break;
         
         int screen_y = bottom_up ? (dest_y + height - 1 - y) : (dest_y + y);
+        
+        if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
         
         for (int x = 0; x < width; x++) {
             int byte_idx = x / 2;
@@ -707,16 +800,19 @@ int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y) {
             
             int screen_x = dest_x + x;
             
-            if (screen_x >= 0 && screen_x < GFX_WIDTH && 
-                screen_y >= 0 && screen_y < GFX_HEIGHT) {
+            if (screen_x >= 0 && screen_x < GFX_WIDTH) {
                 putpixel_raw(screen_x, screen_y, pixel);
             }
         }
     }
     
-    GFX_UNLOCK();
-    
     kfree(row_buf);
     fat32_close(f);
+    
+    /* Mark only the actually drawn region as dirty */
+    if (dirty_x1 >= dirty_x0 && dirty_y1 >= dirty_y0) {
+        mark_dirty(dirty_x0, dirty_y0, dirty_x1 - dirty_x0 + 1, dirty_y1 - dirty_y0 + 1);
+    }
+    
     return 0;
 }

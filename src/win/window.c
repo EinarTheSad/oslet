@@ -22,8 +22,12 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
     win->y = y;
     win->w = w;
     win->h = h;
+    win->prev_x = x;
+    win->prev_y = y;
     win->is_visible = 1;
     win->is_modal = 0;
+    win->dirty = 1;
+    win->saved_bg = NULL;
     
     int i = 0;
     while (title[i] && i < 63) {
@@ -36,12 +40,23 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
 void win_draw(window_t *win) {
     if (!win->is_visible) return;
     
+    /* Save background BEFORE first draw */
+    if (!win->saved_bg) {
+        win_save_background(win);
+    }
+    
     win_draw_frame(win->x, win->y, win->w, win->h);
     win_draw_titlebar(win->x+2, win->y+2, win->w-4, win->title);
+    
+    win->dirty = 0;
 }
 
 void win_destroy(window_t *win) {
     win->is_visible = 0;
+    if (win->saved_bg) {
+        kfree(win->saved_bg);
+        win->saved_bg = NULL;
+    }
 }
 
 void win_draw_frame(int x, int y, int w, int h) {
@@ -176,6 +191,10 @@ int win_is_titlebar(window_t *win, int mx, int my) {
 }
 
 void win_move(window_t *win, int dx, int dy) {
+    /* Restore old background */
+    win_restore_background(win);
+    
+    /* Update position */
     win->x += dx;
     win->y += dy;
     
@@ -184,4 +203,72 @@ void win_move(window_t *win, int dx, int dy) {
     if (win->y < 0) win->y = 0;
     if (win->x + win->w > 640) win->x = 640 - win->w;
     if (win->y + win->h > 480) win->y = 480 - win->h;
+    
+    /* Save new background */
+    win_save_background(win);
+    
+    win->dirty = 1;
+}
+
+void win_mark_dirty(window_t *win) {
+    win->dirty = 1;
+}
+
+void win_clear_dirty(window_t *win) {
+    win->dirty = 0;
+}
+
+int win_needs_redraw(window_t *win) {
+    return win->dirty;
+}
+
+void win_save_background(window_t *win) {
+    if (!win->is_visible) return;
+    
+    /* Allocate buffer if needed */
+    int buf_size = win->w * win->h / 2;  // 4-bit packed
+    if (!win->saved_bg) {
+        win->saved_bg = kmalloc(buf_size);
+        if (!win->saved_bg) return;
+    }
+    
+    uint8_t *bb = gfx_get_backbuffer();
+    
+    /* Copy background region to saved buffer */
+    for (int py = 0; py < win->h; py++) {
+        int sy = win->y + py;
+        if (sy < 0 || sy >= GFX_HEIGHT) continue;
+        
+        for (int px = 0; px < win->w; px += 2) {
+            int sx = win->x + px;
+            if (sx < 0 || sx >= GFX_WIDTH) continue;
+            
+            uint32_t screen_offset = sy * (GFX_WIDTH / 2) + (sx / 2);
+            uint32_t buf_offset = py * (win->w / 2) + (px / 2);
+            
+            win->saved_bg[buf_offset] = bb[screen_offset];
+        }
+    }
+}
+
+void win_restore_background(window_t *win) {
+    if (!win->saved_bg) return;
+    
+    uint8_t *bb = gfx_get_backbuffer();
+    
+    /* Restore background from saved buffer */
+    for (int py = 0; py < win->h; py++) {
+        int sy = win->y + py;
+        if (sy < 0 || sy >= GFX_HEIGHT) continue;
+        
+        for (int px = 0; px < win->w; px += 2) {
+            int sx = win->x + px;
+            if (sx < 0 || sx >= GFX_WIDTH) continue;
+            
+            uint32_t screen_offset = sy * (GFX_WIDTH / 2) + (sx / 2);
+            uint32_t buf_offset = py * (win->w / 2) + (px / 2);
+            
+            bb[screen_offset] = win->saved_bg[buf_offset];
+        }
+    }
 }
