@@ -5,8 +5,13 @@
 #include "../console.h"
 #include "../irq/irq.h"
 
-/* Ring buffer for keys (int to support extended keys) */
 #define KBD_BUF_SZ 128
+#define HISTORY_SIZE 10
+#define HISTORY_MAXLEN 128
+static char cmd_history[HISTORY_SIZE][HISTORY_MAXLEN];
+static int history_count = 0;
+static int history_pos = 0;
+
 static volatile int kbuf[KBD_BUF_SZ];
 static volatile unsigned khead = 0, ktail = 0;
 
@@ -207,12 +212,99 @@ int kbd_getchar(void) {
 size_t kbd_getline(char* out, size_t maxlen) {
     size_t n = 0;
     if (maxlen == 0) return 0;
+    
+    int browsing = 0;
+    int browse_idx = history_count;
+    char temp_buf[HISTORY_MAXLEN];
+    memset_s(temp_buf, 0, sizeof(temp_buf));
 
     for (;;) {
         int c = kbd_getchar();
 
-        /* Ignore extended keys in line input mode */
+        /* Arrow UP - previous command */
+        if (c == KEY_UP) {
+            if (history_count == 0) continue;
+            
+            if (!browsing) {
+                memcpy_s(temp_buf, out, n);
+                temp_buf[n] = '\0';
+                browsing = 1;
+                browse_idx = history_count;
+            }
+            
+            if (browse_idx > 0) {
+                browse_idx--;
+                
+                while (n > 0) {
+                    putchar('\b');
+                    putchar(' ');
+                    putchar('\b');
+                    n--;
+                }
+                
+                const char *hist = cmd_history[browse_idx];
+                n = 0;
+                while (hist[n] && n < maxlen - 1) {
+                    out[n] = hist[n];
+                    putchar(hist[n]);
+                    n++;
+                }
+                out[n] = '\0';
+            }
+            continue;
+        }
+
+        /* Arrow DOWN - next command */
+        if (c == KEY_DOWN) {
+            if (!browsing) continue;
+            
+            if (browse_idx < history_count - 1) {
+                browse_idx++;
+                
+                while (n > 0) {
+                    putchar('\b');
+                    putchar(' ');
+                    putchar('\b');
+                    n--;
+                }
+                
+                const char *hist = cmd_history[browse_idx];
+                n = 0;
+                while (hist[n] && n < maxlen - 1) {
+                    out[n] = hist[n];
+                    putchar(hist[n]);
+                    n++;
+                }
+                out[n] = '\0';
+            } else if (browse_idx == history_count - 1) {
+                browse_idx = history_count;
+                
+                while (n > 0) {
+                    putchar('\b');
+                    putchar(' ');
+                    putchar('\b');
+                    n--;
+                }
+                
+                n = 0;
+                while (temp_buf[n] && n < maxlen - 1) {
+                    out[n] = temp_buf[n];
+                    putchar(temp_buf[n]);
+                    n++;
+                }
+                out[n] = '\0';
+                browsing = 0;
+            }
+            continue;
+        }
+
+        /* Ignore other extended keys */
         if (c >= 0x80) continue;
+
+        /* User typed something - exit browse mode */
+        if (browsing && c != '\b' && c != '\n') {
+            browsing = 0;
+        }
 
         if (c == '\b') {
             if (n > 0) {
@@ -236,6 +328,26 @@ size_t kbd_getline(char* out, size_t maxlen) {
         }
     }
 
-    out[n] = 0;
+    out[n] = '\0';
+    
+    /* Save to history if not empty and different from last */
+    if (n > 0) {
+        int save = 1;
+        if (history_count > 0) {
+            if (strcmp_s(out, cmd_history[history_count - 1]) == 0) {
+                save = 0;
+            }
+        }
+        
+        if (save) {
+            int idx = history_count % HISTORY_SIZE;
+            memcpy_s(cmd_history[idx], out, n);
+            cmd_history[idx][n] = '\0';
+            if (history_count < HISTORY_SIZE) {
+                history_count++;
+            }
+        }
+    }
+    
     return n;
 }
