@@ -846,6 +846,7 @@ static void cmd_reboot(int argc, char *argv[]) {
     (void)argc; (void)argv;
     
     printf("Rebooting...\n");
+    sys_sleep(500);
     
     /* Disable interrupts */
     __asm__ volatile("cli");
@@ -881,6 +882,7 @@ static void cmd_shutdown(int argc, char *argv[]) {
     (void)argc; (void)argv;
     
     printf("Shutting down...\n");
+    sys_sleep(500);
     
     /* Try ACPI shutdown first (QEMU, modern hardware) */
     outw(0x604, 0x2000);  /* QEMU */

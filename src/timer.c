@@ -15,6 +15,7 @@ static void timer_handler(void) {
     timer_ticks++;
     
     if (scheduling_enabled) {
+        wakeup_sleeping_tasks();
         task_tick();
     }
 }

@@ -146,12 +146,16 @@ void task_sleep(uint32_t milliseconds) {
     
     __asm__ volatile ("sti");
     
+    /* Active wait with HLT - timer IRQ will wake us and check if sleep is done */
     while (current_task->state == TASK_SLEEPING) {
-        __asm__ volatile ("hlt");
+        wakeup_sleeping_tasks();  /* Check if we should wake up */
+        if (current_task->state == TASK_SLEEPING) {
+            __asm__ volatile ("hlt");  /* Sleep until next interrupt */
+        }
     }
 }
 
-static void wakeup_sleeping_tasks(void) {
+void wakeup_sleeping_tasks(void) {
     uint32_t current_ticks = timer_get_ticks();
     task_t *t = task_list;
     int woken = 0;

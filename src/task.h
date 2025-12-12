@@ -46,6 +46,7 @@ void task_sleep(uint32_t milliseconds);
 void task_exit(void);
 task_t *task_get_current(void);
 int task_spawn_and_wait(const char *path);
+void wakeup_sleeping_tasks(void);
 
 void schedule(void);
 void task_tick(void);

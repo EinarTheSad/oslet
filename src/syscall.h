@@ -431,3 +431,11 @@ static inline int sys_win_msgbox_click(void *box, int mx, int my) {
 static inline void sys_win_msgbox_draw(void *box) {
     __asm__ volatile("int $0x80" :: "a"(SYS_WIN_MSGBOX_DRAW), "b"(box));
 }
+
+static inline void sys_busywait(uint32_t ms) {
+    uint32_t start = sys_uptime();
+    uint32_t end = start + (ms / 10);  /* uptime is in ticks (10ms) */
+    while (sys_uptime() < end) {
+        __asm__ volatile("pause");  /* CPU hint for spinloop */
+    }
+}
