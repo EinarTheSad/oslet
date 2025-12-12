@@ -3,6 +3,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #define COLOR_BLACK         0x00
 #define COLOR_BLUE          0x01
@@ -29,5 +30,25 @@ int vprintf(const char *fmt, va_list ap);
 
 int snprintf(char *buf, size_t size, const char *fmt, ...);
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap);
+
+static inline void outb(uint16_t port, uint8_t val) {
+    __asm__ volatile ("outb %0, %1" :: "a"(val), "Nd"(port));
+}
+
+static inline uint8_t inb(uint16_t port) {
+    uint8_t val;
+    __asm__ volatile ("inb %1, %0" : "=a"(val) : "Nd"(port));
+    return val;
+}
+
+static inline uint16_t inw(uint16_t port) {
+    uint16_t val;
+    __asm__ volatile ("inw %1, %0" : "=a"(val) : "Nd"(port));
+    return val;
+}
+
+static inline void outw(uint16_t port, uint16_t val) {
+    __asm__ volatile ("outw %0, %1" :: "a"(val), "Nd"(port));
+}
 
 #endif
