@@ -127,6 +127,8 @@ static void cmd_rmdir(int argc, char *argv[]);
 static void cmd_ps(int argc, char *argv[]);
 static void cmd_uptime(int argc, char *argv[]);
 static void cmd_cls(int argc, char *argv[]);
+static void cmd_shutdown(int argc, char *argv[]);
+static void cmd_reboot(int argc, char *argv[]);
 
 static const Command commands[] = {
     { "cat",    "cat <file>",          "Display file contents",      cmd_cat },
@@ -143,6 +145,8 @@ static const Command commands[] = {
     { "rmdir",  "rmdir <dir>",         "Remove directory",           cmd_rmdir },
     { "time",   "time",                "Show current time and date", cmd_rtc },
     { "uptime", "uptime",              "Show system uptime",         cmd_uptime },
+    { "shutdown", "shutdown",          "Power off computer",         cmd_shutdown },
+    { "reboot",   "reboot",              "Restart computer",         cmd_reboot },
     { "exit",   "exit",                "Exit shell",                 cmd_exit }
 };
 
@@ -836,4 +840,59 @@ static void cmd_uptime(int argc, char *argv[]) {
     
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
     printf("\n");
+}
+
+static void cmd_reboot(int argc, char *argv[]) {
+    (void)argc; (void)argv;
+    
+    printf("Rebooting...\n");
+    
+    /* Disable interrupts */
+    __asm__ volatile("cli");
+    
+    /* Try keyboard controller reset (most reliable) */
+    uint8_t temp;
+    do {
+        temp = inb(0x64);
+        if (temp & 0x01) inb(0x60);
+    } while (temp & 0x02);
+    
+    outb(0x64, 0xFE);  /* Pulse reset line */
+    
+    /* Wait a bit */
+    for (volatile int i = 0; i < 1000000; i++);
+    
+    /* Try ACPI reset (newer systems) */
+    outb(0xCF9, 0x06);
+    
+    /* Try triple fault as last resort */
+    __asm__ volatile(
+        "mov $0, %esp\n"
+        "ljmp $0xFFFF, $0x0000\n"
+    );
+    
+    /* Should never reach here */
+    sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+    printf("\nReboot failed\n");
+    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+}
+
+static void cmd_shutdown(int argc, char *argv[]) {
+    (void)argc; (void)argv;
+    
+    printf("Shutting down...\n");
+    
+    /* Try ACPI shutdown first (QEMU, modern hardware) */
+    outw(0x604, 0x2000);  /* QEMU */
+    outw(0xB004, 0x2000); /* Bochs, older QEMU */
+    
+    /* Try VirtualBox */
+    outw(0x4004, 0x3400);
+    
+    /* APM shutdown (legacy) */
+    outw(0x1000, 0x0001 | 0x2000 | 0x4000);
+    
+    /* If still running, show error */
+    sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+    printf("\nShutdown failed - ACPI not supported\n");
 }
