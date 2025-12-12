@@ -335,8 +335,7 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             
             sys_meminfo_t *info = (sys_meminfo_t*)ebx;
             size_t total = pmm_total_frames();
-            static size_t free = 0;
-            free = pmm_count_free_frames();
+            size_t free = pmm_count_free_frames();
             
             info->total_kb = (total * 4096) / 1024;
             info->free_kb = (free * 4096) / 1024;

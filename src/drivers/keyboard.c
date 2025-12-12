@@ -212,7 +212,7 @@ size_t kbd_getline(char* out, size_t maxlen) {
         int c = kbd_getchar();
 
         /* Ignore extended keys in line input mode */
-        if (c >= 0x100) continue;
+        if (c >= 0x80) continue;
 
         if (c == '\b') {
             if (n > 0) {

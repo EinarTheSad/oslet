@@ -338,10 +338,10 @@ static void cmd_exit(int argc, char *argv[]) {
 
 static void cmd_mem(int argc, char *argv[]) {
     (void)argc; (void)argv;
-    sys_meminfo_t meminfo = {0};
+    sys_meminfo_t meminfo;
     sys_get_meminfo(&meminfo);
-    const double total = (double)meminfo.total_kb;
-    const double free = (double)meminfo.free_kb;
+    double total = (double)meminfo.total_kb;
+    double free = (double)meminfo.free_kb;
     printf("\nMemory statistics:\n\n");
     printf("  Total installed:");
     sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
