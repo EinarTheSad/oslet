@@ -57,7 +57,7 @@ void _start(void) {
 
     while (1) {
         sys_get_mouse_state(&mx, &my, &mb);
-        
+        usr_bmf_printf(0, 0, &osans_b, 12, COLOR_YELLOW, ""); // Weird that it has to be there or else the mouse breaks
         /* Handle mouse press */
         if ((mb & 1) && last_mb == 0) {
             if (sys_win_is_titlebar(box, mx, my)) {
