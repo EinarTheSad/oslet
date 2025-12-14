@@ -861,7 +861,7 @@ static void cmd_reboot(int argc, char *argv[]) {
     outb(0x64, 0xFE);  /* Pulse reset line */
     
     /* Wait a bit */
-    for (volatile int i = 0; i < 1000000; i++);
+    sys_sleep(10);
     
     /* Try ACPI reset (newer systems) */
     outb(0xCF9, 0x06);

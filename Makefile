@@ -28,7 +28,7 @@ KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all iso run clean disk install fetchlet shell demo
+.PHONY: all iso run clean disk install fetchlet shell demo desktop
 
 all: $(BUILD)/$(TARGET)
 
@@ -176,6 +176,19 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 edit: $(BIN)/edit.elf
 
 $(BIN)/edit.elf: $(BUILD)/bin/edit.o $(LIB_OBJS)
+	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD)/bin/%.o: $(BIN)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
+$(BUILD)/lib/%.o: $(LIB)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
+desktop: $(BIN)/desktop.elf
+
+$(BIN)/desktop.elf: $(BUILD)/bin/desktop.o $(LIB_OBJS)
 	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
 
 $(BUILD)/bin/%.o: $(BIN)/%.c
