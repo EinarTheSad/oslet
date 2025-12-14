@@ -206,7 +206,6 @@ void win_move(window_t *win, int dx, int dy) {
     
     /* Save new background */
     win_save_background(win);
-    
     win->dirty = 1;
 }
 
