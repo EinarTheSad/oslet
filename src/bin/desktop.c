@@ -71,13 +71,12 @@ void _start(void) {
                 sys_win_move(box, dx, dy);
                 drag_start_x = mx;
                 drag_start_y = my;
-                sys_gfx_clear(COLOR_CYAN);
                 sys_win_msgbox_draw(box);
                 /* Force full redraw of cursor (invalidate buffer) */
                 sys_mouse_draw_cursor(mx, my, COLOR_WHITE, 1);
                 sys_gfx_swap();
                 continue;  /* Skip normal cursor handling */
-            }
+            }            
         }
         
         sys_mouse_draw_cursor(mx, my, COLOR_WHITE, 0);
