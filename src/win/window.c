@@ -224,28 +224,27 @@ int win_needs_redraw(window_t *win) {
 void win_save_background(window_t *win) {
     if (!win->is_visible) return;
     
-    /* Allocate buffer if needed */
-    int buf_size = win->w * win->h / 2;  // 4-bit packed
+    int margin = 10;
+    int w = win->w + 2 * margin;
+    int h = win->h + 2 * margin;
+    int buf_size = w * h;
+    
     if (!win->saved_bg) {
         win->saved_bg = kmalloc(buf_size);
         if (!win->saved_bg) return;
     }
     
-    uint8_t *bb = gfx_get_backbuffer();
+    extern uint8_t gfx_getpixel(int x, int y);
     
-    /* Copy background region to saved buffer */
-    for (int py = 0; py < win->h; py++) {
-        int sy = win->y + py;
+    for (int py = 0; py < h; py++) {
+        int sy = win->y + py - margin;
         if (sy < 0 || sy >= GFX_HEIGHT) continue;
         
-        for (int px = 0; px < win->w; px += 2) {
-            int sx = win->x + px;
+        for (int px = 0; px < w; px++) {
+            int sx = win->x + px - margin;
             if (sx < 0 || sx >= GFX_WIDTH) continue;
             
-            uint32_t screen_offset = sy * (GFX_WIDTH / 2) + (sx / 2);
-            uint32_t buf_offset = py * (win->w / 2) + (px / 2);
-            
-            win->saved_bg[buf_offset] = bb[screen_offset];
+            win->saved_bg[py * w + px] = gfx_getpixel(sx, sy);
         }
     }
 }
@@ -253,21 +252,21 @@ void win_save_background(window_t *win) {
 void win_restore_background(window_t *win) {
     if (!win->saved_bg) return;
     
-    uint8_t *bb = gfx_get_backbuffer();
+    int margin = 10;
+    int w = win->w + 2 * margin;
+    int h = win->h + 2 * margin;
     
-    /* Restore background from saved buffer */
-    for (int py = 0; py < win->h; py++) {
-        int sy = win->y + py;
+    extern void gfx_putpixel(int x, int y, uint8_t color);
+    
+    for (int py = 0; py < h; py++) {
+        int sy = win->y + py - margin;
         if (sy < 0 || sy >= GFX_HEIGHT) continue;
         
-        for (int px = 0; px < win->w; px += 2) {
-            int sx = win->x + px;
+        for (int px = 0; px < w; px++) {
+            int sx = win->x + px - margin;
             if (sx < 0 || sx >= GFX_WIDTH) continue;
             
-            uint32_t screen_offset = sy * (GFX_WIDTH / 2) + (sx / 2);
-            uint32_t buf_offset = py * (win->w / 2) + (px / 2);
-            
-            bb[screen_offset] = win->saved_bg[buf_offset];
+            gfx_putpixel(sx, sy, win->saved_bg[py * w + px]);
         }
     }
 }
