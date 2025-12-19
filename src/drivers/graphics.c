@@ -12,18 +12,20 @@ static int graphics_active = 0;
 #define GFX_LOCK() __asm__ volatile("cli")
 #define GFX_UNLOCK() __asm__ volatile("sti")
 
-static int dirty_x0 = GFX_WIDTH, dirty_y0 = GFX_HEIGHT;
-static int dirty_x1 = -1, dirty_y1 = -1;
-static int full_redraw = 1;
+static volatile int dirty_x0 = GFX_WIDTH, dirty_y0 = GFX_HEIGHT;
+static volatile int dirty_x1 = -1, dirty_y1 = -1;
+static volatile int full_redraw = 1;
 
 static inline void mark_dirty(int x, int y, int w, int h) {
     int x1 = x + w - 1;
     int y1 = y + h - 1;
-    
+
+    GFX_LOCK();
     if (x < dirty_x0) dirty_x0 = x;
     if (y < dirty_y0) dirty_y0 = y;
     if (x1 > dirty_x1) dirty_x1 = x1;
     if (y1 > dirty_y1) dirty_y1 = y1;
+    GFX_UNLOCK();
 }
 
 static inline void reset_dirty(void) {

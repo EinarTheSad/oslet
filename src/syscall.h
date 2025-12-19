@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "rtc.h"
+#include "win/window.h"
 
 typedef rtc_time_t sys_time_t;
 
@@ -67,7 +68,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_GFX_RECT        0x0906
 #define SYS_GFX_FILLRECT    0x0907
 #define SYS_GFX_CIRCLE      0x0908
-#define SYS_GFX_PRINT       0x0909 /* free */
+
 #define SYS_GFX_LOAD_BMP    0x090A
 #define SYS_GFX_FILLRECT_GRADIENT 0x090B
 
@@ -77,13 +78,37 @@ typedef rtc_time_t sys_time_t;
 
 /* AH = 0Bh - Windows */
 #define SYS_WIN_MSGBOX          0x0B00
-#define SYS_WIN_IS_TITLEBAR     0x0B01
-#define SYS_WIN_MOVE            0x0B02
-#define SYS_WIN_MSGBOX_CLICK    0x0B03
-#define SYS_WIN_MSGBOX_DRAW     0x0B04
+#define SYS_WIN_CREATE_FORM     0x0B05
+#define SYS_WIN_DRAW_CONTROL    0x0B06  /* Deprecated - for backwards compatibility */
+#define SYS_WIN_PUMP_EVENTS     0x0B07
+#define SYS_WIN_ADD_CONTROL     0x0B08
+#define SYS_WIN_DRAW            0x0B09 
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
+
+/* Form controls */
+#define CTRL_BUTTON 1
+
+typedef struct {
+    uint8_t type;
+    uint16_t x, y, w, h;
+    uint8_t fg, bg;
+    char text[64];
+    uint16_t id;
+} gui_control_t;
+
+typedef struct {
+    window_t win;
+    gui_control_t *controls;
+    uint8_t ctrl_count;
+    int16_t clicked_id;
+    uint8_t last_mouse_buttons;  /* Previous button state for edge detection */
+    int16_t press_control_id;    /* Which control was pressed (-1 if none) */
+    uint8_t dragging;            /* Is window being dragged */
+    int16_t drag_start_x;        /* Drag start X position */
+    int16_t drag_start_y;        /* Drag start Y position */
+} gui_form_t;
 
 typedef struct {
     uint32_t from_tid;
@@ -403,33 +428,10 @@ static inline void sys_mouse_draw_cursor(int x, int y, uint8_t color, int full_r
     __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(flags));
 }
 
-static inline void* sys_win_msgbox(const char *msg, const char *btn, const char *title) {
-    void *ret;
+static inline int sys_win_msgbox(const char *msg, const char *btn, const char *title) {
+    int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MSGBOX), "b"(msg), "c"(btn), "d"(title));
     return ret;
-}
-
-static inline int sys_win_is_titlebar(void *win, int mx, int my) {
-    int ret;
-    uint32_t coords = ((uint32_t)mx << 16) | (my & 0xFFFF);
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_IS_TITLEBAR), "b"(win), "c"(coords));
-    return ret;
-}
-
-static inline void sys_win_move(void *win, int dx, int dy) {
-    uint32_t delta = (((uint32_t)(int16_t)dx << 16) | ((uint16_t)(int16_t)dy));
-    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_MOVE), "b"(win), "c"(delta));
-}
-
-static inline int sys_win_msgbox_click(void *box, int mx, int my) {
-    int ret;
-    uint32_t coords = ((uint32_t)mx << 16) | (my & 0xFFFF);
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MSGBOX_CLICK), "b"(box), "c"(coords));
-    return ret;
-}
-
-static inline void sys_win_msgbox_draw(void *box) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_MSGBOX_DRAW), "b"(box));
 }
 
 static inline void sys_busywait(uint32_t ms) {
@@ -439,3 +441,30 @@ static inline void sys_busywait(uint32_t ms) {
         __asm__ volatile("pause");  /* CPU hint for spinloop */
     }
 }
+
+static inline void* sys_win_create_form(const char *title, int x, int y, int w, int h) {
+    void *ret;
+    uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
+    uint32_t size = ((uint32_t)w << 16) | (h & 0xFFFF);
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_CREATE_FORM), "b"(title), "c"(pos), "d"(size));
+    return ret;
+}
+
+static inline void sys_win_draw_control(void *form, gui_control_t *ctrl) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DRAW_CONTROL), "b"(form), "c"(ctrl));
+}
+
+static inline void sys_win_add_control(void *form, gui_control_t *ctrl) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_ADD_CONTROL), "b"(form), "c"(ctrl));
+}
+
+static inline int sys_win_pump_events(void *form) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_PUMP_EVENTS), "b"(form));
+    return ret;
+}
+
+static inline void sys_win_draw(void *form) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DRAW), "b"(form));
+}
+
