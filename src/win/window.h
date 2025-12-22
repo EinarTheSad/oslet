@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include "../fonts/bmf.h"
 
 typedef struct {
     int x, y, w, h;
@@ -18,6 +19,21 @@ typedef struct {
     int button_x, button_y;
     int button_w, button_h;
 } msgbox_t;
+
+typedef struct {
+    int x, y;
+    char text[128];
+    uint8_t fg_color;
+    bmf_font_t *font;
+    int font_size;
+} label_t;
+
+typedef struct {
+    int x, y, w, h;
+    char bitmap_path[64];
+    uint8_t *image_data;
+    int loaded;
+} picturebox_t;
 
 /* System initialization */
 void win_init_fonts(void);
@@ -39,10 +55,14 @@ void win_draw_frame(int x, int y, int w, int h);
 void win_draw_titlebar(int x, int y, int w, const char *title);
 void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label);
 
-/* Control drawing - internal function */
-void win_draw_control(window_t *win, void *ctrl);
-
 /* MsgBox - specialized window */
 void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const char *title);
 void win_msgbox_draw(msgbox_t *box);
 int win_msgbox_handle_click(msgbox_t *box, int mx, int my);
+
+/* Control drawing */
+void win_draw_control(window_t *win, void *ctrl);
+void win_draw_label(window_t *win, label_t *label);
+void win_draw_picturebox(window_t *win, picturebox_t *pbox);
+int win_picturebox_load(picturebox_t *pbox, const char *path);
+void win_picturebox_free(picturebox_t *pbox);

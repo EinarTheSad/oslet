@@ -812,10 +812,14 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->fg = ctrl->fg;
                 dest->bg = ctrl->bg;
                 dest->id = ctrl->id;
+                dest->font_type = ctrl->font_type;
+                dest->font_size = ctrl->font_size;
+                dest->border = ctrl->border;
+                dest->border_color = ctrl->border_color;
 
                 /* Copy text */
                 int i = 0;
-                while (ctrl->text[i] && i < 63) {
+                while (ctrl->text[i] && i < 255) {
                     dest->text[i] = ctrl->text[i];
                     i++;
                 }
