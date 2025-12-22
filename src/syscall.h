@@ -89,13 +89,24 @@ typedef rtc_time_t sys_time_t;
 
 /* Form controls */
 #define CTRL_BUTTON 1
+#define CTRL_LABEL 2
+#define CTRL_PICTUREBOX 3
+
+#define FONT_NORMAL 0
+#define FONT_BOLD 1
+#define FONT_ITALIC 2
+#define FONT_BOLD_ITALIC 3
 
 typedef struct {
     uint8_t type;
     uint16_t x, y, w, h;
     uint8_t fg, bg;
-    char text[64];
+    char text[256];
     uint16_t id;
+    uint8_t font_type;
+    uint8_t font_size;
+    uint8_t border;
+    uint8_t border_color;
 } gui_control_t;
 
 typedef struct {
@@ -103,11 +114,11 @@ typedef struct {
     gui_control_t *controls;
     uint8_t ctrl_count;
     int16_t clicked_id;
-    uint8_t last_mouse_buttons;  /* Previous button state for edge detection */
-    int16_t press_control_id;    /* Which control was pressed (-1 if none) */
-    uint8_t dragging;            /* Is window being dragged */
-    int16_t drag_start_x;        /* Drag start X position */
-    int16_t drag_start_y;        /* Drag start Y position */
+    uint8_t last_mouse_buttons;
+    int16_t press_control_id;
+    uint8_t dragging;
+    int16_t drag_start_x;
+    int16_t drag_start_y;
 } gui_form_t;
 
 typedef struct {
