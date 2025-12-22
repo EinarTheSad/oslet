@@ -40,4 +40,8 @@ For more specific information, please consult the Makefile.
 
 <img width="640" height="480" alt="Bitmap" src="https://github.com/user-attachments/assets/57ffbe21-6603-4ad4-b2b9-6b4e2b14adf8" />
 
+### Window system
+
+<img width="640" height="480" alt="Window" src="https://github.com/user-attachments/assets/39fc0ead-cd28-4460-99b1-86a03476aa92" />
+
 ------------------------------------------------------------------------
