@@ -10,7 +10,6 @@
 #define HISTORY_MAXLEN 128
 static char cmd_history[HISTORY_SIZE][HISTORY_MAXLEN];
 static int history_count = 0;
-static int history_pos = 0;
 
 static volatile int kbuf[KBD_BUF_SZ];
 static volatile unsigned khead = 0, ktail = 0;
