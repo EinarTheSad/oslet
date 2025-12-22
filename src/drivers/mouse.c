@@ -10,6 +10,8 @@ static uint8_t cursor_buffer[11 * 19];
 static int saved_x = -1, saved_y = -1;
 int buffer_valid = 0;
 
+extern void pic_send_eoi(int irq);
+
 static void mouse_wait(uint8_t type) {
     uint32_t timeout = 100000;
     if (type == 0) {
