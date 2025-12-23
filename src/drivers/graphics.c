@@ -737,84 +737,128 @@ void gfx_floodfill_gradient(int x, int y,
     mark_dirty(min_x, min_y, eff_w, eff_h);
 }
 
-int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y) {
+uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height) {
     fat32_file_t *f = fat32_open(path, "r");
-    if (!f) return -1;
-    
+    if (!f) return NULL;
+
     bmp_header_t header;
     bmp_info_t info;
-    
+
     if (fat32_read(f, &header, sizeof(header)) != sizeof(header)) {
         fat32_close(f);
-        return -1;
+        return NULL;
     }
-    
+
     if (header.type != 0x4D42) { /* "BM" */
         fat32_close(f);
-        return -1;
+        return NULL;
     }
-    
+
     if (fat32_read(f, &info, sizeof(info)) != sizeof(info)) {
         fat32_close(f);
-        return -1;
+        return NULL;
     }
-    
+
     if (info.bpp != 4 || info.compression != 0) {
         fat32_close(f);
-        return -1;
+        return NULL;
     }
-    
+
     int width = info.width;
     int height = info.height > 0 ? info.height : -info.height;
     int bottom_up = info.height > 0;
-    
+
+    /* Allocate buffer for the bitmap (4-bit = 2 pixels per byte) */
+    int buffer_size = ((width + 1) / 2) * height;
+    uint8_t *bitmap = kmalloc(buffer_size);
+    if (!bitmap) {
+        fat32_close(f);
+        return NULL;
+    }
+
     /* Calculate row size (4-byte aligned) */
     int row_size = ((width + 1) / 2 + 3) & ~3;
-    
+
     /* Seek to pixel data */
     fat32_seek(f, header.offset);
-    
+
     uint8_t *row_buf = kmalloc(row_size);
     if (!row_buf) {
+        kfree(bitmap);
         fat32_close(f);
-        return -1;
+        return NULL;
     }
-    
+
+    /* Read bitmap data */
+    for (int y = 0; y < height; y++) {
+        if (fat32_read(f, row_buf, row_size) != row_size) {
+            kfree(row_buf);
+            kfree(bitmap);
+            fat32_close(f);
+            return NULL;
+        }
+
+        int dest_y = bottom_up ? (height - 1 - y) : y;
+        int dest_offset = dest_y * ((width + 1) / 2);
+
+        /* Copy row data */
+        for (int x = 0; x < (width + 1) / 2; x++) {
+            bitmap[dest_offset + x] = row_buf[x];
+        }
+    }
+
+    kfree(row_buf);
+    fat32_close(f);
+
+    *out_width = width;
+    *out_height = height;
+    return bitmap;
+}
+
+void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y) {
+    if (!backbuffer || !cached_data) return;
+
     /* Calculate actual dirty region */
     int dirty_x0 = dest_x < 0 ? 0 : dest_x;
     int dirty_y0 = dest_y < 0 ? 0 : dest_y;
     int dirty_x1 = dest_x + width - 1;
     int dirty_y1 = dest_y + height - 1;
-    
+
     if (dirty_x1 >= GFX_WIDTH) dirty_x1 = GFX_WIDTH - 1;
     if (dirty_y1 >= GFX_HEIGHT) dirty_y1 = GFX_HEIGHT - 1;
-    
+
     for (int y = 0; y < height; y++) {
-        if (fat32_read(f, row_buf, row_size) != row_size) break;
-        
-        int screen_y = bottom_up ? (dest_y + height - 1 - y) : (dest_y + y);
-        
+        int screen_y = dest_y + y;
+
         if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
-        
+
+        int src_offset = y * ((width + 1) / 2);
+
         for (int x = 0; x < width; x++) {
             int byte_idx = x / 2;
-            uint8_t pixel = (x & 1) ? (row_buf[byte_idx] & 0x0F) : (row_buf[byte_idx] >> 4);
-            
+            uint8_t pixel = (x & 1) ? (cached_data[src_offset + byte_idx] & 0x0F) : (cached_data[src_offset + byte_idx] >> 4);
+
             int screen_x = dest_x + x;
-            
+
             if (screen_x >= 0 && screen_x < GFX_WIDTH) {
                 putpixel_raw(screen_x, screen_y, pixel);
             }
         }
     }
-    
-    kfree(row_buf);
-    fat32_close(f);
-    
+
     /* Mark only the actually drawn region as dirty */
     if (dirty_x1 >= dirty_x0 && dirty_y1 >= dirty_y0) {
         mark_dirty(dirty_x0, dirty_y0, dirty_x1 - dirty_x0 + 1, dirty_y1 - dirty_y0 + 1);
     }
-    
+}
+
+int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y) {
+    int width, height;
+    uint8_t *bitmap = gfx_load_bmp_to_buffer(path, &width, &height);
+    if (!bitmap) return -1;
+
+    gfx_draw_cached_bmp(bitmap, width, height, dest_x, dest_y);
+    kfree(bitmap);
+
     return 0;
 }

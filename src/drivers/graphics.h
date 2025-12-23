@@ -90,3 +90,5 @@ void gfx_fillrect_gradient(int x, int y, int w, int h,
                            uint8_t c_start, uint8_t c_end,
                            int orientation);
 int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y);
+uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
+void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);

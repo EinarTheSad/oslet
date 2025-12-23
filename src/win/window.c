@@ -1,4 +1,5 @@
 #include "window.h"
+#include "../syscall.h"
 #include "../drivers/graphics.h"
 #include "../fonts/bmf.h"
 
@@ -95,19 +96,7 @@ void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *labe
 }
 
 void win_draw_control(window_t *win, void *ctrl) {
-    typedef struct {
-        uint8_t type;
-        uint16_t x, y, w, h;
-        uint8_t fg, bg;
-        char text[256];
-        uint16_t id;
-        uint8_t font_type;
-        uint8_t font_size;
-        uint8_t border;
-        uint8_t border_color;
-    } gui_control_local_t;
-
-    gui_control_local_t *control = (gui_control_local_t*)ctrl;
+    gui_control_t *control = (gui_control_t*)ctrl;
 
     int abs_x = win->x + control->x;
     int abs_y = win->y + control->y + 20;
@@ -218,9 +207,24 @@ void win_draw_control(window_t *win, void *ctrl) {
     else if (control->type == 3) { /* CTRL_PICTUREBOX */
         gfx_fillrect(abs_x, abs_y, control->w, control->h, 8);
         gfx_rect(abs_x, abs_y, control->w, control->h, 7);
-        
+
         if (control->text[0]) {
-            gfx_load_bmp_4bit(control->text, abs_x, abs_y);
+            /* Load bitmap to cache if not already loaded */
+            if (!control->cached_bitmap) {
+                extern uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
+                int width, height;
+                control->cached_bitmap = gfx_load_bmp_to_buffer(control->text, &width, &height);
+                if (control->cached_bitmap) {
+                    control->bmp_width = width;
+                    control->bmp_height = height;
+                }
+            }
+
+            /* Draw from cached bitmap */
+            if (control->cached_bitmap) {
+                extern void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);
+                gfx_draw_cached_bmp(control->cached_bitmap, control->bmp_width, control->bmp_height, abs_x, abs_y);
+            }
         }
     }
 }

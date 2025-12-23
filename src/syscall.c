@@ -663,23 +663,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             
             return (uint32_t)form;
         }
-        
-        case 0x06: { /* SYS_WIN_DRAW_CONTROL */
-            gui_form_t *form = (gui_form_t*)ebx;
-            gui_control_t *ctrl = (gui_control_t*)ecx;
-            if (!form || !ctrl) return 0;
-            
-            int abs_x = form->win.x + ctrl->x;
-            int abs_y = form->win.y + ctrl->y + 20;
-            
-            switch(ctrl->type) {                  
-                case CTRL_BUTTON:
-                    win_draw_button(abs_x, abs_y, ctrl->w, ctrl->h, ctrl->bg, ctrl->text);
-                    break;
-            }
-            return 0;
-        }
-        
+              
         case 0x07: { /* SYS_WIN_PUMP_EVENTS */
             gui_form_t *form = (gui_form_t*)ebx;
 
@@ -718,7 +702,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         for (int i = 0; i < form->ctrl_count; i++) {
                             gui_control_t *ctrl = &form->controls[i];
 
-                            /* Calculate absolute control position (same as SYS_WIN_DRAW_CONTROL) */
+                            /* Calculate absolute control position */
                             int abs_x = form->win.x + ctrl->x;
                             int abs_y = form->win.y + ctrl->y + 20;
 
@@ -816,6 +800,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->font_size = ctrl->font_size;
                 dest->border = ctrl->border;
                 dest->border_color = ctrl->border_color;
+                dest->cached_bitmap = NULL;
+                dest->bmp_width = 0;
+                dest->bmp_height = 0;
 
                 /* Copy text */
                 int i = 0;
@@ -839,6 +826,30 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             for (int i = 0; i < form->ctrl_count; i++) {
                 win_draw_control(&form->win, &form->controls[i]);
             }
+            return 0;
+        }
+
+        case 0x0A: { /* SYS_WIN_DESTROY_FORM */
+            gui_form_t *form = (gui_form_t*)ebx;
+            if (!form) return 0;
+
+            /* Free cached bitmaps in controls */
+            if (form->controls) {
+                for (int i = 0; i < form->ctrl_count; i++) {
+                    if (form->controls[i].cached_bitmap) {
+                        kfree(form->controls[i].cached_bitmap);
+                        form->controls[i].cached_bitmap = NULL;
+                    }
+                }
+                kfree(form->controls);
+            }
+
+            /* Destroy window */
+            win_destroy(&form->win);
+
+            /* Free form */
+            kfree(form);
+
             return 0;
         }
 
