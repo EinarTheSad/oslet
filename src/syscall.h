@@ -79,10 +79,10 @@ typedef rtc_time_t sys_time_t;
 /* AH = 0Bh - Windows */
 #define SYS_WIN_MSGBOX          0x0B00
 #define SYS_WIN_CREATE_FORM     0x0B05
-#define SYS_WIN_DRAW_CONTROL    0x0B06  /* Deprecated - for backwards compatibility */
 #define SYS_WIN_PUMP_EVENTS     0x0B07
 #define SYS_WIN_ADD_CONTROL     0x0B08
-#define SYS_WIN_DRAW            0x0B09 
+#define SYS_WIN_DRAW            0x0B09
+#define SYS_WIN_DESTROY_FORM    0x0B0A 
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -107,6 +107,9 @@ typedef struct {
     uint8_t font_size;
     uint8_t border;
     uint8_t border_color;
+    uint8_t *cached_bitmap;
+    uint16_t bmp_width;
+    uint16_t bmp_height;
 } gui_control_t;
 
 typedef struct {
@@ -430,8 +433,12 @@ static inline int sys_gfx_load_bmp(const char *path, int x, int y) {
 }
 
 static inline void sys_get_mouse_state(int *x, int *y, unsigned char *buttons) {
-    int ret;
-    asm volatile("int $0x80" : "=a"(ret) : "a"(SYS_MOUSE_GET_STATE), "b"(x), "c"(y), "d"(buttons));
+    register int dummy_eax __asm__("eax") = SYS_MOUSE_GET_STATE;
+    register int *dummy_ebx __asm__("ebx") = x;
+    register int *dummy_ecx __asm__("ecx") = y;
+    register unsigned char *dummy_edx __asm__("edx") = buttons;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
+    /* GCC's inline assembly constraints weren't properly telling the compiler that syscalls modify their input registers */
 }
 
 static inline void sys_mouse_draw_cursor(int x, int y, uint8_t color, int full_redraw) {
@@ -461,12 +468,12 @@ static inline void* sys_win_create_form(const char *title, int x, int y, int w, 
     return ret;
 }
 
-static inline void sys_win_draw_control(void *form, gui_control_t *ctrl) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DRAW_CONTROL), "b"(form), "c"(ctrl));
-}
-
 static inline void sys_win_add_control(void *form, gui_control_t *ctrl) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_ADD_CONTROL), "b"(form), "c"(ctrl));
+    register int dummy_eax __asm__("eax") = SYS_WIN_ADD_CONTROL;
+    register void *dummy_ebx __asm__("ebx") = form;
+    register gui_control_t *dummy_ecx __asm__("ecx") = ctrl;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx));
+    /* This has to be done, or else the controls don't show */
 }
 
 static inline int sys_win_pump_events(void *form) {
@@ -477,5 +484,9 @@ static inline int sys_win_pump_events(void *form) {
 
 static inline void sys_win_draw(void *form) {
     __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DRAW), "b"(form));
+}
+
+static inline void sys_win_destroy_form(void *form) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DESTROY_FORM), "b"(form));
 }
 
