@@ -21,22 +21,13 @@ void _start(void) {
     sys_gfx_fillrect(0, 0, 640, 480, COLOR_CYAN);
 
     void *form = sys_win_create_form("Welcome screen", 100, 100, 370, 240);
-
-    sys_win_add_control(form, &controls[0]);
-    sys_win_add_control(form, &controls[1]);
-    sys_win_add_control(form, &controls[2]);
-    sys_win_add_control(form, &controls[3]);
-
-    /* Draw the form (automatically draws all controls) */
+    for (int i = 0; i < 4; i++) {
+        sys_win_add_control(form, &controls[i]);
+    }
     sys_win_draw(form);
-
-    sys_mouse_draw_cursor(mx, my, COLOR_WHITE, 1);
-    sys_gfx_swap();
 
     while (1) {
         sys_get_mouse_state(&mx, &my, &mb);
-
-        /* Pump window events (handles both clicks and dragging) */
         int event = sys_win_pump_events(form);
 
         if (event > 0) {
@@ -48,12 +39,12 @@ void _start(void) {
         } else if (event < 0) {
             /* Window was dragged - redraw */
             sys_win_draw(form);
-            sys_mouse_draw_cursor(mx, my, COLOR_WHITE, 1);
+            sys_mouse_draw_cursor(mx, my, 1);
             sys_gfx_swap();
             continue;
         }
 
-        sys_mouse_draw_cursor(mx, my, COLOR_WHITE, 0);
+        sys_mouse_draw_cursor(mx, my, 0);
         sys_gfx_swap();
     }
 

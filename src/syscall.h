@@ -441,9 +441,8 @@ static inline void sys_get_mouse_state(int *x, int *y, unsigned char *buttons) {
     /* GCC's inline assembly constraints weren't properly telling the compiler that syscalls modify their input registers */
 }
 
-static inline void sys_mouse_draw_cursor(int x, int y, uint8_t color, int full_redraw) {
-    uint32_t flags = (full_redraw << 8) | (color & 0xFF);
-    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(flags));
+static inline void sys_mouse_draw_cursor(int x, int y, int full_redraw) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(full_redraw));
 }
 
 static inline int sys_win_msgbox(const char *msg, const char *btn, const char *title) {
