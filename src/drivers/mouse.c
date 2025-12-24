@@ -126,7 +126,7 @@ static const uint8_t cursor[19][11] = {
 	{0,0,0,0,0,0,0,2,2,0,0}
 };
 
-void mouse_draw_cursor(int x, int y, uint8_t color) {
+void mouse_draw_cursor(int x, int y) {
     for (int row = 0; row < 19; row++) {
         for (int col = 0; col < 11; col++) {
             uint8_t px = cursor[row][col];
@@ -135,7 +135,7 @@ void mouse_draw_cursor(int x, int y, uint8_t color) {
                 continue;
 
             if (px == 1)
-                gfx_putpixel(x + col, y + row, color);
+                gfx_putpixel(x + col, y + row, 15);
 
             if (px == 2)
                 gfx_putpixel(x + col, y + row, 0);

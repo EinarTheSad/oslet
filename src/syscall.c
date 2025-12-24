@@ -526,15 +526,13 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
             return 0;
         }
         case 0x01: {
-            int full_redraw = (edx >> 8) & 0xFF;
-            uint8_t color = edx & 0xFF;
             extern int buffer_valid;
-            if (!full_redraw && buffer_valid) {
+            if (!edx && buffer_valid) {
                 mouse_restore();
             }
             
             mouse_save(ebx, ecx);
-            mouse_draw_cursor(ebx, ecx, color);
+            mouse_draw_cursor(ebx, ecx);
             return 0;
         }
         
@@ -569,7 +567,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Initial cursor draw (save new background) */
             mouse_save(mx, my);
-            mouse_draw_cursor(mx, my, 15);
+            mouse_draw_cursor(mx, my);
             gfx_swap_buffers();
 
             /* Modal event loop */
@@ -620,7 +618,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         /* Redraw window and cursor (save new position during drag) */
                         win_msgbox_draw(&box);
                         mouse_save(mx, my);
-                        mouse_draw_cursor(mx, my, 15);
+                        mouse_draw_cursor(mx, my);
                         gfx_swap_buffers();
                         continue;
                     }
@@ -633,7 +631,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     mouse_restore();
                 }
                 mouse_save(mx, my);
-                mouse_draw_cursor(mx, my, 15);
+                mouse_draw_cursor(mx, my);
                 gfx_swap_buffers();
             }
 

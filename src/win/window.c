@@ -76,21 +76,23 @@ void win_draw_titlebar(int x, int y, int w, const char *title) {
     int btn_x = x + w - 16;
     int btn_y = y + 2;
     
-    gfx_fillrect(btn_x, btn_y, 14, 14, WIN_BUTTON_COLOR);
-    gfx_rect(btn_x-1, btn_y-1, 16, 16, WIN_FRAME_DARK);
-    gfx_rect(btn_x+3, btn_y+7, 10, 2, WIN_FRAME_DARK);
+    gfx_fillrect(btn_x, btn_y, 14, 14, 7);
+    gfx_rect(btn_x-1, btn_y-1, 16, 16, 8);
+    gfx_rect(btn_x+3, btn_y+7, 10, 2, 8);
     gfx_fillrect(btn_x+2, btn_y+6, 10, 2, 15);
 }
 
 void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label) {
-    gfx_fillrect(x, y, w, h, color);
     gfx_rect(x, y, w, h, 0);
-    gfx_rect(x+1, y+1, w-2, h-2, WIN_FRAME_DARK);
+    gfx_fillrect(x+2, y+2, w-3, h-3, color);
+    gfx_rect(x+1, y+1, w-2, h-2, 8);
+    gfx_hline(x+1, y+1, w-3, 15);
+    gfx_vline(x+1, y+1, h-3, 15);
 
     if (font_b.data && label) {
         int text_w = bmf_measure_text(&font_b, 12, label);
         int text_x = x + (w - text_w) / 2;
-        int text_y = y + (h / 2) - 5;
+        int text_y = y + (h / 2) - 4;
         bmf_printf(text_x, text_y, &font_b, 12, 0, "%s", label);
     }
 }
