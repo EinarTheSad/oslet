@@ -3,10 +3,10 @@
 #include "../lib/fonts.h"
 
 gui_control_t controls[] = {
-    {CTRL_PICTUREBOX, 5, 5, 108, 208, 0, 7, "SETUP.BMP", 1, 0, 12, 0, 0, NULL, 0, 0},
-    {CTRL_BUTTON, 290, 189, 75, 25, 0, 7, "OK", 2, 0, 12, 0, 0, NULL, 0, 0},
-    {CTRL_LABEL, 118, 12, 0, 0, 0, 15, "Welcome to osLET!", 3, 1, 12, 0, 0, NULL, 0, 0},
-    {CTRL_LABEL, 118, 40, 190, 0, 0, 15, "This window serves as a test of the\ncontrol system in osLET graphical\nuser interface.\n\nYou can drag this window freely\nusing a mouse, or click the button\nbelow to exit back to shell.\n", 5, 0, 12, 0, 0, NULL, 0, 0}
+    {CTRL_PICTUREBOX, 5, 5, 108, 208, 0, 7, "SETUP.BMP", 1, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_BUTTON, 290, 189, 75, 25, 0, 7, "OK", 2, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_LABEL, 118, 12, 0, 0, 0, 15, "Welcome to osLET!", 3, 1, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_LABEL, 118, 40, 190, 0, 0, 15, "This window serves as a test of the\ncontrol system in osLET graphical\nuser interface.\n\nYou can drag this window freely\nusing a mouse, or click the button\nbelow to exit back to shell.\n", 5, 0, 12, 0, 0, NULL, 0, 0, 0}
 };
 
 __attribute__((section(".entry"), used))

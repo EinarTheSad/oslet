@@ -53,7 +53,7 @@ void win_restore_background(window_t *win);
 /* Drawing primitives */
 void win_draw_frame(int x, int y, int w, int h);
 void win_draw_titlebar(int x, int y, int w, const char *title);
-void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label);
+void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label, int pressed);
 
 /* MsgBox - specialized window */
 void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const char *title);

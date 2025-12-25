@@ -2,6 +2,7 @@
 #include "../syscall.h"
 #include "../drivers/graphics.h"
 #include "../fonts/bmf.h"
+#include "../mem/heap.h"
 
 #define WIN_BG_COLOR        15
 #define WIN_TITLEBAR_COLOR  1
@@ -82,12 +83,20 @@ void win_draw_titlebar(int x, int y, int w, const char *title) {
     gfx_fillrect(btn_x+2, btn_y+6, 10, 2, 15);
 }
 
-void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label) {
+void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label, int pressed) {
+    int shad_a, shad_b;
     gfx_rect(x, y, w, h, 0);
     gfx_fillrect(x+2, y+2, w-3, h-3, color);
-    gfx_rect(x+1, y+1, w-2, h-2, 8);
-    gfx_hline(x+1, y+1, w-3, 15);
-    gfx_vline(x+1, y+1, h-3, 15);
+    if (pressed == 1) {
+        shad_a = 15;
+        shad_b = 8;
+    } else {
+        shad_a = 8;
+        shad_b = 15;
+    }
+    gfx_rect(x+1, y+1, w-2, h-2, shad_a);
+    gfx_hline(x+1, y+1, w-3, shad_b);
+    gfx_vline(x+1, y+1, h-3, shad_b);
 
     if (font_b.data && label) {
         int text_w = bmf_measure_text(&font_b, 12, label);
@@ -104,7 +113,11 @@ void win_draw_control(window_t *win, void *ctrl) {
     int abs_y = win->y + control->y + 20;
 
     if (control->type == 1) { /* CTRL_BUTTON */
-        win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text);
+        if (control->pressed) {
+            win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 1);
+        } else {
+            win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 0);
+        }
     }
     else if (control->type == 2) { /* CTRL_LABEL */
         bmf_font_t *font = &font_n;
@@ -300,7 +313,7 @@ void win_msgbox_draw(msgbox_t *box) {
     
     win_draw_button(abs_btn_x, abs_btn_y, 
                     box->button_w, box->button_h, 
-                    WIN_BUTTON_COLOR, box->button_text);
+                    WIN_BUTTON_COLOR, box->button_text, 0);
 }
 
 int win_msgbox_handle_click(msgbox_t *box, int mx, int my) {
