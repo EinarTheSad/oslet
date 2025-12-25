@@ -110,6 +110,7 @@ typedef struct {
     uint8_t *cached_bitmap;
     uint16_t bmp_width;
     uint16_t bmp_height;
+    uint8_t pressed;
 } gui_control_t;
 
 typedef struct {
@@ -488,4 +489,3 @@ static inline void sys_win_draw(void *form) {
 static inline void sys_win_destroy_form(void *form) {
     __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DESTROY_FORM), "b"(form));
 }
-

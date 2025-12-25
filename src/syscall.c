@@ -409,6 +409,7 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
 
         case 0x05:
             shell_version = (const char*)ebx;
+            return 0;
         
         default:
             return -1;
@@ -708,6 +709,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             if (mx >= abs_x && mx < abs_x + ctrl->w &&
                                 my >= abs_y && my < abs_y + ctrl->h) {
                                 form->press_control_id = ctrl->id;
+                                
+                                /* If it's a button, mark it as pressed and redraw */
+                                if (ctrl->type == CTRL_BUTTON) {
+                                    ctrl->pressed = 1;
+                                    win_draw_control(&form->win, ctrl);
+                                }
                                 break;
                             }
                         }
@@ -731,6 +738,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             /* Calculate absolute control position */
                             int abs_x = form->win.x + ctrl->x;
                             int abs_y = form->win.y + ctrl->y + 20;
+
+                            /* If it's a button, unpress it and redraw */
+                            if (ctrl->type == CTRL_BUTTON && ctrl->pressed) {
+                                ctrl->pressed = 0;
+                                win_draw_control(&form->win, ctrl);
+                            }
 
                             /* Check if release is within same control */
                             if (mx >= abs_x && mx < abs_x + ctrl->w &&
@@ -801,6 +814,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->cached_bitmap = NULL;
                 dest->bmp_width = 0;
                 dest->bmp_height = 0;
+                dest->pressed = 0;
 
                 /* Copy text */
                 int i = 0;
