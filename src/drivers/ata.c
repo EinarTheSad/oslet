@@ -55,13 +55,13 @@ static int ata_wait_drq_timeout(uint32_t timeout_ms) {
     return -1;
 }
 
-static void ata_soft_reset(void) {
+/* static void ata_soft_reset(void) {
     outb(ATA_PRIMARY_CONTROL, 0x04); // SRST
     ata_400ns_delay();
     outb(ATA_PRIMARY_CONTROL, 0x00);
     ata_400ns_delay();
     for (volatile int i = 0; i < 100000; i++); // Wait ~10ms
-}
+} */
 
 static inline void ata_400ns_delay(void) {
     for (int i = 0; i < 4; i++)

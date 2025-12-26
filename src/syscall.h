@@ -82,7 +82,8 @@ typedef rtc_time_t sys_time_t;
 #define SYS_WIN_PUMP_EVENTS     0x0B07
 #define SYS_WIN_ADD_CONTROL     0x0B08
 #define SYS_WIN_DRAW            0x0B09
-#define SYS_WIN_DESTROY_FORM    0x0B0A 
+#define SYS_WIN_DESTROY_FORM    0x0B0A
+#define SYS_WIN_SET_ICON        0x0B0B
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -123,6 +124,7 @@ typedef struct {
     uint8_t dragging;
     int16_t drag_start_x;
     int16_t drag_start_y;
+    char icon_path[64];
 } gui_form_t;
 
 typedef struct {
@@ -488,4 +490,8 @@ static inline void sys_win_draw(void *form) {
 
 static inline void sys_win_destroy_form(void *form) {
     __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DESTROY_FORM), "b"(form));
+}
+
+static inline void sys_win_set_icon(void *form, const char *icon_path) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_SET_ICON), "b"(form), "c"(icon_path));
 }

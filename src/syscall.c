@@ -657,6 +657,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->dragging = 0;
             form->drag_start_x = 0;
             form->drag_start_y = 0;
+            form->icon_path[0] = '\0';
 
             win_draw(&form->win);
             
@@ -687,35 +688,55 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Handle mouse button press */
             if (button_pressed) {
-                /* Check if titlebar was clicked */
-                if (win_is_titlebar(&form->win, mx, my)) {
-                    form->dragging = 1;
-                    form->drag_start_x = mx;
-                    form->drag_start_y = my;
-                    form->press_control_id = -1;  /* Not pressing a control */
+                if (form->win.is_minimized) {
+                    /* Check for double-click on icon */
+                    static uint32_t last_icon_click_time = 0;
+                    static int last_icon_click_x = 0, last_icon_click_y = 0;
+                    uint32_t current_time = timer_get_ticks();
+                    
+                    if (win_is_icon_clicked(&form->win, mx, my)) {
+                        if ((current_time - last_icon_click_time) < 30 &&
+                            last_icon_click_x == mx && last_icon_click_y == my) {
+                            win_restore(&form->win);
+                            return -1;
+                        }
+                        last_icon_click_time = current_time;
+                        last_icon_click_x = mx;
+                        last_icon_click_y = my;
+                    }
                 } else {
-                    /* Find which control (if any) was pressed */
-                    form->press_control_id = -1;
+                    /* Check minimize button */
+                    if (win_is_minimize_button(&form->win, mx, my)) {
+                        static int next_icon_x = 10;
+                        win_minimize(&form->win, next_icon_x, 480 - 42);
+                        next_icon_x += 40;
+                        if (next_icon_x > 600) next_icon_x = 10;
+                        return -1;
+                    }
+                    /* Check if titlebar was clicked */
+                    else if (win_is_titlebar(&form->win, mx, my)) {
+                        form->dragging = 1;
+                        form->drag_start_x = mx;
+                        form->drag_start_y = my;
+                        form->press_control_id = -1;
+                    } else {
+                        /* Find which control (if any) was pressed */
+                        form->press_control_id = -1;
 
-                    if (form->controls) {
-                        for (int i = 0; i < form->ctrl_count; i++) {
-                            gui_control_t *ctrl = &form->controls[i];
+                        if (form->controls) {
+                            for (int i = 0; i < form->ctrl_count; i++) {
+                                gui_control_t *ctrl = &form->controls[i];
 
-                            /* Calculate absolute control position */
-                            int abs_x = form->win.x + ctrl->x;
-                            int abs_y = form->win.y + ctrl->y + 20;
+                                /* Calculate absolute control position */
+                                int abs_x = form->win.x + ctrl->x;
+                                int abs_y = form->win.y + ctrl->y + 20;
 
-                            /* Check if mouse is within control bounds */
-                            if (mx >= abs_x && mx < abs_x + ctrl->w &&
-                                my >= abs_y && my < abs_y + ctrl->h) {
-                                form->press_control_id = ctrl->id;
-                                
-                                /* If it's a button, mark it as pressed and redraw */
-                                if (ctrl->type == CTRL_BUTTON) {
-                                    ctrl->pressed = 1;
-                                    win_draw_control(&form->win, ctrl);
+                                /* Check if mouse is within control bounds */
+                                if (mx >= abs_x && mx < abs_x + ctrl->w &&
+                                    my >= abs_y && my < abs_y + ctrl->h) {
+                                    form->press_control_id = ctrl->id;
+                                    break;
                                 }
-                                break;
                             }
                         }
                     }
@@ -738,12 +759,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             /* Calculate absolute control position */
                             int abs_x = form->win.x + ctrl->x;
                             int abs_y = form->win.y + ctrl->y + 20;
-
-                            /* If it's a button, unpress it and redraw */
-                            if (ctrl->type == CTRL_BUTTON && ctrl->pressed) {
-                                ctrl->pressed = 0;
-                                win_draw_control(&form->win, ctrl);
-                            }
 
                             /* Check if release is within same control */
                             if (mx >= abs_x && mx < abs_x + ctrl->w &&
@@ -834,6 +849,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (!form) return 0;
             win_draw(&form->win);
 
+            /* Don't draw controls if window is minimized */
+            if (form->win.is_minimized) return 0;
+
             /* Draw all controls */
             for (int i = 0; i < form->ctrl_count; i++) {
                 win_draw_control(&form->win, &form->controls[i]);
@@ -862,6 +880,22 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Free form */
             kfree(form);
 
+            return 0;
+        }
+
+        case 0x0B: { /* SYS_WIN_SET_ICON */
+            gui_form_t *form = (gui_form_t*)ebx;
+            const char *icon_path = (const char*)ecx;
+            
+            if (!form || !icon_path) return 0;
+            
+            int i = 0;
+            while (icon_path[i] && i < 63) {
+                form->win.icon_path[i] = icon_path[i];
+                i++;
+            }
+            form->win.icon_path[i] = '\0';
+            
             return 0;
         }
 

@@ -10,6 +10,11 @@ typedef struct {
     int dirty;
     int prev_x, prev_y;
     uint8_t *saved_bg;
+    int is_minimized;
+    int icon_x, icon_y;
+    char icon_path[64];
+    uint8_t *icon_bitmap;
+    uint8_t *icon_saved_bg;
 } window_t;
 
 typedef struct {
@@ -43,6 +48,11 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title);
 void win_draw(window_t *win);
 void win_destroy(window_t *win);
 int win_is_titlebar(window_t *win, int mx, int my);
+int win_is_minimize_button(window_t *win, int mx, int my);
+void win_minimize(window_t *win, int icon_x, int icon_y);
+void win_restore(window_t *win);
+void win_draw_icon(window_t *win);
+int win_is_icon_clicked(window_t *win, int mx, int my);
 void win_move(window_t *win, int dx, int dy);
 void win_mark_dirty(window_t *win);
 void win_clear_dirty(window_t *win);
