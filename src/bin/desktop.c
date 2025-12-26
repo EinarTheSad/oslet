@@ -21,6 +21,7 @@ void _start(void) {
     sys_gfx_fillrect(0, 0, 640, 480, COLOR_CYAN);
 
     void *form = sys_win_create_form("Welcome screen", 100, 100, 370, 240);
+    sys_win_set_icon(form, "C:/ICONS/EXE.ICO");
     for (int i = 0; i < 4; i++) {
         sys_win_add_control(form, &controls[i]);
     }

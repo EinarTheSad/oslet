@@ -81,6 +81,8 @@ install: $(BUILD)/$(TARGET)
 	sudo mkdir -p mnt/FONTS; \
 	sudo cp src/fonts/*.bmf mnt/FONTS/; \
 	sudo cp *.bmp mnt/; \
+	sudo mkdir -p mnt/ICONS; \
+	sudo cp src/icons/*.ico mnt/ICONS/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt; \

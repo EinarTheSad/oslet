@@ -30,6 +30,12 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
     win->is_modal = 0;
     win->dirty = 1;
     win->saved_bg = NULL;
+    win->is_minimized = 0;
+    win->icon_x = 0;
+    win->icon_y = 0;
+    win->icon_bitmap = NULL;
+    win->icon_saved_bg = NULL;
+    win->icon_path[0] = '\0';
     
     int i = 0;
     while (title[i] && i < 63) {
@@ -41,6 +47,11 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
 
 void win_draw(window_t *win) {
     if (!win->is_visible) return;
+
+    if (win->is_minimized) {
+        win_draw_icon(win);
+        return;
+    }
     
     /* Save background BEFORE first draw */
     if (!win->saved_bg) {
@@ -58,6 +69,14 @@ void win_destroy(window_t *win) {
     if (win->saved_bg) {
         kfree(win->saved_bg);
         win->saved_bg = NULL;
+    }
+    if (win->icon_bitmap) {
+        kfree(win->icon_bitmap);
+        win->icon_bitmap = NULL;
+    }
+    if (win->icon_saved_bg) {
+        kfree(win->icon_saved_bg);
+        win->icon_saved_bg = NULL;
     }
 }
 
@@ -419,4 +438,117 @@ void win_restore_background(window_t *win) {
             gfx_putpixel(sx, sy, win->saved_bg[py * w + px]);
         }
     }
+}
+
+int win_is_minimize_button(window_t *win, int mx, int my) {
+    int btn_x = win->x + win->w - 18;
+    int btn_y = win->y + 4;
+    
+    if (mx >= btn_x && mx < btn_x + 14 &&
+        my >= btn_y && my < btn_y + 14) {
+        return 1;
+    }
+    return 0;
+}
+
+void win_minimize(window_t *win, int icon_x, int icon_y) {
+    if (win->is_minimized) return;
+    
+    win_restore_background(win);
+    
+    win->is_minimized = 1;
+    
+    if (win->icon_x == 0 && win->icon_y == 0) {
+        win->icon_x = icon_x;
+        win->icon_y = icon_y;
+    }
+    
+    if (win->icon_path[0] && !win->icon_bitmap) {
+        extern uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
+        int w, h;
+        win->icon_bitmap = gfx_load_bmp_to_buffer(win->icon_path, &w, &h);
+    }
+}
+
+void win_restore(window_t *win) {
+    if (!win->is_minimized) return;
+    
+    /* Restore saved background */
+    if (win->icon_saved_bg) {
+        extern void gfx_putpixel(int x, int y, uint8_t color);
+        for (int y = 0; y < 32; y++) {
+            for (int x = 0; x < 32; x++) {
+                gfx_putpixel(win->icon_x + x, win->icon_y + y, win->icon_saved_bg[y * 32 + x]);
+            }
+        }
+        kfree(win->icon_saved_bg);
+        win->icon_saved_bg = NULL;
+    }
+    
+    win->is_minimized = 0;
+    win->dirty = 1;
+    
+    win_save_background(win);
+}
+
+void win_draw_icon(window_t *win) {
+    if (!win->is_minimized) return;
+    
+    /* Save background before drawing icon (only once) */
+    if (!win->icon_saved_bg) {
+        win->icon_saved_bg = kmalloc(32 * 32);
+        if (win->icon_saved_bg) {
+            extern uint8_t gfx_getpixel(int x, int y);
+            for (int y = 0; y < 32; y++) {
+                for (int x = 0; x < 32; x++) {
+                    win->icon_saved_bg[y * 32 + x] = gfx_getpixel(win->icon_x + x, win->icon_y + y);
+                }
+            }
+        }
+    }
+    
+    if (win->icon_bitmap) {
+        extern void gfx_putpixel(int x, int y, uint8_t color);
+        
+        for (int y = 0; y < 32; y++) {
+            int src_offset = y * ((32 + 1) / 2);
+            
+            for (int x = 0; x < 32; x++) {
+                int byte_idx = x / 2;
+                uint8_t color = (x & 1) 
+                    ? (win->icon_bitmap[src_offset + byte_idx] & 0x0F)
+                    : (win->icon_bitmap[src_offset + byte_idx] >> 4);
+                
+                if (color != 5) {
+                    gfx_putpixel(win->icon_x + x, win->icon_y + y, color);
+                }
+            }
+        }
+    } else {
+        gfx_fillrect(win->icon_x, win->icon_y, 32, 32, 7);
+        gfx_rect(win->icon_x, win->icon_y, 32, 32, 8);
+        
+        if (font_b.data && win->title[0]) {
+            char icon_label[3];
+            icon_label[0] = win->title[0];
+            icon_label[1] = win->title[1] ? win->title[1] : '\0';
+            icon_label[2] = '\0';
+            
+            int tw = bmf_measure_text(&font_b, 12, icon_label);
+            int tx = win->icon_x + (32 - tw) / 2;
+            int ty = win->icon_y + 10;
+            
+            bmf_printf(tx, ty, &font_b, 12, 0, "%s", icon_label);
+        }
+    }
+}
+
+int win_is_icon_clicked(window_t *win, int mx, int my) {
+    if (!win->is_minimized) return 0;
+    
+    if (mx >= win->icon_x && mx < win->icon_x + 32 &&
+        my >= win->icon_y && my < win->icon_y + 32) {
+        return 1;
+    }
+    return 0;
 }
