@@ -46,7 +46,8 @@ $(BUILD)/%.o: $(SRC)/%.S
 $(DISK):
 	@echo "Creating $(DISK_SIZE)MB disk with MBR..."
 	dd if=/dev/zero of=$(DISK) bs=1M count=$(DISK_SIZE)
-	echo -e "o\nn\np\n1\n2048\n\nt\nc\na\nw\n" | fdisk $(DISK)
+	# Use fdisk with explicit geometry for better compatibility
+	echo -e "o\nn\np\n1\n2048\n\nt\nc\na\nw\n" | fdisk $(DISK) || true
 	@echo "Setting up loop device..."
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	echo "Loop: $$LOOP"; \

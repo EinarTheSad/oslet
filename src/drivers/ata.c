@@ -69,52 +69,80 @@ static inline void ata_400ns_delay(void) {
 }
 
 void ata_init(void) {
-    // Soft reset
-    outb(ATA_PRIMARY_CONTROL, 0x04);
+    // Disable interrupts (bit 1 = nIEN)
+    outb(ATA_PRIMARY_CONTROL, 0x02);
+    ata_400ns_delay();
+
+    // Always do soft reset for compatibility - some controllers need it
+    outb(ATA_PRIMARY_CONTROL, 0x06); // nIEN + SRST
     for (volatile int i = 0; i < 100000; i++); // ~10ms
-    outb(ATA_PRIMARY_CONTROL, 0x00);
-    for (volatile int i = 0; i < 400000; i++); // ~40ms
-    
+    outb(ATA_PRIMARY_CONTROL, 0x02); // Clear SRST, keep nIEN
+
+    // Wait for reset to complete - longer wait for real hardware
+    for (volatile int i = 0; i < 4000000; i++); // ~400ms
+
+    // Select master drive
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
-    for (volatile int i = 0; i < 10000; i++);
+    ata_400ns_delay();
+
+    // Wait for drive to be ready
+    for (volatile int i = 0; i < 100000; i++);
 }
 
 int ata_identify(void) {
+    // Select master drive
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
+    ata_400ns_delay();
+
+    // Give drive time to respond to selection
+    for (volatile int i = 0; i < 10000; i++);
+
+    // Wait for BSY to clear and DRDY to set before sending command
+    if (ata_wait_bsy_timeout(5000) != 0) {
+        // Timeout waiting for drive to be ready
+        return -1;
+    }
+
+    // Set up registers
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, 0);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, 0);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, 0);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, 0);
-    ata_400ns_delay();
-    
+
+    // Send IDENTIFY command
     outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
     ata_400ns_delay();
-    
+
+    // Check if drive exists
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
-    if (status == 0) {
-        return -1;
+    if (status == 0 || status == 0xFF) {
+        return -1; // No drive
     }
-    
+
+    // Wait for BSY to clear
     if (ata_wait_bsy_timeout(30000) != 0) {
         return -1;
     }
-    
+
+    // Check LBA mid/hi to detect non-ATA devices (ATAPI, SATA, etc.)
     uint8_t lbamid = inb(ATA_PRIMARY_IO + ATA_REG_LBA_MID);
     uint8_t lbahi = inb(ATA_PRIMARY_IO + ATA_REG_LBA_HI);
-    
+
     if (lbamid != 0 || lbahi != 0) {
-        return -1;
+        return -1; // Not an ATA device
     }
-    
+
+    // Wait for DRQ or ERR
     if (ata_wait_drq_timeout(30000) != 0) {
         return -1;
     }
-    
+
+    // Read identification data
     uint16_t identify[256];
     for (int i = 0; i < 256; i++) {
         identify[i] = inw(ATA_PRIMARY_IO + ATA_REG_DATA);
     }
-    
+
     return 0;
 }
 
@@ -123,19 +151,34 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
     if (!buffer || sector_count == 0) {
         return -1;
     }
-    
+
+    // Basic sanity check - reject obviously invalid LBAs
+    if (lba > 0x0FFFFFFF) {
+        return -1;
+    }
+
     if (ata_wait_bsy_timeout(5000) != 0) {
         return -1;
     }
-    
+
+    // Select drive and wait for it to be ready
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));
     ata_400ns_delay();
+
+    // Wait for drive selection to take effect
+    for (volatile int i = 0; i < 1000; i++);
+
+    // Wait for BSY to clear after drive selection
+    if (ata_wait_bsy_timeout(5000) != 0) {
+        return -1;
+    }
+
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sector_count);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, (uint8_t)lba);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (uint8_t)(lba >> 8));
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_HI, (uint8_t)(lba >> 16));
     outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, ATA_CMD_READ_PIO);
-    
+
     uint16_t *buf = (uint16_t*)buffer;
     
     for (int s = 0; s < sector_count; s++) {
@@ -160,13 +203,23 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
 
 int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     if (!buffer || sector_count == 0) return -1;
-    
+
     if (ata_wait_bsy_timeout(5000) != 0) {
         return -1;
     }
-    
+
+    // Select drive and wait for it to be ready
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));
     ata_400ns_delay();
+
+    // Wait for drive selection to take effect
+    for (volatile int i = 0; i < 1000; i++);
+
+    // Wait for BSY to clear after drive selection
+    if (ata_wait_bsy_timeout(5000) != 0) {
+        return -1;
+    }
+
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sector_count);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_LO, (uint8_t)lba);
     outb(ATA_PRIMARY_IO + ATA_REG_LBA_MID, (uint8_t)(lba >> 8));
@@ -206,21 +259,30 @@ int ata_is_available(void) {
 }
 
 int ata_is_present(void) {
+    // Select master drive
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
-    for (volatile int i = 0; i < 1000; i++);
-    
+    ata_400ns_delay();
+
+    // Wait longer for drive to respond
+    for (volatile int i = 0; i < 10000; i++);
+
+    // Check status register
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
-    
+
     if (status == 0xFF || status == 0x00) {
-        return 0;
+        return 0; // No drive present
     }
-    
+
+    // Check signature registers
     uint8_t lbamid = inb(ATA_PRIMARY_IO + ATA_REG_LBA_MID);
     uint8_t lbahi = inb(ATA_PRIMARY_IO + ATA_REG_LBA_HI);
-    
+
     if (lbamid == 0x14 && lbahi == 0xEB) {
         return 0; // ATAPI (CD-ROM)
     }
-    
+    if (lbamid == 0x3C && lbahi == 0xC3) {
+        return 0; // SATA
+    }
+
     return 1;
 }

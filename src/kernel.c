@@ -143,6 +143,9 @@ static void boot_sequence(void) {
     printf(" ] Multitasking\n");
     
     if (ata_identify() == 0) {
+        // Give drive time to settle after IDENTIFY
+        for (volatile int i = 0; i < 100000; i++);
+
         vga_set_color(0, 8);
         printf("[ .. ] Attempting to auto-mount drive C...\n");
         vga_set_color(0, 7);
