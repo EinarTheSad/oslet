@@ -183,6 +183,7 @@ typedef struct {
 
 void syscall_init(void);
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx);
+void fd_cleanup_task(uint32_t tid);
 
 /* Inline syscall wrappers */
 static inline void sys_write(const char *str) {

@@ -224,7 +224,7 @@ static void draw_edit_area(void) {
 static void draw_status(void) {
     /* Status bar at bottom - inside border area */
     char status[SCREEN_WIDTH];
-    snprintf(status, sizeof(status), " %c | Line:%d Column:%d |",
+    snprintf(status, sizeof(status), " %c  Line:%d Column:%d  ",
              ed.dirty ? '*' : ' ', ed.cursor_y + 1, ed.cursor_x + 1);
     
     /* Pad to width */
