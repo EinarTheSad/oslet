@@ -155,11 +155,14 @@ void task_sleep(uint32_t milliseconds) {
     }
 }
 
-void wakeup_sleeping_tasks(void) {
+/* Internal version - assumes interrupts already disabled */
+static void wakeup_sleeping_tasks_locked(void) {
+    if (!task_list) return;
+
     uint32_t current_ticks = timer_get_ticks();
     task_t *t = task_list;
     int woken = 0;
-    
+
     do {
         if (t->state == TASK_SLEEPING) {
             if (current_ticks >= t->sleep_until_ticks) {
@@ -169,6 +172,13 @@ void wakeup_sleeping_tasks(void) {
         }
         t = t->next;
     } while (t != task_list);
+}
+
+/* Public version - manages interrupt protection */
+void wakeup_sleeping_tasks(void) {
+    __asm__ volatile ("cli");
+    wakeup_sleeping_tasks_locked();
+    __asm__ volatile ("sti");
 }
 
 static void cleanup_terminated_tasks(void) {
@@ -248,8 +258,8 @@ void schedule(void) {
     if (!tasking_enabled || !current_task) return;
 
     __asm__ volatile ("cli");
-    
-    wakeup_sleeping_tasks();
+
+    wakeup_sleeping_tasks_locked();
     cleanup_terminated_tasks();
 
     task_t *next = pick_next_task();
@@ -318,15 +328,26 @@ task_t *task_get_current(void) {
 }
 
 task_t *task_find_by_tid(uint32_t tid) {
-    if (!task_list) return NULL;
-    
+    __asm__ volatile ("cli");
+
+    if (!task_list) {
+        __asm__ volatile ("sti");
+        return NULL;
+    }
+
     task_t *t = task_list;
+    task_t *result = NULL;
+
     do {
-        if (t->tid == tid) return t;
+        if (t->tid == tid) {
+            result = t;
+            break;
+        }
         t = t->next;
     } while (t != task_list);
-    
-    return NULL;
+
+    __asm__ volatile ("sti");
+    return result;
 }
 
 int task_spawn_and_wait(const char *path) {

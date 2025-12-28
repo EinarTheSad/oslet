@@ -42,7 +42,7 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
         win->title[i] = title[i];
         i++;
     }
-    win->title[i] = '\0';
+    win->title[63] = '\0';
 }
 
 void win_draw(window_t *win) {

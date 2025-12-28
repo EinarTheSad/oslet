@@ -16,6 +16,7 @@
 #include "win/window.h"
 
 #define MAX_OPEN_FILES 32
+#define MAX_CONTROLS_PER_FORM 64
 typedef struct {
     fat32_file_t *file;
     int in_use;
@@ -806,12 +807,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Allocate or expand controls array */
             if (!form->controls) {
-                form->controls = (gui_control_t*)kmalloc(sizeof(gui_control_t) * 16);
+                form->controls = (gui_control_t*)kmalloc(sizeof(gui_control_t) * MAX_CONTROLS_PER_FORM);
                 if (!form->controls) return 0;
             }
 
             /* Add control (simple append for now) */
-            if (form->ctrl_count < 16) {
+            if (form->ctrl_count < MAX_CONTROLS_PER_FORM) {
                 /* Copy the control data */
                 gui_control_t *dest = &form->controls[form->ctrl_count];
                 dest->type = ctrl->type;
@@ -886,16 +887,22 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
         case 0x0B: { /* SYS_WIN_SET_ICON */
             gui_form_t *form = (gui_form_t*)ebx;
             const char *icon_path = (const char*)ecx;
-            
+
             if (!form || !icon_path) return 0;
-            
+
+            /* Free old icon bitmap if path is changing */
+            if (form->win.icon_bitmap) {
+                kfree(form->win.icon_bitmap);
+                form->win.icon_bitmap = NULL;
+            }
+
             int i = 0;
             while (icon_path[i] && i < 63) {
                 form->win.icon_path[i] = icon_path[i];
                 i++;
             }
-            form->win.icon_path[i] = '\0';
-            
+            form->win.icon_path[63] = '\0';
+
             return 0;
         }
 
