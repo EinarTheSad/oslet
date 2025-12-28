@@ -192,12 +192,16 @@ static void cleanup_terminated_tasks(void) {
             task_t *to_free = curr;
             prev->next = curr->next;
             curr = curr->next;
-            
+
+            /* Clean up file descriptors owned by this task */
+            extern void fd_cleanup_task(uint32_t tid);
+            fd_cleanup_task(to_free->tid);
+
             /* Clean up exec resources if this was a spawned process */
             if (to_free->exec_slot >= 0) {
                 exec_cleanup_process(to_free->exec_base, to_free->exec_end, to_free->exec_slot);
             }
-            
+
             if (to_free->stack) kfree(to_free->stack);
             kfree(to_free);
         } else {

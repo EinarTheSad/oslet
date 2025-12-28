@@ -17,9 +17,11 @@
 
 #define MAX_OPEN_FILES 32
 #define MAX_CONTROLS_PER_FORM 64
+
 typedef struct {
     fat32_file_t *file;
     int in_use;
+    uint32_t owner_tid;  /* Task ID that owns this file descriptor */
 } file_descriptor_t;
 
 static file_descriptor_t fd_table[MAX_OPEN_FILES];
@@ -28,14 +30,19 @@ static void fd_init(void) {
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         fd_table[i].file = NULL;
         fd_table[i].in_use = 0;
+        fd_table[i].owner_tid = 0;
     }
 }
 
 static int fd_alloc(fat32_file_t *file) {
+    task_t *current = task_get_current();
+    uint32_t tid = current ? current->tid : 0;
+
     for (int i = 3; i < MAX_OPEN_FILES; i++) {
         if (!fd_table[i].in_use) {
             fd_table[i].file = file;
             fd_table[i].in_use = 1;
+            fd_table[i].owner_tid = tid;
             return i;
         }
     }
@@ -45,13 +52,42 @@ static int fd_alloc(fat32_file_t *file) {
 static fat32_file_t* fd_get(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return NULL;
     if (!fd_table[fd].in_use) return NULL;
+
+    /* Check ownership - only the owning task can access this fd */
+    task_t *current = task_get_current();
+    if (current && fd_table[fd].owner_tid != current->tid) {
+        return NULL;  /* Access denied - wrong task */
+    }
+
     return fd_table[fd].file;
 }
 
 static void fd_free(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return;
+
+    /* Check ownership before freeing */
+    task_t *current = task_get_current();
+    if (current && fd_table[fd].owner_tid != 0 && fd_table[fd].owner_tid != current->tid) {
+        return;  /* Access denied - can't close another task's fd */
+    }
+
     fd_table[fd].in_use = 0;
     fd_table[fd].file = NULL;
+    fd_table[fd].owner_tid = 0;
+}
+
+/* Cleanup all file descriptors owned by a task (called on task exit) */
+void fd_cleanup_task(uint32_t tid) {
+    for (int i = 0; i < MAX_OPEN_FILES; i++) {
+        if (fd_table[i].in_use && fd_table[i].owner_tid == tid) {
+            if (fd_table[i].file) {
+                fat32_close(fd_table[i].file);
+            }
+            fd_table[i].in_use = 0;
+            fd_table[i].file = NULL;
+            fd_table[i].owner_tid = 0;
+        }
+    }
 }
 
 static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
@@ -558,10 +594,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 gfx_swap_buffers();
             }
 
-            /* Create msgbox */
-            static msgbox_t box;
-            win_msgbox_create(&box, msg, btn, title);
-            win_msgbox_draw(&box);
+            /* Create msgbox (allocate dynamically to support multiple concurrent msgboxes) */
+            msgbox_t *box = (msgbox_t*)kmalloc(sizeof(msgbox_t));
+            if (!box) return -1;
+
+            win_msgbox_create(box, msg, btn, title);
+            win_msgbox_draw(box);
 
             /* Get initial mouse position and draw cursor */
             int mx = mouse_get_x();
@@ -588,7 +626,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 /* Handle dragging */
                 if (button_pressed) {
-                    if (win_is_titlebar(&box.base, mx, my)) {
+                    if (win_is_titlebar(&box->base, mx, my)) {
                         dragging = 1;
                         drag_start_x = mx;
                         drag_start_y = my;
@@ -597,11 +635,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 if (button_released) {
                     /* Check if button was clicked */
-                    if (!dragging && win_msgbox_handle_click(&box, mx, my)) {
+                    if (!dragging && win_msgbox_handle_click(box, mx, my)) {
                         /* Button clicked - restore cursor and window background */
                         mouse_restore();
-                        win_restore_background(&box.base);
+                        win_restore_background(&box->base);
                         gfx_swap_buffers();
+                        kfree(box);
                         return 1;
                     }
                     dragging = 0;
@@ -613,12 +652,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     int dy = my - drag_start_y;
 
                     if (dx != 0 || dy != 0) {
-                        win_move(&box.base, dx, dy);
+                        win_move(&box->base, dx, dy);
                         drag_start_x = mx;
                         drag_start_y = my;
 
                         /* Redraw window and cursor (save new position during drag) */
-                        win_msgbox_draw(&box);
+                        win_msgbox_draw(box);
                         mouse_save(mx, my);
                         mouse_draw_cursor(mx, my);
                         gfx_swap_buffers();

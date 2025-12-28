@@ -38,7 +38,7 @@ typedef struct {
 #define ELF32_R_TYPE(i) ((i) & 0xFF)
 
 /* Process slots */
-#define MAX_PROCESS_SLOTS 8
+#define MAX_PROCESS_SLOTS 16
 #define SLOT_SIZE         0x00400000  /* 4MB per slot */
 #define SLOT_BASE         0x08000000
 
