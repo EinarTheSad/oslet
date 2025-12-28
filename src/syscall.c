@@ -725,6 +725,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->last_mouse_buttons = mb;
 
             int event_count = 0;
+            int needs_redraw = 0;  /* Track if visual state changed */
 
             /* Handle mouse button press */
             if (button_pressed) {
@@ -775,6 +776,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 if (mx >= abs_x && mx < abs_x + ctrl->w &&
                                     my >= abs_y && my < abs_y + ctrl->h) {
                                     form->press_control_id = ctrl->id;
+
+                                    /* Set pressed state for buttons */
+                                    if (ctrl->type == CTRL_BUTTON) {
+                                        ctrl->pressed = 1;
+                                        needs_redraw = 1;  /* Button visual changed */
+                                    }
                                     break;
                                 }
                             }
@@ -796,6 +803,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         gui_control_t *ctrl = &form->controls[i];
 
                         if (ctrl->id == form->press_control_id) {
+                            /* Clear pressed state for buttons */
+                            if (ctrl->type == CTRL_BUTTON) {
+                                ctrl->pressed = 0;
+                                needs_redraw = 1;  /* Button visual changed */
+                            }
+
                             /* Calculate absolute control position */
                             int abs_x = form->win.x + ctrl->x;
                             int abs_y = form->win.y + ctrl->y + 20;
@@ -808,6 +821,15 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 event_count = 1;
                             }
                             break;
+                        }
+                    }
+                }
+
+                /* Clear all pressed states on any button that might still be pressed */
+                if (form->controls) {
+                    for (int i = 0; i < form->ctrl_count; i++) {
+                        if (form->controls[i].type == CTRL_BUTTON) {
+                            form->controls[i].pressed = 0;
                         }
                     }
                 }
@@ -833,6 +855,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Return clicked control ID directly (0 if none clicked) */
             if (event_count > 0) {
                 return form->clicked_id;
+            }
+
+            /* Return -1 if visual state changed and needs redraw */
+            if (needs_redraw) {
+                return (uint32_t)-1;
             }
 
             return 0;
