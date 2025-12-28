@@ -360,20 +360,28 @@ int win_is_titlebar(window_t *win, int mx, int my) {
 }
 
 void win_move(window_t *win, int dx, int dy) {
+    /* Restore cursor before any window operations to prevent artifacts */
+    extern void mouse_restore(void);
+    extern int buffer_valid;
+    if (buffer_valid) {
+        mouse_restore();
+        buffer_valid = 0;  /* Invalidate so desktop will redraw cursor */
+    }
+
     /* Restore old background */
     win_restore_background(win);
-    
+
     /* Update position */
     win->x += dx;
     win->y += dy;
-    
+
     /* Keep window on screen */
     if (win->x < 0) win->x = 0;
     if (win->y < 0) win->y = 0;
     if (win->x + win->w > 640) win->x = 640 - win->w;
     if (win->y + win->h > 480) win->y = 480 - win->h;
-    
-    /* Save new background */
+
+    /* Save new background (cursor already restored above) */
     win_save_background(win);
     win->dirty = 1;
 }
@@ -392,27 +400,27 @@ int win_needs_redraw(window_t *win) {
 
 void win_save_background(window_t *win) {
     if (!win->is_visible) return;
-    
+
     int margin = 10;
     int w = win->w + 2 * margin;
     int h = win->h + 2 * margin;
     int buf_size = w * h;
-    
+
     if (!win->saved_bg) {
         win->saved_bg = kmalloc(buf_size);
         if (!win->saved_bg) return;
     }
-    
+
     extern uint8_t gfx_getpixel(int x, int y);
-    
+
     for (int py = 0; py < h; py++) {
         int sy = win->y + py - margin;
         if (sy < 0 || sy >= GFX_HEIGHT) continue;
-        
+
         for (int px = 0; px < w; px++) {
             int sx = win->x + px - margin;
             if (sx < 0 || sx >= GFX_WIDTH) continue;
-            
+
             win->saved_bg[py * w + px] = gfx_getpixel(sx, sy);
         }
     }
@@ -453,16 +461,20 @@ int win_is_minimize_button(window_t *win, int mx, int my) {
 
 void win_minimize(window_t *win, int icon_x, int icon_y) {
     if (win->is_minimized) return;
-    
+
+    /* Invalidate cursor buffer since window is disappearing */
+    extern int buffer_valid;
+    buffer_valid = 0;
+
     win_restore_background(win);
-    
+
     win->is_minimized = 1;
-    
+
     if (win->icon_x == 0 && win->icon_y == 0) {
         win->icon_x = icon_x;
         win->icon_y = icon_y;
     }
-    
+
     if (win->icon_path[0] && !win->icon_bitmap) {
         extern uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
         int w, h;
@@ -472,7 +484,11 @@ void win_minimize(window_t *win, int icon_x, int icon_y) {
 
 void win_restore(window_t *win) {
     if (!win->is_minimized) return;
-    
+
+    /* Invalidate cursor buffer since window is appearing */
+    extern int buffer_valid;
+    buffer_valid = 0;
+
     /* Restore saved background */
     if (win->icon_saved_bg) {
         extern void gfx_putpixel(int x, int y, uint8_t color);
@@ -484,10 +500,10 @@ void win_restore(window_t *win) {
         kfree(win->icon_saved_bg);
         win->icon_saved_bg = NULL;
     }
-    
+
     win->is_minimized = 0;
     win->dirty = 1;
-    
+
     win_save_background(win);
 }
 
