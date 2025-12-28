@@ -60,9 +60,11 @@ void timer_wait(uint32_t ticks) {
     
     /* Count other tasks */
     int other_tasks = 0;
+
+    __asm__ volatile ("cli");
     task_t *t = current->next;
     int safety = 0;
-    
+
     while (t != current && safety < 100) {
         if (t && (t->state == TASK_READY || t->state == TASK_RUNNING)) {
             other_tasks++;
@@ -70,6 +72,7 @@ void timer_wait(uint32_t ticks) {
         if (t) t = t->next;
         safety++;
     }
+    __asm__ volatile ("sti");
     
     if (other_tasks > 0) {
         uint32_t ms = (ticks * 1000) / 100;
