@@ -38,11 +38,8 @@ void _start(void) {
                 break;
             }
         } else if (event < 0) {
-            /* Window was dragged - redraw */
+            /* Window needs redraw (dragged or button state changed) */
             sys_win_draw(form);
-            sys_mouse_draw_cursor(mx, my, 1);
-            sys_gfx_swap();
-            continue;
         }
 
         sys_mouse_draw_cursor(mx, my, 0);

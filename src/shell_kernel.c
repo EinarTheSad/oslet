@@ -20,7 +20,7 @@ void shell_init(void) {
 }
 
 void shell_run(void) {
-    printf("Kernel is loading SHELL.BIN from drive C...\n\n");
+    printf("Kernel is loading SHELL.ELF from drive C...\n\n");
     
     if (task_spawn_and_wait("shell.elf") != 0) {
         vga_set_color(0, 12);
