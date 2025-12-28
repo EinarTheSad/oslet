@@ -1354,19 +1354,21 @@ static int find_fat32_start_lba(uint32_t *out_start_lba) {
     uint8_t *sector = kmalloc(512);
     if (!sector) return -1;
 
-    uint32_t boot_drive = 0x80;
     uint32_t boot_part = 0;
-    
+
     if (boot_device != 0xFFFFFFFF) {
-        boot_drive = (boot_device >> 24) & 0xFF;
+        uint32_t boot_drive = (boot_device >> 24) & 0xFF;
         boot_part = (boot_device >> 16) & 0xFF;
-    }
-    
-    if (boot_drive != 0x80) {
-        kfree(sector);
-        return -1;
+
+        // Accept any BIOS hard drive (0x80-0xFF)
+        // We only support primary ATA anyway, so just verify it's a hard drive
+        if (boot_drive < 0x80) {
+            kfree(sector);
+            return -1;
+        }
     }
 
+    // Try reading the MBR/boot sector
     if (ata_read_sectors(0, 1, sector) != 0) {
         kfree(sector);
         return -1;
