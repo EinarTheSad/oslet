@@ -18,6 +18,12 @@
 #define MAX_OPEN_FILES 32
 #define MAX_CONTROLS_PER_FORM 64
 
+/* Icon manager state */
+static int next_icon_x = 10;
+static uint32_t last_icon_click_time = 0;
+static int last_icon_click_x = 0;
+static int last_icon_click_y = 0;
+
 typedef struct {
     fat32_file_t *file;
     int in_use;
@@ -579,6 +585,69 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
     }
 }
 
+/* Helper functions for SYS_WIN_PUMP_EVENTS */
+static int pump_handle_icon_doubleclick(gui_form_t *form, int mx, int my) {
+    uint32_t current_time = timer_get_ticks();
+    
+    if (win_is_icon_clicked(&form->win, mx, my)) {
+        if ((current_time - last_icon_click_time) < 30 &&
+            last_icon_click_x == mx && last_icon_click_y == my) {
+            win_restore(&form->win);
+            return 1;  /* Window restored */
+        }
+        last_icon_click_time = current_time;
+        last_icon_click_x = mx;
+        last_icon_click_y = my;
+    }
+    return 0;
+}
+
+static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
+    if (win_is_minimize_button(&form->win, mx, my)) {
+        win_minimize(&form->win, next_icon_x, 480 - 42);
+        next_icon_x += 40;
+        if (next_icon_x > 600) next_icon_x = 10;
+        return 1;  /* Window minimized */
+    }
+    return 0;
+}
+
+static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
+    if (win_is_titlebar(&form->win, mx, my)) {
+        form->dragging = 1;
+        form->drag_start_x = mx;
+        form->drag_start_y = my;
+        form->press_control_id = -1;
+        return 1;  /* Dragging started */
+    }
+    return 0;
+}
+
+static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
+    form->press_control_id = -1;
+
+    if (form->controls) {
+        for (int i = 0; i < form->ctrl_count; i++) {
+            gui_control_t *ctrl = &form->controls[i];
+
+            int abs_x = form->win.x + ctrl->x;
+            int abs_y = form->win.y + ctrl->y + 20;
+
+            if (mx >= abs_x && mx < abs_x + ctrl->w &&
+                my >= abs_y && my < abs_y + ctrl->h) {
+                form->press_control_id = ctrl->id;
+
+                if (ctrl->type == CTRL_BUTTON) {
+                    ctrl->pressed = 1;
+                    return 1;  /* needs_redraw */
+                }
+                break;
+            }
+        }
+    }
+    return 0;
+}
+
 static uint32_t handle_window(uint32_t al, uint32_t ebx, 
                                uint32_t ecx, uint32_t edx) {
     switch (al) {
@@ -697,7 +766,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->dragging = 0;
             form->drag_start_x = 0;
             form->drag_start_y = 0;
-            form->icon_path[0] = '\0';
 
             win_draw(&form->win);
             
@@ -731,60 +799,21 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (button_pressed) {
                 if (form->win.is_minimized) {
                     /* Check for double-click on icon */
-                    static uint32_t last_icon_click_time = 0;
-                    static int last_icon_click_x = 0, last_icon_click_y = 0;
-                    uint32_t current_time = timer_get_ticks();
-                    
-                    if (win_is_icon_clicked(&form->win, mx, my)) {
-                        if ((current_time - last_icon_click_time) < 30 &&
-                            last_icon_click_x == mx && last_icon_click_y == my) {
-                            win_restore(&form->win);
-                            return -1;
-                        }
-                        last_icon_click_time = current_time;
-                        last_icon_click_x = mx;
-                        last_icon_click_y = my;
+                    if (pump_handle_icon_doubleclick(form, mx, my)) {
+                        return -1;
                     }
                 } else {
                     /* Check minimize button */
-                    if (win_is_minimize_button(&form->win, mx, my)) {
-                        static int next_icon_x = 10;
-                        win_minimize(&form->win, next_icon_x, 480 - 42);
-                        next_icon_x += 40;
-                        if (next_icon_x > 600) next_icon_x = 10;
+                    if (pump_handle_minimize(form, mx, my)) {
                         return -1;
                     }
                     /* Check if titlebar was clicked */
-                    else if (win_is_titlebar(&form->win, mx, my)) {
-                        form->dragging = 1;
-                        form->drag_start_x = mx;
-                        form->drag_start_y = my;
-                        form->press_control_id = -1;
+                    else if (pump_handle_titlebar_click(form, mx, my)) {
+                        /* Dragging started, continue */
                     } else {
                         /* Find which control (if any) was pressed */
-                        form->press_control_id = -1;
-
-                        if (form->controls) {
-                            for (int i = 0; i < form->ctrl_count; i++) {
-                                gui_control_t *ctrl = &form->controls[i];
-
-                                /* Calculate absolute control position */
-                                int abs_x = form->win.x + ctrl->x;
-                                int abs_y = form->win.y + ctrl->y + 20;
-
-                                /* Check if mouse is within control bounds */
-                                if (mx >= abs_x && mx < abs_x + ctrl->w &&
-                                    my >= abs_y && my < abs_y + ctrl->h) {
-                                    form->press_control_id = ctrl->id;
-
-                                    /* Set pressed state for buttons */
-                                    if (ctrl->type == CTRL_BUTTON) {
-                                        ctrl->pressed = 1;
-                                        needs_redraw = 1;  /* Button visual changed */
-                                    }
-                                    break;
-                                }
-                            }
+                        if (pump_handle_control_press(form, mx, my)) {
+                            needs_redraw = 1;
                         }
                     }
                 }

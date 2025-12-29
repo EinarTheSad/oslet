@@ -125,74 +125,47 @@ void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *labe
     }
 }
 
-void win_draw_control(window_t *win, void *ctrl) {
-    gui_control_t *control = (gui_control_t*)ctrl;
-
-    int abs_x = win->x + control->x;
-    int abs_y = win->y + control->y + 20;
-
-    if (control->type == 1) { /* CTRL_BUTTON */
-        if (control->pressed) {
-            win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 1);
-        } else {
-            win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 0);
-        }
+static void draw_button_control(gui_control_t *control, int abs_x, int abs_y) {
+    if (control->pressed) {
+        win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 1);
+    } else {
+        win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 0);
     }
-    else if (control->type == 2) { /* CTRL_LABEL */
-        bmf_font_t *font = &font_n;
-        
-        if (control->font_type == 1) font = &font_b;
-        else if (control->font_type == 2) font = &font_i;
-        else if (control->font_type == 3) font = &font_bi;
-        
-        int size = control->font_size > 0 ? control->font_size : 12;
-        
-        if (font->data) {
-            /* Get actual font height from sequence */
-            extern int bmf_find_sequence_for_size(bmf_font_t *font, uint8_t point_size);
-            int seq_idx = -1;
-            for (int i = 0; i < font->size_count; i++) {
-                if (font->sequences[i].point_size == size) {
-                    seq_idx = i;
-                    break;
-                }
+}
+
+static void draw_label_control(gui_control_t *control, int abs_x, int abs_y) {
+    bmf_font_t *font = &font_n;
+    
+    if (control->font_type == 1) font = &font_b;
+    else if (control->font_type == 2) font = &font_i;
+    else if (control->font_type == 3) font = &font_bi;
+    
+    int size = control->font_size > 0 ? control->font_size : 12;
+    
+    if (font->data) {
+        /* Get actual font height from sequence */
+        extern int bmf_find_sequence_for_size(bmf_font_t *font, uint8_t point_size);
+        int seq_idx = -1;
+        for (int i = 0; i < font->size_count; i++) {
+            if (font->sequences[i].point_size == size) {
+                seq_idx = i;
+                break;
             }
-            
-            int font_height = seq_idx >= 0 ? font->sequences[seq_idx].height : size;
-            
-            /* Calculate text dimensions */
-            int max_line_width = 0;
-            int line_count = 1;
-            int current_line_width = 0;
-            
-            const char *p = control->text;
-            const char *line_start = p;
-            
-            while (*p) {
-                if (*p == '\\' && *(p+1) == 'n') {
-                    /* Measure current line */
-                    int len = p - line_start;
-                    char temp[256];
-                    if (len > 0 && len < 256) {
-                        int i;
-                        for (i = 0; i < len; i++) temp[i] = line_start[i];
-                        temp[i] = '\0';
-                        current_line_width = bmf_measure_text(font, size, temp);
-                        if (current_line_width > max_line_width) {
-                            max_line_width = current_line_width;
-                        }
-                    }
-                    line_count++;
-                    p += 2;
-                    line_start = p;
-                    current_line_width = 0;
-                } else {
-                    p++;
-                }
-            }
-            
-            /* Measure last line */
-            if (line_start < p) {
+        }
+        
+        int font_height = seq_idx >= 0 ? font->sequences[seq_idx].height : size;
+        
+        /* Calculate text dimensions */
+        int max_line_width = 0;
+        int line_count = 1;
+        int current_line_width = 0;
+        
+        const char *p = control->text;
+        const char *line_start = p;
+        
+        while (*p) {
+            if (*p == '\\' && *(p+1) == 'n') {
+                /* Measure current line */
                 int len = p - line_start;
                 char temp[256];
                 if (len > 0 && len < 256) {
@@ -204,62 +177,101 @@ void win_draw_control(window_t *win, void *ctrl) {
                         max_line_width = current_line_width;
                     }
                 }
+                line_count++;
+                p += 2;
+                line_start = p;
+                current_line_width = 0;
+            } else {
+                p++;
             }
-            
-            /* Calculate height: first_line_height + (other_lines * (font_height + 2)) */
-            int text_h = font_height + ((line_count - 1) * (font_height + 2)) + 4;
-            
-            int label_w = control->w > 0 ? control->w : max_line_width + 4;
-            int label_h = control->h > 0 ? control->h : text_h;
-            
-            /* Draw background */
-            gfx_fillrect(abs_x, abs_y, label_w, label_h, control->bg);
-            
-            /* Draw border if enabled */
-            if (control->border) {
-                gfx_rect(abs_x, abs_y, label_w, label_h, control->border_color);
-            }
-            
-            /* Draw text - convert \n to real newlines */
-            char formatted_text[256];
-            int j = 0;
-            for (int i = 0; control->text[i] && j < 255; i++) {
-                if (control->text[i] == '\\' && control->text[i+1] == 'n') {
-                    formatted_text[j++] = '\n';
-                    i++;
-                } else {
-                    formatted_text[j++] = control->text[i];
+        }
+        
+        /* Measure last line */
+        if (line_start < p) {
+            int len = p - line_start;
+            char temp[256];
+            if (len > 0 && len < 256) {
+                int i;
+                for (i = 0; i < len; i++) temp[i] = line_start[i];
+                temp[i] = '\0';
+                current_line_width = bmf_measure_text(font, size, temp);
+                if (current_line_width > max_line_width) {
+                    max_line_width = current_line_width;
                 }
             }
-            formatted_text[j] = '\0';
-            
-            int text_x = abs_x + 2;
-            int text_y = abs_y + 2;
-            bmf_printf(text_x, text_y, font, size, control->fg, "%s", formatted_text);
+        }
+        
+        /* Calculate height: first_line_height + (other_lines * (font_height + 2)) */
+        int text_h = font_height + ((line_count - 1) * (font_height + 2)) + 4;
+        
+        int label_w = control->w > 0 ? control->w : max_line_width + 4;
+        int label_h = control->h > 0 ? control->h : text_h;
+        
+        /* Draw background */
+        gfx_fillrect(abs_x, abs_y, label_w, label_h, control->bg);
+        
+        /* Draw border if enabled */
+        if (control->border) {
+            gfx_rect(abs_x, abs_y, label_w, label_h, control->border_color);
+        }
+        
+        /* Draw text - convert \n to real newlines */
+        char formatted_text[256];
+        int j = 0;
+        for (int i = 0; control->text[i] && j < 255; i++) {
+            if (control->text[i] == '\\' && control->text[i+1] == 'n') {
+                formatted_text[j++] = '\n';
+                i++;
+            } else {
+                formatted_text[j++] = control->text[i];
+            }
+        }
+        formatted_text[j] = '\0';
+        
+        int text_x = abs_x + 2;
+        int text_y = abs_y + 2;
+        bmf_printf(text_x, text_y, font, size, control->fg, "%s", formatted_text);
+    }
+}
+
+static void draw_picturebox_control(gui_control_t *control, int abs_x, int abs_y) {
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, 8);
+    gfx_rect(abs_x, abs_y, control->w, control->h, 7);
+
+    if (control->text[0]) {
+        /* Load bitmap to cache if not already loaded */
+        if (!control->cached_bitmap) {
+            extern uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
+            int width, height;
+            control->cached_bitmap = gfx_load_bmp_to_buffer(control->text, &width, &height);
+            if (control->cached_bitmap) {
+                control->bmp_width = width;
+                control->bmp_height = height;
+            }
+        }
+
+        /* Draw from cached bitmap */
+        if (control->cached_bitmap) {
+            extern void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);
+            gfx_draw_cached_bmp(control->cached_bitmap, control->bmp_width, control->bmp_height, abs_x, abs_y);
         }
     }
+}
+
+void win_draw_control(window_t *win, void *ctrl) {
+    gui_control_t *control = (gui_control_t*)ctrl;
+
+    int abs_x = win->x + control->x;
+    int abs_y = win->y + control->y + 20;
+
+    if (control->type == 1) { /* CTRL_BUTTON */
+        draw_button_control(control, abs_x, abs_y);
+    }
+    else if (control->type == 2) { /* CTRL_LABEL */
+        draw_label_control(control, abs_x, abs_y);
+    }
     else if (control->type == 3) { /* CTRL_PICTUREBOX */
-        gfx_fillrect(abs_x, abs_y, control->w, control->h, 8);
-        gfx_rect(abs_x, abs_y, control->w, control->h, 7);
-
-        if (control->text[0]) {
-            /* Load bitmap to cache if not already loaded */
-            if (!control->cached_bitmap) {
-                extern uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
-                int width, height;
-                control->cached_bitmap = gfx_load_bmp_to_buffer(control->text, &width, &height);
-                if (control->cached_bitmap) {
-                    control->bmp_width = width;
-                    control->bmp_height = height;
-                }
-            }
-
-            /* Draw from cached bitmap */
-            if (control->cached_bitmap) {
-                extern void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);
-                gfx_draw_cached_bmp(control->cached_bitmap, control->bmp_width, control->bmp_height, abs_x, abs_y);
-            }
-        }
+        draw_picturebox_control(control, abs_x, abs_y);
     }
 }
 
