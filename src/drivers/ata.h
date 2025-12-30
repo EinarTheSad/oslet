@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include <stddef.h>
 
 #define ATA_SECTOR_SIZE 512
 

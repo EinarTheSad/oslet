@@ -1,8 +1,6 @@
 #include "stdio.h"
 #include "../syscall.h"
 #include "string.h"
-#include <stdarg.h>
-#include <stddef.h>
 #include <stdint.h>
 
 #define PRINTF_BUF_SIZE 1024

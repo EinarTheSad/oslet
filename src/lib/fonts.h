@@ -1,7 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include <stddef.h>
-#include <stdarg.h>
 
 #define USR_BMF_MAGIC "BMF"
 #define USR_BMF_VERSION 1

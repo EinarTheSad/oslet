@@ -1,6 +1,5 @@
 #include "gdt.h"
 #include "console.h"
-#include <stddef.h>
 
 static gdt_entry_t gdt[3];
 static gdt_ptr_t gdt_ptr;

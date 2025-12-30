@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include <stddef.h>
 #include "syscall.h"
 
 #define TASK_STACK_SIZE 65536

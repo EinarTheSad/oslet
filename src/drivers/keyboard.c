@@ -1,5 +1,4 @@
 #include <stdint.h>
-#include <stddef.h>
 #include "../irq/io.h"
 #include "keyboard.h"
 #include "../console.h"
