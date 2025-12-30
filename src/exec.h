@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include <stddef.h>
 
 /* ELF Magic */
 #define ELF_MAGIC 0x464C457F  /* "\x7FELF" little-endian */

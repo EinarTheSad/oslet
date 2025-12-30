@@ -3,6 +3,7 @@
 #include "../drivers/graphics.h"
 #include "../fonts/bmf.h"
 #include "../mem/heap.h"
+#include "../console.h"
 
 #define WIN_BG_COLOR        15
 #define WIN_TITLEBAR_COLOR  1
@@ -36,13 +37,8 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
     win->icon_bitmap = NULL;
     win->icon_saved_bg = NULL;
     win->icon_path[0] = '\0';
-    
-    int i = 0;
-    while (title[i] && i < 63) {
-        win->title[i] = title[i];
-        i++;
-    }
-    win->title[63] = '\0';
+
+    strcpy_s(win->title, title, 64);
 }
 
 void win_draw(window_t *win) {
@@ -308,19 +304,8 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     win_create(&box->base, win_x, win_y, win_w, win_h, title);
     box->base.is_modal = 1;
     
-    int i = 0;
-    while (msg[i] && i < 255) {
-        box->message[i] = msg[i];
-        i++;
-    }
-    box->message[i] = '\0';
-    
-    i = 0;
-    while (btn[i] && i < 31) {
-        box->button_text[i] = btn[i];
-        i++;
-    }
-    box->button_text[i] = '\0';
+    strcpy_s(box->message, msg, 256);
+    strcpy_s(box->button_text, btn, 32);
     
     /* Store button offsets relative to window */
     box->button_x = (win_w - btn_w) / 2;

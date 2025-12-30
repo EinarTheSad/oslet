@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include <stddef.h>
 
 #define GFX_WIDTH       640
 #define GFX_HEIGHT      480

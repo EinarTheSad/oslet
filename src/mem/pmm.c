@@ -2,7 +2,6 @@
 
 #include "pmm.h"
 #include "early_alloc.h"
-#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include "../irq/io.h"

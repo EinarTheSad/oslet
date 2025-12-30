@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include <stddef.h>
 #include <stdarg.h>
 
 #define BMF_MAGIC "BMF"

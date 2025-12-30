@@ -25,21 +25,6 @@ typedef struct {
     int button_w, button_h;
 } msgbox_t;
 
-typedef struct {
-    int x, y;
-    char text[128];
-    uint8_t fg_color;
-    bmf_font_t *font;
-    int font_size;
-} label_t;
-
-typedef struct {
-    int x, y, w, h;
-    char bitmap_path[64];
-    uint8_t *image_data;
-    int loaded;
-} picturebox_t;
-
 /* System initialization */
 void win_init_fonts(void);
 
@@ -72,7 +57,3 @@ int win_msgbox_handle_click(msgbox_t *box, int mx, int my);
 
 /* Control drawing */
 void win_draw_control(window_t *win, void *ctrl);
-void win_draw_label(window_t *win, label_t *label);
-void win_draw_picturebox(window_t *win, picturebox_t *pbox);
-int win_picturebox_load(picturebox_t *pbox, const char *path);
-void win_picturebox_free(picturebox_t *pbox);

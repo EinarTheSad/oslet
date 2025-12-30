@@ -7,7 +7,6 @@
 #include "exec.h"
 #include "mem/pmm.h"
 #include "mem/heap.h"
-#include <stddef.h>
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
 #include "drivers/mouse.h"
@@ -927,13 +926,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->bmp_height = 0;
                 dest->pressed = 0;
 
-                /* Copy text */
-                int i = 0;
-                while (ctrl->text[i] && i < 255) {
-                    dest->text[i] = ctrl->text[i];
-                    i++;
-                }
-                dest->text[i] = '\0';
+                strcpy_s(dest->text, ctrl->text, 256);
 
                 form->ctrl_count++;
             }
@@ -991,12 +984,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 form->win.icon_bitmap = NULL;
             }
 
-            int i = 0;
-            while (icon_path[i] && i < 63) {
-                form->win.icon_path[i] = icon_path[i];
-                i++;
-            }
-            form->win.icon_path[63] = '\0';
+            strcpy_s(form->win.icon_path, icon_path, 64);
 
             return 0;
         }
