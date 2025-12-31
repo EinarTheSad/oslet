@@ -13,9 +13,10 @@
 #include "fonts/bmf.h"
 #include "rtc.h"
 #include "win/window.h"
+#include "win/wm_config.h"
+#include "win/bitmap.h"
 
 #define MAX_OPEN_FILES 32
-#define MAX_CONTROLS_PER_FORM 64
 
 /* Icon manager state */
 static int next_icon_x = 10;
@@ -587,9 +588,9 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
 /* Helper functions for SYS_WIN_PUMP_EVENTS */
 static int pump_handle_icon_doubleclick(gui_form_t *form, int mx, int my) {
     uint32_t current_time = timer_get_ticks();
-    
+
     if (win_is_icon_clicked(&form->win, mx, my)) {
-        if ((current_time - last_icon_click_time) < 30 &&
+        if ((current_time - last_icon_click_time) < WM_DOUBLECLICK_MS &&
             last_icon_click_x == mx && last_icon_click_y == my) {
             win_restore(&form->win);
             return 1;  /* Window restored */
@@ -603,8 +604,8 @@ static int pump_handle_icon_doubleclick(gui_form_t *form, int mx, int my) {
 
 static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
     if (win_is_minimize_button(&form->win, mx, my)) {
-        win_minimize(&form->win, next_icon_x, 480 - 42);
-        next_icon_x += 40;
+        win_minimize(&form->win, next_icon_x, WM_SCREEN_HEIGHT - 42);
+        next_icon_x += (WM_ICON_SIZE + 8);
         if (next_icon_x > 600) next_icon_x = 10;
         return 1;  /* Window minimized */
     }
@@ -901,12 +902,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Allocate or expand controls array */
             if (!form->controls) {
-                form->controls = (gui_control_t*)kmalloc(sizeof(gui_control_t) * MAX_CONTROLS_PER_FORM);
+                form->controls = (gui_control_t*)kmalloc(sizeof(gui_control_t) * WM_MAX_CONTROLS_PER_FORM);
                 if (!form->controls) return 0;
             }
 
             /* Add control (simple append for now) */
-            if (form->ctrl_count < MAX_CONTROLS_PER_FORM) {
+            if (form->ctrl_count < WM_MAX_CONTROLS_PER_FORM) {
                 /* Copy the control data */
                 gui_control_t *dest = &form->controls[form->ctrl_count];
                 dest->type = ctrl->type;
@@ -922,8 +923,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->border = ctrl->border;
                 dest->border_color = ctrl->border_color;
                 dest->cached_bitmap = NULL;
-                dest->bmp_width = 0;
-                dest->bmp_height = 0;
                 dest->pressed = 0;
 
                 strcpy_s(dest->text, ctrl->text, 256);
@@ -956,7 +955,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (form->controls) {
                 for (int i = 0; i < form->ctrl_count; i++) {
                     if (form->controls[i].cached_bitmap) {
-                        kfree(form->controls[i].cached_bitmap);
+                        bitmap_free(form->controls[i].cached_bitmap);
                         form->controls[i].cached_bitmap = NULL;
                     }
                 }

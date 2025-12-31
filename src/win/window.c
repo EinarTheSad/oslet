@@ -1,15 +1,12 @@
 #include "window.h"
+#include "wm_config.h"
+#include "theme.h"
+#include "bitmap.h"
 #include "../syscall.h"
 #include "../drivers/graphics.h"
 #include "../fonts/bmf.h"
 #include "../mem/heap.h"
 #include "../console.h"
-
-#define WIN_BG_COLOR        15
-#define WIN_TITLEBAR_COLOR  1
-#define WIN_FRAME_DARK      8
-#define WIN_FRAME_LIGHT     7
-#define WIN_BUTTON_COLOR    7
 
 bmf_font_t font_b, font_n, font_i, font_bi;
 
@@ -67,7 +64,7 @@ void win_destroy(window_t *win) {
         win->saved_bg = NULL;
     }
     if (win->icon_bitmap) {
-        kfree(win->icon_bitmap);
+        bitmap_free(win->icon_bitmap);
         win->icon_bitmap = NULL;
     }
     if (win->icon_saved_bg) {
@@ -77,36 +74,39 @@ void win_destroy(window_t *win) {
 }
 
 void win_draw_frame(int x, int y, int w, int h) {
-    gfx_fillrect(x, y + 18, w, h - 18, WIN_BG_COLOR);
-    gfx_rect(x, y, w, h, WIN_FRAME_DARK);
-    gfx_rect(x+1, y+1, w-2, h-2, WIN_FRAME_LIGHT);
+    window_theme_t *theme = theme_get_current();
+    gfx_fillrect(x, y + WM_TITLEBAR_HEIGHT, w, h - WM_TITLEBAR_HEIGHT, theme->bg_color);
+    gfx_rect(x, y, w, h, theme->frame_dark);
+    gfx_rect(x+1, y+1, w-2, h-2, theme->frame_light);
 }
 
 void win_draw_titlebar(int x, int y, int w, const char *title) {
-    gfx_fillrect(x, y, w, 18, WIN_TITLEBAR_COLOR);
-       
+    window_theme_t *theme = theme_get_current();
+    gfx_fillrect(x, y, w, WM_TITLEBAR_HEIGHT, theme->titlebar_color);
+
     if (font_b.data) {
         bmf_printf(x+5, y+4, &font_b, 12, 15, "%s", title);
     }
-    
+
     int btn_x = x + w - 16;
     int btn_y = y + 2;
-    
-    gfx_fillrect(btn_x, btn_y, 14, 14, 7);
-    gfx_rect(btn_x-1, btn_y-1, 16, 16, 8);
-    gfx_rect(btn_x+3, btn_y+7, 10, 2, 8);
+
+    gfx_fillrect(btn_x, btn_y, 14, 14, theme->button_color);
+    gfx_rect(btn_x-1, btn_y-1, 16, 16, theme->frame_dark);
+    gfx_rect(btn_x+3, btn_y+7, 10, 2, theme->frame_dark);
     gfx_fillrect(btn_x+2, btn_y+6, 10, 2, 15);
 }
 
 void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label, int pressed) {
+    window_theme_t *theme = theme_get_current();
     int shad_a, shad_b;
-    gfx_rect(x, y, w, h, 0);
+    gfx_rect(x, y, w, h, theme->text_color);
     gfx_fillrect(x+2, y+2, w-3, h-3, color);
     if (pressed == 1) {
         shad_a = 15;
-        shad_b = 8;
+        shad_b = theme->frame_dark;
     } else {
-        shad_a = 8;
+        shad_a = theme->frame_dark;
         shad_b = 15;
     }
     gfx_rect(x+1, y+1, w-2, h-2, shad_a);
@@ -117,7 +117,7 @@ void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *labe
         int text_w = bmf_measure_text(&font_b, 12, label);
         int text_x = x + (w - text_w) / 2;
         int text_y = y + (h / 2) - 4;
-        bmf_printf(text_x, text_y, &font_b, 12, 0, "%s", label);
+        bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
     }
 }
 
@@ -231,25 +231,19 @@ static void draw_label_control(gui_control_t *control, int abs_x, int abs_y) {
 }
 
 static void draw_picturebox_control(gui_control_t *control, int abs_x, int abs_y) {
-    gfx_fillrect(abs_x, abs_y, control->w, control->h, 8);
-    gfx_rect(abs_x, abs_y, control->w, control->h, 7);
+    window_theme_t *theme = theme_get_current();
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, theme->frame_dark);
+    gfx_rect(abs_x, abs_y, control->w, control->h, theme->button_color);
 
     if (control->text[0]) {
         /* Load bitmap to cache if not already loaded */
         if (!control->cached_bitmap) {
-            extern uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
-            int width, height;
-            control->cached_bitmap = gfx_load_bmp_to_buffer(control->text, &width, &height);
-            if (control->cached_bitmap) {
-                control->bmp_width = width;
-                control->bmp_height = height;
-            }
+            control->cached_bitmap = bitmap_load_from_file(control->text);
         }
 
         /* Draw from cached bitmap */
         if (control->cached_bitmap) {
-            extern void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);
-            gfx_draw_cached_bmp(control->cached_bitmap, control->bmp_width, control->bmp_height, abs_x, abs_y);
+            bitmap_draw(control->cached_bitmap, abs_x, abs_y);
         }
     }
 }
@@ -298,8 +292,8 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     
     if (win_w < 120) win_w = 120;
     
-    int win_x = (640 - win_w) / 2;
-    int win_y = (480 - win_h) / 2;
+    int win_x = (WM_SCREEN_WIDTH - win_w) / 2;
+    int win_y = (WM_SCREEN_HEIGHT - win_h) / 2;
     
     win_create(&box->base, win_x, win_y, win_w, win_h, title);
     box->base.is_modal = 1;
@@ -326,10 +320,11 @@ void win_msgbox_draw(msgbox_t *box) {
     /* Calculate absolute button position */
     int abs_btn_x = box->base.x + box->button_x;
     int abs_btn_y = box->base.y + box->button_y;
-    
-    win_draw_button(abs_btn_x, abs_btn_y, 
-                    box->button_w, box->button_h, 
-                    WIN_BUTTON_COLOR, box->button_text, 0);
+
+    window_theme_t *theme = theme_get_current();
+    win_draw_button(abs_btn_x, abs_btn_y,
+                    box->button_w, box->button_h,
+                    theme->button_color, box->button_text, 0);
 }
 
 int win_msgbox_handle_click(msgbox_t *box, int mx, int my) {
@@ -346,11 +341,11 @@ int win_msgbox_handle_click(msgbox_t *box, int mx, int my) {
 
 int win_is_titlebar(window_t *win, int mx, int my) {
     int close_btn_x = win->x + win->w - 16;
-    
-    if (mx >= win->x && 
+
+    if (mx >= win->x &&
         mx < close_btn_x &&
-        my >= win->y && 
-        my < win->y + 18) {
+        my >= win->y &&
+        my < win->y + WM_TITLEBAR_HEIGHT) {
         return 1;
     }
     return 0;
@@ -375,8 +370,8 @@ void win_move(window_t *win, int dx, int dy) {
     /* Keep window on screen */
     if (win->x < 0) win->x = 0;
     if (win->y < 0) win->y = 0;
-    if (win->x + win->w > 640) win->x = 640 - win->w;
-    if (win->y + win->h > 480) win->y = 480 - win->h;
+    if (win->x + win->w > WM_SCREEN_WIDTH) win->x = WM_SCREEN_WIDTH - win->w;
+    if (win->y + win->h > WM_SCREEN_HEIGHT) win->y = WM_SCREEN_HEIGHT - win->h;
 
     /* Save new background (cursor already restored above) */
     win_save_background(win);
@@ -398,7 +393,7 @@ int win_needs_redraw(window_t *win) {
 void win_save_background(window_t *win) {
     if (!win->is_visible) return;
 
-    int margin = 10;
+    int margin = WM_BG_MARGIN;
     int w = win->w + 2 * margin;
     int h = win->h + 2 * margin;
     int buf_size = w * h;
@@ -412,11 +407,11 @@ void win_save_background(window_t *win) {
 
     for (int py = 0; py < h; py++) {
         int sy = win->y + py - margin;
-        if (sy < 0 || sy >= GFX_HEIGHT) continue;
+        if (sy < 0 || sy >= WM_SCREEN_HEIGHT) continue;
 
         for (int px = 0; px < w; px++) {
             int sx = win->x + px - margin;
-            if (sx < 0 || sx >= GFX_WIDTH) continue;
+            if (sx < 0 || sx >= WM_SCREEN_WIDTH) continue;
 
             win->saved_bg[py * w + px] = gfx_getpixel(sx, sy);
         }
@@ -425,21 +420,21 @@ void win_save_background(window_t *win) {
 
 void win_restore_background(window_t *win) {
     if (!win->saved_bg) return;
-    
-    int margin = 10;
+
+    int margin = WM_BG_MARGIN;
     int w = win->w + 2 * margin;
     int h = win->h + 2 * margin;
-    
+
     extern void gfx_putpixel(int x, int y, uint8_t color);
-    
+
     for (int py = 0; py < h; py++) {
         int sy = win->y + py - margin;
-        if (sy < 0 || sy >= GFX_HEIGHT) continue;
-        
+        if (sy < 0 || sy >= WM_SCREEN_HEIGHT) continue;
+
         for (int px = 0; px < w; px++) {
             int sx = win->x + px - margin;
-            if (sx < 0 || sx >= GFX_WIDTH) continue;
-            
+            if (sx < 0 || sx >= WM_SCREEN_WIDTH) continue;
+
             gfx_putpixel(sx, sy, win->saved_bg[py * w + px]);
         }
     }
@@ -473,9 +468,7 @@ void win_minimize(window_t *win, int icon_x, int icon_y) {
     }
 
     if (win->icon_path[0] && !win->icon_bitmap) {
-        extern uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
-        int w, h;
-        win->icon_bitmap = gfx_load_bmp_to_buffer(win->icon_path, &w, &h);
+        win->icon_bitmap = bitmap_load_from_file(win->icon_path);
     }
 }
 
@@ -489,9 +482,9 @@ void win_restore(window_t *win) {
     /* Restore saved background */
     if (win->icon_saved_bg) {
         extern void gfx_putpixel(int x, int y, uint8_t color);
-        for (int y = 0; y < 32; y++) {
-            for (int x = 0; x < 32; x++) {
-                gfx_putpixel(win->icon_x + x, win->icon_y + y, win->icon_saved_bg[y * 32 + x]);
+        for (int y = 0; y < WM_ICON_SIZE; y++) {
+            for (int x = 0; x < WM_ICON_SIZE; x++) {
+                gfx_putpixel(win->icon_x + x, win->icon_y + y, win->icon_saved_bg[y * WM_ICON_SIZE + x]);
             }
         }
         kfree(win->icon_saved_bg);
@@ -506,61 +499,49 @@ void win_restore(window_t *win) {
 
 void win_draw_icon(window_t *win) {
     if (!win->is_minimized) return;
-    
+
     /* Save background before drawing icon (only once) */
     if (!win->icon_saved_bg) {
-        win->icon_saved_bg = kmalloc(32 * 32);
+        win->icon_saved_bg = kmalloc(WM_ICON_SIZE * WM_ICON_SIZE);
         if (win->icon_saved_bg) {
             extern uint8_t gfx_getpixel(int x, int y);
-            for (int y = 0; y < 32; y++) {
-                for (int x = 0; x < 32; x++) {
-                    win->icon_saved_bg[y * 32 + x] = gfx_getpixel(win->icon_x + x, win->icon_y + y);
+            for (int y = 0; y < WM_ICON_SIZE; y++) {
+                for (int x = 0; x < WM_ICON_SIZE; x++) {
+                    win->icon_saved_bg[y * WM_ICON_SIZE + x] = gfx_getpixel(win->icon_x + x, win->icon_y + y);
                 }
             }
         }
     }
-    
+
     if (win->icon_bitmap) {
-        extern void gfx_putpixel(int x, int y, uint8_t color);
-        
-        for (int y = 0; y < 32; y++) {
-            int src_offset = y * ((32 + 1) / 2);
-            
-            for (int x = 0; x < 32; x++) {
-                int byte_idx = x / 2;
-                uint8_t color = (x & 1) 
-                    ? (win->icon_bitmap[src_offset + byte_idx] & 0x0F)
-                    : (win->icon_bitmap[src_offset + byte_idx] >> 4);
-                
-                if (color != 5) {
-                    gfx_putpixel(win->icon_x + x, win->icon_y + y, color);
-                }
-            }
-        }
+        // Use bitmap API for drawing
+        bitmap_draw(win->icon_bitmap, win->icon_x, win->icon_y);
     } else {
-        gfx_fillrect(win->icon_x, win->icon_y, 32, 32, 7);
-        gfx_rect(win->icon_x, win->icon_y, 32, 32, 8);
-        
+        // Draw default icon with title initials
+        window_theme_t *theme = theme_get_current();
+        gfx_fillrect(win->icon_x, win->icon_y, WM_ICON_SIZE, WM_ICON_SIZE, theme->button_color);
+        gfx_rect(win->icon_x, win->icon_y, WM_ICON_SIZE, WM_ICON_SIZE, theme->frame_dark);
+
         if (font_b.data && win->title[0]) {
             char icon_label[3];
             icon_label[0] = win->title[0];
             icon_label[1] = win->title[1] ? win->title[1] : '\0';
             icon_label[2] = '\0';
-            
+
             int tw = bmf_measure_text(&font_b, 12, icon_label);
-            int tx = win->icon_x + (32 - tw) / 2;
+            int tx = win->icon_x + (WM_ICON_SIZE - tw) / 2;
             int ty = win->icon_y + 10;
-            
-            bmf_printf(tx, ty, &font_b, 12, 0, "%s", icon_label);
+
+            bmf_printf(tx, ty, &font_b, 12, theme->text_color, "%s", icon_label);
         }
     }
 }
 
 int win_is_icon_clicked(window_t *win, int mx, int my) {
     if (!win->is_minimized) return 0;
-    
-    if (mx >= win->icon_x && mx < win->icon_x + 32 &&
-        my >= win->icon_y && my < win->icon_y + 32) {
+
+    if (mx >= win->icon_x && mx < win->icon_x + WM_ICON_SIZE &&
+        my >= win->icon_y && my < win->icon_y + WM_ICON_SIZE) {
         return 1;
     }
     return 0;
