@@ -11,12 +11,11 @@ typedef struct {
     int is_visible;
     int is_modal;
     int dirty;
-    int prev_x, prev_y;
     uint8_t *saved_bg;
     int is_minimized;
     int icon_x, icon_y;
     char icon_path[64];
-    bitmap_t *icon_bitmap;      // Changed from uint8_t*
+    bitmap_t *icon_bitmap;
     uint8_t *icon_saved_bg;
 } window_t;
 

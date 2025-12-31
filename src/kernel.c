@@ -22,6 +22,7 @@ extern void shell_init(void);
 extern void shell_run(void);
 extern uint8_t __kernel_end;
 extern void win_init_fonts(void);
+extern void theme_init(void);
 
 uint32_t boot_device = 0xFFFFFFFF;
 
@@ -176,6 +177,13 @@ static void boot_sequence(void) {
     printf("OK");
     vga_set_color(0, 7);
     printf(" ] Fonts\n");
+
+    theme_init();
+    printf("[ ");
+    vga_set_color(0, 10);
+    printf("OK");
+    vga_set_color(0, 7);
+    printf(" ] Theme\n");
 
     printf("\n");
     __asm__ volatile ("sti");

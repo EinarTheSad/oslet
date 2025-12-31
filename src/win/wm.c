@@ -1,0 +1,152 @@
+#include "wm.h"
+#include "window.h"
+
+void wm_init(window_manager_t *wm) {
+    wm->count = 0;
+    wm->focused_index = -1;
+    wm->next_icon_x = WM_ICON_MARGIN;
+    wm->last_icon_click_time = 0;
+    wm->last_icon_click_x = 0;
+    wm->last_icon_click_y = 0;
+
+    for (int i = 0; i < WM_MAX_WINDOWS; i++) {
+        wm->windows[i] = NULL;
+    }
+}
+
+int wm_register_window(window_manager_t *wm, gui_form_t *form) {
+    if (!form || wm->count >= WM_MAX_WINDOWS) {
+        return 0;  // Failure
+    }
+
+    // Add window to array
+    wm->windows[wm->count] = form;
+    wm->count++;
+
+    // Make new window focused
+    wm->focused_index = wm->count - 1;
+
+    return 1;  // Success
+}
+
+void wm_unregister_window(window_manager_t *wm, gui_form_t *form) {
+    if (!form) return;
+
+    // Find window in array
+    int found_index = -1;
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] == form) {
+            found_index = i;
+            break;
+        }
+    }
+
+    if (found_index == -1) return;  // Not found
+
+    // Shift remaining windows down
+    for (int i = found_index; i < wm->count - 1; i++) {
+        wm->windows[i] = wm->windows[i + 1];
+    }
+
+    wm->windows[wm->count - 1] = NULL;
+    wm->count--;
+
+    // Adjust focused index
+    if (wm->focused_index == found_index) {
+        // Focus was on removed window - focus last window
+        wm->focused_index = wm->count > 0 ? wm->count - 1 : -1;
+    } else if (wm->focused_index > found_index) {
+        // Adjust focused index down
+        wm->focused_index--;
+    }
+}
+
+void wm_bring_to_front(window_manager_t *wm, gui_form_t *form) {
+    if (!form || wm->count <= 1) return;
+
+    // Find window
+    int found_index = -1;
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] == form) {
+            found_index = i;
+            break;
+        }
+    }
+
+    if (found_index == -1 || found_index == wm->count - 1) {
+        return;  // Not found or already at front
+    }
+
+    // Move window to end (front in Z-order)
+    gui_form_t *temp = wm->windows[found_index];
+    for (int i = found_index; i < wm->count - 1; i++) {
+        wm->windows[i] = wm->windows[i + 1];
+    }
+    wm->windows[wm->count - 1] = temp;
+    wm->focused_index = wm->count - 1;
+}
+
+gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
+    // Search from front to back (reverse order)
+    for (int i = wm->count - 1; i >= 0; i--) {
+        gui_form_t *form = wm->windows[i];
+        if (!form || !form->win.is_visible) continue;
+
+        // Check if minimized - check icon area
+        if (form->win.is_minimized) {
+            if (win_is_icon_clicked(&form->win, x, y)) {
+                return form;
+            }
+        } else {
+            // Check window area
+            if (x >= form->win.x && x < form->win.x + form->win.w &&
+                y >= form->win.y && y < form->win.y + form->win.h) {
+                return form;
+            }
+        }
+    }
+
+    return NULL;  // No window at this position
+}
+
+void wm_draw_all(window_manager_t *wm) {
+    // Draw windows from back to front
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *form = wm->windows[i];
+        if (!form || !form->win.is_visible) continue;
+
+        win_draw(&form->win);
+
+        // Draw controls if not minimized
+        if (!form->win.is_minimized && form->controls) {
+            for (int j = 0; j < form->ctrl_count; j++) {
+                win_draw_control(&form->win, &form->controls[j]);
+            }
+        }
+    }
+}
+
+void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
+    *out_x = wm->next_icon_x;
+    *out_y = WM_SCREEN_HEIGHT - WM_ICON_SIZE - WM_ICON_MARGIN;
+
+    // Advance position for next icon
+    wm->next_icon_x += WM_ICON_SIZE + 8;
+    if (wm->next_icon_x > WM_SCREEN_WIDTH - WM_ICON_SIZE - WM_ICON_MARGIN) {
+        wm->next_icon_x = WM_ICON_MARGIN;  // Wrap to beginning
+    }
+}
+
+void wm_set_icon_click(window_manager_t *wm, uint32_t time, int x, int y) {
+    wm->last_icon_click_time = time;
+    wm->last_icon_click_x = x;
+    wm->last_icon_click_y = y;
+}
+
+int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, int x, int y) {
+    if ((time - wm->last_icon_click_time) < WM_DOUBLECLICK_MS &&
+        wm->last_icon_click_x == x && wm->last_icon_click_y == y) {
+        return 1;
+    }
+    return 0;
+}

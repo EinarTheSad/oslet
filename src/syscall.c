@@ -15,14 +15,13 @@
 #include "win/window.h"
 #include "win/wm_config.h"
 #include "win/bitmap.h"
+#include "win/wm.h"
 
 #define MAX_OPEN_FILES 32
 
-/* Icon manager state */
-static int next_icon_x = 10;
-static uint32_t last_icon_click_time = 0;
-static int last_icon_click_x = 0;
-static int last_icon_click_y = 0;
+/* Global window manager */
+static window_manager_t global_wm;
+static int wm_initialized = 0;
 
 typedef struct {
     fat32_file_t *file;
@@ -590,23 +589,20 @@ static int pump_handle_icon_doubleclick(gui_form_t *form, int mx, int my) {
     uint32_t current_time = timer_get_ticks();
 
     if (win_is_icon_clicked(&form->win, mx, my)) {
-        if ((current_time - last_icon_click_time) < WM_DOUBLECLICK_MS &&
-            last_icon_click_x == mx && last_icon_click_y == my) {
+        if (wm_is_icon_doubleclick(&global_wm, current_time, mx, my)) {
             win_restore(&form->win);
             return 1;  /* Window restored */
         }
-        last_icon_click_time = current_time;
-        last_icon_click_x = mx;
-        last_icon_click_y = my;
+        wm_set_icon_click(&global_wm, current_time, mx, my);
     }
     return 0;
 }
 
 static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
     if (win_is_minimize_button(&form->win, mx, my)) {
-        win_minimize(&form->win, next_icon_x, WM_SCREEN_HEIGHT - 42);
-        next_icon_x += (WM_ICON_SIZE + 8);
-        if (next_icon_x > 600) next_icon_x = 10;
+        int icon_x, icon_y;
+        wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
+        win_minimize(&form->win, icon_x, icon_y);
         return 1;  /* Window minimized */
     }
     return 0;
@@ -749,14 +745,20 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
         }
 
         case 0x05: { /* SYS_WIN_CREATE_FORM */
+            /* Initialize window manager on first use */
+            if (!wm_initialized) {
+                wm_init(&global_wm);
+                wm_initialized = 1;
+            }
+
             gui_form_t *form = (gui_form_t*)kmalloc(sizeof(gui_form_t));
             if (!form) return (uint32_t)NULL;
-            
+
             int x = (int16_t)(ecx >> 16);
             int y = (int16_t)(ecx & 0xFFFF);
             int w = (int16_t)(edx >> 16);
             int h = (int16_t)(edx & 0xFFFF);
-            
+
             win_create(&form->win, x, y, w, h, (const char*)ebx);
             form->controls = NULL;
             form->ctrl_count = 0;
@@ -767,8 +769,15 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->drag_start_x = 0;
             form->drag_start_y = 0;
 
+            /* Register window with window manager */
+            if (!wm_register_window(&global_wm, form)) {
+                /* Failed to register - cleanup */
+                kfree(form);
+                return (uint32_t)NULL;
+            }
+
             win_draw(&form->win);
-            
+
             return (uint32_t)form;
         }
               
@@ -803,6 +812,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         return -1;
                     }
                 } else {
+                    /* Check if click is within window bounds - bring to front if so */
+                    if (mx >= form->win.x && mx < form->win.x + form->win.w &&
+                        my >= form->win.y && my < form->win.y + form->win.h) {
+                        wm_bring_to_front(&global_wm, form);
+                    }
+
                     /* Check minimize button */
                     if (pump_handle_minimize(form, mx, my)) {
                         return -1;
@@ -821,7 +836,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Handle mouse button release */
             if (button_released) {
-                /* End dragging */
+                /* End dragging - signal full redraw needed */
+                int was_dragging = form->dragging;
                 if (form->dragging) {
                     form->dragging = 0;
                 }
@@ -865,6 +881,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 /* Clear press state after release */
                 form->press_control_id = -1;
+
+                /* If we just finished dragging, signal full redraw needed */
+                if (was_dragging) {
+                    return (uint32_t)-2;  /* -2 = drag ended, full redraw needed */
+                }
             }
 
             /* Handle active dragging */
@@ -876,8 +897,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     win_move(&form->win, dx, dy);
                     form->drag_start_x = mx;
                     form->drag_start_y = my;
-                    /* Return -1 to indicate window was moved (needs redraw) */
-                    return (uint32_t)-1;
+                    /* During drag, just redraw this window (no full screen redraw) */
+                    win_draw(&form->win);
+                    needs_redraw = 0;  /* Already drawn */
                 }
             }
 
@@ -951,6 +973,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             gui_form_t *form = (gui_form_t*)ebx;
             if (!form) return 0;
 
+            /* Unregister from window manager */
+            wm_unregister_window(&global_wm, form);
+
             /* Free cached bitmaps in controls */
             if (form->controls) {
                 for (int i = 0; i < form->ctrl_count; i++) {
@@ -985,6 +1010,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             strcpy_s(form->win.icon_path, icon_path, 64);
 
+            return 0;
+        }
+
+        case 0x0C: { /* SYS_WIN_REDRAW_ALL */
+            wm_draw_all(&global_wm);
             return 0;
         }
 
