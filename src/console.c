@@ -6,6 +6,7 @@
 
 const char *kernel_version = "0.5";
 const char *shell_version = "oslet-v04";
+const char *shell_name = "SHELL.ELF"; /* This can be any program! */
 
 static const console_t* CURRENT;
 

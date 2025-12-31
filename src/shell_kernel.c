@@ -16,16 +16,14 @@ static void print_banner(void) {
 
 void shell_init(void) {
     print_banner();
-    vga_set_color(0, 7);
 }
 
 void shell_run(void) {
-    printf("Kernel is loading SHELL.ELF from drive C...\n\n");
+    printf("Kernel is loading %s from drive C...\n\n",shell_name);
     
-    if (task_spawn_and_wait("shell.elf") != 0) {
+    if (task_spawn_and_wait(shell_name) != 0) {
         vga_set_color(0, 12);
-        printf("PANIC: Failed to load C:/SHELL.ELF!\n");
-        vga_set_color(0, 7);
+        printf("PANIC: Failed to load %s. System halt.\n",shell_name);
         for (;;) __asm__ volatile ("hlt");
     }
 }
