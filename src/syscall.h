@@ -98,6 +98,9 @@ typedef rtc_time_t sys_time_t;
 #define FONT_ITALIC 2
 #define FONT_BOLD_ITALIC 3
 
+// Forward declaration
+typedef struct bitmap_s bitmap_t;
+
 typedef struct {
     uint8_t type;
     uint16_t x, y, w, h;
@@ -108,9 +111,7 @@ typedef struct {
     uint8_t font_size;
     uint8_t border;
     uint8_t border_color;
-    uint8_t *cached_bitmap;
-    uint16_t bmp_width;
-    uint16_t bmp_height;
+    bitmap_t *cached_bitmap;  // Changed from uint8_t*
     uint8_t pressed;
 } gui_control_t;
 

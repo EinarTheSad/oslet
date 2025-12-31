@@ -2,6 +2,9 @@
 #include <stdint.h>
 #include "../fonts/bmf.h"
 
+// Forward declarations
+typedef struct bitmap_s bitmap_t;
+
 typedef struct {
     int x, y, w, h;
     char title[64];
@@ -13,7 +16,7 @@ typedef struct {
     int is_minimized;
     int icon_x, icon_y;
     char icon_path[64];
-    uint8_t *icon_bitmap;
+    bitmap_t *icon_bitmap;      // Changed from uint8_t*
     uint8_t *icon_saved_bg;
 } window_t;
 
