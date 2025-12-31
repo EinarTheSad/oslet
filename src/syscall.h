@@ -84,6 +84,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_WIN_DRAW            0x0B09
 #define SYS_WIN_DESTROY_FORM    0x0B0A
 #define SYS_WIN_SET_ICON        0x0B0B
+#define SYS_WIN_REDRAW_ALL      0x0B0C
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -535,4 +536,9 @@ static inline void sys_win_set_icon(void *form, const char *icon_path) {
     register void *dummy_ebx __asm__("ebx") = form;
     register const char *dummy_ecx __asm__("ecx") = icon_path;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx) :: "memory");
+}
+
+static inline void sys_win_redraw_all(void) {
+    register int dummy_eax __asm__("eax") = SYS_WIN_REDRAW_ALL;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
 }
