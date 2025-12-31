@@ -372,46 +372,71 @@ static inline uint32_t sys_uptime(void) {
 }
 
 static inline void sys_gfx_enter(void) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_ENTER));
+    register int dummy_eax __asm__("eax") = SYS_GFX_ENTER;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
 }
 
 static inline void sys_gfx_exit(void) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_EXIT));
+    register int dummy_eax __asm__("eax") = SYS_GFX_EXIT;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
 }
 
 static inline void sys_gfx_clear(uint8_t color) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_CLEAR), "b"(color));
+    register int dummy_eax __asm__("eax") = SYS_GFX_CLEAR;
+    register uint8_t dummy_ebx __asm__("ebx") = color;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
 }
 
 static inline void sys_gfx_swap(void) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_SWAP));
+    register int dummy_eax __asm__("eax") = SYS_GFX_SWAP;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
 }
 
 static inline void sys_gfx_putpixel(int x, int y, uint8_t color) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_PUTPIXEL), "b"(x), "c"(y), "d"(color));
+    register int dummy_eax __asm__("eax") = SYS_GFX_PUTPIXEL;
+    register int dummy_ebx __asm__("ebx") = x;
+    register int dummy_ecx __asm__("ecx") = y;
+    register uint8_t dummy_edx __asm__("edx") = color;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline void sys_gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
     uint32_t start = ((uint32_t)x0 << 16) | (y0 & 0xFFFF);
     uint32_t end = ((uint32_t)x1 << 16) | (y1 & 0xFFFF);
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_LINE), "b"(start), "c"(end), "d"(color));
+    register int dummy_eax __asm__("eax") = SYS_GFX_LINE;
+    register uint32_t dummy_ebx __asm__("ebx") = start;
+    register uint32_t dummy_ecx __asm__("ecx") = end;
+    register uint8_t dummy_edx __asm__("edx") = color;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline void sys_gfx_rect(int x, int y, int w, int h, uint8_t color) {
     uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
     uint32_t size = ((uint32_t)w << 16) | (h & 0xFFFF);
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_RECT), "b"(pos), "c"(size), "d"(color));
+    register int dummy_eax __asm__("eax") = SYS_GFX_RECT;
+    register uint32_t dummy_ebx __asm__("ebx") = pos;
+    register uint32_t dummy_ecx __asm__("ecx") = size;
+    register uint8_t dummy_edx __asm__("edx") = color;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline void sys_gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
     uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
     uint32_t size = ((uint32_t)w << 16) | (h & 0xFFFF);
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FILLRECT), "b"(pos), "c"(size), "d"(color));
+    register int dummy_eax __asm__("eax") = SYS_GFX_FILLRECT;
+    register uint32_t dummy_ebx __asm__("ebx") = pos;
+    register uint32_t dummy_ecx __asm__("ecx") = size;
+    register uint8_t dummy_edx __asm__("edx") = color;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline void sys_gfx_circle(int cx, int cy, int r, uint8_t color) {
     uint32_t packed = ((uint32_t)r << 8) | color;
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_CIRCLE), "b"(cx), "c"(cy), "d"(packed));
+    register int dummy_eax __asm__("eax") = SYS_GFX_CIRCLE;
+    register int dummy_ebx __asm__("ebx") = cx;
+    register int dummy_ecx __asm__("ecx") = cy;
+    register uint32_t dummy_edx __asm__("edx") = packed;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline void sys_gfx_fillrect_gradient(int x, int y, int w, int h,
@@ -420,7 +445,11 @@ static inline void sys_gfx_fillrect_gradient(int x, int y, int w, int h,
     uint32_t coords = ((uint32_t)w << 16) | (h & 0xFFFF);
     uint32_t colors = ((uint32_t)c_start << 16) | ((uint32_t)c_end << 8) | orientation;
     uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FILLRECT_GRADIENT), "b"(pos), "c"(coords), "d"(colors));
+    register int dummy_eax __asm__("eax") = SYS_GFX_FILLRECT_GRADIENT;
+    register uint32_t dummy_ebx __asm__("ebx") = pos;
+    register uint32_t dummy_ecx __asm__("ecx") = coords;
+    register uint32_t dummy_edx __asm__("edx") = colors;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline int sys_get_time(sys_time_t *time) {
@@ -445,7 +474,11 @@ static inline void sys_get_mouse_state(int *x, int *y, unsigned char *buttons) {
 }
 
 static inline void sys_mouse_draw_cursor(int x, int y, int full_redraw) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_DRAW_CURSOR), "b"(x), "c"(y), "d"(full_redraw));
+    register int dummy_eax __asm__("eax") = SYS_MOUSE_DRAW_CURSOR;
+    register int dummy_ebx __asm__("ebx") = x;
+    register int dummy_ecx __asm__("ecx") = y;
+    register int dummy_edx __asm__("edx") = full_redraw;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline int sys_win_msgbox(const char *msg, const char *btn, const char *title) {
@@ -485,13 +518,20 @@ static inline int sys_win_pump_events(void *form) {
 }
 
 static inline void sys_win_draw(void *form) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DRAW), "b"(form));
+    register int dummy_eax __asm__("eax") = SYS_WIN_DRAW;
+    register void *dummy_ebx __asm__("ebx") = form;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
 }
 
 static inline void sys_win_destroy_form(void *form) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_DESTROY_FORM), "b"(form));
+    register int dummy_eax __asm__("eax") = SYS_WIN_DESTROY_FORM;
+    register void *dummy_ebx __asm__("ebx") = form;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
 }
 
 static inline void sys_win_set_icon(void *form, const char *icon_path) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_WIN_SET_ICON), "b"(form), "c"(icon_path));
+    register int dummy_eax __asm__("eax") = SYS_WIN_SET_ICON;
+    register void *dummy_ebx __asm__("ebx") = form;
+    register const char *dummy_ecx __asm__("ecx") = icon_path;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx) :: "memory");
 }
