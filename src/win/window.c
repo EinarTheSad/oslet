@@ -12,10 +12,10 @@
 bmf_font_t font_b, font_n, font_i, font_bi;
 
 void win_init_fonts(void) {
-    bmf_import(&font_b, "C:/FONTS/OSANS_B.BMF");
-    bmf_import(&font_n, "C:/FONTS/OSANS.BMF");
-    bmf_import(&font_i, "C:/FONTS/OSANS_I.BMF");
-    bmf_import(&font_bi, "C:/FONTS/OSANS_BI.BMF");
+    bmf_import(&font_b, "C:/FONTS/LSANS_B.BMF");
+    bmf_import(&font_n, "C:/FONTS/LSANS.BMF");
+    bmf_import(&font_i, "C:/FONTS/LSANS_I.BMF");
+    bmf_import(&font_bi, "C:/FONTS/LSANS_BI.BMF");
 }
 
 void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
@@ -84,7 +84,7 @@ void win_draw_titlebar(int x, int y, int w, const char *title) {
     gfx_fillrect(x, y, w, WM_TITLEBAR_HEIGHT, theme->titlebar_color);
 
     if (font_b.data) {
-        bmf_printf(x+5, y+4, &font_b, 12, 15, "%s", title);
+        bmf_printf(x+5, y+5, &font_b, 12, 15, "%s", title);
     }
 
     int btn_x = x + w - 16;
@@ -114,8 +114,8 @@ void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *labe
 
     if (font_b.data && label) {
         int text_w = bmf_measure_text(&font_b, 12, label);
-        int text_x = x + (w - text_w) / 2;
-        int text_y = y + (h / 2) - 4;
+        int text_x = x + (w - text_w) / 2 + 2;
+        int text_y = y + (h / 2) - 3;
         bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
     }
 }
