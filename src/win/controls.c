@@ -112,7 +112,7 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
         formatted_text[j] = '\0';
 
         int text_x = abs_x + 2;
-        int text_y = abs_y + 2;
+        int text_y = abs_y + 5;
         bmf_printf(text_x, text_y, font, size, control->fg, "%s", formatted_text);
     }
 }
