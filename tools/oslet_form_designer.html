@@ -1,0 +1,2150 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>osLET IDE - Multi-Window Form Designer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Liberation+Sans:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Liberation Sans', 'Arial', sans-serif;
+            background: #2b2b2b;
+            color: #e0e0e0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 250px;
+            background: #1e1e1e;
+            border-right: 1px solid #3e3e3e;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #project-header {
+            padding: 15px;
+            border-bottom: 1px solid #3e3e3e;
+        }
+
+        #project-name {
+            font-size: 14px;
+            font-weight: bold;
+            color: #007acc;
+            margin-bottom: 10px;
+        }
+
+        .project-actions {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .project-actions button {
+            flex: 1;
+            min-width: 70px;
+            font-size: 11px;
+            padding: 5px 8px;
+        }
+
+        #windows-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .window-item {
+            background: #2d2d2d;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .window-item:hover {
+            background: #3d3d3d;
+        }
+
+        .window-item.active {
+            border-color: #007acc;
+            background: #1e3a5f;
+        }
+
+        .window-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .window-item-title {
+            font-weight: bold;
+            font-size: 13px;
+        }
+
+        .window-item-info {
+            font-size: 11px;
+            color: #999;
+            margin-top: 4px;
+        }
+
+        .window-delete {
+            background: #c00;
+            color: white;
+            border: none;
+            padding: 3px 8px;
+            font-size: 10px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .window-delete:hover {
+            background: #e00;
+        }
+
+        #add-window-btn {
+            margin: 10px;
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 4px;
+        }
+
+        #add-window-btn:hover {
+            background: #005a9e;
+        }
+
+        #toolbar {
+            width: 200px;
+            background: #1e1e1e;
+            padding: 15px;
+            border-right: 1px solid #3e3e3e;
+            overflow-y: auto;
+        }
+
+        #canvas-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #2b2b2b;
+        }
+
+        #top-bar {
+            background: #1e1e1e;
+            padding: 10px 15px;
+            border-bottom: 1px solid #3e3e3e;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        #canvas {
+            flex: 1;
+            position: relative;
+            overflow: auto;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #screen-bounds {
+            width: 640px;
+            height: 480px;
+            background: #008080;
+            border: 1px solid #666666;
+            position: relative;
+        }
+
+        #form {
+            position: absolute;
+            box-sizing: border-box;
+        }
+
+        #form::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: 1px solid #555555;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        #form::after {
+            content: '';
+            position: absolute;
+            top: 1px;
+            left: 1px;
+            right: 1px;
+            bottom: 1px;
+            border: 1px solid #a0a0a0;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        #titlebar {
+            position: absolute;
+            left: 2px;
+            top: 2px;
+            height: 18px;
+            background: #1e1e64;
+            cursor: move;
+            display: flex;
+            align-items: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            user-select: none;
+            letter-spacing: 1.2px;
+            z-index: 2;
+        }
+
+        #form-title {
+            padding-left: 5px;
+            line-height: 18px;
+        }
+
+        #close-btn {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 14px;
+            height: 14px;
+            background: #a0a0a0;
+            cursor: default;
+            box-sizing: border-box;
+        }
+        
+        #close-btn::before {
+            content: '';
+            position: absolute;
+            top: -1px;
+            left: -1px;
+            width: 16px;
+            height: 16px;
+            border: 1px solid #555555;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+        
+        #close-btn::after {
+            content: '';
+            width: 10px;
+            height: 2px;
+            background: white;
+            position: absolute;
+            left: 2px;
+            top: 6px;
+        }
+
+        #form-content {
+            position: absolute;
+            left: 2px;
+            top: 20px;
+            background: #ffffff;
+            overflow: hidden;
+        }
+
+        .resize-handle {
+            position: absolute;
+            background: transparent;
+            z-index: 100;
+        }
+
+        .resize-handle.corner {
+            width: 10px;
+            height: 10px;
+            cursor: nwse-resize;
+        }
+
+        .resize-handle.right {
+            width: 5px;
+            height: 100%;
+            right: 0;
+            top: 0;
+            cursor: ew-resize;
+        }
+
+        .resize-handle.bottom {
+            width: 100%;
+            height: 5px;
+            bottom: 0;
+            left: 0;
+            cursor: ns-resize;
+        }
+
+        .resize-handle.corner.br {
+            right: 0;
+            bottom: 0;
+        }
+
+        .control {
+            position: absolute;
+            cursor: move;
+            border: 1px dashed transparent;
+        }
+
+        .control.selected {
+            border: 1px dashed #ffa500;
+            outline: 1px solid #ffa500;
+        }
+
+        .control-button {
+            background: #a0a0a0;
+            border: 1px solid #000000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 12px;
+            user-select: none;
+            color: #000;
+            position: relative;
+            box-sizing: border-box;
+            letter-spacing: 1px;
+        }
+
+        .control-button::after {
+            content: '';
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            right: 0px;
+            bottom: 0px;
+            border: 1px solid;
+            border-top-color: #ffffff;
+            border-left-color: #ffffff;
+            border-right-color: #555555;
+            border-bottom-color: #555555;
+            pointer-events: none;
+        }
+
+        .control-resize-handle {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: #ffa500;
+            border: 1px solid #000;
+            z-index: 10;
+        }
+
+        .control-resize-handle.br {
+            right: -3px;
+            bottom: -3px;
+            cursor: nwse-resize;
+        }
+
+        .control-label {
+            font-size: 12px;
+            user-select: none;
+            white-space: pre;
+            padding: 2px;
+            box-sizing: border-box;
+            display: inline-block;
+            line-height: 1.2;
+            letter-spacing: 1px;
+        }
+
+        .control-picturebox {
+            background: #555;
+            border: 1px solid #a0a0a0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+            font-size: 10px;
+        }
+
+        #properties {
+            width: 250px;
+            background: #1e1e1e;
+            padding: 15px;
+            border-left: 1px solid #3e3e3e;
+            overflow-y: auto;
+        }
+
+        .tool-btn {
+            background: #3e3e3e;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            width: 100%;
+            text-align: left;
+            transition: background 0.2s;
+        }
+
+        .tool-btn:hover {
+            background: #4e4e4e;
+        }
+
+        .tool-btn.active {
+            background: #007acc;
+            border-color: #007acc;
+        }
+
+        .prop-group {
+            margin-bottom: 15px;
+        }
+
+        .prop-label {
+            font-size: 11px;
+            color: #999;
+            margin-bottom: 4px;
+        }
+
+        .prop-input {
+            width: 100%;
+            background: #3e3e3e;
+            border: 1px solid #555;
+            color: #e0e0e0;
+            padding: 6px;
+            font-size: 12px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        textarea.prop-input {
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        button {
+            background: #007acc;
+            border: none;
+            color: white;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+            font-size: 12px;
+        }
+
+        button:hover {
+            background: #005a9e;
+        }
+
+        h3 {
+            color: #007acc;
+            font-size: 14px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #3e3e3e;
+            padding-bottom: 5px;
+        }
+
+        #code-output {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e1e1e;
+            border: 2px solid #007acc;
+            padding: 20px;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow: auto;
+            display: none;
+            z-index: 1000;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+        }
+
+        #code-output.show {
+            display: block;
+        }
+
+        pre {
+            background: #2b2b2b;
+            padding: 15px;
+            overflow-x: auto;
+            color: #d4d4d4;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+
+        .close-btn {
+            background: #c00;
+            padding: 4px 12px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 4px;
+            margin-top: 4px;
+        }
+
+        .color-btn {
+            width: 100%;
+            height: 30px;
+            border: 2px solid #555;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .color-btn:hover {
+            transform: scale(1.1);
+            border-color: #ffa500;
+        }
+
+        .color-btn.selected {
+            border-color: #ffa500;
+            border-width: 3px;
+        }
+
+        #no-window-message {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #666;
+            font-size: 18px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <div id="project-header">
+            <div id="project-name">Untitled Project</div>
+            <div class="project-actions">
+                <button onclick="newProject()" title="New Project">New</button>
+                <button onclick="saveProject()" title="Save Project">Save</button>
+                <button onclick="loadProject()" title="Load Project">Load</button>
+                <button onclick="importCFile()" title="Import C File">Import C</button>
+                <button onclick="generateCode()" title="Generate C Code">Build</button>
+            </div>
+        </div>
+
+        <div id="windows-list">
+            <!-- Window items will be added here -->
+        </div>
+
+        <button id="add-window-btn" onclick="addWindow()">+ Add Window</button>
+    </div>
+
+    <div id="toolbar">
+        <h3>Toolbox</h3>
+        <button class="tool-btn" onclick="selectTool('button')">Button</button>
+        <button class="tool-btn" onclick="selectTool('label')">Label</button>
+        <button class="tool-btn" onclick="selectTool('picturebox')">PictureBox</button>
+        <button class="tool-btn" onclick="selectTool('select')" style="margin-top: 20px;">Select (Esc)</button>
+    </div>
+
+    <div id="canvas-container">
+        <div id="top-bar">
+            <button onclick="undo()" id="undo-btn" title="Undo (Ctrl+Z)">Undo</button>
+            <button onclick="redo()" id="redo-btn" title="Redo (Ctrl+Y)">Redo</button>
+            <button onclick="deleteSelected()" style="background: #c00;">Delete Control</button>
+            <button onclick="clearAllControls()" style="background: #c00;">Clear All Controls</button>
+        </div>
+
+        <div id="canvas">
+            <div id="no-window-message">
+                Create or select a window to start designing
+            </div>
+            <div id="screen-bounds" style="display: none;">
+                <div id="form">
+                    <div id="form-content"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="properties">
+        <h3>Properties</h3>
+        <div id="prop-content">
+            <p style="color: #666; font-size: 12px;">No window selected</p>
+        </div>
+    </div>
+
+    <div id="code-output">
+        <h3>Generated Code</h3>
+        <button onclick="copyCode()" style="margin-bottom: 10px;">Copy to Clipboard</button>
+        <button onclick="saveCodeToFile()" style="margin-bottom: 10px;">Save as .c</button>
+        <button onclick="closeCodeWindow()" class="close-btn">Close</button>
+        <pre id="code-text"></pre>
+    </div>
+
+    <input type="file" id="project-file-input" accept=".oplet" onchange="handleProjectLoad(event)">
+    <input type="file" id="c-file-input" accept=".c" onchange="handleCFileLoad(event)">
+
+    <script>
+        const osletColors = [
+            {name: 'BLACK', val: 0, rgb: '#000000'},
+            {name: 'BLUE', val: 1, rgb: '#1e1e64'},
+            {name: 'GREEN', val: 2, rgb: '#346524'},
+            {name: 'CYAN', val: 3, rgb: '#4095aa'},
+            {name: 'RED', val: 4, rgb: '#643c18'},
+            {name: 'MAGENTA', val: 5, rgb: '#462337'},
+            {name: 'BROWN', val: 6, rgb: '#646418'},
+            {name: 'LIGHT_GRAY', val: 7, rgb: '#a0a0a0'},
+            {name: 'DARK_GRAY', val: 8, rgb: '#555555'},
+            {name: 'LIGHT_BLUE', val: 9, rgb: '#597dce'},
+            {name: 'LIGHT_GREEN', val: 10, rgb: '#6daa2c'},
+            {name: 'LIGHT_CYAN', val: 11, rgb: '#6eced8'},
+            {name: 'LIGHT_RED', val: 12, rgb: '#d04648'},
+            {name: 'LIGHT_MAGENTA', val: 13, rgb: '#d2aa99'},
+            {name: 'YELLOW', val: 14, rgb: '#e6dc42'},
+            {name: 'WHITE', val: 15, rgb: '#ffffff'}
+        ];
+
+        // Project state
+        let project = {
+            name: 'Untitled Project',
+            windows: []
+        };
+
+        let currentWindowIndex = -1;
+        let currentTool = 'select';
+        let selectedControl = null;
+        let nextId = 1;
+
+        // Undo/Redo state
+        let undoStack = [];
+        let redoStack = [];
+        const MAX_UNDO_STEPS = 50;
+        let draggedControl = null;
+        let dragOffset = {x: 0, y: 0};
+        let formDragging = false;
+        let formDragOffset = {x: 0, y: 0};
+        let resizing = false;
+        let resizeType = '';
+        let resizeStart = {x: 0, y: 0, w: 0, h: 0};
+        let resizingControl = false;
+        let resizeControlStart = {x: 0, y: 0, w: 0, h: 0};
+
+        const fontNames = ['Normal', 'Bold', 'Italic', 'Bold Italic'];
+
+        const form = document.getElementById('form');
+        const formContent = document.getElementById('form-content');
+        const canvas = document.getElementById('canvas');
+        const screenBounds = document.getElementById('screen-bounds');
+        const noWindowMessage = document.getElementById('no-window-message');
+
+        // Create titlebar
+        const titlebar = document.createElement('div');
+        titlebar.id = 'titlebar';
+        const formTitle = document.createElement('span');
+        formTitle.id = 'form-title';
+        formTitle.textContent = 'Window1';
+        titlebar.appendChild(formTitle);
+
+        const closeBtn = document.createElement('div');
+        closeBtn.id = 'close-btn';
+        titlebar.appendChild(closeBtn);
+
+        form.appendChild(titlebar);
+
+        // Create resize handles
+        const resizeRight = document.createElement('div');
+        resizeRight.className = 'resize-handle right';
+        const resizeBottom = document.createElement('div');
+        resizeBottom.className = 'resize-handle bottom';
+        const resizeCorner = document.createElement('div');
+        resizeCorner.className = 'resize-handle corner br';
+
+        form.appendChild(resizeRight);
+        form.appendChild(resizeBottom);
+        form.appendChild(resizeCorner);
+
+        function getCurrentWindow() {
+            if (currentWindowIndex >= 0 && currentWindowIndex < project.windows.length) {
+                return project.windows[currentWindowIndex];
+            }
+            return null;
+        }
+
+        function newProject() {
+            if (project.windows.length > 0) {
+                if (!confirm('Create new project? Current work will be lost if not saved.')) {
+                    return;
+                }
+            }
+
+            project = {
+                name: 'Untitled Project',
+                windows: []
+            };
+            currentWindowIndex = -1;
+            nextId = 1;
+
+            document.getElementById('project-name').textContent = project.name;
+            updateWindowsList();
+            hideCanvas();
+            updateProperties();
+        }
+
+        function addWindow() {
+            const defaultName = `Form${project.windows.length + 1}`;
+            const name = prompt('Window name:', defaultName);
+            if (!name) return;
+
+            const win = {
+                name: name,
+                title: name,
+                x: 50 + (project.windows.length * 20),
+                y: 50 + (project.windows.length * 20),
+                w: 320,
+                h: 240,
+                controls: [],
+                nextControlId: 1
+            };
+
+            project.windows.push(win);
+            updateWindowsList();
+            selectWindow(project.windows.length - 1);
+        }
+
+        function saveUndoState() {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            // Create a deep copy of the current window state
+            const state = {
+                windowIndex: currentWindowIndex,
+                controls: JSON.parse(JSON.stringify(win.controls.map(c => ({
+                    type: c.type,
+                    x: c.x,
+                    y: c.y,
+                    w: c.w,
+                    h: c.h,
+                    fg: c.fg,
+                    bg: c.bg,
+                    text: c.text,
+                    id: c.id,
+                    font_type: c.font_type,
+                    font_size: c.font_size,
+                    border: c.border,
+                    border_color: c.border_color,
+                    action: c.action
+                })))),
+                nextControlId: win.nextControlId
+            };
+
+            undoStack.push(state);
+            if (undoStack.length > MAX_UNDO_STEPS) {
+                undoStack.shift();
+            }
+
+            // Clear redo stack when new action is performed
+            redoStack = [];
+            updateUndoRedoButtons();
+        }
+
+        function undo() {
+            if (undoStack.length === 0) return;
+
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            // Save current state to redo stack
+            const currentState = {
+                windowIndex: currentWindowIndex,
+                controls: JSON.parse(JSON.stringify(win.controls.map(c => ({
+                    type: c.type,
+                    x: c.x,
+                    y: c.y,
+                    w: c.w,
+                    h: c.h,
+                    fg: c.fg,
+                    bg: c.bg,
+                    text: c.text,
+                    id: c.id,
+                    font_type: c.font_type,
+                    font_size: c.font_size,
+                    border: c.border,
+                    border_color: c.border_color,
+                    action: c.action
+                })))),
+                nextControlId: win.nextControlId
+            };
+            redoStack.push(currentState);
+
+            // Restore previous state
+            const previousState = undoStack.pop();
+            restoreState(previousState);
+            updateUndoRedoButtons();
+        }
+
+        function redo() {
+            if (redoStack.length === 0) return;
+
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            // Save current state to undo stack
+            const currentState = {
+                windowIndex: currentWindowIndex,
+                controls: JSON.parse(JSON.stringify(win.controls.map(c => ({
+                    type: c.type,
+                    x: c.x,
+                    y: c.y,
+                    w: c.w,
+                    h: c.h,
+                    fg: c.fg,
+                    bg: c.bg,
+                    text: c.text,
+                    id: c.id,
+                    font_type: c.font_type,
+                    font_size: c.font_size,
+                    border: c.border,
+                    border_color: c.border_color,
+                    action: c.action
+                })))),
+                nextControlId: win.nextControlId
+            };
+            undoStack.push(currentState);
+
+            // Restore next state
+            const nextState = redoStack.pop();
+            restoreState(nextState);
+            updateUndoRedoButtons();
+        }
+
+        function restoreState(state) {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            // Clear current controls from DOM
+            win.controls.forEach(c => {
+                if (c.el) c.el.remove();
+            });
+
+            // Restore controls
+            win.controls = state.controls.map(c => ({...c}));
+            win.nextControlId = state.nextControlId;
+
+            // Recreate DOM elements
+            win.controls.forEach(control => {
+                createControlElement(control, win);
+            });
+
+            selectedControl = null;
+            updateProperties();
+            updateWindowsList();
+        }
+
+        function updateUndoRedoButtons() {
+            const undoBtn = document.getElementById('undo-btn');
+            const redoBtn = document.getElementById('redo-btn');
+
+            if (undoBtn) {
+                undoBtn.disabled = undoStack.length === 0;
+                undoBtn.style.opacity = undoStack.length === 0 ? '0.5' : '1';
+            }
+
+            if (redoBtn) {
+                redoBtn.disabled = redoStack.length === 0;
+                redoBtn.style.opacity = redoStack.length === 0 ? '0.5' : '1';
+            }
+        }
+
+        function selectWindow(index) {
+            // Save current window state if exists
+            if (currentWindowIndex >= 0) {
+                saveCurrentWindowState();
+            }
+
+            currentWindowIndex = index;
+            const win = getCurrentWindow();
+
+            if (!win) {
+                hideCanvas();
+                return;
+            }
+
+            // Clear undo/redo stacks when switching windows
+            undoStack = [];
+            redoStack = [];
+            updateUndoRedoButtons();
+
+            // Show canvas
+            showCanvas();
+
+            // Load window state
+            loadWindowState(win);
+
+            updateWindowsList();
+            updateProperties();
+        }
+
+        function saveCurrentWindowState() {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            // Save form position and size
+            win.x = parseInt(form.style.left) || win.x;
+            win.y = parseInt(form.style.top) || win.y;
+
+            // Controls are already saved in the win.controls array (kept in sync)
+        }
+
+        function loadWindowState(win) {
+            // Clear current controls from DOM
+            formContent.innerHTML = '';
+
+            // Set form dimensions
+            form.style.width = win.w + 'px';
+            form.style.height = win.h + 'px';
+            form.style.left = win.x + 'px';
+            form.style.top = win.y + 'px';
+
+            formTitle.textContent = win.title;
+
+            const titlebarEl = document.getElementById('titlebar');
+            titlebarEl.style.width = (win.w - 4) + 'px';
+
+            formContent.style.width = (win.w - 4) + 'px';
+            formContent.style.height = (win.h - 20) + 'px';
+
+            selectedControl = null;
+
+            // Recreate controls
+            win.controls.forEach(control => {
+                createControlElement(control, win);
+            });
+
+            nextId = win.nextControlId;
+        }
+
+        function createControlElement(control, win) {
+            const el = document.createElement('div');
+            el.className = 'control control-' + control.type;
+            el.style.left = control.x + 'px';
+            el.style.top = control.y + 'px';
+
+            if (control.type === 'button') {
+                el.style.width = control.w + 'px';
+                el.style.height = control.h + 'px';
+                el.textContent = control.text;
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'control-resize-handle br';
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    resizingControl = true;
+                    resizeControlStart.x = e.clientX;
+                    resizeControlStart.y = e.clientY;
+                    resizeControlStart.w = control.w;
+                    resizeControlStart.h = control.h;
+                    draggedControl = control;
+                });
+                el.appendChild(resizeHandle);
+            } else if (control.type === 'label') {
+                const displayText = control.text.replace(/\\n/g, '\n');
+                el.textContent = displayText;
+                el.style.color = osletColors[control.fg].rgb;
+                el.style.backgroundColor = osletColors[control.bg].rgb;
+                el.style.fontSize = control.font_size + 'px';
+                el.style.lineHeight = '1.2';
+
+                const fontWeights = ['normal', 'bold', 'normal', 'bold'];
+                const fontStyles = ['normal', 'normal', 'italic', 'italic'];
+                el.style.fontWeight = fontWeights[control.font_type];
+                el.style.fontStyle = fontStyles[control.font_type];
+
+                if (control.border) {
+                    el.style.border = '1px solid ' + osletColors[control.border_color].rgb;
+                }
+            } else if (control.type === 'picturebox') {
+                el.style.width = control.w + 'px';
+                el.style.height = control.h + 'px';
+                el.textContent = '[Image]';
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'control-resize-handle br';
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    resizingControl = true;
+                    resizeControlStart.x = e.clientX;
+                    resizeControlStart.y = e.clientY;
+                    resizeControlStart.w = control.w;
+                    resizeControlStart.h = control.h;
+                    draggedControl = control;
+                });
+                el.appendChild(resizeHandle);
+            }
+
+            el.addEventListener('mousedown', (e) => {
+                if (e.target.classList.contains('control-resize-handle')) return;
+                e.stopPropagation();
+                selectControl(control);
+                draggedControl = control;
+                resizingControl = false;
+                dragOffset.x = e.clientX - formContent.getBoundingClientRect().left - control.x;
+                dragOffset.y = e.clientY - formContent.getBoundingClientRect().top - control.y;
+            });
+
+            control.el = el;
+            formContent.appendChild(el);
+        }
+
+        function deleteWindow(index) {
+            if (!confirm('Delete this window?')) return;
+
+            project.windows.splice(index, 1);
+
+            if (currentWindowIndex === index) {
+                if (project.windows.length > 0) {
+                    selectWindow(Math.max(0, index - 1));
+                } else {
+                    currentWindowIndex = -1;
+                    hideCanvas();
+                }
+            } else if (currentWindowIndex > index) {
+                currentWindowIndex--;
+            }
+
+            updateWindowsList();
+        }
+
+        function updateWindowsList() {
+            const list = document.getElementById('windows-list');
+            list.innerHTML = '';
+
+            project.windows.forEach((win, index) => {
+                const item = document.createElement('div');
+                item.className = 'window-item' + (index === currentWindowIndex ? ' active' : '');
+
+                item.innerHTML = `
+                    <div class="window-item-header">
+                        <div class="window-item-title">${win.name}</div>
+                        <button class="window-delete" onclick="event.stopPropagation(); deleteWindow(${index})">×</button>
+                    </div>
+                    <div class="window-item-info">${win.w}×${win.h}, ${win.controls.length} controls</div>
+                `;
+
+                item.onclick = () => selectWindow(index);
+                list.appendChild(item);
+            });
+        }
+
+        function showCanvas() {
+            screenBounds.style.display = 'block';
+            noWindowMessage.style.display = 'none';
+        }
+
+        function hideCanvas() {
+            screenBounds.style.display = 'none';
+            noWindowMessage.style.display = 'flex';
+            updateProperties();
+        }
+
+        function selectTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+        }
+
+        formContent.addEventListener('click', (e) => {
+            if (e.target === formContent) {
+                if (currentTool === 'select') {
+                    const win = getCurrentWindow();
+                    if (win) {
+                        win.controls.forEach(c => c.el.classList.remove('selected'));
+                    }
+                    selectedControl = null;
+                    updateProperties();
+                } else {
+                    addControl(e);
+                }
+            }
+        });
+
+        document.getElementById('titlebar').addEventListener('mousedown', (e) => {
+            formDragging = true;
+            const screenRect = screenBounds.getBoundingClientRect();
+            const currentLeft = parseInt(form.style.left) || 0;
+            const currentTop = parseInt(form.style.top) || 0;
+            formDragOffset.x = e.clientX - screenRect.left - currentLeft;
+            formDragOffset.y = e.clientY - screenRect.top - currentTop;
+            e.preventDefault();
+        });
+
+        document.querySelectorAll('.resize-handle').forEach(handle => {
+            handle.addEventListener('mousedown', (e) => {
+                const win = getCurrentWindow();
+                if (!win) return;
+
+                resizing = true;
+                resizeStart.x = e.clientX;
+                resizeStart.y = e.clientY;
+                resizeStart.w = win.w;
+                resizeStart.h = win.h;
+
+                if (handle.classList.contains('right')) resizeType = 'right';
+                else if (handle.classList.contains('bottom')) resizeType = 'bottom';
+                else if (handle.classList.contains('br')) resizeType = 'corner';
+
+                e.stopPropagation();
+                e.preventDefault();
+            });
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            if (formDragging) {
+                const screenRect = screenBounds.getBoundingClientRect();
+
+                let newLeft = e.clientX - screenRect.left - formDragOffset.x;
+                let newTop = e.clientY - screenRect.top - formDragOffset.y;
+
+                newLeft = Math.max(0, Math.min(newLeft, 640 - win.w));
+                newTop = Math.max(0, Math.min(newTop, 480 - win.h));
+
+                form.style.left = newLeft + 'px';
+                form.style.top = newTop + 'px';
+
+                win.x = newLeft;
+                win.y = newTop;
+            }
+
+            if (resizing) {
+                const dx = e.clientX - resizeStart.x;
+                const dy = e.clientY - resizeStart.y;
+
+                const currentLeft = parseInt(form.style.left) || 0;
+                const currentTop = parseInt(form.style.top) || 0;
+
+                if (resizeType === 'right' || resizeType === 'corner') {
+                    const maxWidth = 640 - currentLeft;
+                    win.w = Math.max(100, Math.min(maxWidth, resizeStart.w + dx));
+                }
+                if (resizeType === 'bottom' || resizeType === 'corner') {
+                    const maxHeight = 480 - currentTop;
+                    win.h = Math.max(80, Math.min(maxHeight, resizeStart.h + dy));
+                }
+
+                updateFormSize();
+                updateWindowsList();
+            }
+
+            if (resizingControl && draggedControl) {
+                const dx = e.clientX - resizeControlStart.x;
+                const dy = e.clientY - resizeControlStart.y;
+
+                draggedControl.w = Math.max(20, resizeControlStart.w + dx);
+                draggedControl.h = Math.max(10, resizeControlStart.h + dy);
+
+                draggedControl.el.style.width = draggedControl.w + 'px';
+                draggedControl.el.style.height = draggedControl.h + 'px';
+
+                updateProperties();
+            }
+            else if (draggedControl && !resizingControl) {
+                const rect = formContent.getBoundingClientRect();
+                const x = e.clientX - rect.left - dragOffset.x;
+                const y = e.clientY - rect.top - dragOffset.y;
+
+                draggedControl.el.style.left = Math.max(0, x) + 'px';
+                draggedControl.el.style.top = Math.max(0, y) + 'px';
+                draggedControl.x = Math.max(0, Math.round(x));
+                draggedControl.y = Math.max(0, Math.round(y));
+
+                updateProperties();
+            }
+        });
+
+        let isDraggingControl = false;
+        let isResizingControlActive = false;
+
+        document.addEventListener('mousedown', (e) => {
+            if (draggedControl && !resizingControl) {
+                isDraggingControl = true;
+            }
+            if (resizingControl) {
+                isResizingControlActive = true;
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            // Save undo state after drag/resize ends
+            if ((isDraggingControl || isResizingControlActive) && draggedControl) {
+                saveUndoState();
+            }
+
+            formDragging = false;
+            resizing = false;
+            resizingControl = false;
+            draggedControl = null;
+            isDraggingControl = false;
+            isResizingControlActive = false;
+
+            if (resizing) {
+                updateWindowsList();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                selectTool('select');
+                document.querySelector('.tool-btn:last-of-type').classList.add('active');
+            }
+            if (e.key === 'Delete' && selectedControl) {
+                deleteSelected();
+            }
+            if (e.ctrlKey && e.key === 'z') {
+                e.preventDefault();
+                undo();
+            }
+            if (e.ctrlKey && e.key === 'y') {
+                e.preventDefault();
+                redo();
+            }
+        });
+
+        function updateFormSize() {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            form.style.width = win.w + 'px';
+            form.style.height = win.h + 'px';
+
+            const titlebarEl = document.getElementById('titlebar');
+            titlebarEl.style.width = (win.w - 4) + 'px';
+
+            formContent.style.width = (win.w - 4) + 'px';
+            formContent.style.height = (win.h - 20) + 'px';
+        }
+
+        function addControl(e) {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            saveUndoState();
+
+            const rect = formContent.getBoundingClientRect();
+            const x = Math.round(e.clientX - rect.left);
+            const y = Math.round(e.clientY - rect.top);
+
+            const control = {
+                type: currentTool,
+                x: x,
+                y: y,
+                w: currentTool === 'button' ? 70 : (currentTool === 'picturebox' ? 100 : 0),
+                h: currentTool === 'button' ? 23 : (currentTool === 'picturebox' ? 100 : 0),
+                fg: 0,
+                bg: currentTool === 'label' ? 15 : 7,
+                text: currentTool === 'button' ? 'Button' : (currentTool === 'label' ? 'Label' : 'IMAGE.BMP'),
+                id: win.nextControlId++,
+                font_type: 0,
+                font_size: 12,
+                border: 0,
+                border_color: 0,
+                action: currentTool === 'button' ? { type: 'none', target: '' } : undefined
+            };
+
+            win.controls.push(control);
+            createControlElement(control, win);
+            selectControl(control);
+            updateWindowsList();
+        }
+
+        function selectControl(control) {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            win.controls.forEach(c => {
+                if (c.el) c.el.classList.remove('selected');
+            });
+            if (control.el) {
+                control.el.classList.add('selected');
+            }
+            selectedControl = control;
+            updateProperties();
+        }
+
+        function updateProperties() {
+            const win = getCurrentWindow();
+
+            if (!win) {
+                document.getElementById('prop-content').innerHTML = '<p style="color: #666; font-size: 12px;">No window selected</p>';
+                return;
+            }
+
+            if (!selectedControl) {
+                // Show window properties
+                let html = `
+                    <div class="prop-group">
+                        <div class="prop-label">Window Name</div>
+                        <input class="prop-input" value="${win.name}" onchange="updateWindowName(this.value)">
+                    </div>
+                    <div class="prop-group">
+                        <div class="prop-label">Window Title</div>
+                        <input class="prop-input" value="${win.title}" onchange="updateWindowTitle(this.value)">
+                    </div>
+                    <div class="prop-group">
+                        <div class="prop-label">Width</div>
+                        <input class="prop-input" type="number" value="${win.w}" onchange="updateWindowDimension('w', parseInt(this.value))">
+                    </div>
+                    <div class="prop-group">
+                        <div class="prop-label">Height</div>
+                        <input class="prop-input" type="number" value="${win.h}" onchange="updateWindowDimension('h', parseInt(this.value))">
+                    </div>
+                `;
+                document.getElementById('prop-content').innerHTML = html;
+                return;
+            }
+
+            // Show control properties with action editor for buttons
+            if (selectedControl.type === 'button') {
+                showButtonProperties(selectedControl);
+                return;
+            }
+
+            const c = selectedControl;
+            const typeLabel = c.type === 'button' ? 'CTRL_BUTTON' : (c.type === 'label' ? 'CTRL_LABEL' : 'CTRL_PICTUREBOX');
+
+            let html = `
+                <div class="prop-group">
+                    <div class="prop-label">Type</div>
+                    <input class="prop-input" value="${typeLabel}" disabled>
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">ID</div>
+                    <input class="prop-input" type="number" value="${c.id}" onchange="selectedControl.id = parseInt(this.value)">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">X</div>
+                    <input class="prop-input" type="number" value="${c.x}" onchange="updatePosition('x', parseInt(this.value))">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">Y</div>
+                    <input class="prop-input" type="number" value="${c.y}" onchange="updatePosition('y', parseInt(this.value))">
+                </div>
+            `;
+
+            if (c.type !== 'label') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Width</div>
+                        <input class="prop-input" type="number" value="${c.w}" onchange="updateSize('w', parseInt(this.value))">
+                    </div>
+                    <div class="prop-group">
+                        <div class="prop-label">Height</div>
+                        <input class="prop-input" type="number" value="${c.h}" onchange="updateSize('h', parseInt(this.value))">
+                    </div>
+                `;
+            }
+
+            if (c.type === 'label') {
+                const editText = c.text.replace(/\\n/g, '\n');
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Text (use Enter for new lines)</div>
+                        <textarea class="prop-input" rows="3" onchange="updateText(this.value)">${editText}</textarea>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Text</div>
+                        <input class="prop-input" value="${c.text}" onchange="updateText(this.value)">
+                    </div>
+                `;
+            }
+
+            if (c.type === 'label') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Font Type</div>
+                        <select class="prop-input" onchange="updateFontType(parseInt(this.value))">
+                            <option value="0" ${c.font_type === 0 ? 'selected' : ''}>Normal</option>
+                            <option value="1" ${c.font_type === 1 ? 'selected' : ''}>Bold</option>
+                            <option value="2" ${c.font_type === 2 ? 'selected' : ''}>Italic</option>
+                            <option value="3" ${c.font_type === 3 ? 'selected' : ''}>Bold Italic</option>
+                        </select>
+                    </div>
+                    <div class="prop-group">
+                        <div class="prop-label">Font Size</div>
+                        <input class="prop-input" type="number" value="${c.font_size}" onchange="updateFontSize(parseInt(this.value))">
+                    </div>
+                `;
+                html += `<div class="prop-group">
+                    <div class="prop-label">Foreground Color</div>
+                    <div class="color-grid">`;
+                osletColors.forEach(col => {
+                    html += `<div class="color-btn ${c.fg === col.val ? 'selected' : ''}" style="background: ${col.rgb}"
+                             onclick="updateColor('fg', ${col.val})" title="${col.name}"></div>`;
+                });
+                html += `</div></div>`;
+            }
+
+            if (c.type === 'label') {
+                html += `<div class="prop-group">
+                    <div class="prop-label">Background Color</div>
+                    <div class="color-grid">`;
+                osletColors.forEach(col => {
+                    html += `<div class="color-btn ${c.bg === col.val ? 'selected' : ''}" style="background: ${col.rgb}"
+                             onclick="updateColor('bg', ${col.val})" title="${col.name}"></div>`;
+                });
+                html += `</div></div>`;
+
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Border</div>
+                        <select class="prop-input" onchange="updateBorder(parseInt(this.value))">
+                            <option value="0" ${c.border === 0 ? 'selected' : ''}>None</option>
+                            <option value="1" ${c.border === 1 ? 'selected' : ''}>Enabled</option>
+                        </select>
+                    </div>
+                `;
+
+                if (c.border) {
+                    html += `<div class="prop-group">
+                        <div class="prop-label">Border Color</div>
+                        <div class="color-grid">`;
+                    osletColors.forEach(col => {
+                        html += `<div class="color-btn ${c.border_color === col.val ? 'selected' : ''}" style="background: ${col.rgb}"
+                                 onclick="updateBorderColor(${col.val})" title="${col.name}"></div>`;
+                    });
+                    html += `</div></div>`;
+                }
+            }
+
+            if (c.type === 'button') {
+                html += `<div class="prop-group">
+                    <div class="prop-label">Background Color</div>
+                    <div class="color-grid">`;
+                osletColors.forEach(col => {
+                    html += `<div class="color-btn ${c.bg === col.val ? 'selected' : ''}" style="background: ${col.rgb}"
+                             onclick="updateColor('bg', ${col.val})" title="${col.name}"></div>`;
+                });
+                html += `</div></div>`;
+            }
+
+            document.getElementById('prop-content').innerHTML = html;
+        }
+
+        function updateWindowName(value) {
+            const win = getCurrentWindow();
+            if (win) {
+                win.name = value;
+                updateWindowsList();
+            }
+        }
+
+        function updateWindowTitle(value) {
+            const win = getCurrentWindow();
+            if (win) {
+                win.title = value;
+                formTitle.textContent = value;
+            }
+        }
+
+        function updateWindowDimension(axis, value) {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            if (axis === 'w') {
+                win.w = Math.max(100, value);
+            } else {
+                win.h = Math.max(80, value);
+            }
+            updateFormSize();
+            updateProperties();
+            updateWindowsList();
+        }
+
+        function updatePosition(axis, value) {
+            selectedControl[axis] = value;
+            selectedControl.el.style[axis === 'x' ? 'left' : 'top'] = value + 'px';
+        }
+
+        function updateSize(axis, value) {
+            selectedControl[axis] = value;
+            selectedControl.el.style[axis === 'w' ? 'width' : 'height'] = value + 'px';
+        }
+
+        function updateText(value) {
+            selectedControl.text = value.replace(/\n/g, '\\n');
+            selectedControl.el.textContent = value;
+        }
+
+        function updateFontType(value) {
+            selectedControl.font_type = value;
+            const fontWeights = ['normal', 'bold', 'normal', 'bold'];
+            const fontStyles = ['normal', 'normal', 'italic', 'italic'];
+            selectedControl.el.style.fontWeight = fontWeights[value];
+            selectedControl.el.style.fontStyle = fontStyles[value];
+        }
+
+        function updateFontSize(value) {
+            selectedControl.font_size = Math.max(6, Math.min(32, value));
+            selectedControl.el.style.fontSize = selectedControl.font_size + 'px';
+            selectedControl.el.style.lineHeight = '1.2';
+            updateProperties();
+        }
+
+        function updateBorder(value) {
+            selectedControl.border = value;
+            if (value) {
+                selectedControl.el.style.border = '1px solid ' + osletColors[selectedControl.border_color].rgb;
+            } else {
+                selectedControl.el.style.border = 'none';
+            }
+            updateProperties();
+        }
+
+        function updateBorderColor(value) {
+            selectedControl.border_color = value;
+            if (selectedControl.border) {
+                selectedControl.el.style.border = '1px solid ' + osletColors[value].rgb;
+            }
+            updateProperties();
+        }
+
+        function updateColor(type, value) {
+            selectedControl[type] = value;
+            if (type === 'fg' && selectedControl.type === 'label') {
+                selectedControl.el.style.color = osletColors[value].rgb;
+            } else if (type === 'bg') {
+                if (selectedControl.type === 'button') {
+                    selectedControl.el.style.background = osletColors[value].rgb;
+                } else if (selectedControl.type === 'label') {
+                    selectedControl.el.style.backgroundColor = osletColors[value].rgb;
+                }
+            }
+            updateProperties();
+        }
+
+        function showButtonProperties(control) {
+            const win = getCurrentWindow();
+            const c = control;
+
+            let html = `
+                <div class="prop-group">
+                    <div class="prop-label">Type</div>
+                    <input class="prop-input" value="CTRL_BUTTON" disabled>
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">ID</div>
+                    <input class="prop-input" type="number" value="${c.id}" onchange="selectedControl.id = parseInt(this.value)">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">Text</div>
+                    <input class="prop-input" value="${c.text}" onchange="updateText(this.value)">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">X</div>
+                    <input class="prop-input" type="number" value="${c.x}" onchange="updatePosition('x', parseInt(this.value))">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">Y</div>
+                    <input class="prop-input" type="number" value="${c.y}" onchange="updatePosition('y', parseInt(this.value))">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">Width</div>
+                    <input class="prop-input" type="number" value="${c.w}" onchange="updateSize('w', parseInt(this.value))">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">Height</div>
+                    <input class="prop-input" type="number" value="${c.h}" onchange="updateSize('h', parseInt(this.value))">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">Background Color</div>
+                    <div class="color-grid">`;
+            osletColors.forEach(col => {
+                html += `<div class="color-btn ${c.bg === col.val ? 'selected' : ''}" style="background: ${col.rgb}"
+                         onclick="updateColor('bg', ${col.val})" title="${col.name}"></div>`;
+            });
+            html += `</div></div>`;
+
+            // Button action configuration
+            html += `
+                <h3 style="margin-top: 20px;">Button Action</h3>
+                <div class="prop-group">
+                    <div class="prop-label">Action Type</div>
+                    <select class="prop-input" onchange="updateButtonAction('type', this.value)">
+                        <option value="none" ${!c.action || c.action.type === 'none' ? 'selected' : ''}>None</option>
+                        <option value="show_form" ${c.action && c.action.type === 'show_form' ? 'selected' : ''}>Show Form</option>
+                        <option value="hide_form" ${c.action && c.action.type === 'hide_form' ? 'selected' : ''}>Hide Form</option>
+                        <option value="exit" ${c.action && c.action.type === 'exit' ? 'selected' : ''}>Exit Application</option>
+                    </select>
+                </div>
+            `;
+
+            if (c.action && (c.action.type === 'show_form' || c.action.type === 'hide_form')) {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Target Form</div>
+                        <select class="prop-input" onchange="updateButtonAction('target', this.value)">
+                            <option value="">-- Select Form --</option>`;
+                project.windows.forEach(w => {
+                    if (w.name !== win.name) {
+                        const selected = c.action.target === w.name ? 'selected' : '';
+                        html += `<option value="${w.name}" ${selected}>${w.name}</option>`;
+                    }
+                });
+                html += `
+                        </select>
+                    </div>
+                `;
+            }
+
+            document.getElementById('prop-content').innerHTML = html;
+        }
+
+        function updateButtonAction(field, value) {
+            if (!selectedControl || selectedControl.type !== 'button') return;
+
+            if (!selectedControl.action) {
+                selectedControl.action = { type: 'none', target: '' };
+            }
+
+            if (field === 'type') {
+                selectedControl.action.type = value;
+                if (value === 'none' || value === 'exit') {
+                    selectedControl.action.target = '';
+                }
+            } else if (field === 'target') {
+                selectedControl.action.target = value;
+            }
+
+            updateProperties();
+        }
+
+        function deleteSelected() {
+            if (!selectedControl) return;
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            saveUndoState();
+
+            const idx = win.controls.indexOf(selectedControl);
+            if (idx > -1) {
+                win.controls[idx].el.remove();
+                win.controls.splice(idx, 1);
+                selectedControl = null;
+                updateProperties();
+                updateWindowsList();
+            }
+        }
+
+        function clearAllControls() {
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            if (confirm('Clear all controls in this window?')) {
+                saveUndoState();
+
+                win.controls.forEach(c => c.el.remove());
+                win.controls = [];
+                win.nextControlId = 1;
+                selectedControl = null;
+                updateProperties();
+                updateWindowsList();
+            }
+        }
+
+        // Create a hidden canvas for text measurement
+        const measureCanvas = document.createElement('canvas');
+        const measureCtx = measureCanvas.getContext('2d');
+
+        // Measure text using Canvas API with Liberation Sans font
+        function measureTextWidth(text, fontSize, fontType) {
+            const fontWeights = ['normal', 'bold', 'normal', 'bold'];
+            const fontStyles = ['normal', 'normal', 'italic', 'italic'];
+
+            const weight = fontWeights[fontType] || 'normal';
+            const style = fontStyles[fontType] || 'normal';
+
+            measureCtx.font = `${style} ${weight} ${fontSize}px 'Liberation Sans', Arial, sans-serif`;
+
+            let totalWidth = 0;
+            for (let i = 0; i < text.length; i++) {
+                const metrics = measureCtx.measureText(text[i]);
+                totalWidth += Math.ceil(metrics.width);
+            }
+
+            return totalWidth;
+        }
+
+        // Calculate label dimensions based on text, font type and size
+        function calculateLabelDimensions(control) {
+            if (control.type !== 'label') {
+                return { w: control.w, h: control.h };
+            }
+
+            const text = control.text;
+            const fontSize = control.font_size || 12;
+
+            // Split by \n to get lines
+            const lines = text.split('\\n');
+
+            // For single-line labels, return 0,0 to let osLET calculate dimensions automatically
+            if (lines.length === 1) {
+                return { w: 0, h: 0 };
+            }
+
+            // For multi-line labels, calculate dimensions
+            let maxLineWidth = 0;
+            lines.forEach(line => {
+                const lineWidth = measureTextWidth(line, fontSize, control.font_type);
+                if (lineWidth > maxLineWidth) {
+                    maxLineWidth = lineWidth;
+                }
+            });
+
+            // Font height calculation (matches osLET's font_height + spacing)
+            const fontHeight = fontSize;
+
+            const textHeight = fontHeight + ((lines.length) * (fontHeight + 2)) + 4;
+
+            return {
+                w: Math.max(maxLineWidth + 4, 10), // +4 for padding (2px on each side)
+                h: textHeight
+            };
+        }
+
+        function generateCode() {
+            if (project.windows.length === 0) {
+                alert('Add at least one window first!');
+                return;
+            }
+
+            saveCurrentWindowState();
+
+            let code = `/* Generated by osLET IDE */\n/* Project: ${project.name} */\n\n`;
+            code += `#include "../syscall.h"\n`;
+            code += `#include "../lib/stdio.h"\n\n`;
+
+            // Generate controls for each window
+            project.windows.forEach((win, winIdx) => {
+                if (win.controls.length > 0) {
+                    code += `// Controls for ${win.name}\n`;
+                    code += `gui_control_t ${win.name}_controls[] = {\n`;
+
+                    win.controls.forEach((c, i) => {
+                        const typeStr = c.type === 'button' ? 'CTRL_BUTTON' : (c.type === 'label' ? 'CTRL_LABEL' : 'CTRL_PICTUREBOX');
+                        const comma = i < win.controls.length - 1 ? ',' : '';
+
+                        // Calculate proper dimensions for labels
+                        let w = c.w;
+                        let h = c.h;
+                        if (c.type === 'label') {
+                            const dims = calculateLabelDimensions(c);
+                            w = dims.w;
+                            h = dims.h;
+                        }
+
+                        code += `    {${typeStr}, ${c.x}, ${c.y}, ${w}, ${h}, ${c.fg}, ${c.bg}, "${c.text}", ${c.id}, ${c.font_type}, ${c.font_size}, ${c.border}, ${c.border_color}, NULL, 0}${comma}\n`;
+                    });
+
+                    code += `};\n\n`;
+                }
+            });
+
+            // Generate window creation functions
+            project.windows.forEach(win => {
+                code += `void* create_${win.name}(void) {\n`;
+                code += `    void *form = sys_win_create_form("${win.title}", ${win.x}, ${win.y}, ${win.w}, ${win.h});\n`;
+
+                if (win.controls.length > 0) {
+                    code += `    for (int i = 0; i < ${win.controls.length}; i++) {\n`;
+                    code += `        sys_win_add_control(form, &${win.name}_controls[i]);\n`;
+                    code += `    }\n`;
+                }
+
+                code += `    sys_win_draw(form);\n`;
+                code += `    return form;\n`;
+                code += `}\n\n`;
+            });
+
+            // Generate main function
+            code += `__attribute__((section(".entry"), used))\n`;
+            code += `void _start(void) {\n`;
+            code += `    int mx = 320;\n`;
+            code += `    int my = 240;\n`;
+            code += `    unsigned char mb;\n\n`;
+            code += `    sys_gfx_enter();\n`;
+            code += `    sys_gfx_fillrect(0, 0, 640, 480, COLOR_CYAN);\n\n`;
+
+            // Create all windows
+            code += `    // Create windows\n`;
+            project.windows.forEach(win => {
+                code += `    void *${win.name} = create_${win.name}();\n`;
+            });
+
+            code += `\n    int exit_requested = 0;\n\n`;
+            code += `    while (!exit_requested) {\n`;
+            code += `        sys_get_mouse_state(&mx, &my, &mb);\n\n`;
+
+            // Event handling for each window
+            project.windows.forEach((win, idx) => {
+                code += `        // Handle ${win.name} events\n`;
+                code += `        int event${idx} = sys_win_pump_events(${win.name});\n`;
+                code += `        if (event${idx} > 0) {\n`;
+                code += `            /* Control clicked in ${win.name} - event = control ID */\n`;
+
+                const buttons = win.controls.filter(c => c.type === 'button');
+                if (buttons.length > 0) {
+                    buttons.forEach(c => {
+                        code += `            if (event${idx} == ${c.id}) { /* ${c.text} */\n`;
+
+                        // Generate code based on button action
+                        if (c.action) {
+                            if (c.action.type === 'show_form' && c.action.target) {
+                                code += `                sys_win_draw(${c.action.target});\n`;
+                            } else if (c.action.type === 'hide_form' && c.action.target) {
+                                code += `                sys_win_restore_background(&((gui_form_t*)${c.action.target})->win);\n`;
+                            } else if (c.action.type === 'exit') {
+                                code += `                exit_requested = 1;\n`;
+                            } else {
+                                code += `                // TODO: Handle ${c.text} click\n`;
+                            }
+                        } else {
+                            code += `                // TODO: Handle ${c.text} click\n`;
+                        }
+
+                        code += `            }\n`;
+                    });
+                }
+
+                code += `        } else if (event${idx} == -2 || event${idx} == -1) {\n`;
+                code += `            sys_gfx_fillrect(0, 0, 640, 480, COLOR_CYAN);\n`;
+                code += `            sys_win_redraw_all();\n`;
+                code += `        }\n\n`;
+            });
+
+            code += `        sys_mouse_draw_cursor(mx, my, 0);\n`;
+            code += `        sys_gfx_swap();\n`;
+            code += `    }\n\n`;
+
+            // Cleanup
+            project.windows.forEach(win => {
+                code += `    sys_win_destroy_form(${win.name});\n`;
+            });
+
+            code += `    sys_gfx_exit();\n`;
+            code += `    sys_exit();\n`;
+            code += `}\n`;
+
+            document.getElementById('code-text').textContent = code;
+            document.getElementById('code-output').classList.add('show');
+        }
+
+        function copyCode() {
+            const text = document.getElementById('code-text').textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Code copied to clipboard!');
+            });
+        }
+
+        function saveCodeToFile() {
+            const code = document.getElementById('code-text').textContent;
+            const blob = new Blob([code], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = project.name.toLowerCase().replace(/\s+/g, '_') + '.c';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function closeCodeWindow() {
+            document.getElementById('code-output').classList.remove('show');
+        }
+
+        function saveProject() {
+            saveCurrentWindowState();
+
+            const projectData = {
+                name: project.name,
+                windows: project.windows.map(win => ({
+                    name: win.name,
+                    title: win.title,
+                    x: win.x,
+                    y: win.y,
+                    w: win.w,
+                    h: win.h,
+                    controls: win.controls.map(c => ({
+                        type: c.type,
+                        x: c.x,
+                        y: c.y,
+                        w: c.w,
+                        h: c.h,
+                        fg: c.fg,
+                        bg: c.bg,
+                        text: c.text,
+                        id: c.id,
+                        font_type: c.font_type,
+                        font_size: c.font_size,
+                        border: c.border,
+                        border_color: c.border_color,
+                        action: c.action
+                    })),
+                    nextControlId: win.nextControlId
+                }))
+            };
+
+            const json = JSON.stringify(projectData, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = project.name.toLowerCase().replace(/\s+/g, '_') + '.oplet';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function loadProject() {
+            document.getElementById('project-file-input').click();
+        }
+
+        function handleProjectLoad(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+
+                    project = {
+                        name: data.name || 'Untitled Project',
+                        windows: data.windows.map(win => ({
+                            name: win.name,
+                            title: win.title,
+                            x: win.x,
+                            y: win.y,
+                            w: win.w,
+                            h: win.h,
+                            controls: win.controls || [],
+                            nextControlId: win.nextControlId || 1
+                        }))
+                    };
+
+                    document.getElementById('project-name').textContent = project.name;
+                    currentWindowIndex = -1;
+
+                    updateWindowsList();
+
+                    if (project.windows.length > 0) {
+                        selectWindow(0);
+                    } else {
+                        hideCanvas();
+                    }
+
+                    alert('Project loaded successfully!');
+                } catch (err) {
+                    alert('Error loading project: ' + err.message);
+                    console.error(err);
+                }
+            };
+            reader.readAsText(file);
+
+            // Reset file input
+            event.target.value = '';
+        }
+
+        function importCFile() {
+            document.getElementById('c-file-input').click();
+        }
+
+        function handleCFileLoad(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const code = e.target.result;
+                parseCFileAndLoadWindows(code);
+            };
+            reader.readAsText(file);
+
+            // Reset file input
+            event.target.value = '';
+        }
+
+        function parseCFileAndLoadWindows(code) {
+            try {
+                // Extract project name from comment if exists
+                const projectNameMatch = code.match(/\/\*\s*Project:\s*([^\*]+)\*\//);
+                if (projectNameMatch) {
+                    project.name = projectNameMatch[1].trim();
+                    document.getElementById('project-name').textContent = project.name;
+                }
+
+                // Find all control arrays (e.g., Form1_controls, Form2_controls, or just "controls")
+                const controlArrayRegex = /(?:\/\/\s*Controls for\s+(\w+)\s*\n)?gui_control_t\s+(\w+)(?:_controls)?\[\]\s*=\s*\{([\s\S]*?)\n\};/g;
+                const controlMatches = [...code.matchAll(controlArrayRegex)];
+
+                // Try to find window creation functions first (multi-window format)
+                const windowFuncRegex = /void\*\s+create_(\w+)\(void\)\s*\{[\s\S]*?sys_win_create_form\("([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/g;
+                let windowMatches = [...code.matchAll(windowFuncRegex)];
+
+                // If no creation functions found, try inline format (single window in _start)
+                if (windowMatches.length === 0) {
+                    const inlineRegex = /sys_win_create_form\("([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/g;
+                    const inlineMatches = [...code.matchAll(inlineRegex)];
+
+                    if (inlineMatches.length === 0) {
+                        alert('No window creation found in C file');
+                        return;
+                    }
+
+                    // Convert inline format to window format
+                    windowMatches = inlineMatches.map((match, idx) => {
+                        // Create a fake match array that looks like windowFuncRegex result
+                        return [
+                            match[0],
+                            `Form${idx + 1}`, // window name
+                            match[1],          // title
+                            match[2],          // x
+                            match[3],          // y
+                            match[4],          // w
+                            match[5]           // h
+                        ];
+                    });
+                }
+
+                // Clear existing project
+                project.windows = [];
+
+                // Process each window
+                windowMatches.forEach((winMatch, winIdx) => {
+                    const windowName = winMatch[1];
+                    const windowTitle = winMatch[2];
+                    const x = parseInt(winMatch[3]);
+                    const y = parseInt(winMatch[4]);
+                    const w = parseInt(winMatch[5]);
+                    const h = parseInt(winMatch[6]);
+
+                    // Find corresponding controls
+                    // Try to match by window name first, then by array name, or use first/only array
+                    let controlsMatch = controlMatches.find(cm =>
+                        (cm[1] && cm[1] === windowName) ||
+                        (cm[2] && cm[2] === windowName) ||
+                        (cm[2] && cm[2] === windowName + '_controls')
+                    );
+
+                    // If still not found and we have controls, use the first one (for single-window files)
+                    if (!controlsMatch && controlMatches.length > 0 && winIdx === 0) {
+                        controlsMatch = controlMatches[0];
+                    }
+
+                    const win = {
+                        name: windowName,
+                        title: windowTitle,
+                        x: x,
+                        y: y,
+                        w: w,
+                        h: h,
+                        controls: [],
+                        nextControlId: 1
+                    };
+
+                    if (controlsMatch) {
+                        const controlsText = controlsMatch[3];
+                        const controlRegex = /\{(CTRL_\w+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*NULL,\s*0\}/g;
+                        const controls = [...controlsText.matchAll(controlRegex)];
+
+                        controls.forEach(match => {
+                            const typeStr = match[1];
+                            const type = typeStr === 'CTRL_BUTTON' ? 'button' : (typeStr === 'CTRL_LABEL' ? 'label' : 'picturebox');
+
+                            const control = {
+                                type: type,
+                                x: parseInt(match[2]),
+                                y: parseInt(match[3]),
+                                w: parseInt(match[4]),
+                                h: parseInt(match[5]),
+                                fg: parseInt(match[6]),
+                                bg: parseInt(match[7]),
+                                text: match[8],
+                                id: parseInt(match[9]),
+                                font_type: parseInt(match[10]),
+                                font_size: parseInt(match[11]),
+                                border: parseInt(match[12]),
+                                border_color: parseInt(match[13]),
+                                action: type === 'button' ? { type: 'none', target: '' } : undefined
+                            };
+
+                            if (control.id >= win.nextControlId) {
+                                win.nextControlId = control.id + 1;
+                            }
+
+                            // Try to parse button actions from code
+                            if (type === 'button') {
+                                parseButtonAction(code, windowName, control);
+                            }
+
+                            win.controls.push(control);
+                        });
+                    }
+
+                    project.windows.push(win);
+                });
+
+                updateWindowsList();
+
+                if (project.windows.length > 0) {
+                    selectWindow(0);
+                } else {
+                    hideCanvas();
+                }
+
+                alert(`Imported ${project.windows.length} window(s) successfully!`);
+
+            } catch (err) {
+                alert('Error parsing C file: ' + err.message);
+                console.error(err);
+            }
+        }
+
+        function parseButtonAction(code, windowName, control) {
+            // Try to find button action in event handler
+            // Pattern: if (event == ID) { action }
+            const eventPattern = new RegExp(
+                `if\\s*\\(event\\d+\\s*==\\s*${control.id}\\)\\s*\\{[^}]*?(?:` +
+                `sys_win_draw\\((\\w+)\\)|` +  // show_form
+                `sys_win_restore_background|` + // hide_form
+                `exit_requested\\s*=\\s*1)`,    // exit
+                'g'
+            );
+
+            const match = eventPattern.exec(code);
+            if (match) {
+                if (match[0].includes('sys_win_draw')) {
+                    control.action = { type: 'show_form', target: match[1] || '' };
+                } else if (match[0].includes('sys_win_restore_background')) {
+                    // Try to extract target form name
+                    const targetMatch = match[0].match(/\(\(gui_form_t\*\)(\w+)\)/);
+                    control.action = {
+                        type: 'hide_form',
+                        target: targetMatch ? targetMatch[1] : ''
+                    };
+                } else if (match[0].includes('exit_requested')) {
+                    control.action = { type: 'exit', target: '' };
+                }
+            }
+        }
+    </script>
+</body>
+</html>
