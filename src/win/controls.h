@@ -13,6 +13,18 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y);
 // Draw a picturebox control
 void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y);
 
+// Draw a checkbox control
+void ctrl_draw_checkbox(gui_control_t *control, int abs_x, int abs_y);
+
+// Draw a radio button control
+void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y);
+
+// Draw a textbox control
+void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y);
+
+// Draw a frame control
+void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y);
+
 // Generic control drawing dispatcher
 void ctrl_draw(window_t *win, gui_control_t *control);
 

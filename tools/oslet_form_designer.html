@@ -546,6 +546,10 @@
         <button class="tool-btn" onclick="selectTool('button')">Button</button>
         <button class="tool-btn" onclick="selectTool('label')">Label</button>
         <button class="tool-btn" onclick="selectTool('picturebox')">PictureBox</button>
+        <button class="tool-btn" onclick="selectTool('checkbox')">CheckBox</button>
+        <button class="tool-btn" onclick="selectTool('radiobutton')">RadioButton</button>
+        <button class="tool-btn" onclick="selectTool('textbox')">TextBox</button>
+        <button class="tool-btn" onclick="selectTool('frame')">Frame</button>
         <button class="tool-btn" onclick="selectTool('select')" style="margin-top: 20px;">Select (Esc)</button>
     </div>
 
@@ -982,6 +986,222 @@
                     draggedControl = control;
                 });
                 el.appendChild(resizeHandle);
+            } else if (control.type === 'checkbox') {
+                el.style.width = 'auto';
+                el.style.height = '13px';
+                el.style.lineHeight = '13px';
+
+                const box = document.createElement('div');
+                box.style.width = '13px';
+                box.style.height = '13px';
+                box.style.display = 'inline-block';
+                box.style.verticalAlign = 'middle';
+                // 3D sunken effect matching osLET
+                box.style.borderTop = '1px solid #808080';
+                box.style.borderLeft = '1px solid #808080';
+                box.style.borderBottom = '1px solid #dfdfdf';
+                box.style.borderRight = '1px solid #dfdfdf';
+                box.style.backgroundColor = 'white';
+                box.style.boxShadow = 'inset 1px 1px 0 #404040';
+
+                if (control.checked) {
+                    // Draw X checkmark using SVG (7 pixels diagonal lines)
+                    const svg = `<svg width="13" height="13" xmlns="http://www.w3.org/2000/svg">
+                        <line x1="3" y1="3" x2="9" y2="9" stroke="black" stroke-width="1"/>
+                        <line x1="4" y1="3" x2="10" y2="9" stroke="black" stroke-width="1"/>
+                        <line x1="9" y1="3" x2="3" y2="9" stroke="black" stroke-width="1"/>
+                        <line x1="10" y1="3" x2="4" y2="9" stroke="black" stroke-width="1"/>
+                    </svg>`;
+                    box.innerHTML = svg;
+                }
+
+                const label = document.createElement('span');
+                label.textContent = control.text;
+                label.style.marginLeft = '4px';
+                label.style.fontSize = '12px';
+                label.style.verticalAlign = 'middle';
+                label.style.color = 'black';
+
+                el.appendChild(box);
+                el.appendChild(label);
+
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    control.checked = control.checked ? 0 : 1;
+                    createControlElement(control, getCurrentWindow());
+                    selectControl(control);
+                    updateProperties();
+                });
+            } else if (control.type === 'radiobutton') {
+                el.style.width = 'auto';
+                el.style.height = '12px';
+                el.style.lineHeight = '12px';
+
+                const circle = document.createElement('div');
+                circle.style.width = '12px';
+                circle.style.height = '12px';
+                circle.style.display = 'inline-block';
+                circle.style.verticalAlign = 'middle';
+                circle.style.border = '1px solid #808080';
+                circle.style.borderRadius = '50%';
+                circle.style.backgroundColor = 'white';
+
+                if (control.checked) {
+                    // Draw filled dot matching osLET (radius 2, 1, and center pixel)
+                    const svg = `<svg width="12" height="12" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="6" cy="6" r="2" fill="black"/>
+                        <circle cx="6" cy="6" r="1" fill="black"/>
+                        <rect x="5.5" y="5.5" width="1" height="1" fill="black"/>
+                    </svg>`;
+                    circle.innerHTML = svg;
+                }
+
+                const label = document.createElement('span');
+                label.textContent = control.text;
+                label.style.marginLeft = '4px';
+                label.style.fontSize = '12px';
+                label.style.verticalAlign = 'middle';
+                label.style.color = 'black';
+
+                el.appendChild(circle);
+                el.appendChild(label);
+
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const win = getCurrentWindow();
+                    // Uncheck other radios in same group
+                    win.controls.forEach(c => {
+                        if (c.type === 'radiobutton' && c.group_id === control.group_id) {
+                            c.checked = 0;
+                        }
+                    });
+                    control.checked = 1;
+                    // Redraw all radio buttons
+                    win.controls.forEach(c => {
+                        if (c.type === 'radiobutton' && c.el) {
+                            c.el.remove();
+                            createControlElement(c, win);
+                        }
+                    });
+                    selectControl(control);
+                    updateProperties();
+                });
+            } else if (control.type === 'textbox') {
+                el.style.width = control.w + 'px';
+                el.style.height = control.h + 'px';
+                // 3D sunken effect matching osLET
+                el.style.borderTop = '1px solid #808080';
+                el.style.borderLeft = '1px solid #808080';
+                el.style.borderBottom = '1px solid #dfdfdf';
+                el.style.borderRight = '1px solid #dfdfdf';
+                el.style.backgroundColor = 'white';
+                el.style.color = 'black';
+                el.style.boxShadow = 'inset 1px 1px 0 #404040';
+                el.style.fontSize = '12px';
+                el.style.padding = '6px 0 0 4px'; // Match osLET: text at y+6, x+4
+                el.style.boxSizing = 'border-box';
+                el.style.overflow = 'hidden';
+                el.textContent = control.text;
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'control-resize-handle br';
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    resizingControl = true;
+                    resizeControlStart.x = e.clientX;
+                    resizeControlStart.y = e.clientY;
+                    resizeControlStart.w = control.w;
+                    resizeControlStart.h = control.h;
+                    draggedControl = control;
+                });
+                el.appendChild(resizeHandle);
+            } else if (control.type === 'frame') {
+                el.style.width = control.w + 'px';
+                el.style.height = control.h + 'px';
+                el.style.position = 'relative';
+                el.style.boxSizing = 'border-box';
+
+                // Frame border starts at ~half font height from top (font_height/2 + 2)
+                const borderOffset = 8; // For 12px font: 12/2 + 2 = 8
+
+                const titleOffset = 8;
+                const textWidth = control.text ? control.text.length * 7 : 0; // Approximate
+
+                // Left side of top border (before title)
+                const topLeft = document.createElement('div');
+                topLeft.style.position = 'absolute';
+                topLeft.style.top = borderOffset + 'px';
+                topLeft.style.left = '0';
+                topLeft.style.width = titleOffset + 'px';
+                topLeft.style.height = '0';
+                topLeft.style.borderTop = '1px solid #808080';
+                el.appendChild(topLeft);
+
+                // Right side of top border (after title)
+                if (control.text) {
+                    const topRight = document.createElement('div');
+                    topRight.style.position = 'absolute';
+                    topRight.style.top = borderOffset + 'px';
+                    topRight.style.left = (titleOffset + textWidth + 8) + 'px';
+                    topRight.style.right = '0';
+                    topRight.style.height = '0';
+                    topRight.style.borderTop = '1px solid #808080';
+                    el.appendChild(topRight);
+                }
+
+                // Left border
+                const leftBorder = document.createElement('div');
+                leftBorder.style.position = 'absolute';
+                leftBorder.style.top = borderOffset + 'px';
+                leftBorder.style.left = '0';
+                leftBorder.style.bottom = '0';
+                leftBorder.style.width = '0';
+                leftBorder.style.borderLeft = '1px solid #808080';
+                el.appendChild(leftBorder);
+
+                // Bottom border
+                const bottomBorder = document.createElement('div');
+                bottomBorder.style.position = 'absolute';
+                bottomBorder.style.bottom = '0';
+                bottomBorder.style.left = '0';
+                bottomBorder.style.right = '0';
+                bottomBorder.style.height = '0';
+                bottomBorder.style.borderBottom = '1px solid #dfdfdf';
+                el.appendChild(bottomBorder);
+
+                // Right border
+                const rightBorder = document.createElement('div');
+                rightBorder.style.position = 'absolute';
+                rightBorder.style.top = borderOffset + 'px';
+                rightBorder.style.right = '0';
+                rightBorder.style.bottom = '0';
+                rightBorder.style.width = '0';
+                rightBorder.style.borderRight = '1px solid #dfdfdf';
+                el.appendChild(rightBorder);
+
+                // Title text - NO background, positioned at top
+                const frameTitle = document.createElement('span');
+                frameTitle.textContent = control.text;
+                frameTitle.style.position = 'absolute';
+                frameTitle.style.top = '0px'; // Match osLET: text starts at abs_y, then +5 for baseline
+                frameTitle.style.left = '12px'; // title_offset + 4 = 8 + 4 = 12
+                frameTitle.style.fontSize = '12px';
+                frameTitle.style.lineHeight = '12px';
+                frameTitle.style.color = 'black'; // Match osLET fg color
+                el.appendChild(frameTitle);
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'control-resize-handle br';
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    resizingControl = true;
+                    resizeControlStart.x = e.clientX;
+                    resizeControlStart.y = e.clientY;
+                    resizeControlStart.w = control.w;
+                    resizeControlStart.h = control.h;
+                    draggedControl = control;
+                });
+                el.appendChild(resizeHandle);
             }
 
             el.addEventListener('mousedown', (e) => {
@@ -1238,20 +1458,48 @@
             const x = Math.round(e.clientX - rect.left);
             const y = Math.round(e.clientY - rect.top);
 
+            // Set default dimensions based on control type
+            let w = 0, h = 0, text = '', bg = 7;
+            switch (currentTool) {
+                case 'button':
+                    w = 70; h = 23; text = 'Button';
+                    break;
+                case 'picturebox':
+                    w = 100; h = 100; text = 'IMAGE.BMP';
+                    break;
+                case 'checkbox':
+                    w = 13; h = 13; text = 'CheckBox';
+                    break;
+                case 'radiobutton':
+                    w = 12; h = 12; text = 'Radio';
+                    break;
+                case 'textbox':
+                    w = 120; h = 20; text = '';
+                    break;
+                case 'frame':
+                    w = 150; h = 100; text = 'Frame';
+                    break;
+                case 'label':
+                    w = 0; h = 0; text = 'Label'; bg = 15;
+                    break;
+            }
+
             const control = {
                 type: currentTool,
                 x: x,
                 y: y,
-                w: currentTool === 'button' ? 70 : (currentTool === 'picturebox' ? 100 : 0),
-                h: currentTool === 'button' ? 23 : (currentTool === 'picturebox' ? 100 : 0),
+                w: w,
+                h: h,
                 fg: 0,
-                bg: currentTool === 'label' ? 15 : 7,
-                text: currentTool === 'button' ? 'Button' : (currentTool === 'label' ? 'Label' : 'IMAGE.BMP'),
+                bg: bg,
+                text: text,
                 id: win.nextControlId++,
                 font_type: 0,
                 font_size: 12,
                 border: 0,
                 border_color: 0,
+                checked: 0,  // For checkbox and radio
+                group_id: 0,  // For radio button grouping
                 action: currentTool === 'button' ? { type: 'none', target: '' } : undefined
             };
 
@@ -1314,7 +1562,16 @@
             }
 
             const c = selectedControl;
-            const typeLabel = c.type === 'button' ? 'CTRL_BUTTON' : (c.type === 'label' ? 'CTRL_LABEL' : 'CTRL_PICTUREBOX');
+            const typeMap = {
+                'button': 'CTRL_BUTTON',
+                'label': 'CTRL_LABEL',
+                'picturebox': 'CTRL_PICTUREBOX',
+                'checkbox': 'CTRL_CHECKBOX',
+                'radiobutton': 'CTRL_RADIOBUTTON',
+                'textbox': 'CTRL_TEXTBOX',
+                'frame': 'CTRL_FRAME'
+            };
+            const typeLabel = typeMap[c.type] || 'UNKNOWN';
 
             let html = `
                 <div class="prop-group">
@@ -1434,6 +1691,29 @@
                 html += `</div></div>`;
             }
 
+            // Add checked property for checkbox and radio button
+            if (c.type === 'checkbox' || c.type === 'radiobutton') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Checked</div>
+                        <select class="prop-input" onchange="updateChecked(parseInt(this.value))">
+                            <option value="0" ${c.checked === 0 ? 'selected' : ''}>Unchecked</option>
+                            <option value="1" ${c.checked === 1 ? 'selected' : ''}>Checked</option>
+                        </select>
+                    </div>
+                `;
+            }
+
+            // Add group_id property for radio button
+            if (c.type === 'radiobutton') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Group ID</div>
+                        <input class="prop-input" type="number" value="${c.group_id || 0}" onchange="updateGroupId(parseInt(this.value))">
+                    </div>
+                `;
+            }
+
             document.getElementById('prop-content').innerHTML = html;
         }
 
@@ -1526,6 +1806,41 @@
                     selectedControl.el.style.backgroundColor = osletColors[value].rgb;
                 }
             }
+            updateProperties();
+        }
+
+        function updateChecked(value) {
+            if (!selectedControl) return;
+            const win = getCurrentWindow();
+            if (!win) return;
+
+            selectedControl.checked = value;
+
+            // Redraw the control
+            if (selectedControl.el) {
+                selectedControl.el.remove();
+                createControlElement(selectedControl, win);
+            }
+
+            // If radio button, uncheck others in same group
+            if (selectedControl.type === 'radiobutton' && value === 1) {
+                win.controls.forEach(c => {
+                    if (c.type === 'radiobutton' && c.group_id === selectedControl.group_id && c !== selectedControl) {
+                        c.checked = 0;
+                        if (c.el) {
+                            c.el.remove();
+                            createControlElement(c, win);
+                        }
+                    }
+                });
+            }
+
+            selectControl(selectedControl);
+        }
+
+        function updateGroupId(value) {
+            if (!selectedControl) return;
+            selectedControl.group_id = value;
             updateProperties();
         }
 
@@ -1737,7 +2052,16 @@
                     code += `gui_control_t ${win.name}_controls[] = {\n`;
 
                     win.controls.forEach((c, i) => {
-                        const typeStr = c.type === 'button' ? 'CTRL_BUTTON' : (c.type === 'label' ? 'CTRL_LABEL' : 'CTRL_PICTUREBOX');
+                        const typeMap = {
+                            'button': 'CTRL_BUTTON',
+                            'label': 'CTRL_LABEL',
+                            'picturebox': 'CTRL_PICTUREBOX',
+                            'checkbox': 'CTRL_CHECKBOX',
+                            'radiobutton': 'CTRL_RADIOBUTTON',
+                            'textbox': 'CTRL_TEXTBOX',
+                            'frame': 'CTRL_FRAME'
+                        };
+                        const typeStr = typeMap[c.type] || 'CTRL_BUTTON';
                         const comma = i < win.controls.length - 1 ? ',' : '';
 
                         // Calculate proper dimensions for labels
@@ -1749,7 +2073,9 @@
                             h = dims.h;
                         }
 
-                        code += `    {${typeStr}, ${c.x}, ${c.y}, ${w}, ${h}, ${c.fg}, ${c.bg}, "${c.text}", ${c.id}, ${c.font_type}, ${c.font_size}, ${c.border}, ${c.border_color}, NULL, 0}${comma}\n`;
+                        const checked = c.checked || 0;
+                        const group_id = c.group_id || 0;
+                        code += `    {${typeStr}, ${c.x}, ${c.y}, ${w}, ${h}, ${c.fg}, ${c.bg}, "${c.text}", ${c.id}, ${c.font_type}, ${c.font_size}, ${c.border}, ${c.border_color}, NULL, 0, ${checked}, ${group_id}}${comma}\n`;
                     });
 
                     code += `};\n\n`;
@@ -2062,12 +2388,21 @@
 
                     if (controlsMatch) {
                         const controlsText = controlsMatch[3];
-                        const controlRegex = /\{(CTRL_\w+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*NULL,\s*0\}/g;
+                        const controlRegex = /\{(CTRL_\w+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*NULL,\s*0(?:,\s*(\d+),\s*(\d+))?\}/g;
                         const controls = [...controlsText.matchAll(controlRegex)];
 
                         controls.forEach(match => {
                             const typeStr = match[1];
-                            const type = typeStr === 'CTRL_BUTTON' ? 'button' : (typeStr === 'CTRL_LABEL' ? 'label' : 'picturebox');
+                            const typeMap = {
+                                'CTRL_BUTTON': 'button',
+                                'CTRL_LABEL': 'label',
+                                'CTRL_PICTUREBOX': 'picturebox',
+                                'CTRL_CHECKBOX': 'checkbox',
+                                'CTRL_RADIOBUTTON': 'radiobutton',
+                                'CTRL_TEXTBOX': 'textbox',
+                                'CTRL_FRAME': 'frame'
+                            };
+                            const type = typeMap[typeStr] || 'button';
 
                             const control = {
                                 type: type,
@@ -2083,6 +2418,8 @@
                                 font_size: parseInt(match[11]),
                                 border: parseInt(match[12]),
                                 border_color: parseInt(match[13]),
+                                checked: match[14] ? parseInt(match[14]) : 0,
+                                group_id: match[15] ? parseInt(match[15]) : 0,
                                 action: type === 'button' ? { type: 'none', target: '' } : undefined
                             };
 

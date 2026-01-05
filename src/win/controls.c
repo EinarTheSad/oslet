@@ -135,6 +135,159 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
     }
 }
 
+void ctrl_draw_checkbox(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    bmf_font_t *font = &font_n;
+    int size = control->font_size > 0 ? control->font_size : 12;
+
+    // Draw checkbox square (13x13 pixels)
+    int box_size = 13;
+
+    // Background
+    gfx_fillrect(abs_x, abs_y, box_size, box_size, COLOR_WHITE);
+
+    // 3D border effect (sunken)
+    gfx_hline(abs_x, abs_y, box_size, theme->frame_dark);  // Top
+    gfx_vline(abs_x, abs_y, box_size, theme->frame_dark);  // Left
+    gfx_hline(abs_x, abs_y + box_size - 1, box_size, theme->frame_light);  // Bottom
+    gfx_vline(abs_x + box_size - 1, abs_y, box_size, theme->frame_light);  // Right
+
+    // Inner border
+    gfx_hline(abs_x + 1, abs_y + 1, box_size - 2, COLOR_DARK_GRAY);
+    gfx_vline(abs_x + 1, abs_y + 1, box_size - 2, COLOR_DARK_GRAY);
+
+    // Draw checkmark if checked
+    if (control->checked) {
+        // Simple X checkmark
+        for (int i = 0; i < 7; i++) {
+            gfx_putpixel(abs_x + 3 + i, abs_y + 3 + i, control->fg);
+            gfx_putpixel(abs_x + 9 - i, abs_y + 3 + i, control->fg);
+        }
+    }
+
+    // Draw label text
+    if (control->text[0] && font->data) {
+        int text_x = abs_x + box_size + 4;
+        int text_y = abs_y + 3;
+        bmf_printf(text_x, text_y, font, size, control->fg, "%s", control->text);
+    }
+}
+
+void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    bmf_font_t *font = &font_n;
+    int size = control->font_size > 0 ? control->font_size : 12;
+
+    // Draw radio button circle (12x12 pixels)
+    int radius = 6;
+    int center_x = abs_x + radius;
+    int center_y = abs_y + radius;
+
+    // Fill background circle
+    gfx_fillrect(abs_x, abs_y, 12, 12, COLOR_WHITE);
+
+    // Draw outer circle
+    gfx_circle(center_x, center_y, radius - 1, theme->frame_dark);
+
+    // Draw selected dot if checked
+    if (control->checked) {
+        gfx_circle(center_x, center_y, 2, control->fg);
+        gfx_circle(center_x, center_y, 1, control->fg);
+        gfx_putpixel(center_x, center_y, control->fg);
+    }
+
+    // Draw label text
+    if (control->text[0] && font->data) {
+        int text_x = abs_x + 12 + 4;
+        int text_y = abs_y + 3;
+        bmf_printf(text_x, text_y, font, size, control->fg, "%s", control->text);
+    }
+}
+
+void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    bmf_font_t *font = &font_n;
+    int size = control->font_size > 0 ? control->font_size : 12;
+
+    // Draw textbox background
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
+
+    // Draw 3D sunken border effect
+    gfx_hline(abs_x, abs_y, control->w, theme->frame_dark);  // Top
+    gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);  // Left
+    gfx_hline(abs_x, abs_y + control->h - 1, control->w, theme->frame_light);  // Bottom
+    gfx_vline(abs_x + control->w - 1, abs_y, control->h, theme->frame_light);  // Right
+
+    // Inner shadow
+    gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_DARK_GRAY);
+    gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_DARK_GRAY);
+
+    // Draw text content
+    if (control->text[0] && font->data) {
+        int text_x = abs_x + 4;
+        int text_y = abs_y + 6;
+        bmf_printf(text_x, text_y, font, size, control->fg, "%s", control->text);
+    }
+
+    // Draw cursor if focused (optional - can be enhanced later)
+    // For now, we skip cursor rendering
+}
+
+void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    bmf_font_t *font = &font_n;
+
+    // Use same font properties as labels
+    if (control->font_type == 1) font = &font_b;
+    else if (control->font_type == 2) font = &font_i;
+    else if (control->font_type == 3) font = &font_bi;
+
+    int size = control->font_size > 0 ? control->font_size : 12;
+
+    // Get actual font height
+    int seq_idx = -1;
+    for (int i = 0; i < font->size_count; i++) {
+        if (font->sequences[i].point_size == size) {
+            seq_idx = i;
+            break;
+        }
+    }
+    int font_height = seq_idx >= 0 ? font->sequences[seq_idx].height : size;
+
+    // Calculate title dimensions
+    int title_width = 0;
+    if (control->text[0] && font->data) {
+        title_width = bmf_measure_text(font, size, control->text);
+    }
+
+    // Draw frame border
+    int title_offset = 8;
+    int border_y = abs_y + font_height / 2 + 2;
+
+    // Top line (with gap for title)
+    if (title_width > 0) {
+        gfx_hline(abs_x, border_y, title_offset, theme->frame_dark);
+        gfx_hline(abs_x + title_offset + title_width + 8, border_y,
+                  control->w - title_offset - title_width - 8, theme->frame_dark);
+    } else {
+        gfx_hline(abs_x, border_y, control->w, theme->frame_dark);
+    }
+
+    // Other sides
+    gfx_vline(abs_x, border_y, control->h - (border_y - abs_y), theme->frame_dark);
+    gfx_hline(abs_x, abs_y + control->h - 1, control->w, theme->frame_light);
+    gfx_vline(abs_x + control->w - 1, border_y, control->h - (border_y - abs_y), theme->frame_light);
+
+    // Draw title text with background
+    if (control->text[0] && font->data) {
+        int text_x = abs_x + title_offset + 4;
+        int text_y = abs_y + 5;
+
+        // Draw title text
+        bmf_printf(text_x, text_y, font, size, control->fg, "%s", control->text);
+    }
+}
+
 void ctrl_draw(window_t *win, gui_control_t *control) {
     int abs_x = win->x + control->x;
     int abs_y = win->y + control->y + 20;
@@ -147,6 +300,18 @@ void ctrl_draw(window_t *win, gui_control_t *control) {
     }
     else if (control->type == 3) { /* CTRL_PICTUREBOX */
         ctrl_draw_picturebox(control, abs_x, abs_y);
+    }
+    else if (control->type == 4) { /* CTRL_CHECKBOX */
+        ctrl_draw_checkbox(control, abs_x, abs_y);
+    }
+    else if (control->type == 5) { /* CTRL_RADIOBUTTON */
+        ctrl_draw_radiobutton(control, abs_x, abs_y);
+    }
+    else if (control->type == 6) { /* CTRL_TEXTBOX */
+        ctrl_draw_textbox(control, abs_x, abs_y);
+    }
+    else if (control->type == 7) { /* CTRL_FRAME */
+        ctrl_draw_frame(control, abs_x, abs_y);
     }
 }
 
