@@ -3,7 +3,7 @@
 #include "../mem/heap.h"
 #include "../console.h"
 
-#define FAT32_EOC 0x0FFFFFFF
+#define FAT32_EOC 0x0FFFFFF8  /* End of cluster chain starts at 0x0FFFFFF8 */
 #define FAT32_BAD 0x0FFFFFF7
 
 typedef struct {
@@ -974,29 +974,30 @@ void fat32_close(fat32_file_t *file) {
 
 int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries) {
     if (!entries || max_entries <= 0) return -1;
-    
+
     uint8_t drive;
     char rest[FAT32_MAX_PATH];
     if (parse_path(path, &drive, rest, sizeof(rest)) != 0) return -1;
-    
+
     fat32_volume_t *vol = get_volume(drive);
     if (!vol) return -1;
-    
+
     uint32_t dir_cluster;
     char filename[FAT32_MAX_PATH];
     if (navigate_path(vol, rest, &dir_cluster, filename) != 0) return -1;
-    
+
     if (filename[0] != '\0') {
         fat32_direntry_t entry;
         if (find_in_dir(vol, dir_cluster, filename, &entry, NULL, NULL) != 0) return -1;
         if (!(entry.attr & FAT_ATTR_DIRECTORY)) return -1;
         dir_cluster = ((uint32_t)entry.first_cluster_high << 16) | entry.first_cluster_low;
+        if (dir_cluster == 0) dir_cluster = vol->root_cluster;
     }
-    
+
     size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
     uint8_t *cluster_buf = kmalloc(cluster_size);
     if (!cluster_buf) return -1;
-    
+
     int count = 0;
     uint32_t cluster = dir_cluster;
     
