@@ -6,13 +6,19 @@ Ensure the following dependencies are installed:
 sudo apt install gcc make build-essential fdisk grub-pc qemu-system
 ```
 
-The following target will compile the OS and run it in QEMU:
+The following sequence will compile the OS and run it in QEMU:
 
 ``` bash
+make
+make disk
+make shell
+make binstall
 make run
 ```
 
-For more specific information, please consult the Makefile. 
+You can compile each binary separately by specifying its name. Remember to then run ```make binstall``` to copy it to the virtual hard drive.
+
+For more specific information, please consult the Makefile.
 
 ------------------------------------------------------------------------
 
@@ -42,6 +48,6 @@ For more specific information, please consult the Makefile.
 
 ### Window system
 
-<img width="640" height="480" alt="Window" src="https://github.com/user-attachments/assets/39fc0ead-cd28-4460-99b1-86a03476aa92" />
+<img width="640" height="480" alt="Window" src="https://github.com/user-attachments/assets/6b9191bf-1068-4924-9c36-dc2ba6db3256" />
 
 ------------------------------------------------------------------------
