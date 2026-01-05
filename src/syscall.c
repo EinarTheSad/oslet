@@ -623,19 +623,44 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
     form->press_control_id = -1;
 
     if (form->controls) {
-        for (int i = 0; i < form->ctrl_count; i++) {
+        /* Iterate backwards to check top-most (last drawn) controls first */
+        for (int i = form->ctrl_count - 1; i >= 0; i--) {
             gui_control_t *ctrl = &form->controls[i];
+
+            /* Skip non-interactive controls */
+            if (ctrl->type != CTRL_BUTTON &&
+                ctrl->type != CTRL_CHECKBOX &&
+                ctrl->type != CTRL_RADIOBUTTON &&
+                ctrl->type != CTRL_TEXTBOX) {
+                continue;
+            }
 
             int abs_x = form->win.x + ctrl->x;
             int abs_y = form->win.y + ctrl->y + 20;
 
-            if (mx >= abs_x && mx < abs_x + ctrl->w &&
-                my >= abs_y && my < abs_y + ctrl->h) {
+            /* For checkbox and radio - hit area includes the control and label */
+            int hit_w = ctrl->w;
+            int hit_h = ctrl->h;
+
+            /* For checkbox/radio, if w/h are just the box size, expand hit area to include text */
+            if (ctrl->type == CTRL_CHECKBOX && ctrl->w == 13) {
+                /* Estimate text width - in practice, user should set w to include text */
+                hit_w = 100;  /* Generous hit area including label */
+            } else if (ctrl->type == CTRL_RADIOBUTTON && ctrl->w == 12) {
+                hit_w = 100;  /* Generous hit area including label */
+            }
+
+            if (mx >= abs_x && mx < abs_x + hit_w &&
+                my >= abs_y && my < abs_y + hit_h) {
                 form->press_control_id = ctrl->id;
 
                 if (ctrl->type == CTRL_BUTTON) {
                     ctrl->pressed = 1;
                     return 1;  /* needs_redraw */
+                }
+                /* For checkbox and radio, just record the press */
+                else if (ctrl->type == CTRL_CHECKBOX || ctrl->type == CTRL_RADIOBUTTON) {
+                    return 0;  /* Press recorded, no visual change yet */
                 }
                 break;
             }
@@ -858,12 +883,49 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             int abs_x = form->win.x + ctrl->x;
                             int abs_y = form->win.y + ctrl->y + 20;
 
+                            /* For checkbox and radio - hit area includes the control and label */
+                            int hit_w = ctrl->w;
+                            int hit_h = ctrl->h;
+
+                            /* For checkbox/radio, if w/h are just the box size, expand hit area to include text */
+                            if (ctrl->type == CTRL_CHECKBOX && ctrl->w == 13) {
+                                hit_w = 100;  /* Generous hit area including label */
+                            } else if (ctrl->type == CTRL_RADIOBUTTON && ctrl->w == 12) {
+                                hit_w = 100;  /* Generous hit area including label */
+                            }
+
                             /* Check if release is within same control */
-                            if (mx >= abs_x && mx < abs_x + ctrl->w &&
-                                my >= abs_y && my < abs_y + ctrl->h) {
-                                /* Valid click detected */
-                                form->clicked_id = ctrl->id;
-                                event_count = 1;
+                            if (mx >= abs_x && mx < abs_x + hit_w &&
+                                my >= abs_y && my < abs_y + hit_h) {
+
+                                /* Handle checkbox toggle */
+                                if (ctrl->type == CTRL_CHECKBOX) {
+                                    ctrl->checked = !ctrl->checked;
+                                    needs_redraw = 1;
+                                    /* Don't set clicked_id for checkbox - just redraw */
+                                }
+
+                                /* Handle radio button selection */
+                                else if (ctrl->type == CTRL_RADIOBUTTON) {
+                                    /* Uncheck all radio buttons in the same group */
+                                    for (int j = 0; j < form->ctrl_count; j++) {
+                                        gui_control_t *other = &form->controls[j];
+                                        if (other->type == CTRL_RADIOBUTTON &&
+                                            other->group_id == ctrl->group_id) {
+                                            other->checked = 0;
+                                        }
+                                    }
+                                    /* Check this radio button */
+                                    ctrl->checked = 1;
+                                    needs_redraw = 1;
+                                    /* Don't set clicked_id for radio - just redraw */
+                                }
+
+                                /* Valid click detected for buttons and other controls */
+                                else {
+                                    form->clicked_id = ctrl->id;
+                                    event_count = 1;
+                                }
                             }
                             break;
                         }
@@ -946,6 +1008,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->border_color = ctrl->border_color;
                 dest->cached_bitmap = NULL;
                 dest->pressed = 0;
+                dest->checked = ctrl->checked;
+                dest->group_id = ctrl->group_id;
 
                 strcpy_s(dest->text, ctrl->text, 256);
 

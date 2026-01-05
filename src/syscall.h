@@ -93,6 +93,10 @@ typedef rtc_time_t sys_time_t;
 #define CTRL_BUTTON 1
 #define CTRL_LABEL 2
 #define CTRL_PICTUREBOX 3
+#define CTRL_CHECKBOX 4
+#define CTRL_RADIOBUTTON 5
+#define CTRL_TEXTBOX 6
+#define CTRL_FRAME 7
 
 #define FONT_NORMAL 0
 #define FONT_BOLD 1
@@ -114,6 +118,8 @@ typedef struct {
     uint8_t border_color;
     bitmap_t *cached_bitmap;  // Changed from uint8_t*
     uint8_t pressed;
+    uint8_t checked;  // For checkbox and radio button
+    uint16_t group_id;  // For radio button groups
 } gui_control_t;
 
 typedef struct {
