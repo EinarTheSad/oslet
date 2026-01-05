@@ -137,7 +137,7 @@ static const Command commands[] = {
     { "echo",   "echo <text> <file>",  "Write text to file",         cmd_echo },
     { "heap",   "heap",                "Show heap statistics",       cmd_heap },
     { "help",   "help",                "Show this command list",     cmd_help },
-    { "ls",     "ls <path>",           "List directory",             cmd_ls },
+    { "dir",    "dir <path>",          "List directory",             cmd_ls },
     { "mem",    "mem",                 "Show memory statistics",     cmd_mem },
     { "mkdir",  "mkdir <dir>",         "Create directory",           cmd_mkdir },
     { "ps",     "ps",                  "List running tasks",         cmd_ps },
