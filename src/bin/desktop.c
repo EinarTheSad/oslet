@@ -54,8 +54,6 @@ void _start(void) {
                 exit_requested = 1;
             }
         } else if (event0 == -2 || event0 == -1) {
-            sys_gfx_fillrect(0, 0, 640, 480, COLOR_CYAN);
-            draw_taskbar();
             sys_win_redraw_all();
         }
 
