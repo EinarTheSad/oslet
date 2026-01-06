@@ -250,7 +250,7 @@ static void bmf_emit(char ch, void *user) {
     const bmf_glyph_t *glyph = bmf_get_glyph(ctx->font, ctx->point_size, (uint8_t)ch);
     if (glyph) {
         bmf_draw_glyph(ctx->x, ctx->y, glyph, ctx->height, ctx->baseline, ctx->fg, ctx->bg);
-        ctx->x += glyph->width + 1;
+        ctx->x += glyph->width;
         ctx->written++;
     }
 }

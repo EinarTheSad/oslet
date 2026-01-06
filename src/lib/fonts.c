@@ -242,7 +242,7 @@ int usr_bmf_printf(int x, int y, usr_bmf_font_t *font, uint8_t point_size,
         const usr_bmf_glyph_t *glyph = usr_bmf_get_glyph(font, point_size, (uint8_t)*p);
         if (glyph) {
             usr_bmf_draw_glyph(cx, cy, glyph, height, baseline, fg);
-            cx += glyph->width + 1;
+            cx += glyph->width;
             written++;
         }
     }
