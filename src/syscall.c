@@ -935,8 +935,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* Clear all pressed states on any button that might still be pressed */
                 if (form->controls) {
                     for (int i = 0; i < form->ctrl_count; i++) {
-                        if (form->controls[i].type == CTRL_BUTTON) {
+                        if (form->controls[i].type == CTRL_BUTTON && form->controls[i].pressed) {
                             form->controls[i].pressed = 0;
+                            needs_redraw = 1;  /* Button visual changed */
                         }
                     }
                 }
@@ -967,6 +968,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Return clicked control ID directly (0 if none clicked) */
             if (event_count > 0) {
+                /* If button was pressed, we need to redraw to show unpressed state */
+                if (needs_redraw) {
+                    wm_draw_all(&global_wm);
+                }
                 return form->clicked_id;
             }
 
