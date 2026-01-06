@@ -312,7 +312,6 @@
             font-size: 12px;
             user-select: none;
             color: #000;
-            position: relative;
             box-sizing: border-box;
             letter-spacing: 1px;
         }
@@ -1118,7 +1117,7 @@
             } else if (control.type === 'frame') {
                 el.style.width = control.w + 'px';
                 el.style.height = control.h + 'px';
-                el.style.position = 'relative';
+                // Note: position is 'absolute' from .control class, but acts as 'relative' for child elements
                 el.style.boxSizing = 'border-box';
 
                 // Frame border starts at ~half font height from top (font_height/2 + 2)
@@ -1759,7 +1758,18 @@
 
         function updateText(value) {
             selectedControl.text = value.replace(/\n/g, '\\n');
-            selectedControl.el.textContent = value;
+
+            // For frames, we need to recreate the entire element because of complex structure
+            if (selectedControl.type === 'frame') {
+                const win = getCurrentWindow();
+                if (win && selectedControl.el) {
+                    selectedControl.el.remove();
+                    createControlElement(selectedControl, win);
+                    selectControl(selectedControl);
+                }
+            } else {
+                selectedControl.el.textContent = value;
+            }
         }
 
         function updateFontType(value) {
