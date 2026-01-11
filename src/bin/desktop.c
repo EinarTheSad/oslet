@@ -32,9 +32,11 @@ void draw_simple_button(int x, int y, int w, int h, const char *label, int press
     sys_gfx_line(x+1, y+1, x+w-3, y+1, shad_b);
     sys_gfx_line(x+1, y+1, x+1, y+h-3, shad_b);
 
+    sys_gfx_load_bmp("C:/ICONS/LET.ICO", x+3, y+2);
+
     if (ui_font.data && label) {
-        int text_x = x + 25;
-        int text_y = y + 8;
+        int text_x = x + 22;
+        int text_y = y + 7;
         usr_bmf_printf(text_x, text_y, &ui_font, 12, COLOR_BLACK, "%s", label);
     }
 }
@@ -59,7 +61,7 @@ void* create_Form1(void) {
 void init_start_button(void) {
     start_button.x = 2;
     start_button.y = TASKBAR_Y + 1;
-    start_button.w = 60;
+    start_button.w = 57;
     start_button.h = 22;
     start_button.pressed = 0;
 }
