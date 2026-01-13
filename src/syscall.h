@@ -132,6 +132,7 @@ typedef struct {
     uint8_t dragging;
     int16_t drag_start_x;
     int16_t drag_start_y;
+    char icon_path[64];  // Icon path for minimized window
 } gui_form_t;
 
 typedef struct {

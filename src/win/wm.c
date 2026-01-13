@@ -4,7 +4,8 @@
 void wm_init(window_manager_t *wm) {
     wm->count = 0;
     wm->focused_index = -1;
-    wm->next_icon_x = WM_ICON_MARGIN;
+    wm->next_icon_y = WM_ICON_MARGIN;
+    wm->next_icon_column = 0;
     wm->last_icon_click_time = 0;
     wm->last_icon_click_x = 0;
     wm->last_icon_click_y = 0;
@@ -127,13 +128,18 @@ void wm_draw_all(window_manager_t *wm) {
 }
 
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
-    *out_x = wm->next_icon_x;
-    *out_y = WM_SCREEN_HEIGHT - WM_ICON_SIZE - WM_ICON_MARGIN;
+    // Calculate X based on column (vertical stacking from left side)
+    *out_x = WM_ICON_MARGIN + (wm->next_icon_column * (WM_ICON_SIZE + 8));
+    *out_y = wm->next_icon_y;
 
-    // Advance position for next icon
-    wm->next_icon_x += WM_ICON_SIZE + 8;
-    if (wm->next_icon_x > WM_SCREEN_WIDTH - WM_ICON_SIZE - WM_ICON_MARGIN) {
-        wm->next_icon_x = WM_ICON_MARGIN;  // Wrap to beginning
+    // Advance position for next icon (vertical layout)
+    wm->next_icon_y += WM_ICON_TOTAL_HEIGHT + 10;
+
+    // Check if we need to wrap to next column (accounting for taskbar at bottom)
+    // Leave space for taskbar plus margin
+    if (wm->next_icon_y + WM_ICON_TOTAL_HEIGHT > WM_SCREEN_HEIGHT - 27 - WM_ICON_MARGIN) {
+        wm->next_icon_y = WM_ICON_MARGIN;  // Reset to top
+        wm->next_icon_column++;  // Move to next column
     }
 }
 

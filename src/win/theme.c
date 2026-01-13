@@ -1,13 +1,12 @@
 #include "theme.h"
 
-// Default theme (Windows 95-style)
 static window_theme_t default_theme = {
-    .bg_color = 15,         // White background
-    .titlebar_color = 1,    // Blue title bar
-    .frame_dark = 8,        // Dark gray frame
-    .frame_light = 7,       // Light gray frame
-    .text_color = 0,        // Black text
-    .button_color = 7       // Gray button
+    .bg_color = 15,
+    .titlebar_color = 1,
+    .frame_dark = 8,
+    .frame_light = 7,
+    .text_color = 0,
+    .button_color = 7
 };
 
 static window_theme_t *current_theme = &default_theme;
