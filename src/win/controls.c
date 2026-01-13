@@ -4,7 +4,6 @@
 #include "../drivers/graphics.h"
 #include "../fonts/bmf.h"
 
-// External font references from window.c
 extern bmf_font_t font_b, font_n, font_i, font_bi;
 
 void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
@@ -90,15 +89,12 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
         int label_w = control->w > 0 ? control->w : max_line_width + 4;
         int label_h = control->h > 0 ? control->h : text_h;
 
-        /* Draw background */
         gfx_fillrect(abs_x, abs_y, label_w, label_h, control->bg);
 
-        /* Draw border if enabled */
         if (control->border) {
             gfx_rect(abs_x, abs_y, label_w, label_h, control->border_color);
         }
 
-        /* Draw text - convert \n to real newlines */
         char formatted_text[256];
         int j = 0;
         for (int i = 0; control->text[i] && j < 255; i++) {
@@ -140,10 +136,8 @@ void ctrl_draw_checkbox(gui_control_t *control, int abs_x, int abs_y) {
     bmf_font_t *font = &font_n;
     int size = control->font_size > 0 ? control->font_size : 12;
 
-    // Draw checkbox square (13x13 pixels)
     int box_size = 13;
 
-    // Background
     gfx_fillrect(abs_x, abs_y, box_size, box_size, COLOR_WHITE);
 
     // 3D border effect (sunken)

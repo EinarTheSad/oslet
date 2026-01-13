@@ -1,26 +1,23 @@
-#ifndef WM_CONFIG_H
-#define WM_CONFIG_H
+#pragma once
 
-// Screen configuration
 #define WM_SCREEN_WIDTH 640
 #define WM_SCREEN_HEIGHT 480
 
-// Window appearance
 #define WM_TITLEBAR_HEIGHT 18
 #define WM_FRAME_WIDTH 2
 
-// Icon configuration
 #define WM_ICON_SIZE 32
 #define WM_ICON_MARGIN 10
+#define WM_ICON_LABEL_HEIGHT 24  // Height for text label below icon (2 lines * 11px + spacing)
+#define WM_ICON_LABEL_MAX_WIDTH 48
+#define WM_ICON_TOTAL_WIDTH 48  // Use label width as total width for consistent centering
+#define WM_ICON_TOTAL_HEIGHT (WM_ICON_SIZE + WM_ICON_LABEL_HEIGHT + 2)  // Icon + label + spacing
+#define WM_ICON_CENTER_OFFSET ((WM_ICON_TOTAL_WIDTH - WM_ICON_SIZE) / 2)  // Offset to center icon over label
 
-// Timing
 #define WM_DOUBLECLICK_MS 30
 
-// Limits
 #define WM_MAX_WINDOWS 16
 #define WM_MAX_CONTROLS_PER_FORM 64
 
-// Background save margins
 #define WM_BG_MARGIN 10
 
-#endif // WM_CONFIG_H

@@ -585,15 +585,35 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
 }
 
 /* Helper functions for SYS_WIN_PUMP_EVENTS */
-static int pump_handle_icon_doubleclick(gui_form_t *form, int mx, int my) {
+static void pump_deselect_all_icons(window_manager_t *wm) {
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] && wm->windows[i]->win.is_minimized && wm->windows[i]->win.minimized_icon) {
+            icon_set_selected(wm->windows[i]->win.minimized_icon, 0);
+        }
+    }
+}
+
+static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
     uint32_t current_time = timer_get_ticks();
 
     if (win_is_icon_clicked(&form->win, mx, my)) {
         if (wm_is_icon_doubleclick(&global_wm, current_time, mx, my)) {
+            /* Double-click - restore window */
             win_restore(&form->win);
-            return 1;  /* Window restored */
+            return 2;  /* Window restored */
+        } else {
+            /* Single click - select this icon, deselect others */
+            /* Invalidate cursor buffer to prevent artifacts */
+            extern int buffer_valid;
+            buffer_valid = 0;
+
+            pump_deselect_all_icons(&global_wm);
+            if (form->win.minimized_icon) {
+                icon_set_selected(form->win.minimized_icon, 1);
+            }
+            wm_set_icon_click(&global_wm, current_time, mx, my);
+            return 1;  /* Selection changed, needs redraw */
         }
-        wm_set_icon_click(&global_wm, current_time, mx, my);
     }
     return 0;
 }
@@ -602,7 +622,8 @@ static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
     if (win_is_minimize_button(&form->win, mx, my)) {
         int icon_x, icon_y;
         wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
-        win_minimize(&form->win, icon_x, icon_y);
+        const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;
+        win_minimize(&form->win, icon_x, icon_y, icon_path);
         return 1;  /* Window minimized */
     }
     return 0;
@@ -793,6 +814,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->dragging = 0;
             form->drag_start_x = 0;
             form->drag_start_y = 0;
+            form->icon_path[0] = '\0';
 
             /* Register window with window manager */
             if (!wm_register_window(&global_wm, form)) {
@@ -832,9 +854,34 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Handle mouse button press */
             if (button_pressed) {
                 if (form->win.is_minimized) {
-                    /* Check for double-click on icon */
-                    if (pump_handle_icon_doubleclick(form, mx, my)) {
+                    /* Check for click on icon (single or double) */
+                    int icon_result = pump_handle_icon_click(form, mx, my);
+                    if (icon_result == 2) {
+                        /* Double-click - window restored */
                         return -1;
+                    } else if (icon_result == 1) {
+                        /* Single click - selection changed */
+                        needs_redraw = 1;
+                    } else if (icon_result == 0) {
+                        /* Click outside this icon - check if we need to deselect */
+                        if (form->win.minimized_icon && form->win.minimized_icon->selected) {
+                            /* Check if click was on ANY other icon */
+                            int clicked_other_icon = 0;
+                            for (int i = 0; i < global_wm.count; i++) {
+                                if (global_wm.windows[i] &&
+                                    global_wm.windows[i] != form &&
+                                    global_wm.windows[i]->win.is_minimized &&
+                                    win_is_icon_clicked(&global_wm.windows[i]->win, mx, my)) {
+                                    clicked_other_icon = 1;
+                                    break;
+                                }
+                            }
+                            /* If no icon was clicked, deselect all */
+                            if (!clicked_other_icon) {
+                                pump_deselect_all_icons(&global_wm);
+                                needs_redraw = 1;
+                            }
+                        }
                     }
                 } else {
                     /* Check if click is within window bounds - bring to front if so */
@@ -1071,13 +1118,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             if (!form || !icon_path) return 0;
 
-            /* Free old icon bitmap if path is changing */
-            if (form->win.icon_bitmap) {
-                kfree(form->win.icon_bitmap);
-                form->win.icon_bitmap = NULL;
-            }
-
-            strcpy_s(form->win.icon_path, icon_path, 64);
+            /* Store icon path for later use when minimizing */
+            strcpy_s(form->icon_path, icon_path, 64);
 
             return 0;
         }

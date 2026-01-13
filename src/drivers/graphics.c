@@ -840,7 +840,8 @@ void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x
 
             int screen_x = dest_x + x;
 
-            if (screen_x >= 0 && screen_x < GFX_WIDTH) {
+            /* Skip transparent pixels (color index 5) */
+            if (screen_x >= 0 && screen_x < GFX_WIDTH && pixel != 5) {
                 putpixel_raw(screen_x, screen_y, pixel);
             }
         }

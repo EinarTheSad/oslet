@@ -2,7 +2,7 @@
 #include "../lib/stdio.h"
 #include "../lib/fonts.h"
 
-#define TASKBAR_HEIGHT 24
+#define TASKBAR_HEIGHT 27
 #define TASKBAR_Y (480 - TASKBAR_HEIGHT)
 
 typedef struct {
@@ -43,14 +43,16 @@ void draw_simple_button(int x, int y, int w, int h, const char *label, int press
 
 // Controls for Form1
 gui_control_t Form1_controls[] = {
-    {CTRL_PICTUREBOX, 5, 5, 108, 208, 0, 7, "SETUP.BMP", 1, 0, 12, 0, 0, NULL, 0},
-    {CTRL_BUTTON, 295, 191, 70, 23, 0, 7, "OK", 2, 0, 12, 0, 0, NULL, 0},
-    {CTRL_LABEL, 118, 12, 0, 0, 0, 15, "Welcome to osLET!", 3, 1, 12, 0, 0, NULL, 0},
-    {CTRL_LABEL, 119, 40, 219, 114, 0, 15, "This window serves as a test of the\ncontrol system in osLET graphical\nuser interface.\n\nYou can drag this window freely using\nthe mouse, or click the button below\nto exit back to shell.", 5, 0, 12, 0, 0, NULL, 0}
+    {CTRL_PICTUREBOX, 5, 5, 108, 208, 0, 7, "SETUP.BMP", 1, 0, 12, 0, 0, NULL, 0, 0},
+    {CTRL_BUTTON, 295, 191, 70, 23, 0, 7, "OK", 2, 0, 12, 0, 0, NULL, 0, 0},
+    {CTRL_LABEL, 118, 12, 0, 0, 0, 15, "Welcome to osLET!", 3, 1, 12, 0, 0, NULL, 0, 0},
+    {CTRL_LABEL, 119, 40, 219, 114, 0, 15, "This window serves as a test of the\ncontrol system in osLET graphical\nuser interface.\n\nYou can drag this window freely using\nthe mouse, or click the button below\nto exit back to shell.", 5, 0, 12, 0, 0, NULL, 0, 0}
 };
 
 void* create_Form1(void) {
     void *form = sys_win_create_form("Welcome screen", 50, 50, 370, 240);
+    sys_win_set_icon(form, "C:/ICONS/EXE.ICO");
+
     for (int i = 0; i < 4; i++) {
         sys_win_add_control(form, &Form1_controls[i]);
     }
@@ -58,11 +60,37 @@ void* create_Form1(void) {
     return form;
 }
 
+// Controls for Form2
+gui_control_t Form2_controls[] = {
+    {CTRL_FRAME, 10, 7, 181, 165, 0, 7, "Non-interactive", 1, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_LABEL, 17, 34, 0, 0, 0, 15, "Label", 2, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_LABEL, 18, 60, 0, 0, 0, 14, "Label with decoration", 3, 3, 12, 1, 0, NULL, 0, 0, 0},
+    {CTRL_PICTUREBOX, 18, 89, 165, 75, 0, 7, "", 4, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_FRAME, 197, 7, 181, 165, 0, 7, "Interactive", 9, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_BUTTON, 209, 28, 70, 23, 0, 7, "Button", 10, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_BUTTON, 295, 28, 70, 23, 0, 12, "Button", 11, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_CHECKBOX, 207, 149, 13, 13, 0, 7, "CheckBox", 12, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_CHECKBOX, 292, 149, 13, 13, 0, 7, "CheckBox", 13, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_RADIOBUTTON, 208, 124, 12, 12, 0, 7, "Radio", 14, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_RADIOBUTTON, 293, 124, 12, 12, 0, 7, "Radio", 15, 0, 12, 0, 0, NULL, 0, 0, 0},
+    {CTRL_TEXTBOX, 210, 67, 154, 20, 0, 7, "", 16, 0, 12, 0, 0, NULL, 0, 0, 0}
+};
+
+void* create_Form2(void) {
+    void *form2 = sys_win_create_form("Control test", 126, 135, 392, 201);
+    sys_win_set_icon(form2, "C:/ICONS/EXE.ICO");
+    for (int i = 0; i < 12; i++) {
+        sys_win_add_control(form2, &Form2_controls[i]);
+    }
+    sys_win_draw(form2);
+    return form2;
+}
+
 void init_start_button(void) {
-    start_button.x = 2;
-    start_button.y = TASKBAR_Y + 1;
+    start_button.x = 3;
+    start_button.y = TASKBAR_Y + 3;
     start_button.w = 57;
-    start_button.h = 22;
+    start_button.h = 21;
     start_button.pressed = 0;
 }
 
@@ -131,6 +159,7 @@ void _start(void) {
     draw_taskbar();
 
     void *Form1 = create_Form1();
+    void *Form2 = create_Form2();
 
     int exit_requested = 0;
     int taskbar_needs_redraw = 0;
@@ -164,7 +193,16 @@ void _start(void) {
             }
         } else if (event0 == -2 || event0 == -1) {
             sys_win_redraw_all();
-            taskbar_needs_redraw = 1;
+        }
+        // Handle Form2 events
+        int event1 = sys_win_pump_events(Form2);
+        if (event1 > 0) {
+            /* Control clicked in Form2 - event = control ID */
+            if (event1 == 2) {
+                continue;
+            }
+        } else if (event1 == -2 || event1 == -1) {
+            sys_win_redraw_all();
         }
 
         sys_mouse_draw_cursor(mx, my, 0);
@@ -172,6 +210,7 @@ void _start(void) {
     }
 
     sys_win_destroy_form(Form1);
+    sys_win_destroy_form(Form2);
     sys_gfx_exit();
     sys_exit();
 }

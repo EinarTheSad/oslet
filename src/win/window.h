@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include "../fonts/bmf.h"
+#include "icon.h"
 
 // Forward declarations
 typedef struct bitmap_s bitmap_t;
@@ -9,14 +10,10 @@ typedef struct {
     int x, y, w, h;
     char title[64];
     int is_visible;
-    int is_modal;
     int dirty;
     uint8_t *saved_bg;
     int is_minimized;
-    int icon_x, icon_y;
-    char icon_path[64];
-    bitmap_t *icon_bitmap;
-    uint8_t *icon_saved_bg;
+    icon_t *minimized_icon;  // Icon when minimized (NULL if not minimized)
 } window_t;
 
 typedef struct {
@@ -36,14 +33,10 @@ void win_draw(window_t *win);
 void win_destroy(window_t *win);
 int win_is_titlebar(window_t *win, int mx, int my);
 int win_is_minimize_button(window_t *win, int mx, int my);
-void win_minimize(window_t *win, int icon_x, int icon_y);
+void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path);
 void win_restore(window_t *win);
-void win_draw_icon(window_t *win);
 int win_is_icon_clicked(window_t *win, int mx, int my);
 void win_move(window_t *win, int dx, int dy);
-void win_mark_dirty(window_t *win);
-void win_clear_dirty(window_t *win);
-int win_needs_redraw(window_t *win);
 void win_save_background(window_t *win);
 void win_restore_background(window_t *win);
 

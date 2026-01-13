@@ -24,15 +24,10 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
     win->w = w;
     win->h = h;
     win->is_visible = 1;
-    win->is_modal = 0;
     win->dirty = 1;
     win->saved_bg = NULL;
     win->is_minimized = 0;
-    win->icon_x = 0;
-    win->icon_y = 0;
-    win->icon_bitmap = NULL;
-    win->icon_saved_bg = NULL;
-    win->icon_path[0] = '\0';
+    win->minimized_icon = NULL;
 
     strcpy_s(win->title, title, 64);
 }
@@ -40,19 +35,19 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
 void win_draw(window_t *win) {
     if (!win->is_visible) return;
 
-    if (win->is_minimized) {
-        win_draw_icon(win);
+    if (win->is_minimized && win->minimized_icon) {
+        icon_draw(win->minimized_icon);
         return;
     }
-    
+
     /* Save background BEFORE first draw */
     if (!win->saved_bg) {
         win_save_background(win);
     }
-    
+
     win_draw_frame(win->x, win->y, win->w, win->h);
     win_draw_titlebar(win->x+2, win->y+2, win->w-4, win->title);
-    
+
     win->dirty = 0;
 }
 
@@ -62,13 +57,11 @@ void win_destroy(window_t *win) {
         kfree(win->saved_bg);
         win->saved_bg = NULL;
     }
-    if (win->icon_bitmap) {
-        bitmap_free(win->icon_bitmap);
-        win->icon_bitmap = NULL;
-    }
-    if (win->icon_saved_bg) {
-        kfree(win->icon_saved_bg);
-        win->icon_saved_bg = NULL;
+    /* Destroy minimized icon if exists */
+    if (win->minimized_icon) {
+        icon_destroy(win->minimized_icon);
+        kfree(win->minimized_icon);
+        win->minimized_icon = NULL;
     }
 }
 
@@ -154,10 +147,9 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     
     int win_x = (WM_SCREEN_WIDTH - win_w) / 2;
     int win_y = (WM_SCREEN_HEIGHT - win_h) / 2;
-    
+
     win_create(&box->base, win_x, win_y, win_w, win_h, title);
-    box->base.is_modal = 1;
-    
+
     strcpy_s(box->message, msg, 256);
     strcpy_s(box->button_text, btn, 32);
     
@@ -220,10 +212,7 @@ void win_move(window_t *win, int dx, int dy) {
         buffer_valid = 0;  /* Invalidate so desktop will redraw cursor */
     }
 
-    /* Restore old background */
     win_restore_background(win);
-
-    /* Update position */
     win->x += dx;
     win->y += dy;
 
@@ -231,23 +220,10 @@ void win_move(window_t *win, int dx, int dy) {
     if (win->x < 0) win->x = 0;
     if (win->y < 0) win->y = 0;
     if (win->x + win->w > WM_SCREEN_WIDTH) win->x = WM_SCREEN_WIDTH - win->w;
-    if (win->y + win->h > WM_SCREEN_HEIGHT) win->y = WM_SCREEN_HEIGHT - win->h;
+    if (win->y + win->h > WM_SCREEN_HEIGHT) win->y = WM_SCREEN_HEIGHT - win->h - 24; /* remember the taskbar */
 
-    /* Save new background (cursor already restored above) */
     win_save_background(win);
     win->dirty = 1;
-}
-
-void win_mark_dirty(window_t *win) {
-    win->dirty = 1;
-}
-
-void win_clear_dirty(window_t *win) {
-    win->dirty = 0;
-}
-
-int win_needs_redraw(window_t *win) {
-    return win->dirty;
 }
 
 void win_save_background(window_t *win) {
@@ -311,7 +287,7 @@ int win_is_minimize_button(window_t *win, int mx, int my) {
     return 0;
 }
 
-void win_minimize(window_t *win, int icon_x, int icon_y) {
+void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path) {
     if (win->is_minimized) return;
 
     /* Invalidate cursor buffer since window is disappearing */
@@ -322,13 +298,17 @@ void win_minimize(window_t *win, int icon_x, int icon_y) {
 
     win->is_minimized = 1;
 
-    if (win->icon_x == 0 && win->icon_y == 0) {
-        win->icon_x = icon_x;
-        win->icon_y = icon_y;
-    }
-
-    if (win->icon_path[0] && !win->icon_bitmap) {
-        win->icon_bitmap = bitmap_load_from_file(win->icon_path);
+    /* Create icon if not exists, otherwise reuse existing */
+    if (!win->minimized_icon) {
+        win->minimized_icon = kmalloc(sizeof(icon_t));
+        if (win->minimized_icon) {
+            icon_create(win->minimized_icon, icon_x, icon_y, win->title, icon_path);
+            win->minimized_icon->user_data = win;  /* Link back to window */
+        }
+    } else {
+        /* Icon already exists (re-minimizing) - just reset selection state */
+        /* saved_bg is NULL after icon_hide(), will be recreated on next draw */
+        icon_set_selected(win->minimized_icon, 0);
     }
 }
 
@@ -339,16 +319,10 @@ void win_restore(window_t *win) {
     extern int buffer_valid;
     buffer_valid = 0;
 
-    /* Restore saved background */
-    if (win->icon_saved_bg) {
-        extern void gfx_putpixel(int x, int y, uint8_t color);
-        for (int y = 0; y < WM_ICON_SIZE; y++) {
-            for (int x = 0; x < WM_ICON_SIZE; x++) {
-                gfx_putpixel(win->icon_x + x, win->icon_y + y, win->icon_saved_bg[y * WM_ICON_SIZE + x]);
-            }
-        }
-        kfree(win->icon_saved_bg);
-        win->icon_saved_bg = NULL;
+    /* Hide icon but keep icon structure for reuse */
+    if (win->minimized_icon) {
+        icon_hide(win->minimized_icon);
+        icon_set_selected(win->minimized_icon, 0);  /* Clear selection */
     }
 
     win->is_minimized = 0;
@@ -357,52 +331,7 @@ void win_restore(window_t *win) {
     win_save_background(win);
 }
 
-void win_draw_icon(window_t *win) {
-    if (!win->is_minimized) return;
-
-    /* Save background before drawing icon (only once) */
-    if (!win->icon_saved_bg) {
-        win->icon_saved_bg = kmalloc(WM_ICON_SIZE * WM_ICON_SIZE);
-        if (win->icon_saved_bg) {
-            extern uint8_t gfx_getpixel(int x, int y);
-            for (int y = 0; y < WM_ICON_SIZE; y++) {
-                for (int x = 0; x < WM_ICON_SIZE; x++) {
-                    win->icon_saved_bg[y * WM_ICON_SIZE + x] = gfx_getpixel(win->icon_x + x, win->icon_y + y);
-                }
-            }
-        }
-    }
-
-    if (win->icon_bitmap) {
-        // Use bitmap API for drawing
-        bitmap_draw(win->icon_bitmap, win->icon_x, win->icon_y);
-    } else {
-        // Draw default icon with title initials
-        window_theme_t *theme = theme_get_current();
-        gfx_fillrect(win->icon_x, win->icon_y, WM_ICON_SIZE, WM_ICON_SIZE, theme->button_color);
-        gfx_rect(win->icon_x, win->icon_y, WM_ICON_SIZE, WM_ICON_SIZE, theme->frame_dark);
-
-        if (font_b.data && win->title[0]) {
-            char icon_label[3];
-            icon_label[0] = win->title[0];
-            icon_label[1] = win->title[1] ? win->title[1] : '\0';
-            icon_label[2] = '\0';
-
-            int tw = bmf_measure_text(&font_b, 12, icon_label);
-            int tx = win->icon_x + (WM_ICON_SIZE - tw) / 2;
-            int ty = win->icon_y + 10;
-
-            bmf_printf(tx, ty, &font_b, 12, theme->text_color, "%s", icon_label);
-        }
-    }
-}
-
 int win_is_icon_clicked(window_t *win, int mx, int my) {
-    if (!win->is_minimized) return 0;
-
-    if (mx >= win->icon_x && mx < win->icon_x + WM_ICON_SIZE &&
-        my >= win->icon_y && my < win->icon_y + WM_ICON_SIZE) {
-        return 1;
-    }
-    return 0;
+    if (!win->is_minimized || !win->minimized_icon) return 0;
+    return icon_is_clicked(win->minimized_icon, mx, my);
 }
