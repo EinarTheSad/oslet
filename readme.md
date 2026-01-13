@@ -46,8 +46,9 @@ For more specific information, please consult the Makefile.
 
 <img width="640" height="480" alt="Bitmap" src="https://github.com/user-attachments/assets/57ffbe21-6603-4ad4-b2b9-6b4e2b14adf8" />
 
-### Window system
+### Desktop
 
-<img width="640" height="480" alt="Window" src="https://github.com/user-attachments/assets/6b9191bf-1068-4924-9c36-dc2ba6db3256" />
+<img width="640" height="480" alt="Desktop" src="https://github.com/user-attachments/assets/1c494309-787b-4fed-9497-b3a0eb7a6d79" />
+
 
 ------------------------------------------------------------------------
