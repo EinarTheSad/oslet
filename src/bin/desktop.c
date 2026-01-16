@@ -179,15 +179,19 @@ void _start(void) {
 
         if (taskbar_needs_redraw) {
             draw_taskbar();
+            draw_clock();
             taskbar_needs_redraw = 0;
         }
 
         // Handle Form1 events
-        int event0 = sys_win_pump_events(Form1);
+        int event0 = Form1 ? sys_win_pump_events(Form1) : 0;
         if (event0 > 0) {
             /* Control clicked in Form1 - event = control ID */
             if (event0 == 2) { /* OK */
-                exit_requested = 1;
+                sys_win_destroy_form(Form1);
+                Form1 = NULL;
+                sys_gfx_fillrect(0, 0, 640, 480-27, COLOR_CYAN);
+                sys_mouse_draw_cursor(mx, my, 1);
             }
         } else if (event0 == -2 || event0 == -1) {
             /* Window was minimized or restored - redraw desktop and all windows */
@@ -201,7 +205,6 @@ void _start(void) {
         sys_gfx_swap();
     }
 
-    sys_win_destroy_form(Form1);
     sys_gfx_exit();
     sys_exit();
 }

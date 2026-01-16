@@ -13,8 +13,8 @@ static inline void heap_acquire(void) {
 }
 
 static inline void heap_release(void) {
-    __asm__ volatile("sti");
     __sync_lock_release(&heap_lock);
+    __asm__ volatile("sti");
 }
 
 block_t *heap_start = NULL;

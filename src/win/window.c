@@ -220,7 +220,7 @@ void win_move(window_t *win, int dx, int dy) {
     if (win->x < 0) win->x = 0;
     if (win->y < 0) win->y = 0;
     if (win->x + win->w > WM_SCREEN_WIDTH) win->x = WM_SCREEN_WIDTH - win->w;
-    if (win->y + win->h > WM_SCREEN_HEIGHT) win->y = WM_SCREEN_HEIGHT - win->h - 24; /* remember the taskbar */
+    if (win->y + win->h > WM_SCREEN_HEIGHT) win->y = WM_SCREEN_HEIGHT - win->h;
 
     win_save_background(win);
     win->dirty = 1;

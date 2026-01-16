@@ -83,11 +83,15 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     }
     
     uint32_t *sp = (uint32_t *)((uint8_t*)task->stack + TASK_STACK_SIZE);
-    
-    *--sp = (uint32_t)entry;
-    *--sp = (uint32_t)task_trampoline;
-    *--sp = 0;
-    
+
+    /* Setup initial stack frame for context switch */
+    *--sp = (uint32_t)entry;           /* Argument for task_trampoline */
+    *--sp = (uint32_t)task_trampoline; /* Return address (EIP) */
+    *--sp = 0;                         /* EBP */
+    *--sp = 0;                         /* EBX */
+    *--sp = 0;                         /* ESI */
+    *--sp = 0;                         /* EDI */
+
     task->esp = (uint32_t)sp;
     
     __asm__ volatile ("cli");
@@ -287,10 +291,13 @@ void schedule(void) {
         case PRIORITY_LOW:    current_task->quantum_remaining = QUANTUM_LOW; break;
         case PRIORITY_IDLE:   current_task->quantum_remaining = QUANTUM_IDLE; break;
     }
-    
+
     __asm__ volatile (
         "movl %0, %%esp\n\t"
         "popl %%ebp\n\t"
+        "popl %%ebx\n\t"
+        "popl %%esi\n\t"
+        "popl %%edi\n\t"
         "sti\n\t"
         "ret"
         :: "r"(current_task->esp)
@@ -308,21 +315,21 @@ void task_tick(void) {
 
 void task_yield(void) {
     if (!tasking_enabled || !current_task) return;
-    
+
     __asm__ volatile ("cli");
-    
+
     uint32_t esp_save;
     __asm__ volatile (
-        "movl %%ebp, %%eax\n\t"
-        "pushl %%eax\n\t"
+        "pushl %%edi\n\t"
+        "pushl %%esi\n\t"
+        "pushl %%ebx\n\t"
+        "pushl %%ebp\n\t"
         "movl %%esp, %0"
         : "=r"(esp_save)
-        :: "eax", "memory"
+        :: "memory"
     );
-    
+
     current_task->esp = esp_save;
-    
-    __asm__ volatile ("sti");
 
     schedule();
 }
