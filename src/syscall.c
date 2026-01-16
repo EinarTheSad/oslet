@@ -642,6 +642,8 @@ static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
 
 static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
     form->press_control_id = -1;
+    int old_focus = form->focused_control_id;
+    int clicked_on_focusable = 0;
 
     if (form->controls) {
         /* Iterate backwards to check top-most (last drawn) controls first */
@@ -683,14 +685,130 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 else if (ctrl->type == CTRL_CHECKBOX || ctrl->type == CTRL_RADIOBUTTON) {
                     return 0;  /* Press recorded, no visual change yet */
                 }
+                /* For textbox, set keyboard focus */
+                else if (ctrl->type == CTRL_TEXTBOX) {
+                    form->focused_control_id = ctrl->id;
+                    clicked_on_focusable = 1;
+                    /* Return 1 if focus changed to trigger redraw */
+                    if (old_focus != form->focused_control_id) {
+                        return 1;
+                    }
+                    return 0;
+                }
                 break;
             }
         }
     }
+
+    /* If clicked outside any focusable control, clear focus */
+    if (!clicked_on_focusable && old_focus != -1) {
+        form->focused_control_id = -1;
+        return 1;  /* Focus changed, needs redraw */
+    }
+
     return 0;
 }
 
-static uint32_t handle_window(uint32_t al, uint32_t ebx, 
+/* Helper function to find control by ID */
+static gui_control_t* find_control_by_id(gui_form_t *form, int16_t id) {
+    if (!form || !form->controls || id < 0) return NULL;
+    for (int i = 0; i < form->ctrl_count; i++) {
+        if (form->controls[i].id == id) {
+            return &form->controls[i];
+        }
+    }
+    return NULL;
+}
+
+/* Handle keyboard input for focused textbox */
+static int pump_handle_keyboard(gui_form_t *form) {
+    if (form->focused_control_id < 0) return 0;
+
+    gui_control_t *ctrl = find_control_by_id(form, form->focused_control_id);
+    if (!ctrl || ctrl->type != CTRL_TEXTBOX) return 0;
+
+    int key = kbd_getchar_nonblock();
+    if (key == 0) return 0;  /* No key pressed */
+
+    int text_len = 0;
+    while (ctrl->text[text_len]) text_len++;
+
+    int max_len = ctrl->max_length > 0 ? ctrl->max_length : 255;
+    int needs_redraw = 0;
+
+    /* Handle special keys */
+    if (key == KEY_LEFT) {
+        if (ctrl->cursor_pos > 0) {
+            ctrl->cursor_pos--;
+            needs_redraw = 1;
+        }
+    }
+    else if (key == KEY_RIGHT) {
+        if (ctrl->cursor_pos < text_len) {
+            ctrl->cursor_pos++;
+            needs_redraw = 1;
+        }
+    }
+    else if (key == KEY_HOME) {
+        if (ctrl->cursor_pos != 0) {
+            ctrl->cursor_pos = 0;
+            needs_redraw = 1;
+        }
+    }
+    else if (key == KEY_END) {
+        if (ctrl->cursor_pos != text_len) {
+            ctrl->cursor_pos = text_len;
+            needs_redraw = 1;
+        }
+    }
+    else if (key == '\b') {  /* Backspace */
+        if (ctrl->cursor_pos > 0) {
+            /* Shift text left from cursor position */
+            for (int i = ctrl->cursor_pos - 1; i < text_len; i++) {
+                ctrl->text[i] = ctrl->text[i + 1];
+            }
+            ctrl->cursor_pos--;
+            needs_redraw = 1;
+        }
+    }
+    else if (key == KEY_DELETE) {
+        if (ctrl->cursor_pos < text_len) {
+            /* Shift text left from position after cursor */
+            for (int i = ctrl->cursor_pos; i < text_len; i++) {
+                ctrl->text[i] = ctrl->text[i + 1];
+            }
+            needs_redraw = 1;
+        }
+    }
+    else if (key == '\t') {
+        /* Tab could be used to move focus to next control - for now skip */
+    }
+    else if (key == '\n' || key == '\r') {
+        /* Enter - could signal form submission, for now ignore in single-line textbox */
+    }
+    else if (key == KEY_ESC) {
+        /* Escape - clear focus */
+        form->focused_control_id = -1;
+        needs_redraw = 1;
+    }
+    else if (key >= 0x20 && key < 0x80) {
+        /* Printable ASCII character */
+        if (text_len < max_len - 1) {
+            /* Shift text right from cursor position */
+            for (int i = text_len; i >= ctrl->cursor_pos; i--) {
+                ctrl->text[i + 1] = ctrl->text[i];
+            }
+            ctrl->text[ctrl->cursor_pos] = (char)key;
+            ctrl->cursor_pos++;
+            needs_redraw = 1;
+        }
+    }
+    /* Ignore other special keys (function keys, alt combinations, etc.) */
+
+    return needs_redraw;
+}
+
+static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                uint32_t ecx, uint32_t edx) {
     switch (al) {
         case 0x00: { /* SYS_WIN_MSGBOX - Modal message box */
@@ -815,6 +933,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->drag_start_x = 0;
             form->drag_start_y = 0;
             form->icon_path[0] = '\0';
+            form->focused_control_id = -1;  /* No control focused initially */
 
             /* Register window with window manager */
             if (!wm_register_window(&global_wm, form)) {
@@ -1013,6 +1132,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 }
             }
 
+            /* Handle keyboard input for focused textbox */
+            if (!form->win.is_minimized && form->focused_control_id >= 0) {
+                if (pump_handle_keyboard(form)) {
+                    needs_redraw = 1;
+                }
+            }
+
             /* Return clicked control ID directly (0 if none clicked) */
             if (event_count > 0) {
                 /* If button was pressed, we need to redraw to show unpressed state */
@@ -1062,8 +1188,19 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->pressed = 0;
                 dest->checked = ctrl->checked;
                 dest->group_id = ctrl->group_id;
+                /* Textbox-specific fields */
+                dest->cursor_pos = ctrl->cursor_pos;
+                dest->max_length = ctrl->max_length > 0 ? ctrl->max_length : 255;
+                dest->scroll_offset = 0;
 
                 strcpy_s(dest->text, ctrl->text, 256);
+
+                /* For textbox, set cursor to end of initial text */
+                if (dest->type == CTRL_TEXTBOX) {
+                    int len = 0;
+                    while (dest->text[len]) len++;
+                    dest->cursor_pos = len;
+                }
 
                 form->ctrl_count++;
             }
@@ -1080,6 +1217,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Draw all controls */
             for (int i = 0; i < form->ctrl_count; i++) {
+                /* Set focus state before drawing (used by textbox for cursor) */
+                form->controls[i].is_focused =
+                    (form->controls[i].id == form->focused_control_id) ? 1 : 0;
                 win_draw_control(&form->win, &form->controls[i]);
             }
             return 0;

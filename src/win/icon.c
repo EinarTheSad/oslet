@@ -59,7 +59,7 @@ void icon_draw(icon_t *icon) {
 
     /* Calculate centered icon position */
     int icon_draw_x = icon->x + WM_ICON_CENTER_OFFSET;
-    int icon_width = WM_ICON_SIZE;  /* Default width */
+    int icon_width = WM_ICON_SIZE;
 
     /* Load bitmap if needed */
     if (icon->bitmap_path[0] && !icon->bitmap) {
@@ -68,11 +68,9 @@ void icon_draw(icon_t *icon) {
 
     /* Draw icon bitmap or default icon */
     if (icon->bitmap) {
-        /* Use actual bitmap dimensions for non-standard icons */
-        icon_width = icon->bitmap->width;
         /* Recalculate icon_draw_x to center the bitmap within the icon area */
         icon_draw_x = icon->x + (WM_ICON_TOTAL_WIDTH - icon_width) / 2;
-        bitmap_draw(icon->bitmap, icon_draw_x, icon->y);
+        bitmap_draw(icon->bitmap, icon_draw_x, icon->y + 1);
     } else {
         /* Draw default icon with label initials */
         window_theme_t *theme = theme_get_current();
@@ -148,7 +146,7 @@ void icon_draw(icon_t *icon) {
                 /* Word doesn't fit - draw current line centered and start new */
                 line[line_idx] = '\0';
                 int line_w = bmf_measure_text(&font_n, 10, line);
-                int line_x = icon->x + (icon_draw_x / 4) + (total_width - line_w) / 2;
+                int line_x = icon->x + (total_width - line_w) / 2;
                 bmf_printf(line_x, text_y, &font_n, 10, text_color, "%s", line);
                 text_y += 11;
 
@@ -175,7 +173,7 @@ void icon_draw(icon_t *icon) {
         if (line_idx > 0) {
             line[line_idx] = '\0';
             int final_w = bmf_measure_text(&font_n, 10, line);
-            int final_x = icon->x + (icon_draw_x / 4) + (total_width - final_w) / 2;
+            int final_x = icon->x + (total_width - final_w) / 2;
             bmf_printf(final_x, text_y, &font_n, 10, text_color, "%s", line);
         }
     }

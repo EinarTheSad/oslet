@@ -210,7 +210,7 @@ int bmf_measure_text(bmf_font_t *font, uint8_t point_size, const char *text) {
     int width = 0;
     while (*text) {
         const bmf_glyph_t *g = bmf_get_glyph(font, point_size, (uint8_t)*text);
-        if (g) width += g->width + 1;
+        if (g) width += g->width;
         text++;
     }
     return width;

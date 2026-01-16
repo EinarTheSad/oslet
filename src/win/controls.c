@@ -216,15 +216,44 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
     gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_DARK_GRAY);
     gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_DARK_GRAY);
 
+    // Text positioning
+    int text_x = abs_x + 4;
+    int text_y = abs_y + 6;
+
+    // Get font height for cursor
+    int seq_idx = -1;
+    for (int i = 0; i < font->size_count; i++) {
+        if (font->sequences[i].point_size == size) {
+            seq_idx = i;
+            break;
+        }
+    }
+    int font_height = seq_idx >= 0 ? font->sequences[seq_idx].height : size;
+
     // Draw text content
     if (control->text[0] && font->data) {
-        int text_x = abs_x + 4;
-        int text_y = abs_y + 6;
         bmf_printf(text_x, text_y, font, size, control->fg, "%s", control->text);
     }
 
-    // Draw cursor if focused (optional - can be enhanced later)
-    // For now, we skip cursor rendering
+    // Draw cursor if focused
+    if (control->is_focused && font->data) {
+        // Measure text up to cursor position to find cursor X
+        int cursor_x = text_x;
+        if (control->cursor_pos > 0) {
+            char temp[257];
+            int i;
+            for (i = 0; i < control->cursor_pos && i < 256; i++) {
+                temp[i] = control->text[i];
+            }
+            temp[i] = '\0';
+            cursor_x = text_x + bmf_measure_text(font, size, temp);
+        }
+
+        // Draw cursor line (vertical bar)
+        int cursor_y = text_y - 3;
+        int cursor_height = font_height + 1;
+        gfx_vline(cursor_x, cursor_y, cursor_height, control->fg);
+    }
 }
 
 void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y) {
