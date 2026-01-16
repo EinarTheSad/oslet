@@ -121,6 +121,9 @@ void wm_draw_all(window_manager_t *wm) {
         // Draw controls if not minimized
         if (!form->win.is_minimized && form->controls) {
             for (int j = 0; j < form->ctrl_count; j++) {
+                /* Set focus state before drawing (used by textbox for cursor) */
+                form->controls[j].is_focused =
+                    (form->controls[j].id == form->focused_control_id) ? 1 : 0;
                 win_draw_control(&form->win, &form->controls[j]);
             }
         }

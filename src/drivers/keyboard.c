@@ -207,6 +207,13 @@ int kbd_getchar(void) {
     return buf_pop();
 }
 
+int kbd_getchar_nonblock(void) {
+    if (buf_empty()) {
+        return 0;  /* No key available */
+    }
+    return buf_pop();
+}
+
 size_t kbd_getline(char* out, size_t maxlen) {
     size_t n = 0;
     if (maxlen == 0) return 0;

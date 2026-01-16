@@ -120,6 +120,11 @@ typedef struct {
     uint8_t pressed;
     uint8_t checked;  // For checkbox and radio button
     uint16_t group_id;  // For radio button groups
+    /* Textbox-specific fields */
+    uint16_t cursor_pos;  // Cursor position in text
+    uint16_t max_length;  // Maximum text length (0 = use default 255)
+    uint16_t scroll_offset;  // For horizontal scrolling when text overflows
+    uint8_t is_focused;  // Set by form before drawing (for textbox cursor)
 } gui_control_t;
 
 typedef struct {
@@ -133,6 +138,8 @@ typedef struct {
     int16_t drag_start_x;
     int16_t drag_start_y;
     char icon_path[64];  // Icon path for minimized window
+    /* Focus tracking for keyboard input */
+    int16_t focused_control_id;  // ID of control with keyboard focus (-1 = none)
 } gui_form_t;
 
 typedef struct {

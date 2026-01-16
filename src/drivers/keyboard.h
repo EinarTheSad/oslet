@@ -68,5 +68,6 @@
 
 void keyboard_init(void);
 
-int kbd_getchar(void);  /* Returns int to support extended keys */
+int kbd_getchar(void);  /* Returns int to support extended keys (blocking) */
+int kbd_getchar_nonblock(void);  /* Non-blocking: returns 0 if no key available */
 size_t kbd_getline(char* buf, size_t maxlen);
