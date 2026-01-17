@@ -4,6 +4,7 @@
 #include "task.h"
 
 static void print_banner(void) {
+    vga_clear();
     vga_set_color(1, 15);
     printf("  _____   _____  .       ______ _______ \n");
     printf(" |     | |_____  |      |______    |    \n");

@@ -16,10 +16,56 @@
 
 #define MAX_ARGS 8
 #define FAT32_MAX_PATH 256
+#define PAGE_LINES 23
 
 #define COMMAND_COUNT (sizeof(commands) / sizeof((commands)[0]))
 
-const char *shell_version = "oslet-v04";
+#define printf paged_printf
+
+const char *shell_version = "oslet-v05";
+
+static int pager_enabled = 0;
+static int pager_line_count = 0;
+
+static void paged_write(const char *str) {
+    if (!pager_enabled) {
+        sys_write(str);
+        return;
+    }
+
+    for (int i = 0; str[i]; i++) {
+        char c[2] = { str[i], '\0' };
+        sys_write(c);
+
+        if (str[i] == '\n') {
+            pager_line_count++;
+            if (pager_line_count >= PAGE_LINES) {
+                sys_setcolor(COLOR_INFO_BG, COLOR_INFO_FG);
+                sys_write("-- More --");
+                sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+                int key = sys_getchar();
+                sys_write("\r          \r");
+                pager_line_count = 0;
+                /* ESC or 'q' to quit paging */
+                if (key == 27 || key == 'q' || key == 'Q') {
+                    pager_enabled = 0;
+                    return;
+                }
+            }
+        }
+    }
+}
+
+static int paged_printf(const char *fmt, ...) {
+    char buf[1024];
+    va_list ap;
+    va_start(ap, fmt);
+    int len = vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    buf[sizeof(buf) - 1] = '\0';
+    paged_write(buf);
+    return len;
+}
 
 static int sys_stat(const char *path, sys_dirent_t *entry) {
     sys_dirent_t entries[64];
@@ -62,11 +108,11 @@ static void str_toupper(char *str) {
 static int compare_entries(const void *a, const void *b) {
     const sys_dirent_t *ea = (const sys_dirent_t*)a;
     const sys_dirent_t *eb = (const sys_dirent_t*)b;
-    
+
     if (ea->is_directory && !eb->is_directory) return -1;
     if (!ea->is_directory && eb->is_directory) return 1;
-    
-    return strcmp(ea->name, eb->name);
+
+    return strcasecmp(ea->name, eb->name);
 }
 
 static int match_wildcard(const char *pattern, const char *str) {
@@ -129,24 +175,36 @@ static void cmd_uptime(int argc, char *argv[]);
 static void cmd_cls(int argc, char *argv[]);
 static void cmd_shutdown(int argc, char *argv[]);
 static void cmd_reboot(int argc, char *argv[]);
+static void cmd_cp(int argc, char *argv[]);
+static void cmd_mv(int argc, char *argv[]);
+static void cmd_ren(int argc, char *argv[]);
+static void cmd_ver(int argc, char *argv[]);
 
 static const Command commands[] = {
     { "cat",    "cat <file>",          "Display file contents",      cmd_cat },
     { "cd",     "cd <dir>",            "Change directory",           cmd_cd },
     { "cls",    "cls",                 "Clear screen",               cmd_cls },
+    { "cp",     "cp <src> <dst>",      "Alias of 'copy'",            cmd_cp },
+    { "copy",   "copy <src> <dst>",    "Copy file",                  cmd_cp },
     { "echo",   "echo <text> <file>",  "Write text to file",         cmd_echo },
     { "heap",   "heap",                "Show heap statistics",       cmd_heap },
     { "help",   "help",                "Show this command list",     cmd_help },
     { "dir",    "dir <path>",          "List directory",             cmd_ls },
+    { "ls",     "ls <path>",           "Alias of 'dir'",             cmd_ls },
     { "mem",    "mem",                 "Show memory statistics",     cmd_mem },
     { "mkdir",  "mkdir <dir>",         "Create directory",           cmd_mkdir },
+    { "mv",     "mv <src> <dst>",      "Alias of 'move'",            cmd_mv },
+    { "move",   "move <src> <dst>",    "Move file",                  cmd_mv },
     { "ps",     "ps",                  "List running tasks",         cmd_ps },
-    { "rm",     "rm <file>",           "Delete file",                cmd_rm },
+    { "ren",    "ren <old> <new>",     "Rename file",                cmd_ren },
+    { "rm",     "rm <file>",           "Alias of 'del'",             cmd_rm },
+    { "del",    "del <file>",          "Delete file",                cmd_rm },
     { "rmdir",  "rmdir <dir>",         "Remove directory",           cmd_rmdir },
+    { "ver",    "ver",                 "Display system version",     cmd_ver },
     { "time",   "time",                "Show current time and date", cmd_rtc },
     { "uptime", "uptime",              "Show system uptime",         cmd_uptime },
     { "shutdown", "shutdown",          "Power off computer",         cmd_shutdown },
-    { "reboot",   "reboot",              "Restart computer",         cmd_reboot },
+    { "reboot",   "reboot",            "Restart computer",           cmd_reboot },
     { "exit",   "exit",                "Exit shell",                 cmd_exit }
 };
 
@@ -207,6 +265,24 @@ void _start(void) {
         if (argc == 0)
             continue;
 
+        /* Check for /p flag (pager) - can be anywhere in args */
+        pager_enabled = 0;
+        pager_line_count = 0;
+        for (int i = 0; i < argc; i++) {
+            if (!strcmp(argv[i], "/p") || !strcmp(argv[i], "/P")) {
+                pager_enabled = 1;
+                /* Remove /p from argv */
+                for (int j = i; j < argc - 1; j++) {
+                    argv[j] = argv[j + 1];
+                }
+                argv[--argc] = NULL;
+                break;
+            }
+        }
+
+        if (argc == 0)
+            continue;
+
         char *cmd = argv[0];
 
         int found = 0;
@@ -220,6 +296,8 @@ void _start(void) {
                 break;
             }
         }
+
+        pager_enabled = 0;
 
         if (!found) {
             char bin_path[FAT32_MAX_PATH];
@@ -334,7 +412,7 @@ static void cmd_help(int argc, char *argv[]) {
 
 static void cmd_exit(int argc, char *argv[]) {
     (void)argc; (void)argv;
-    printf("This action will return you to the kernel shell.\nMake sure you know what you are doing! Proceed? (Y/N) ");
+    printf("This action will result in exiting the shell program.\nMake sure you know what you are doing! Proceed? (Y/N) ");
     char conf[80];
     sys_readline(conf, sizeof(conf));
     if (!strcmp(conf,"Y") || !strcmp(conf,"y")) sys_exit();
@@ -362,12 +440,12 @@ static void cmd_rtc(int argc, char *argv[]) {
     sys_time_t current;
     sys_get_time(&current);
 
-    printf("Current time: ");
+    printf("\nCurrent time: ");
     sys_setcolor(COLOR_INFO_BG,COLOR_INFO_FG);
     printf("%02u/%02u/%04u %02u:%02u:%02u",
        current.day, current.month, current.year,
        current.hour, current.minute, current.second);
-    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG); printf("\n");
+    sys_setcolor(COLOR_NORMAL_BG,COLOR_NORMAL_FG); printf("\n\n");
 }
 
 static void cmd_heap(int argc, char *argv[]) {
@@ -405,6 +483,213 @@ static void cmd_cls(int argc, char *argv[]) {
     sys_clear();
 }
 
+static int copy_file(const char *src, const char *dst) {
+    int fd_src = sys_open(src, "r");
+    if (fd_src < 0) return -1;
+
+    int fd_dst = sys_open(dst, "w");
+    if (fd_dst < 0) {
+        sys_close(fd_src);
+        return -2;
+    }
+
+    char buf[512];
+    int n;
+    int total = 0;
+
+    while ((n = sys_read(fd_src, buf, sizeof(buf))) > 0) {
+        if (sys_write_file(fd_dst, buf, n) != n) {
+            sys_close(fd_src);
+            sys_close(fd_dst);
+            sys_unlink(dst);
+            return -3;
+        }
+        total += n;
+    }
+
+    sys_close(fd_src);
+    sys_close(fd_dst);
+    return total;
+}
+
+static void cmd_cp(int argc, char *argv[]) {
+    if (argc < 3) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Usage: cp <source> <destination>\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    const char *src = argv[1];
+    const char *dst = argv[2];
+
+    /* Check if source exists and is a file */
+    sys_dirent_t entry;
+    if (sys_stat(src, &entry) != 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: source file '%s' not found\n", src);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    if (entry.is_directory) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: cannot copy directory '%s'\n", src);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    int result = copy_file(src, dst);
+
+    if (result < 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        switch (result) {
+            case -1:
+                printf("Error: cannot open source file '%s'\n", src);
+                break;
+            case -2:
+                printf("Error: cannot create destination file '%s'\n", dst);
+                break;
+            case -3:
+                printf("Error: write failed during copy\n");
+                break;
+        }
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+    } else {
+        sys_setcolor(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
+        printf("Copied %d bytes: %s -> %s\n", result, src, dst);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+    }
+}
+
+static void cmd_mv(int argc, char *argv[]) {
+    if (argc < 3) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Usage: mv <source> <destination>\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    const char *src = argv[1];
+    const char *dst = argv[2];
+
+    /* Check if source exists and is a file */
+    sys_dirent_t entry;
+    if (sys_stat(src, &entry) != 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: source file '%s' not found\n", src);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    if (entry.is_directory) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: cannot move directory '%s'\n", src);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Copy file to destination */
+    int result = copy_file(src, dst);
+
+    if (result < 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        switch (result) {
+            case -1:
+                printf("Error: cannot open source file '%s'\n", src);
+                break;
+            case -2:
+                printf("Error: cannot create destination file '%s'\n", dst);
+                break;
+            case -3:
+                printf("Error: write failed during move\n");
+                break;
+        }
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Delete source file */
+    if (sys_unlink(src) != 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Warning: copied but failed to delete source '%s'\n", src);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    sys_setcolor(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
+    printf("Moved: %s -> %s\n", src, dst);
+    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+}
+
+static void cmd_ren(int argc, char *argv[]) {
+    if (argc < 3) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Usage: ren <oldname> <newname>\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    const char *oldname = argv[1];
+    const char *newname = argv[2];
+
+    /* Check if source exists and is a file */
+    sys_dirent_t entry;
+    if (sys_stat(oldname, &entry) != 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: file '%s' not found\n", oldname);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    if (entry.is_directory) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: cannot rename directory '%s'\n", oldname);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Check if destination already exists */
+    if (sys_stat(newname, NULL) == 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: file '%s' already exists\n", newname);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Copy file to new name */
+    int result = copy_file(oldname, newname);
+
+    if (result < 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        switch (result) {
+            case -1:
+                printf("Error: cannot open file '%s'\n", oldname);
+                break;
+            case -2:
+                printf("Error: cannot create file '%s'\n", newname);
+                break;
+            case -3:
+                printf("Error: write failed during rename\n");
+                break;
+        }
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Delete old file */
+    if (sys_unlink(oldname) != 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Warning: copied but failed to delete '%s'\n", oldname);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    sys_setcolor(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
+    printf("Renamed: %s -> %s\n", oldname, newname);
+    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+}
+
 static void cmd_cat(int argc, char *argv[]) {
     if (argc < 2) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
@@ -415,7 +700,7 @@ static void cmd_cat(int argc, char *argv[]) {
 
     const char *pattern = argv[1];
     int has_wildcard = (strchr(pattern, '*') != NULL || strchr(pattern, '?') != NULL);
-    
+
     if (!has_wildcard) {
         int fd = sys_open(pattern, "r");
         if (fd < 0) {
@@ -429,43 +714,43 @@ static void cmd_cat(int argc, char *argv[]) {
         int n;
         while ((n = sys_read(fd, buf, sizeof(buf) - 1)) > 0) {
             buf[n] = '\0';
-            sys_write(buf);
+            paged_write(buf);
         }
 
         sys_close(fd);
         return;
     }
-    
+
     char path_buf[FAT32_MAX_PATH];
     sys_getcwd(path_buf, sizeof(path_buf));
     size_t len = strlen(path_buf);
     if (len > 3 && path_buf[len - 1] == '/')
         path_buf[len - 1] = '\0';
-    
+
     sys_dirent_t entries[64];
     int count = sys_readdir(path_buf, entries, 64);
-    
+
     if (count < 0) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
         printf("Error: cannot read directory\n");
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         return;
     }
-    
+
     int found = 0;
-    
+
     for (int i = 0; i < count; i++) {
         if (entries[i].is_directory) continue;
-        
+
         if (match_wildcard(pattern, entries[i].name)) {
             found++;
-            
+
             if (count > 1) {
                 sys_setcolor(COLOR_NORMAL_BG, COLOR_INFO_FG);
                 printf("\n==> %s <==\n", entries[i].name);
                 sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
             }
-            
+
             int fd = sys_open(entries[i].name, "r");
             if (fd < 0) {
                 sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
@@ -478,13 +763,13 @@ static void cmd_cat(int argc, char *argv[]) {
             int n;
             while ((n = sys_read(fd, buf, sizeof(buf) - 1)) > 0) {
                 buf[n] = '\0';
-                sys_write(buf);
+                paged_write(buf);
             }
 
             sys_close(fd);
         }
     }
-    
+
     if (found == 0) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
         printf("No files match pattern '%s'\n", pattern);
@@ -627,25 +912,34 @@ static void cmd_ls(int argc, char *argv[]) {
     printf("\n");
     int dirs = 0;
     for (int i = 0; i < count; i++) {
+        /* Decode FAT date/time */
+        int day = entries[i].mdate & 0x1F;
+        int month = (entries[i].mdate >> 5) & 0x0F;
+        int year = ((entries[i].mdate >> 9) & 0x7F) + 1980;
+        int hour = (entries[i].mtime >> 11) & 0x1F;
+        int min = (entries[i].mtime >> 5) & 0x3F;
+
         if (entries[i].is_directory) {
             sys_setcolor(COLOR_NORMAL_BG, COLOR_DIR_FG);
-            printf("  %-43s ", entries[i].name);
+            printf("  %-32s ", entries[i].name);
             sys_setcolor(COLOR_NORMAL_BG, COLOR_INFO_FG);
-            printf("<DIR>\n");
+            printf("<DIR>");
             sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            printf("     %02d/%02d/%04d %02d:%02d\n", day, month, year, hour, min);
             dirs++;
         } else {
             sys_setcolor(COLOR_NORMAL_BG, 15);
-            printf("  %-34s ", entries[i].name);
+            printf("  %-28s ", entries[i].name);
             sys_setcolor(COLOR_NORMAL_BG, COLOR_INFO_FG);
             if (entries[i].size > 1024 * 1024) {
-                printf("  %8u MiB\n", entries[i].size / (1024 * 1024));
+                printf("%6u MB", entries[i].size / (1024 * 1024));
             } else if (entries[i].size > 1024) {
-                printf("  %8u KiB\n", entries[i].size / 1024);
+                printf("%6u kB", entries[i].size / 1024);
             } else {
-                printf("%8u bytes\n", entries[i].size);
+                printf("%6u B ", entries[i].size);
             }
             sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            printf("     %02d/%02d/%04d %02d:%02d\n", day, month, year, hour, min);
         }
     }
     
@@ -830,7 +1124,7 @@ static void cmd_uptime(int argc, char *argv[]) {
     uint32_t hours = minutes / 60;
     uint32_t days = hours / 24;
 
-    printf("System uptime: ");
+    printf("\nSystem uptime: ");
     sys_setcolor(COLOR_INFO_BG, COLOR_INFO_FG);
     
     if (days > 0) {
@@ -839,7 +1133,24 @@ static void cmd_uptime(int argc, char *argv[]) {
     printf("%02u:%02u:%02u", hours % 24, minutes % 60, seconds % 60);
     
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-    printf("\n");
+    printf("\n\n");
+}
+
+static void cmd_ver(int argc, char *argv[]) {
+    (void)argc; (void)argv;
+    
+    printf("\nosLET ");
+    sys_setcolor(COLOR_INFO_BG, COLOR_INFO_FG);
+    printf("%s",sys_version());
+    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+    printf("\nShell version ");
+    sys_setcolor(COLOR_INFO_BG, COLOR_INFO_FG);
+    printf("%s",sys_info_shell());
+    sys_setcolor(COLOR_NORMAL_BG, COLOR_DARK_GRAY);
+    printf("\n\nThis project is currently under development. The author provides this software\n\"as is\" under no warranty of any kind. "
+           "Any damages resulting from using osLET\non valuable data or real hardware will be your fault.");
+    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+    printf("\n\n");
 }
 
 static void cmd_reboot(int argc, char *argv[]) {
@@ -894,7 +1205,8 @@ static void cmd_shutdown(int argc, char *argv[]) {
     /* APM shutdown (legacy) */
     outw(0x1000, 0x0001 | 0x2000 | 0x4000);
     
-    /* If still running, show error */
-    sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-    printf("\nShutdown failed - ACPI not supported\n");
+    /* If still running, just stop and let the user pull the plug */
+    sys_clear();
+    printf("It is now safe to turn off the computer");
+    for (;;) __asm__ volatile ("hlt");
 }

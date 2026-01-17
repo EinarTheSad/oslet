@@ -12,4 +12,3 @@ typedef struct {
 
 void rtc_init(void);
 void rtc_read_time(rtc_time_t *time);
-void rtc_print_time(void);
