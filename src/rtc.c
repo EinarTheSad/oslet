@@ -42,7 +42,6 @@ void rtc_read_time(rtc_time_t *time)
 
     rtc_time_t t1, t2;
 
-    // Stabilizacja: dwa kompletne odczyty, aż wartości się pokryją.
     do {
         while (rtc_is_updating());
 
@@ -103,13 +102,4 @@ void rtc_read_time(rtc_time_t *time)
     if (is_12h && (hr & 0x80)) {
         time->hour = ((time->hour & 0x7F) + 12) % 24;
     }
-}
-
-void rtc_print_time(void) {
-    rtc_time_t current;
-    rtc_read_time(&current);
-    
-    printf("Current time: %02u/%02u/%04u %02u:%02u:%02u\n",
-           current.day, current.month, current.year,
-           current.hour, current.minute, current.second);
 }

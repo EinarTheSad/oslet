@@ -2,6 +2,7 @@
 #include "ata.h"
 #include "../mem/heap.h"
 #include "../console.h"
+#include "../rtc.h"
 
 #define FAT32_EOC 0x0FFFFFF8  /* End of cluster chain starts at 0x0FFFFFF8 */
 #define FAT32_BAD 0x0FFFFFF7
@@ -77,6 +78,30 @@ static char current_dir[FAT32_MAX_PATH] = "C:/";
 
 static uint8_t fat_dirty[FAT32_MAX_VOLUMES];
 static uint32_t last_alloc[FAT32_MAX_VOLUMES];
+
+/* Convert RTC time to FAT32 time format */
+static uint16_t rtc_to_fat_time(const rtc_time_t *rtc) {
+    return ((uint16_t)(rtc->hour & 0x1F) << 11) |
+           ((uint16_t)(rtc->minute & 0x3F) << 5) |
+           ((uint16_t)(rtc->second / 2) & 0x1F);
+}
+
+/* Convert RTC time to FAT32 date format */
+static uint16_t rtc_to_fat_date(const rtc_time_t *rtc) {
+    uint16_t year = (rtc->year >= 1980) ? (rtc->year - 1980) : 0;
+    if (year > 127) year = 127;
+    return ((year & 0x7F) << 9) |
+           ((uint16_t)(rtc->month & 0x0F) << 5) |
+           ((uint16_t)(rtc->day & 0x1F));
+}
+
+/* Get current FAT32 timestamp */
+static void get_fat_timestamp(uint16_t *time, uint16_t *date) {
+    rtc_time_t rtc;
+    rtc_read_time(&rtc);
+    if (time) *time = rtc_to_fat_time(&rtc);
+    if (date) *date = rtc_to_fat_date(&rtc);
+}
 
 static fat32_volume_t* get_volume(uint8_t drive) {
     for (int i = 0; i < FAT32_MAX_VOLUMES; i++) {
@@ -560,6 +585,15 @@ static int add_dir_entry(fat32_volume_t *vol, uint32_t dir_cluster, const char *
             entry->first_cluster_high = (uint16_t)(first_cluster >> 16);
             entry->first_cluster_low = (uint16_t)(first_cluster & 0xFFFF);
             entry->file_size = size;
+
+            /* Set creation and modification timestamps */
+            uint16_t fat_time, fat_date;
+            get_fat_timestamp(&fat_time, &fat_date);
+            entry->created_time = fat_time;
+            entry->created_date = fat_date;
+            entry->modified_time = fat_time;
+            entry->modified_date = fat_date;
+            entry->accessed_date = fat_date;
             
             if (write_cluster(vol, cluster, cluster_buf) != 0) {
                 kfree(cluster_buf);
@@ -959,6 +993,14 @@ void fat32_close(fat32_file_t *file) {
                                 fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
                                 uint32_t idx = offset / 32;
                                 entries[idx].file_size = file->size;
+
+                                /* Update modification timestamp */
+                                uint16_t fat_time, fat_date;
+                                get_fat_timestamp(&fat_time, &fat_date);
+                                entries[idx].modified_time = fat_time;
+                                entries[idx].modified_date = fat_date;
+                                entries[idx].accessed_date = fat_date;
+
                                 write_cluster(vol, cluster, cluster_buf);
                             }
                             kfree(cluster_buf);
@@ -1087,8 +1129,10 @@ int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries) {
             }
             
             entries[count].size = dir_entries[i].file_size;
-            entries[count].first_cluster = ((uint32_t)dir_entries[i].first_cluster_high << 16) | 
+            entries[count].first_cluster = ((uint32_t)dir_entries[i].first_cluster_high << 16) |
                                           dir_entries[i].first_cluster_low;
+            entries[count].mtime = dir_entries[i].modified_time;
+            entries[count].mdate = dir_entries[i].modified_date;
             entries[count].is_directory = (dir_entries[i].attr & FAT_ATTR_DIRECTORY) ? 1 : 0;
             entries[count].attr = dir_entries[i].attr;
             count++;
@@ -1264,6 +1308,8 @@ int fat32_stat(const char *path, fat32_dirent_t *entry) {
         strcpy_s(entry->name, "/", sizeof(entry->name));
         entry->size = 0;
         entry->first_cluster = vol->root_cluster;
+        entry->mtime = 0;
+        entry->mdate = 0;
         entry->is_directory = 1;
         entry->attr = FAT_ATTR_DIRECTORY;
         return 0;
@@ -1275,6 +1321,8 @@ int fat32_stat(const char *path, fat32_dirent_t *entry) {
     strcpy_s(entry->name, filename, sizeof(entry->name));
     entry->size = raw_entry.file_size;
     entry->first_cluster = ((uint32_t)raw_entry.first_cluster_high << 16) | raw_entry.first_cluster_low;
+    entry->mtime = raw_entry.modified_time;
+    entry->mdate = raw_entry.modified_date;
     entry->is_directory = (raw_entry.attr & FAT_ATTR_DIRECTORY) ? 1 : 0;
     entry->attr = raw_entry.attr;
     return 0;

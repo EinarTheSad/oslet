@@ -18,6 +18,8 @@ typedef struct {
     char name[FAT32_MAX_PATH];
     uint32_t size;
     uint32_t first_cluster;
+    uint16_t mtime;  /* FAT time format */
+    uint16_t mdate;  /* FAT date format */
     uint8_t is_directory;
     uint8_t attr;
 } fat32_dirent_t;
