@@ -1499,6 +1499,7 @@
                 border_color: 0,
                 checked: 0,  // For checkbox and radio
                 group_id: 0,  // For radio button grouping
+                max_length: currentTool === 'textbox' ? 255 : 0,  // For textbox
                 action: currentTool === 'button' ? { type: 'none', target: '' } : undefined
             };
 
@@ -1713,6 +1714,16 @@
                 `;
             }
 
+            // Add max_length property for textbox
+            if (c.type === 'textbox') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Max Length</div>
+                        <input class="prop-input" type="number" value="${c.max_length || 255}" onchange="updateMaxLength(parseInt(this.value))">
+                    </div>
+                `;
+            }
+
             document.getElementById('prop-content').innerHTML = html;
         }
 
@@ -1851,6 +1862,12 @@
         function updateGroupId(value) {
             if (!selectedControl) return;
             selectedControl.group_id = value;
+            updateProperties();
+        }
+
+        function updateMaxLength(value) {
+            if (!selectedControl) return;
+            selectedControl.max_length = Math.max(1, Math.min(255, value));
             updateProperties();
         }
 
@@ -2085,7 +2102,10 @@
 
                         const checked = c.checked || 0;
                         const group_id = c.group_id || 0;
-                        code += `    {${typeStr}, ${c.x}, ${c.y}, ${w}, ${h}, ${c.fg}, ${c.bg}, "${c.text}", ${c.id}, ${c.font_type}, ${c.font_size}, ${c.border}, ${c.border_color}, NULL, 0, ${checked}, ${group_id}}${comma}\n`;
+                        const max_length = c.max_length || 0;
+                        // Structure: type, x, y, w, h, fg, bg, text, id, font_type, font_size, border, border_color,
+                        //            cached_bitmap, pressed, checked, group_id, cursor_pos, max_length, scroll_offset, is_focused, sel_start, sel_end
+                        code += `    {${typeStr}, ${c.x}, ${c.y}, ${w}, ${h}, ${c.fg}, ${c.bg}, "${c.text}", ${c.id}, ${c.font_type}, ${c.font_size}, ${c.border}, ${c.border_color}, NULL, 0, ${checked}, ${group_id}, 0, ${max_length}, 0, 0, -1, -1}${comma}\n`;
                     });
 
                     code += `};\n\n`;

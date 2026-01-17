@@ -16,6 +16,7 @@
 #include "win/wm_config.h"
 #include "win/bitmap.h"
 #include "win/wm.h"
+#include "win/controls.h"
 
 #define MAX_OPEN_FILES 32
 
@@ -279,6 +280,8 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
                     memcpy_s(sys_entries[i].name, fat_entries[i].name, sizeof(sys_entries[i].name));
                     sys_entries[i].size = fat_entries[i].size;
                     sys_entries[i].first_cluster = fat_entries[i].first_cluster;
+                    sys_entries[i].mtime = fat_entries[i].mtime;
+                    sys_entries[i].mdate = fat_entries[i].mdate;
                     sys_entries[i].is_directory = fat_entries[i].is_directory;
                     sys_entries[i].attr = fat_entries[i].attr;
                 }
@@ -685,15 +688,27 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 else if (ctrl->type == CTRL_CHECKBOX || ctrl->type == CTRL_RADIOBUTTON) {
                     return 0;  /* Press recorded, no visual change yet */
                 }
-                /* For textbox, set keyboard focus */
+                /* For textbox, set keyboard focus and cursor position */
                 else if (ctrl->type == CTRL_TEXTBOX) {
                     form->focused_control_id = ctrl->id;
                     clicked_on_focusable = 1;
-                    /* Return 1 if focus changed to trigger redraw */
-                    if (old_focus != form->focused_control_id) {
-                        return 1;
-                    }
-                    return 0;
+
+                    /* Calculate cursor position from mouse click */
+                    extern bmf_font_t font_n;
+                    int size = ctrl->font_size > 0 ? ctrl->font_size : 12;
+                    int text_area_x = abs_x + 4;
+                    int rel_x = mx - text_area_x;
+
+                    int new_pos = textbox_pos_from_x(&font_n, size, ctrl->text,
+                                                     ctrl->scroll_offset, rel_x);
+                    ctrl->cursor_pos = new_pos;
+
+                    /* Start mouse selection */
+                    ctrl->sel_start = new_pos;
+                    ctrl->sel_end = new_pos;
+                    form->textbox_selecting = 1;
+
+                    return 1;  /* Always redraw to show cursor position */
                 }
                 break;
             }
@@ -720,6 +735,28 @@ static gui_control_t* find_control_by_id(gui_form_t *form, int16_t id) {
     return NULL;
 }
 
+/* Helper: delete selected text in textbox, return 1 if deleted */
+static int textbox_delete_selection(gui_control_t *ctrl) {
+    if (ctrl->sel_start < 0 || ctrl->sel_start == ctrl->sel_end) return 0;
+
+    int sel_min = ctrl->sel_start < ctrl->sel_end ? ctrl->sel_start : ctrl->sel_end;
+    int sel_max = ctrl->sel_start > ctrl->sel_end ? ctrl->sel_start : ctrl->sel_end;
+
+    int text_len = 0;
+    while (ctrl->text[text_len]) text_len++;
+
+    /* Shift text left to remove selected portion */
+    int del_count = sel_max - sel_min;
+    for (int i = sel_min; i <= text_len - del_count; i++) {
+        ctrl->text[i] = ctrl->text[i + del_count];
+    }
+
+    ctrl->cursor_pos = sel_min;
+    ctrl->sel_start = -1;
+    ctrl->sel_end = -1;
+    return 1;
+}
+
 /* Handle keyboard input for focused textbox */
 static int pump_handle_keyboard(gui_form_t *form) {
     if (form->focused_control_id < 0) return 0;
@@ -735,34 +772,50 @@ static int pump_handle_keyboard(gui_form_t *form) {
 
     int max_len = ctrl->max_length > 0 ? ctrl->max_length : 255;
     int needs_redraw = 0;
+    int has_selection = (ctrl->sel_start >= 0 && ctrl->sel_start != ctrl->sel_end);
 
     /* Handle special keys */
     if (key == KEY_LEFT) {
-        if (ctrl->cursor_pos > 0) {
+        if (has_selection) {
+            /* Move cursor to start of selection, clear selection */
+            int sel_min = ctrl->sel_start < ctrl->sel_end ? ctrl->sel_start : ctrl->sel_end;
+            ctrl->cursor_pos = sel_min;
+            ctrl->sel_start = -1;
+            ctrl->sel_end = -1;
+        } else if (ctrl->cursor_pos > 0) {
             ctrl->cursor_pos--;
-            needs_redraw = 1;
         }
+        needs_redraw = 1;
     }
     else if (key == KEY_RIGHT) {
-        if (ctrl->cursor_pos < text_len) {
+        if (has_selection) {
+            /* Move cursor to end of selection, clear selection */
+            int sel_max = ctrl->sel_start > ctrl->sel_end ? ctrl->sel_start : ctrl->sel_end;
+            ctrl->cursor_pos = sel_max;
+            ctrl->sel_start = -1;
+            ctrl->sel_end = -1;
+        } else if (ctrl->cursor_pos < text_len) {
             ctrl->cursor_pos++;
-            needs_redraw = 1;
         }
+        needs_redraw = 1;
     }
     else if (key == KEY_HOME) {
-        if (ctrl->cursor_pos != 0) {
-            ctrl->cursor_pos = 0;
-            needs_redraw = 1;
-        }
+        ctrl->cursor_pos = 0;
+        ctrl->sel_start = -1;
+        ctrl->sel_end = -1;
+        needs_redraw = 1;
     }
     else if (key == KEY_END) {
-        if (ctrl->cursor_pos != text_len) {
-            ctrl->cursor_pos = text_len;
-            needs_redraw = 1;
-        }
+        ctrl->cursor_pos = text_len;
+        ctrl->sel_start = -1;
+        ctrl->sel_end = -1;
+        needs_redraw = 1;
     }
     else if (key == '\b') {  /* Backspace */
-        if (ctrl->cursor_pos > 0) {
+        if (has_selection) {
+            textbox_delete_selection(ctrl);
+            needs_redraw = 1;
+        } else if (ctrl->cursor_pos > 0) {
             /* Shift text left from cursor position */
             for (int i = ctrl->cursor_pos - 1; i < text_len; i++) {
                 ctrl->text[i] = ctrl->text[i + 1];
@@ -772,7 +825,10 @@ static int pump_handle_keyboard(gui_form_t *form) {
         }
     }
     else if (key == KEY_DELETE) {
-        if (ctrl->cursor_pos < text_len) {
+        if (has_selection) {
+            textbox_delete_selection(ctrl);
+            needs_redraw = 1;
+        } else if (ctrl->cursor_pos < text_len) {
             /* Shift text left from position after cursor */
             for (int i = ctrl->cursor_pos; i < text_len; i++) {
                 ctrl->text[i] = ctrl->text[i + 1];
@@ -787,12 +843,22 @@ static int pump_handle_keyboard(gui_form_t *form) {
         /* Enter - could signal form submission, for now ignore in single-line textbox */
     }
     else if (key == KEY_ESC) {
-        /* Escape - clear focus */
+        /* Escape - clear selection and focus */
+        ctrl->sel_start = -1;
+        ctrl->sel_end = -1;
         form->focused_control_id = -1;
         needs_redraw = 1;
     }
     else if (key >= 0x20 && key < 0x80) {
         /* Printable ASCII character */
+        /* Delete selection first if any */
+        if (has_selection) {
+            textbox_delete_selection(ctrl);
+            /* Recalculate text length after deletion */
+            text_len = 0;
+            while (ctrl->text[text_len]) text_len++;
+        }
+
         if (text_len < max_len - 1) {
             /* Shift text right from cursor position */
             for (int i = text_len; i >= ctrl->cursor_pos; i--) {
@@ -934,6 +1000,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->drag_start_y = 0;
             form->icon_path[0] = '\0';
             form->focused_control_id = -1;  /* No control focused initially */
+            form->textbox_selecting = 0;
 
             /* Register window with window manager */
             if (!wm_register_window(&global_wm, form)) {
@@ -1132,6 +1199,43 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 }
             }
 
+            /* Handle textbox mouse selection (dragging to select text) */
+            if (form->textbox_selecting && (mb & 1) && form->focused_control_id >= 0) {
+                gui_control_t *ctrl = find_control_by_id(form, form->focused_control_id);
+                if (ctrl && ctrl->type == CTRL_TEXTBOX) {
+                    int abs_x = form->win.x + ctrl->x;
+                    //int abs_y = form->win.y + ctrl->y + 20;
+
+                    extern bmf_font_t font_n;
+                    int size = ctrl->font_size > 0 ? ctrl->font_size : 12;
+                    int text_area_x = abs_x + 4;
+                    int rel_x = mx - text_area_x;
+
+                    int new_pos = textbox_pos_from_x(&font_n, size, ctrl->text,
+                                                     ctrl->scroll_offset, rel_x);
+
+                    /* Update selection end and cursor */
+                    if (new_pos != ctrl->sel_end) {
+                        ctrl->sel_end = new_pos;
+                        ctrl->cursor_pos = new_pos;
+                        needs_redraw = 1;
+                    }
+                }
+            }
+
+            /* End textbox selection on mouse release */
+            if (button_released && form->textbox_selecting) {
+                form->textbox_selecting = 0;
+                /* If sel_start == sel_end, clear selection */
+                gui_control_t *ctrl = find_control_by_id(form, form->focused_control_id);
+                if (ctrl && ctrl->type == CTRL_TEXTBOX) {
+                    if (ctrl->sel_start == ctrl->sel_end) {
+                        ctrl->sel_start = -1;
+                        ctrl->sel_end = -1;
+                    }
+                }
+            }
+
             /* Handle keyboard input for focused textbox */
             if (!form->win.is_minimized && form->focused_control_id >= 0) {
                 if (pump_handle_keyboard(form)) {
@@ -1192,6 +1296,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->cursor_pos = ctrl->cursor_pos;
                 dest->max_length = ctrl->max_length > 0 ? ctrl->max_length : 255;
                 dest->scroll_offset = 0;
+                dest->is_focused = 0;
+                dest->sel_start = -1;
+                dest->sel_end = -1;
 
                 strcpy_s(dest->text, ctrl->text, 256);
 

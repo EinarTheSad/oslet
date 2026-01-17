@@ -152,4 +152,3 @@ fetchlet: $(BIN)/fetchlet.elf
 shell: $(BIN)/shell.elf
 edit: $(BIN)/edit.elf
 desktop: $(BIN)/desktop.elf
-contest: $(BIN)/contest.elf

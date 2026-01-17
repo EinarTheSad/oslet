@@ -7,6 +7,7 @@
 
 usr_bmf_font_t font_b;
 usr_bmf_font_t font_n;
+sys_time_t current = {0};
 
 typedef struct {
     int x, y, w, h;
@@ -44,12 +45,12 @@ void draw_simple_button(int x, int y, int w, int h, const char *label, int press
 }
 
 // Controls for Form1
-// Structure: type, x, y, w, h, fg, bg, text, id, font_type, font_size, border, border_color, cached_bitmap, pressed, checked, group_id, cursor_pos, max_length, scroll_offset, is_focused
+// Structure: type, x, y, w, h, fg, bg, text, id, font_type, font_size, border, border_color, cached_bitmap, pressed, checked, group_id, cursor_pos, max_length, scroll_offset, is_focused, sel_start, sel_end
 gui_control_t Form1_controls[] = {
-    {CTRL_PICTUREBOX, 5, 5, 108, 208, 0, 7, "SETUP.BMP", 1, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0},
-    {CTRL_BUTTON, 295, 191, 70, 23, 0, 7, "OK", 2, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0},
-    {CTRL_LABEL, 118, 12, 0, 0, 0, 15, "Welcome to osLET!", 3, 1, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0},
-    {CTRL_LABEL, 119, 40, 219, 114, 0, 15, "This window serves as a test of the\ncontrol system in osLET graphical\nuser interface.\n\nYou can drag this window freely using\nthe mouse, or click the button below\nto exit back to shell.", 5, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0}
+    {CTRL_PICTUREBOX, 5, 5, 108, 208, 0, 7, "SETUP.BMP", 1, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1},
+    {CTRL_BUTTON, 295, 191, 70, 23, 0, 7, "OK", 2, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1},
+    {CTRL_LABEL, 118, 12, 0, 0, 0, 15, "Welcome to osLET!", 3, 1, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1},
+    {CTRL_LABEL, 119, 40, 219, 114, 0, 15, "This window serves as a test of the\ncontrol system in osLET graphical\nuser interface.\n\nYou can drag this window freely using\nthe mouse, or click the button below\nto exit back to shell.", 5, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1}
 };
 
 void* create_Form1(void) {
@@ -75,7 +76,6 @@ int last_clock_hour = -1;
 int last_clock_minute = -1;
 
 void draw_clock(void) {
-    sys_time_t current;
     sys_get_time(&current);
     sys_gfx_rect(640-60, TASKBAR_Y + 3, 57, 21, COLOR_DARK_GRAY);
     sys_gfx_fillrect(640-59, TASKBAR_Y + 4, 55, 19, COLOR_LIGHT_GRAY);
@@ -85,7 +85,6 @@ void draw_clock(void) {
 }
 
 int update_clock(void) {
-    sys_time_t current;
     sys_get_time(&current);
     if (current.hour != last_clock_hour || current.minute != last_clock_minute) {
         draw_clock();
@@ -95,15 +94,8 @@ int update_clock(void) {
 }
 
 void draw_taskbar(void) {
-    int y = TASKBAR_Y;
-
-    sys_gfx_fillrect(0, y + 1, 640, TASKBAR_HEIGHT - 1, COLOR_LIGHT_GRAY);
-
-    // Draw 3D border effect
-    sys_gfx_line(0, y, 639, y, COLOR_WHITE);
-    sys_gfx_line(0, y + 1, 0, 479, COLOR_WHITE);
-    sys_gfx_line(639, y + 1, 639, 479, COLOR_DARK_GRAY);
-    sys_gfx_line(0, 479, 639, 479, COLOR_DARK_GRAY);
+    sys_gfx_fillrect(0, TASKBAR_Y, 640, TASKBAR_HEIGHT, COLOR_LIGHT_GRAY);
+    sys_gfx_line(0, TASKBAR_Y, 640, TASKBAR_Y, COLOR_WHITE);
 
     draw_simple_button(start_button.x, start_button.y,
                       start_button.w, start_button.h,

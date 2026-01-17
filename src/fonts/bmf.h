@@ -42,6 +42,7 @@ const bmf_glyph_t* bmf_get_glyph(bmf_font_t *font, uint8_t height, uint8_t ascii
 
 /* Rendering */
 void bmf_draw_glyph(int x, int y, const bmf_glyph_t *glyph, uint8_t height, uint8_t baseline, uint8_t fg, uint8_t bg);
+void bmf_draw_char(int x, int y, bmf_font_t *font, uint8_t point_size, uint8_t ch, uint8_t fg);
 int bmf_measure_text(bmf_font_t *font, uint8_t height, const char *text);
 
 /* Printf-like functions - format: x, y, color, format, args */
