@@ -201,6 +201,21 @@ void bmf_draw_glyph(int x, int y, const bmf_glyph_t *glyph, uint8_t height, uint
     }
 }
 
+/* Draw single character at position */
+void bmf_draw_char(int x, int y, bmf_font_t *font, uint8_t point_size, uint8_t ch, uint8_t fg) {
+    if (!font) return;
+
+    int seq_idx = bmf_find_sequence_for_size(font, point_size);
+    if (seq_idx < 0) return;
+
+    const bmf_glyph_t *g = bmf_get_glyph(font, point_size, ch);
+    if (g) {
+        uint8_t height = font->sequences[seq_idx].height;
+        uint8_t baseline = font->sequences[seq_idx].baseline;
+        bmf_draw_glyph(x, y, g, height, baseline, fg, BMF_TRANSPARENT);
+    }
+}
+
 int bmf_measure_text(bmf_font_t *font, uint8_t point_size, const char *text) {
     if (!font || !text) return 0;
 

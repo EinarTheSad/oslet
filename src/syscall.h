@@ -125,6 +125,9 @@ typedef struct {
     uint16_t max_length;  // Maximum text length (0 = use default 255)
     uint16_t scroll_offset;  // For horizontal scrolling when text overflows
     uint8_t is_focused;  // Set by form before drawing (for textbox cursor)
+    /* Text selection */
+    int16_t sel_start;  // Selection start (-1 = no selection)
+    int16_t sel_end;    // Selection end
 } gui_control_t;
 
 typedef struct {
@@ -140,6 +143,8 @@ typedef struct {
     char icon_path[64];  // Icon path for minimized window
     /* Focus tracking for keyboard input */
     int16_t focused_control_id;  // ID of control with keyboard focus (-1 = none)
+    /* Textbox mouse selection tracking */
+    uint8_t textbox_selecting;  // Currently selecting text with mouse
 } gui_form_t;
 
 typedef struct {
@@ -157,9 +162,11 @@ typedef struct {
 } msg_queue_t;
 
 typedef struct {
-    char name[13];
+    char name[256];
     uint32_t size;
     uint32_t first_cluster;
+    uint16_t mtime;  /* FAT time format */
+    uint16_t mdate;  /* FAT date format */
     uint8_t is_directory;
     uint8_t attr;
 } sys_dirent_t;
