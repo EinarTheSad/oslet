@@ -55,6 +55,13 @@ char *strrchr(const char *s, int c) {
     return (char*)last;
 }
 
+char *strncpy(char *dst, const char *src, size_t n) {
+    char *ret = dst;
+    while (n && (*dst++ = *src++)) n--;
+    while (n--) *dst++ = '\0';
+    return ret;
+}
+
 static inline char _toupper(char c) {
     if (c >= 'a' && c <= 'z') return c - 32;
     return c;
