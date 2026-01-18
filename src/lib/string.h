@@ -10,3 +10,4 @@ char *strcpy(char *dst, const char *src);
 char *strcat(char *dst, const char *src);
 char *strchr(const char *s, int c);
 char *strrchr(const char *s, int c);
+char *strncpy(char *dst, const char *src, size_t n);
