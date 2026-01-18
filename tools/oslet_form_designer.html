@@ -530,6 +530,7 @@
                 <button onclick="loadProject()" title="Load Project">Load</button>
                 <button onclick="importCFile()" title="Import C File">Import C</button>
                 <button onclick="generateCode()" title="Generate C Code">Build</button>
+                <button onclick="openCodeEditor()" title="Edit Global Code" style="background: #5a5;">Code</button>
             </div>
         </div>
 
@@ -587,6 +588,44 @@
         <pre id="code-text"></pre>
     </div>
 
+    <!-- Code Editor Modal for globals and helpers -->
+    <div id="code-editor-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+         background: rgba(0,0,0,0.8); z-index: 1000; padding: 30px;">
+        <div style="background: #1e1e1e; border-radius: 8px; max-width: 900px; margin: 0 auto; height: calc(100% - 60px);
+                    display: flex; flex-direction: column;">
+            <div style="padding: 15px; border-bottom: 1px solid #3e3e3e; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0;">Project Code Editor</h3>
+                <button onclick="closeCodeEditor()" class="close-btn">Close</button>
+            </div>
+            <div style="flex: 1; display: flex; overflow: hidden;">
+                <!-- Globals panel -->
+                <div style="flex: 1; display: flex; flex-direction: column; border-right: 1px solid #3e3e3e;">
+                    <div style="padding: 10px; background: #2a2a2a; border-bottom: 1px solid #3e3e3e;">
+                        <strong>Global Variables</strong>
+                        <div style="font-size: 10px; color: #888; margin-top: 3px;">Static variables, state, constants</div>
+                    </div>
+                    <textarea id="globals-editor" style="flex: 1; background: #1e1e1e; color: #e0e0e0; border: none;
+                              font-family: monospace; font-size: 12px; padding: 10px; resize: none;"
+                              placeholder="/* Global variables */&#10;static int counter = 0;&#10;static char buffer[256];"></textarea>
+                </div>
+                <!-- Helpers panel -->
+                <div style="flex: 1; display: flex; flex-direction: column;">
+                    <div style="padding: 10px; background: #2a2a2a; border-bottom: 1px solid #3e3e3e;">
+                        <strong>Helper Functions</strong>
+                        <div style="font-size: 10px; color: #888; margin-top: 3px;">Functions called from button actions</div>
+                    </div>
+                    <textarea id="helpers-editor" style="flex: 1; background: #1e1e1e; color: #e0e0e0; border: none;
+                              font-family: monospace; font-size: 12px; padding: 10px; resize: none;"
+                              placeholder="/* Helper functions */&#10;static void update_display(void *form, int val) {&#10;    char buf[16];&#10;    // ...&#10;}"></textarea>
+                </div>
+            </div>
+            <div style="padding: 10px; border-top: 1px solid #3e3e3e; text-align: right;">
+                <button onclick="saveCodeEditor()" style="background: #007acc; padding: 8px 20px;">Save</button>
+                <button onclick="closeCodeEditor()" style="margin-left: 10px;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <input type="file" id="project-file-input" accept=".oplet" onchange="handleProjectLoad(event)">
     <input type="file" id="c-file-input" accept=".c" onchange="handleCFileLoad(event)">
 
@@ -613,7 +652,9 @@
         // Project state
         let project = {
             name: 'Untitled Project',
-            windows: []
+            windows: [],
+            globals: '',       // Global variables (e.g., static int counter = 0;)
+            helpers: ''        // Helper functions (e.g., void append_digit(...) { ... })
         };
 
         let currentWindowIndex = -1;
@@ -685,7 +726,9 @@
 
             project = {
                 name: 'Untitled Project',
-                windows: []
+                windows: [],
+                globals: '',
+                helpers: ''
             };
             currentWindowIndex = -1;
             nextId = 1;
@@ -960,6 +1003,14 @@
                 el.style.fontSize = control.font_size + 'px';
                 el.style.lineHeight = '1.2';
 
+                // Use explicit dimensions if set (w > 0)
+                if (control.w > 0) {
+                    el.style.width = control.w + 'px';
+                }
+                if (control.h > 0) {
+                    el.style.height = control.h + 'px';
+                }
+
                 const fontWeights = ['normal', 'bold', 'normal', 'bold'];
                 const fontStyles = ['normal', 'normal', 'italic', 'italic'];
                 el.style.fontWeight = fontWeights[control.font_type];
@@ -967,6 +1018,22 @@
 
                 if (control.border) {
                     el.style.border = '1px solid ' + osletColors[control.border_color].rgb;
+                }
+
+                // Add resize handle for labels with explicit dimensions
+                if (control.w > 0 || control.h > 0) {
+                    const resizeHandle = document.createElement('div');
+                    resizeHandle.className = 'control-resize-handle br';
+                    resizeHandle.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        resizingControl = true;
+                        resizeControlStart.x = e.clientX;
+                        resizeControlStart.y = e.clientY;
+                        resizeControlStart.w = control.w;
+                        resizeControlStart.h = control.h;
+                        draggedControl = control;
+                    });
+                    el.appendChild(resizeHandle);
                 }
             } else if (control.type === 'picturebox') {
                 el.style.width = control.w + 'px';
@@ -1592,18 +1659,18 @@
                 </div>
             `;
 
-            if (c.type !== 'label') {
-                html += `
-                    <div class="prop-group">
-                        <div class="prop-label">Width</div>
-                        <input class="prop-input" type="number" value="${c.w}" onchange="updateSize('w', parseInt(this.value))">
-                    </div>
-                    <div class="prop-group">
-                        <div class="prop-label">Height</div>
-                        <input class="prop-input" type="number" value="${c.h}" onchange="updateSize('h', parseInt(this.value))">
-                    </div>
-                `;
-            }
+            // Show width/height for all control types
+            // Labels use 0 for auto-size, but can have explicit dimensions
+            html += `
+                <div class="prop-group">
+                    <div class="prop-label">Width${c.type === 'label' ? ' (0=auto)' : ''}</div>
+                    <input class="prop-input" type="number" value="${c.w}" onchange="updateSize('w', parseInt(this.value))">
+                </div>
+                <div class="prop-group">
+                    <div class="prop-label">Height${c.type === 'label' ? ' (0=auto)' : ''}</div>
+                    <input class="prop-input" type="number" value="${c.h}" onchange="updateSize('h', parseInt(this.value))">
+                </div>
+            `;
 
             if (c.type === 'label') {
                 const editText = c.text.replace(/\\n/g, '\n');
@@ -1764,7 +1831,13 @@
 
         function updateSize(axis, value) {
             selectedControl[axis] = value;
-            selectedControl.el.style[axis === 'w' ? 'width' : 'height'] = value + 'px';
+            const styleProp = axis === 'w' ? 'width' : 'height';
+            // For labels, 0 means auto-size
+            if (selectedControl.type === 'label' && value === 0) {
+                selectedControl.el.style[styleProp] = '';  // Remove explicit size
+            } else {
+                selectedControl.el.style[styleProp] = value + 'px';
+            }
         }
 
         function updateText(value) {
@@ -1931,6 +2004,9 @@
                             <option value="set_visible" ${c.action && c.action.type === 'set_visible' ? 'selected' : ''}>Show/Hide Control</option>
                             <option value="set_color" ${c.action && c.action.type === 'set_color' ? 'selected' : ''}>Change Color</option>
                         </optgroup>
+                        <optgroup label="─── Advanced ───">
+                            <option value="custom" ${c.action && c.action.type === 'custom' ? 'selected' : ''}>Custom Code (C)</option>
+                        </optgroup>
                     </select>
                 </div>
             `;
@@ -2081,6 +2157,25 @@
                 html += `</div></div>`;
             }
 
+            // Custom code editor
+            if (c.action && c.action.type === 'custom') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">C Code</div>
+                        <textarea class="prop-input" style="height: 120px; font-family: monospace; font-size: 11px; resize: vertical;"
+                                  onchange="updateButtonAction('custom_code', this.value)"
+                                  placeholder="/* Your C code here */&#10;// Example:&#10;append_digit(form, 5);">${c.action.custom_code || ''}</textarea>
+                    </div>
+                    <div class="prop-group">
+                        <div style="font-size: 10px; color: #888; margin-top: 5px;">
+                            Available: form, ctrl_set_text(), ctrl_get_text(), ctrl_set_image(),
+                            ctrl_set_checked(), ctrl_get_checked(), ctrl_set_visible(),
+                            ctrl_set_fg(), ctrl_set_bg(), sys_win_draw()
+                        </div>
+                    </div>
+                `;
+            }
+
             document.getElementById('prop-content').innerHTML = html;
         }
 
@@ -2088,10 +2183,12 @@
             if (!selectedControl || selectedControl.type !== 'button') return;
 
             if (!selectedControl.action) {
-                selectedControl.action = { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg' };
+                selectedControl.action = { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg', custom_code: '' };
             }
 
             if (field === 'type') {
+                // Preserve custom_code when switching to/from custom type
+                const oldCustomCode = selectedControl.action.custom_code || '';
                 // Reset action fields when type changes
                 selectedControl.action = {
                     type: value,
@@ -2099,7 +2196,8 @@
                     source_id: 0,
                     target_id: 0,
                     value: value === 'set_visible' ? 1 : '',
-                    prop: 'fg'
+                    prop: 'fg',
+                    custom_code: value === 'custom' ? oldCustomCode : ''
                 };
             } else {
                 selectedControl.action[field] = value;
@@ -2213,6 +2311,18 @@
             code += `#include "../syscall.h"\n`;
             code += `#include "../lib/stdio.h"\n\n`;
 
+            // Add global variables if defined
+            if (project.globals && project.globals.trim()) {
+                code += `/* Global variables */\n`;
+                code += project.globals.trim() + '\n\n';
+            }
+
+            // Add helper functions if defined
+            if (project.helpers && project.helpers.trim()) {
+                code += `/* Helper functions */\n`;
+                code += project.helpers.trim() + '\n\n';
+            }
+
             // Generate controls for each window
             project.windows.forEach((win, winIdx) => {
                 if (win.controls.length > 0) {
@@ -2233,9 +2343,10 @@
                         const comma = i < win.controls.length - 1 ? ',' : '';
 
                         // Calculate proper dimensions for labels
+                        // Only auto-calculate if both w and h are 0 (unset)
                         let w = c.w;
                         let h = c.h;
-                        if (c.type === 'label') {
+                        if (c.type === 'label' && c.w === 0 && c.h === 0) {
                             const dims = calculateLabelDimensions(c);
                             w = dims.w;
                             h = dims.h;
@@ -2353,6 +2464,15 @@
                                         code += `                sys_win_draw(${win.name});\n`;
                                     }
                                     break;
+                                case 'custom':
+                                    if (c.action.custom_code) {
+                                        // Indent each line of custom code
+                                        const lines = c.action.custom_code.split('\n');
+                                        lines.forEach(line => {
+                                            code += `                ${line}\n`;
+                                        });
+                                    }
+                                    break;
                                 default:
                                     code += `                // TODO: Handle ${c.text} click\n`;
                             }
@@ -2411,11 +2531,29 @@
             document.getElementById('code-output').classList.remove('show');
         }
 
+        function openCodeEditor() {
+            document.getElementById('globals-editor').value = project.globals || '';
+            document.getElementById('helpers-editor').value = project.helpers || '';
+            document.getElementById('code-editor-modal').style.display = 'block';
+        }
+
+        function closeCodeEditor() {
+            document.getElementById('code-editor-modal').style.display = 'none';
+        }
+
+        function saveCodeEditor() {
+            project.globals = document.getElementById('globals-editor').value;
+            project.helpers = document.getElementById('helpers-editor').value;
+            closeCodeEditor();
+        }
+
         function saveProject() {
             saveCurrentWindowState();
 
             const projectData = {
                 name: project.name,
+                globals: project.globals || '',
+                helpers: project.helpers || '',
                 windows: project.windows.map(win => ({
                     name: win.name,
                     title: win.title,
@@ -2470,6 +2608,8 @@
 
                     project = {
                         name: data.name || 'Untitled Project',
+                        globals: data.globals || '',
+                        helpers: data.helpers || '',
                         windows: data.windows.map(win => ({
                             name: win.name,
                             title: win.title,
@@ -2479,7 +2619,15 @@
                             h: win.h,
                             controls: (win.controls || []).map(c => ({
                                 ...c,
-                                action: c.action || { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg' }
+                                action: c.action ? {
+                                    type: c.action.type || 'none',
+                                    target: c.action.target || '',
+                                    source_id: c.action.source_id || 0,
+                                    target_id: c.action.target_id || 0,
+                                    value: c.action.value !== undefined ? c.action.value : '',
+                                    prop: c.action.prop || 'fg',
+                                    custom_code: c.action.custom_code || ''
+                                } : { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg', custom_code: '' }
                             })),
                             nextControlId: win.nextControlId || 1
                         }))
@@ -2536,13 +2684,40 @@
                     document.getElementById('project-name').textContent = project.name;
                 }
 
-                // Find all control arrays (e.g., Form1_controls, Form2_controls, or just "controls")
-                const controlArrayRegex = /(?:\/\/\s*Controls for\s+(\w+)\s*\n)?gui_control_t\s+(\w+)(?:_controls)?\[\]\s*=\s*\{([\s\S]*?)\n\};/g;
+                // Extract global variables and helper functions
+                project.globals = '';
+                project.helpers = '';
+
+                // Find static variables (globals)
+                const staticVarRegex = /^(static\s+(?:int|char|void|unsigned|const)\s+[^(]+;)$/gm;
+                const staticVars = code.match(staticVarRegex);
+                if (staticVars) {
+                    project.globals = staticVars.join('\n');
+                }
+
+                // Find static functions (helpers) - everything between includes and gui_control_t
+                const helperMatch = code.match(/(?:#include[^\n]+\n)+\s*([\s\S]*?)(?=\/\/\s*Controls|gui_control_t|\n\s*void\*\s+create_)/);
+                if (helperMatch && helperMatch[1]) {
+                    let helpers = helperMatch[1].trim();
+                    // Remove static variable declarations (we already have them)
+                    helpers = helpers.replace(/^static\s+(?:int|char|void|unsigned|const)\s+[^(]+;\s*$/gm, '').trim();
+                    // Remove #define lines
+                    helpers = helpers.replace(/^#define\s+.+$/gm, '').trim();
+                    if (helpers) {
+                        project.helpers = helpers;
+                    }
+                }
+
+                // Find all control arrays (e.g., Form1_controls, calc_controls, or just "controls")
+                // Use a more flexible regex that handles comments and various endings
+                const controlArrayRegex = /gui_control_t\s+(\w+)\s*\[\]\s*=\s*\{([\s\S]*?)\n\};/g;
                 const controlMatches = [...code.matchAll(controlArrayRegex)];
+                console.log('Found control arrays:', controlMatches.map(m => m[1]));
 
                 // Try to find window creation functions first (multi-window format)
                 const windowFuncRegex = /void\*\s+create_(\w+)\(void\)\s*\{[\s\S]*?sys_win_create_form\("([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/g;
                 let windowMatches = [...code.matchAll(windowFuncRegex)];
+                console.log('Found window functions:', windowMatches.map(m => m[1]));
 
                 // If no creation functions found, try inline format (single window in _start)
                 if (windowMatches.length === 0) {
@@ -2582,12 +2757,15 @@
                     const h = parseInt(winMatch[6]);
 
                     // Find corresponding controls
-                    // Try to match by window name first, then by array name, or use first/only array
-                    let controlsMatch = controlMatches.find(cm =>
-                        (cm[1] && cm[1] === windowName) ||
-                        (cm[2] && cm[2] === windowName) ||
-                        (cm[2] && cm[2] === windowName + '_controls')
-                    );
+                    // cm[1] = array name (e.g., "calc_controls", "Form1_controls")
+                    // cm[2] = array content
+                    let controlsMatch = controlMatches.find(cm => {
+                        const arrayName = cm[1];
+                        // Match: calc_controls for calculator, Form1_controls for Form1, etc.
+                        return arrayName === windowName + '_controls' ||
+                               arrayName === windowName ||
+                               arrayName.startsWith(windowName.substring(0, 4));  // partial match like "calc" for "calculator"
+                    });
 
                     // If still not found and we have controls, use the first one (for single-window files)
                     if (!controlsMatch && controlMatches.length > 0 && winIdx === 0) {
@@ -2606,9 +2784,132 @@
                     };
 
                     if (controlsMatch) {
-                        const controlsText = controlsMatch[3];
-                        const controlRegex = /\{(CTRL_\w+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*"((?:[^"\\]|\\.)*)"\s*,\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+),\s*NULL,\s*0(?:,\s*(\d+),\s*(\d+))?\}/g;
-                        const controls = [...controlsText.matchAll(controlRegex)];
+                        const controlsText = controlsMatch[2];
+
+                        // Extract #define constants from the code for expression evaluation
+                        const defines = {};
+                        const defineRegex = /#define\s+(\w+)\s+(\d+)/g;
+                        let defMatch;
+                        while ((defMatch = defineRegex.exec(code)) !== null) {
+                            defines[defMatch[1]] = parseInt(defMatch[2]);
+                        }
+
+                        console.log('Defines found:', defines);
+
+                        // Helper to evaluate simple C expressions with defines
+                        function evalExpr(expr) {
+                            if (!expr) return 0;
+                            const origExpr = expr;
+                            expr = expr.trim();
+                            // If it's just a number, return it
+                            if (/^\d+$/.test(expr)) return parseInt(expr);
+                            // Replace defined constants
+                            for (const [name, val] of Object.entries(defines)) {
+                                expr = expr.replace(new RegExp('\\b' + name + '\\b', 'g'), val);
+                            }
+                            // Try to evaluate the expression (safe since we control the input)
+                            try {
+                                // Only allow numbers, operators, and parentheses
+                                if (/^[\d\s+\-*\/()]+$/.test(expr)) {
+                                    const result = Math.floor(eval(expr));
+                                    console.log(`evalExpr: "${origExpr}" -> "${expr}" = ${result}`);
+                                    return result;
+                                }
+                            } catch (e) {
+                                console.error('evalExpr error:', e, 'expr:', expr);
+                            }
+                            console.warn('evalExpr failed for:', origExpr, '->', expr);
+                            return 0;
+                        }
+
+                        // Parse controls by finding each {CTRL_...} block
+                        // This handles comments between controls properly
+                        const controls = [];
+
+                        // Find each control definition - match balanced braces starting with CTRL_
+                        const controlStrings = [];
+                        const ctrlRegex = /\{\s*(CTRL_\w+)/g;
+                        let match;
+                        while ((match = ctrlRegex.exec(controlsText)) !== null) {
+                            // Find matching closing brace
+                            let depth = 1;
+                            let end = match.index + 1;
+                            while (depth > 0 && end < controlsText.length) {
+                                if (controlsText[end] === '{') depth++;
+                                if (controlsText[end] === '}') depth--;
+                                end++;
+                            }
+                            const ctrlStr = controlsText.substring(match.index + 1, end - 1).trim();
+                            controlStrings.push(ctrlStr);
+                        }
+
+                        console.log('Found', controlStrings.length, 'control strings');
+                        console.log('First control:', controlStrings[0]?.substring(0, 80));
+
+                        controlStrings.forEach(ctrlStr => {
+                            // Parse: TYPE, x, y, w, h, fg, bg, "text", id, font_type, font_size, border, border_color, ...
+                            const typeMatch = ctrlStr.match(/^(CTRL_\w+)/);
+                            if (!typeMatch) return;
+
+                            // Extract the text field first (it's in quotes)
+                            const textMatch = ctrlStr.match(/"((?:[^"\\]|\\.)*)"/);
+                            const text = textMatch ? textMatch[1] : '';
+
+                            // Split by comma, but be smart about parentheses
+                            const parts = [];
+                            let current = '';
+                            let parenDepth = 0;
+                            let inQuotes = false;
+
+                            for (const ch of ctrlStr) {
+                                if (ch === '"' && current.slice(-1) !== '\\') inQuotes = !inQuotes;
+                                if (!inQuotes) {
+                                    if (ch === '(') parenDepth++;
+                                    if (ch === ')') parenDepth--;
+                                    if (ch === ',' && parenDepth === 0) {
+                                        parts.push(current.trim());
+                                        current = '';
+                                        continue;
+                                    }
+                                }
+                                current += ch;
+                            }
+                            if (current.trim()) parts.push(current.trim());
+
+                            // parts[0] = type, [1]=x, [2]=y, [3]=w, [4]=h, [5]=fg, [6]=bg, [7]=text, [8]=id, ...
+                            console.log('Control parts:', parts.length, 'type:', parts[0], 'text:', text);
+                            if (parts.length < 13) {
+                                console.warn('Skipping control with insufficient parts:', parts.length, ctrlStr.substring(0, 60));
+                            }
+                            if (parts.length >= 13) {
+                                // gui_control_t struct fields:
+                                // 0=type, 1=x, 2=y, 3=w, 4=h, 5=fg, 6=bg, 7=text, 8=id,
+                                // 9=font_type, 10=font_size, 11=border, 12=border_color,
+                                // 13=cached_bitmap, 14=pressed, 15=checked, 16=group_id,
+                                // 17=cursor_pos, 18=max_length, 19=scroll_offset, 20=is_focused, 21=sel_start, 22=sel_end
+                                controls.push([
+                                    ctrlStr,           // [0] full match (not used)
+                                    parts[0],          // [1] type
+                                    parts[1],          // [2] x
+                                    parts[2],          // [3] y
+                                    parts[3],          // [4] w
+                                    parts[4],          // [5] h
+                                    parts[5],          // [6] fg
+                                    parts[6],          // [7] bg
+                                    text,              // [8] text (extracted from quotes)
+                                    parts[8],          // [9] id
+                                    parts[9],          // [10] font_type
+                                    parts[10],         // [11] font_size
+                                    parts[11],         // [12] border
+                                    parts[12],         // [13] border_color
+                                    parts[15] || '0',  // [14] checked (struct index 15)
+                                    parts[16] || '0',  // [15] group_id (struct index 16)
+                                    parts[18] || '0'   // [16] max_length (struct index 18)
+                                ]);
+                            }
+                        });
+
+                        console.log('Parsed', controls.length, 'controls');
 
                         controls.forEach(match => {
                             const typeStr = match[1];
@@ -2625,22 +2926,25 @@
 
                             const control = {
                                 type: type,
-                                x: parseInt(match[2]),
-                                y: parseInt(match[3]),
-                                w: parseInt(match[4]),
-                                h: parseInt(match[5]),
-                                fg: parseInt(match[6]),
-                                bg: parseInt(match[7]),
+                                x: evalExpr(match[2]),
+                                y: evalExpr(match[3]),
+                                w: evalExpr(match[4]),
+                                h: evalExpr(match[5]),
+                                fg: parseInt(match[6]) || 0,
+                                bg: parseInt(match[7]) || 0,
                                 text: match[8],
-                                id: parseInt(match[9]),
-                                font_type: parseInt(match[10]),
-                                font_size: parseInt(match[11]),
-                                border: parseInt(match[12]),
-                                border_color: parseInt(match[13]),
-                                checked: match[14] ? parseInt(match[14]) : 0,
-                                group_id: match[15] ? parseInt(match[15]) : 0,
-                                action: type === 'button' ? { type: 'none', target: '' } : undefined
+                                id: evalExpr(match[9]),
+                                font_type: parseInt(match[10]) || 0,
+                                font_size: parseInt(match[11]) || 12,
+                                border: parseInt(match[12]) || 0,
+                                border_color: parseInt(match[13]) || 0,
+                                checked: parseInt(match[14]) || 0,
+                                group_id: parseInt(match[15]) || 0,
+                                max_length: parseInt(match[16]) || (type === 'textbox' ? 255 : 0),
+                                action: type === 'button' ? { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg', custom_code: '' } : undefined
                             };
+
+                            console.log(`Parsed ${type} id=${control.id}: x=${control.x}, y=${control.y}, w=${control.w}, h=${control.h}`);
 
                             if (control.id >= win.nextControlId) {
                                 win.nextControlId = control.id + 1;
@@ -2666,7 +2970,8 @@
                     hideCanvas();
                 }
 
-                alert(`Imported ${project.windows.length} window(s) successfully!`);
+                const totalControls = project.windows.reduce((sum, w) => sum + w.controls.length, 0);
+                alert(`Imported ${project.windows.length} window(s) with ${totalControls} control(s)!`);
 
             } catch (err) {
                 alert('Error parsing C file: ' + err.message);
@@ -2675,29 +2980,185 @@
         }
 
         function parseButtonAction(code, windowName, control) {
-            // Try to find button action in event handler
-            // Pattern: if (event == ID) { action }
-            const eventPattern = new RegExp(
-                `if\\s*\\(event\\d+\\s*==\\s*${control.id}\\)\\s*\\{[^}]*?(?:` +
-                `sys_win_draw\\((\\w+)\\)|` +  // show_form
-                `sys_win_restore_background|` + // hide_form
-                `exit_requested\\s*=\\s*1)`,    // exit
-                'g'
-            );
+            // Find the event handler block for this button
+            // Match patterns like: if (event0 == 2) { ... } or case ID_BTN_X: ... break;
 
-            const match = eventPattern.exec(code);
-            if (match) {
-                if (match[0].includes('sys_win_draw')) {
-                    control.action = { type: 'show_form', target: match[1] || '' };
-                } else if (match[0].includes('sys_win_restore_background')) {
-                    // Try to extract target form name
-                    const targetMatch = match[0].match(/\(\(gui_form_t\*\)(\w+)\)/);
+            let actionCode = '';
+
+            // Try if-style first: if (event0 == 17) { ... }
+            const ifPattern = new RegExp(
+                `if\\s*\\(event\\d*\\s*==\\s*${control.id}\\)\\s*\\{([^}]*(?:\\{[^}]*\\}[^}]*)*)\\}`,
+                's'
+            );
+            let ifMatch = ifPattern.exec(code);
+            if (ifMatch) {
+                actionCode = ifMatch[1];
+            }
+
+            // Try switch-case style: case ID_BTN_7: append_digit(calc, 7); break;
+            // or: case 17: append_digit(calc, 7); break;
+            if (!actionCode) {
+                // Find all #define ID constants to match by name
+                const defineMap = {};
+                const defineRegex = /#define\s+(ID_\w+)\s+(\d+)/g;
+                let defMatch;
+                while ((defMatch = defineRegex.exec(code)) !== null) {
+                    defineMap[defMatch[2]] = defMatch[1];  // id -> name
+                }
+
+                // Look for case with this control's ID (by number or by define name)
+                const idName = defineMap[String(control.id)] || String(control.id);
+                console.log(`Looking for action for button ${control.id}, idName=${idName}`);
+
+                // Try multiple patterns to find the case statement
+                const casePatterns = [
+                    // Match by define name: case ID_BTN_7: ...
+                    new RegExp(`case\\s+${idName}\\s*:\\s*([^;]+;)(?:\\s*break;)?`, 's'),
+                    // Match by numeric ID: case 17: ...
+                    new RegExp(`case\\s+${control.id}\\s*:\\s*([^;]+;)(?:\\s*break;)?`, 's')
+                ];
+
+                for (const pattern of casePatterns) {
+                    const caseMatch = pattern.exec(code);
+                    if (caseMatch) {
+                        actionCode = caseMatch[1].trim();
+                        console.log(`Case match for control ${control.id} (${idName}):`, actionCode);
+                        break;
+                    }
+                }
+
+                if (!actionCode) {
+                    console.log(`No case match found for control ${control.id} (${idName})`);
+                }
+            }
+
+            // Parse recognized action patterns
+            control.action = { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg', custom_code: '' };
+
+            // If we found action code, store it as custom
+            if (actionCode && actionCode.trim()) {
+                console.log(`Found action for control ${control.id}:`, actionCode.substring(0, 50));
+            }
+
+            // Check for ctrl_set_text with ctrl_get_text (copy_text)
+            const copyTextMatch = actionCode.match(/ctrl_set_text\s*\(\s*\w+\s*,\s*(\d+)\s*,\s*ctrl_get_text\s*\(\s*\w+\s*,\s*(\d+)\s*\)\s*\)/);
+            if (copyTextMatch) {
+                control.action = {
+                    type: 'copy_text',
+                    target_id: parseInt(copyTextMatch[1]),
+                    source_id: parseInt(copyTextMatch[2]),
+                    target: '', value: '', prop: 'fg', custom_code: ''
+                };
+                return;
+            }
+
+            // Check for ctrl_set_text with literal string (set_text)
+            const setTextMatch = actionCode.match(/ctrl_set_text\s*\(\s*\w+\s*,\s*(\d+)\s*,\s*"([^"]*)"\s*\)/);
+            if (setTextMatch) {
+                control.action = {
+                    type: 'set_text',
+                    target_id: parseInt(setTextMatch[1]),
+                    value: setTextMatch[2],
+                    target: '', source_id: 0, prop: 'fg', custom_code: ''
+                };
+                return;
+            }
+
+            // Check for ctrl_set_image
+            const setImageMatch = actionCode.match(/ctrl_set_image\s*\(\s*\w+\s*,\s*(\d+)\s*,\s*ctrl_get_text\s*\(\s*\w+\s*,\s*(\d+)\s*\)\s*\)/);
+            if (setImageMatch) {
+                control.action = {
+                    type: 'set_image',
+                    target_id: parseInt(setImageMatch[1]),
+                    source_id: parseInt(setImageMatch[2]),
+                    target: '', value: '', prop: 'fg', custom_code: ''
+                };
+                return;
+            }
+
+            // Check for ctrl_set_checked (toggle)
+            const toggleMatch = actionCode.match(/ctrl_set_checked\s*\(\s*\w+\s*,\s*(\d+)\s*,\s*!ctrl_get_checked/);
+            if (toggleMatch) {
+                control.action = {
+                    type: 'toggle_checked',
+                    target_id: parseInt(toggleMatch[1]),
+                    target: '', source_id: 0, value: '', prop: 'fg', custom_code: ''
+                };
+                return;
+            }
+
+            // Check for ctrl_set_visible
+            const visibleMatch = actionCode.match(/ctrl_set_visible\s*\(\s*\w+\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
+            if (visibleMatch) {
+                control.action = {
+                    type: 'set_visible',
+                    target_id: parseInt(visibleMatch[1]),
+                    value: parseInt(visibleMatch[2]),
+                    target: '', source_id: 0, prop: 'fg', custom_code: ''
+                };
+                return;
+            }
+
+            // Check for ctrl_set_fg/ctrl_set_bg (set_color)
+            const colorMatch = actionCode.match(/ctrl_set_(fg|bg)\s*\(\s*\w+\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
+            if (colorMatch) {
+                control.action = {
+                    type: 'set_color',
+                    prop: colorMatch[1],
+                    target_id: parseInt(colorMatch[2]),
+                    value: parseInt(colorMatch[3]),
+                    target: '', source_id: 0, custom_code: ''
+                };
+                return;
+            }
+
+            // Check for sys_win_draw (show_form)
+            const showFormMatch = actionCode.match(/sys_win_draw\s*\(\s*(\w+)\s*\)/);
+            if (showFormMatch && !actionCode.includes('ctrl_set_')) {
+                control.action = {
+                    type: 'show_form',
+                    target: showFormMatch[1],
+                    source_id: 0, target_id: 0, value: '', prop: 'fg', custom_code: ''
+                };
+                return;
+            }
+
+            // Check for hide_form
+            if (actionCode.includes('sys_win_restore_background')) {
+                const targetMatch = actionCode.match(/\(\(gui_form_t\*\)\s*(\w+)\s*\)/);
+                control.action = {
+                    type: 'hide_form',
+                    target: targetMatch ? targetMatch[1] : '',
+                    source_id: 0, target_id: 0, value: '', prop: 'fg', custom_code: ''
+                };
+                return;
+            }
+
+            // Check for exit - must have exit_requested, not just 'break' (which appears in switch/case)
+            if (actionCode.includes('exit_requested')) {
+                control.action = {
+                    type: 'exit',
+                    target: '', source_id: 0, target_id: 0, value: '', prop: 'fg', custom_code: ''
+                };
+                return;
+            }
+
+            // If we found code but couldn't parse it as a known action, store as custom
+            if (actionCode && actionCode.trim() && !actionCode.includes('// TODO:')) {
+                let cleanCode = actionCode.trim();
+                // Remove trailing break; if present (from switch/case)
+                cleanCode = cleanCode.replace(/;\s*break;?\s*$/, ';').trim();
+                // Remove sys_win_draw calls that we handle elsewhere
+                cleanCode = cleanCode.replace(/^\s*sys_win_draw\s*\(\s*\w+\s*\)\s*;?\s*$/g, '');
+                cleanCode = cleanCode.trim();
+
+                if (cleanCode) {
                     control.action = {
-                        type: 'hide_form',
-                        target: targetMatch ? targetMatch[1] : ''
+                        type: 'custom',
+                        custom_code: cleanCode,
+                        target: '', source_id: 0, target_id: 0, value: '', prop: 'fg'
                     };
-                } else if (match[0].includes('exit_requested')) {
-                    control.action = { type: 'exit', target: '' };
+                    console.log(`Stored custom action for control ${control.id}:`, cleanCode);
                 }
             }
         }
