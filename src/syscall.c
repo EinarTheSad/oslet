@@ -1376,6 +1376,127 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             return 0;
         }
 
+        case 0x0D: { /* SYS_WIN_GET_CONTROL */
+            gui_form_t *form = (gui_form_t*)ebx;
+            int16_t id = (int16_t)ecx;
+
+            if (!form) return 0;
+
+            for (int i = 0; i < form->ctrl_count; i++) {
+                if (form->controls[i].id == id) {
+                    return (uint32_t)&form->controls[i];
+                }
+            }
+            return 0;
+        }
+
+        case 0x0E: { /* SYS_WIN_CTRL_SET_PROP */
+            gui_form_t *form = (gui_form_t*)ebx;
+            int16_t ctrl_id = (int16_t)(ecx >> 16);
+            int16_t prop_id = (int16_t)(ecx & 0xFFFF);
+            uint32_t value = edx;
+
+            if (!form) return 0;
+
+            /* Find control */
+            gui_control_t *ctrl = NULL;
+            for (int i = 0; i < form->ctrl_count; i++) {
+                if (form->controls[i].id == ctrl_id) {
+                    ctrl = &form->controls[i];
+                    break;
+                }
+            }
+            if (!ctrl) return 0;
+
+            switch (prop_id) {
+                case 0: /* PROP_TEXT */
+                    if (value) strcpy_s(ctrl->text, (const char*)value, 256);
+                    break;
+                case 1: /* PROP_CHECKED */
+                    ctrl->checked = (uint8_t)value;
+                    break;
+                case 2: /* PROP_X */
+                    ctrl->x = (uint16_t)value;
+                    break;
+                case 3: /* PROP_Y */
+                    ctrl->y = (uint16_t)value;
+                    break;
+                case 4: /* PROP_W */
+                    ctrl->w = (uint16_t)value;
+                    break;
+                case 5: /* PROP_H */
+                    ctrl->h = (uint16_t)value;
+                    break;
+                case 6: /* PROP_VISIBLE - use high bit of type as flag */
+                    if (value)
+                        ctrl->type &= 0x7F;  /* Clear hidden bit */
+                    else
+                        ctrl->type |= 0x80;  /* Set hidden bit */
+                    break;
+                case 7: /* PROP_FG */
+                    ctrl->fg = (uint8_t)value;
+                    break;
+                case 8: /* PROP_BG */
+                    ctrl->bg = (uint8_t)value;
+                    break;
+                case 9: /* PROP_IMAGE - same as text for picturebox */
+                    if (value) {
+                        strcpy_s(ctrl->text, (const char*)value, 256);
+                        /* Clear cached bitmap so it reloads */
+                        if (ctrl->cached_bitmap) {
+                            ctrl->cached_bitmap = NULL;
+                        }
+                    }
+                    break;
+                default:
+                    return 0;
+            }
+            return 1;
+        }
+
+        case 0x0F: { /* SYS_WIN_CTRL_GET_PROP */
+            gui_form_t *form = (gui_form_t*)ebx;
+            int16_t ctrl_id = (int16_t)(ecx >> 16);
+            int16_t prop_id = (int16_t)(ecx & 0xFFFF);
+
+            if (!form) return 0;
+
+            /* Find control */
+            gui_control_t *ctrl = NULL;
+            for (int i = 0; i < form->ctrl_count; i++) {
+                if (form->controls[i].id == ctrl_id) {
+                    ctrl = &form->controls[i];
+                    break;
+                }
+            }
+            if (!ctrl) return 0;
+
+            switch (prop_id) {
+                case 0: /* PROP_TEXT */
+                    return (uint32_t)ctrl->text;
+                case 1: /* PROP_CHECKED */
+                    return ctrl->checked;
+                case 2: /* PROP_X */
+                    return ctrl->x;
+                case 3: /* PROP_Y */
+                    return ctrl->y;
+                case 4: /* PROP_W */
+                    return ctrl->w;
+                case 5: /* PROP_H */
+                    return ctrl->h;
+                case 6: /* PROP_VISIBLE */
+                    return (ctrl->type & 0x80) ? 0 : 1;
+                case 7: /* PROP_FG */
+                    return ctrl->fg;
+                case 8: /* PROP_BG */
+                    return ctrl->bg;
+                case 9: /* PROP_IMAGE */
+                    return (uint32_t)ctrl->text;
+                default:
+                    return 0;
+            }
+        }
+
         default:
             return (uint32_t)-1;
     }
