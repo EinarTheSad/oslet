@@ -249,3 +249,16 @@ int usr_bmf_printf(int x, int y, usr_bmf_font_t *font, uint8_t point_size,
 
     return written;
 }
+
+int usr_bmf_measure(usr_bmf_font_t *font, uint8_t point_size, const char *text) {
+    if (!font || !text) return 0;
+
+    int width = 0;
+    for (const char *p = text; *p; p++) {
+        const usr_bmf_glyph_t *glyph = usr_bmf_get_glyph(font, point_size, (uint8_t)*p);
+        if (glyph) {
+            width += glyph->width;
+        }
+    }
+    return width;
+}
