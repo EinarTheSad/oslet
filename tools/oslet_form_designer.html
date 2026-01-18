@@ -1919,14 +1919,23 @@
                 <div class="prop-group">
                     <div class="prop-label">Action Type</div>
                     <select class="prop-input" onchange="updateButtonAction('type', this.value)">
-                        <option value="none" ${!c.action || c.action.type === 'none' ? 'selected' : ''}>None</option>
+                        <option value="none" ${!c.action || c.action.type === 'none' ? 'selected' : ''}>None (TODO)</option>
                         <option value="show_form" ${c.action && c.action.type === 'show_form' ? 'selected' : ''}>Show Form</option>
                         <option value="hide_form" ${c.action && c.action.type === 'hide_form' ? 'selected' : ''}>Hide Form</option>
                         <option value="exit" ${c.action && c.action.type === 'exit' ? 'selected' : ''}>Exit Application</option>
+                        <optgroup label="─── Control Properties ───">
+                            <option value="copy_text" ${c.action && c.action.type === 'copy_text' ? 'selected' : ''}>Copy Text (Label.Text = TextBox.Text)</option>
+                            <option value="set_text" ${c.action && c.action.type === 'set_text' ? 'selected' : ''}>Set Text (Label.Text = "...")</option>
+                            <option value="set_image" ${c.action && c.action.type === 'set_image' ? 'selected' : ''}>Set Image (from TextBox path)</option>
+                            <option value="toggle_checked" ${c.action && c.action.type === 'toggle_checked' ? 'selected' : ''}>Toggle Checked</option>
+                            <option value="set_visible" ${c.action && c.action.type === 'set_visible' ? 'selected' : ''}>Show/Hide Control</option>
+                            <option value="set_color" ${c.action && c.action.type === 'set_color' ? 'selected' : ''}>Change Color</option>
+                        </optgroup>
                     </select>
                 </div>
             `;
 
+            // Form-based actions (show/hide form)
             if (c.action && (c.action.type === 'show_form' || c.action.type === 'hide_form')) {
                 html += `
                     <div class="prop-group">
@@ -1939,10 +1948,137 @@
                         html += `<option value="${w.name}" ${selected}>${w.name}</option>`;
                     }
                 });
+                html += `</select></div>`;
+            }
+
+            // Copy text: source control -> target control
+            if (c.action && c.action.type === 'copy_text') {
                 html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Source Control</div>
+                        <select class="prop-input" onchange="updateButtonAction('source_id', parseInt(this.value))">
+                            <option value="">-- Select Source --</option>`;
+                win.controls.filter(ctrl => ['textbox', 'label'].includes(ctrl.type) && ctrl.id !== c.id).forEach(ctrl => {
+                    const selected = c.action.source_id === ctrl.id ? 'selected' : '';
+                    html += `<option value="${ctrl.id}" ${selected}>${ctrl.type}#${ctrl.id}: "${ctrl.text.substring(0, 15)}"</option>`;
+                });
+                html += `</select></div>
+                    <div class="prop-group">
+                        <div class="prop-label">Target Control</div>
+                        <select class="prop-input" onchange="updateButtonAction('target_id', parseInt(this.value))">
+                            <option value="">-- Select Target --</option>`;
+                win.controls.filter(ctrl => ['textbox', 'label', 'picturebox'].includes(ctrl.type) && ctrl.id !== c.id).forEach(ctrl => {
+                    const selected = c.action.target_id === ctrl.id ? 'selected' : '';
+                    html += `<option value="${ctrl.id}" ${selected}>${ctrl.type}#${ctrl.id}: "${ctrl.text.substring(0, 15)}"</option>`;
+                });
+                html += `</select></div>`;
+            }
+
+            // Set text: literal value -> target control
+            if (c.action && c.action.type === 'set_text') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Target Control</div>
+                        <select class="prop-input" onchange="updateButtonAction('target_id', parseInt(this.value))">
+                            <option value="">-- Select Target --</option>`;
+                win.controls.filter(ctrl => ['textbox', 'label'].includes(ctrl.type) && ctrl.id !== c.id).forEach(ctrl => {
+                    const selected = c.action.target_id === ctrl.id ? 'selected' : '';
+                    html += `<option value="${ctrl.id}" ${selected}>${ctrl.type}#${ctrl.id}</option>`;
+                });
+                html += `</select></div>
+                    <div class="prop-group">
+                        <div class="prop-label">Text Value</div>
+                        <input type="text" class="prop-input" value="${c.action.value || ''}"
+                               onchange="updateButtonAction('value', this.value)">
+                    </div>`;
+            }
+
+            // Set image: textbox path -> picturebox
+            if (c.action && c.action.type === 'set_image') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Path Source (TextBox)</div>
+                        <select class="prop-input" onchange="updateButtonAction('source_id', parseInt(this.value))">
+                            <option value="">-- Select TextBox --</option>`;
+                win.controls.filter(ctrl => ctrl.type === 'textbox').forEach(ctrl => {
+                    const selected = c.action.source_id === ctrl.id ? 'selected' : '';
+                    html += `<option value="${ctrl.id}" ${selected}>textbox#${ctrl.id}</option>`;
+                });
+                html += `</select></div>
+                    <div class="prop-group">
+                        <div class="prop-label">Target PictureBox</div>
+                        <select class="prop-input" onchange="updateButtonAction('target_id', parseInt(this.value))">
+                            <option value="">-- Select PictureBox --</option>`;
+                win.controls.filter(ctrl => ctrl.type === 'picturebox').forEach(ctrl => {
+                    const selected = c.action.target_id === ctrl.id ? 'selected' : '';
+                    html += `<option value="${ctrl.id}" ${selected}>picturebox#${ctrl.id}</option>`;
+                });
+                html += `</select></div>`;
+            }
+
+            // Toggle checked: for checkbox/radiobutton
+            if (c.action && c.action.type === 'toggle_checked') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Target Control</div>
+                        <select class="prop-input" onchange="updateButtonAction('target_id', parseInt(this.value))">
+                            <option value="">-- Select Control --</option>`;
+                win.controls.filter(ctrl => ['checkbox', 'radiobutton'].includes(ctrl.type)).forEach(ctrl => {
+                    const selected = c.action.target_id === ctrl.id ? 'selected' : '';
+                    html += `<option value="${ctrl.id}" ${selected}>${ctrl.type}#${ctrl.id}: "${ctrl.text}"</option>`;
+                });
+                html += `</select></div>`;
+            }
+
+            // Show/hide control
+            if (c.action && c.action.type === 'set_visible') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Target Control</div>
+                        <select class="prop-input" onchange="updateButtonAction('target_id', parseInt(this.value))">
+                            <option value="">-- Select Control --</option>`;
+                win.controls.filter(ctrl => ctrl.id !== c.id).forEach(ctrl => {
+                    const selected = c.action.target_id === ctrl.id ? 'selected' : '';
+                    html += `<option value="${ctrl.id}" ${selected}>${ctrl.type}#${ctrl.id}</option>`;
+                });
+                html += `</select></div>
+                    <div class="prop-group">
+                        <div class="prop-label">Visibility</div>
+                        <select class="prop-input" onchange="updateButtonAction('value', parseInt(this.value))">
+                            <option value="1" ${c.action.value === 1 ? 'selected' : ''}>Show</option>
+                            <option value="0" ${c.action.value === 0 ? 'selected' : ''}>Hide</option>
+                        </select>
+                    </div>`;
+            }
+
+            // Change color
+            if (c.action && c.action.type === 'set_color') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Target Control</div>
+                        <select class="prop-input" onchange="updateButtonAction('target_id', parseInt(this.value))">
+                            <option value="">-- Select Control --</option>`;
+                win.controls.filter(ctrl => ctrl.id !== c.id).forEach(ctrl => {
+                    const selected = c.action.target_id === ctrl.id ? 'selected' : '';
+                    html += `<option value="${ctrl.id}" ${selected}>${ctrl.type}#${ctrl.id}</option>`;
+                });
+                html += `</select></div>
+                    <div class="prop-group">
+                        <div class="prop-label">Property</div>
+                        <select class="prop-input" onchange="updateButtonAction('prop', this.value)">
+                            <option value="fg" ${c.action.prop === 'fg' ? 'selected' : ''}>Foreground</option>
+                            <option value="bg" ${c.action.prop === 'bg' ? 'selected' : ''}>Background</option>
                         </select>
                     </div>
-                `;
+                    <div class="prop-group">
+                        <div class="prop-label">Color</div>
+                        <div class="color-palette">`;
+                vgaColors.forEach(col => {
+                    const selected = c.action.value === col.val ? 'border: 2px solid white;' : '';
+                    html += `<div class="color-swatch" style="background: ${col.css}; ${selected}"
+                             onclick="updateButtonAction('value', ${col.val})" title="${col.name}"></div>`;
+                });
+                html += `</div></div>`;
             }
 
             document.getElementById('prop-content').innerHTML = html;
@@ -1952,16 +2088,21 @@
             if (!selectedControl || selectedControl.type !== 'button') return;
 
             if (!selectedControl.action) {
-                selectedControl.action = { type: 'none', target: '' };
+                selectedControl.action = { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg' };
             }
 
             if (field === 'type') {
-                selectedControl.action.type = value;
-                if (value === 'none' || value === 'exit') {
-                    selectedControl.action.target = '';
-                }
-            } else if (field === 'target') {
-                selectedControl.action.target = value;
+                // Reset action fields when type changes
+                selectedControl.action = {
+                    type: value,
+                    target: '',
+                    source_id: 0,
+                    target_id: 0,
+                    value: value === 'set_visible' ? 1 : '',
+                    prop: 'fg'
+                };
+            } else {
+                selectedControl.action[field] = value;
             }
 
             updateProperties();
@@ -2160,15 +2301,60 @@
                         code += `            if (event${idx} == ${c.id}) { /* ${c.text} */\n`;
 
                         // Generate code based on button action
-                        if (c.action) {
-                            if (c.action.type === 'show_form' && c.action.target) {
-                                code += `                sys_win_draw(${c.action.target});\n`;
-                            } else if (c.action.type === 'hide_form' && c.action.target) {
-                                code += `                sys_win_restore_background(&((gui_form_t*)${c.action.target})->win);\n`;
-                            } else if (c.action.type === 'exit') {
-                                code += `                exit_requested = 1;\n`;
-                            } else {
-                                code += `                // TODO: Handle ${c.text} click\n`;
+                        if (c.action && c.action.type !== 'none') {
+                            switch (c.action.type) {
+                                case 'show_form':
+                                    if (c.action.target) {
+                                        code += `                sys_win_draw(${c.action.target});\n`;
+                                    }
+                                    break;
+                                case 'hide_form':
+                                    if (c.action.target) {
+                                        code += `                sys_win_restore_background(&((gui_form_t*)${c.action.target})->win);\n`;
+                                    }
+                                    break;
+                                case 'exit':
+                                    code += `                exit_requested = 1;\n`;
+                                    break;
+                                case 'copy_text':
+                                    if (c.action.source_id && c.action.target_id) {
+                                        code += `                ctrl_set_text(${win.name}, ${c.action.target_id}, ctrl_get_text(${win.name}, ${c.action.source_id}));\n`;
+                                        code += `                sys_win_draw(${win.name});\n`;
+                                    }
+                                    break;
+                                case 'set_text':
+                                    if (c.action.target_id) {
+                                        code += `                ctrl_set_text(${win.name}, ${c.action.target_id}, "${c.action.value || ''}");\n`;
+                                        code += `                sys_win_draw(${win.name});\n`;
+                                    }
+                                    break;
+                                case 'set_image':
+                                    if (c.action.source_id && c.action.target_id) {
+                                        code += `                ctrl_set_image(${win.name}, ${c.action.target_id}, ctrl_get_text(${win.name}, ${c.action.source_id}));\n`;
+                                        code += `                sys_win_draw(${win.name});\n`;
+                                    }
+                                    break;
+                                case 'toggle_checked':
+                                    if (c.action.target_id) {
+                                        code += `                ctrl_set_checked(${win.name}, ${c.action.target_id}, !ctrl_get_checked(${win.name}, ${c.action.target_id}));\n`;
+                                        code += `                sys_win_draw(${win.name});\n`;
+                                    }
+                                    break;
+                                case 'set_visible':
+                                    if (c.action.target_id) {
+                                        code += `                ctrl_set_visible(${win.name}, ${c.action.target_id}, ${c.action.value});\n`;
+                                        code += `                sys_win_draw(${win.name});\n`;
+                                    }
+                                    break;
+                                case 'set_color':
+                                    if (c.action.target_id && c.action.value !== undefined) {
+                                        const colorFunc = c.action.prop === 'bg' ? 'ctrl_set_bg' : 'ctrl_set_fg';
+                                        code += `                ${colorFunc}(${win.name}, ${c.action.target_id}, ${c.action.value});\n`;
+                                        code += `                sys_win_draw(${win.name});\n`;
+                                    }
+                                    break;
+                                default:
+                                    code += `                // TODO: Handle ${c.text} click\n`;
                             }
                         } else {
                             code += `                // TODO: Handle ${c.text} click\n`;
@@ -2291,7 +2477,10 @@
                             y: win.y,
                             w: win.w,
                             h: win.h,
-                            controls: win.controls || [],
+                            controls: (win.controls || []).map(c => ({
+                                ...c,
+                                action: c.action || { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg' }
+                            })),
                             nextControlId: win.nextControlId || 1
                         }))
                     };

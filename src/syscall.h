@@ -85,6 +85,22 @@ typedef rtc_time_t sys_time_t;
 #define SYS_WIN_DESTROY_FORM    0x0B0A
 #define SYS_WIN_SET_ICON        0x0B0B
 #define SYS_WIN_REDRAW_ALL      0x0B0C
+#define SYS_WIN_GET_CONTROL     0x0B0D
+#define SYS_WIN_CTRL_SET_PROP   0x0B0E
+#define SYS_WIN_CTRL_GET_PROP   0x0B0F
+
+/* Control property IDs for sys_ctrl_set/get */
+#define PROP_TEXT       0   /* char* - text content */
+#define PROP_CHECKED    1   /* int - checkbox/radio state */
+#define PROP_X          2   /* int - x position */
+#define PROP_Y          3   /* int - y position */
+#define PROP_W          4   /* int - width */
+#define PROP_H          5   /* int - height */
+#define PROP_VISIBLE    6   /* int - visibility (0/1) */
+#define PROP_FG         7   /* int - foreground color */
+#define PROP_BG         8   /* int - background color */
+#define PROP_IMAGE      9   /* char* - image path (picturebox) */
+#define PROP_ENABLED   10   /* int - enabled state */
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -562,4 +578,83 @@ static inline void sys_win_set_icon(void *form, const char *icon_path) {
 static inline void sys_win_redraw_all(void) {
     register int dummy_eax __asm__("eax") = SYS_WIN_REDRAW_ALL;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
+}
+
+static inline gui_control_t* sys_win_get_control(void *form, int16_t id) {
+    gui_control_t *ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_GET_CONTROL), "b"(form), "c"(id));
+    return ret;
+}
+
+/* Low-level property syscalls - pack control_id and prop_id into ecx */
+static inline void sys_ctrl_set_prop(void *form, int16_t ctrl_id, int prop_id, uint32_t value) {
+    uint32_t packed = ((uint32_t)ctrl_id << 16) | (prop_id & 0xFFFF);
+    register int dummy_eax __asm__("eax") = SYS_WIN_CTRL_SET_PROP;
+    register void *dummy_ebx __asm__("ebx") = form;
+    register uint32_t dummy_ecx __asm__("ecx") = packed;
+    register uint32_t dummy_edx __asm__("edx") = value;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
+}
+
+static inline uint32_t sys_ctrl_get_prop(void *form, int16_t ctrl_id, int prop_id) {
+    uint32_t packed = ((uint32_t)ctrl_id << 16) | (prop_id & 0xFFFF);
+    uint32_t ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_CTRL_GET_PROP), "b"(form), "c"(packed));
+    return ret;
+}
+
+/*
+ * High-level control property API
+ * Usage examples:
+ *   ctrl_set_text(form, 3, "Hello");           // Label.Text = "Hello"
+ *   ctrl_set_text(form, 5, textbox->text);     // Label.Text = TextBox.Text
+ *   ctrl_set_image(form, 2, "/path/to.bmp");   // PictureBox.Image = path
+ *   ctrl_set_checked(form, 4, 1);              // CheckBox.Checked = true
+ *   int checked = ctrl_get_checked(form, 4);   // if (CheckBox.Checked)
+ */
+
+/* Text property (PROP_TEXT) */
+static inline void ctrl_set_text(void *form, int16_t id, const char *text) {
+    sys_ctrl_set_prop(form, id, PROP_TEXT, (uint32_t)text);
+}
+static inline const char* ctrl_get_text(void *form, int16_t id) {
+    return (const char*)sys_ctrl_get_prop(form, id, PROP_TEXT);
+}
+
+/* Checked property (PROP_CHECKED) */
+static inline void ctrl_set_checked(void *form, int16_t id, int checked) {
+    sys_ctrl_set_prop(form, id, PROP_CHECKED, checked);
+}
+static inline int ctrl_get_checked(void *form, int16_t id) {
+    return (int)sys_ctrl_get_prop(form, id, PROP_CHECKED);
+}
+
+/* Image path property (PROP_IMAGE) - for PictureBox */
+static inline void ctrl_set_image(void *form, int16_t id, const char *path) {
+    sys_ctrl_set_prop(form, id, PROP_IMAGE, (uint32_t)path);
+}
+
+/* Position properties */
+static inline void ctrl_set_pos(void *form, int16_t id, int x, int y) {
+    sys_ctrl_set_prop(form, id, PROP_X, x);
+    sys_ctrl_set_prop(form, id, PROP_Y, y);
+}
+
+/* Size properties */
+static inline void ctrl_set_size(void *form, int16_t id, int w, int h) {
+    sys_ctrl_set_prop(form, id, PROP_W, w);
+    sys_ctrl_set_prop(form, id, PROP_H, h);
+}
+
+/* Color properties */
+static inline void ctrl_set_fg(void *form, int16_t id, int color) {
+    sys_ctrl_set_prop(form, id, PROP_FG, color);
+}
+static inline void ctrl_set_bg(void *form, int16_t id, int color) {
+    sys_ctrl_set_prop(form, id, PROP_BG, color);
+}
+
+/* Visibility */
+static inline void ctrl_set_visible(void *form, int16_t id, int visible) {
+    sys_ctrl_set_prop(form, id, PROP_VISIBLE, visible);
 }
