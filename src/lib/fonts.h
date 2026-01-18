@@ -38,7 +38,8 @@ int usr_bmf_import(usr_bmf_font_t *font, const char *path);
 void usr_bmf_free(usr_bmf_font_t *font);
 const usr_bmf_glyph_t* usr_bmf_get_glyph(usr_bmf_font_t *font, uint8_t height, uint8_t ascii);
 
-int usr_bmf_printf(int x, int y, usr_bmf_font_t *font, uint8_t height, 
+int usr_bmf_printf(int x, int y, usr_bmf_font_t *font, uint8_t height,
                uint8_t fg, const char *fmt, ...);
+int usr_bmf_measure(usr_bmf_font_t *font, uint8_t point_size, const char *text);
 
 /* Use usr_bmf_* directly in user code */
