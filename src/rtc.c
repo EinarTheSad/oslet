@@ -80,6 +80,11 @@ void rtc_read_time(rtc_time_t *time)
     uint8_t month = t1.month;
     uint8_t year  = t1.year;
 
+    /* Check 12h mode and PM bit before BCD conversion */
+    int is_12h = !(status_b & 0x02);
+    int is_pm = hr & 0x80;
+    hr &= 0x7F;  /* Clear PM bit before conversion */
+
     if (!binary_mode) {
         sec   = bcd_to_bin(sec);
         min   = bcd_to_bin(min);
@@ -89,17 +94,19 @@ void rtc_read_time(rtc_time_t *time)
         year  = bcd_to_bin(year);
     }
 
+    /* Handle 12h to 24h conversion */
+    if (is_12h) {
+        if (hr == 12) {
+            hr = is_pm ? 12 : 0;  /* 12 PM = 12, 12 AM = 0 */
+        } else if (is_pm) {
+            hr += 12;  /* 1-11 PM -> 13-23 */
+        }
+    }
+
     time->second = sec;
     time->minute = min;
     time->hour   = hr;
     time->day    = day;
     time->month  = month;
-    time->year   = (uint16_t)year;
-
-    time->year += 2000;
-
-    int is_12h = !(status_b & 0x02);
-    if (is_12h && (hr & 0x80)) {
-        time->hour = ((time->hour & 0x7F) + 12) % 24;
-    }
+    time->year   = (uint16_t)year + 2000;
 }
