@@ -28,3 +28,4 @@ void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y);
 
 void wm_set_icon_click(window_manager_t *wm, uint32_t time, int x, int y);
 int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, int x, int y);
+void wm_invalidate_icon_backgrounds(window_manager_t *wm);

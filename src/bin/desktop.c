@@ -121,6 +121,7 @@ static void desktop_redraw(void) {
     sys_gfx_fillrect(0, 0, 640, TASKBAR_Y, DESKTOP_COLOR);
     taskbar_draw();
     clock_draw();
+    sys_win_invalidate_icons();
     sys_win_redraw_all();
 }
 

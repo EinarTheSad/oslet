@@ -1574,6 +1574,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             }
         }
 
+        case 0x10: { /* SYS_WIN_INVALIDATE_ICONS */
+            wm_invalidate_icon_backgrounds(&global_wm);
+            return 0;
+        }
+
         default:
             return (uint32_t)-1;
     }

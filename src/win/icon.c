@@ -260,3 +260,12 @@ void icon_set_label(icon_t *icon, const char *new_label) {
         icon->label[0] = '\0';
     }
 }
+
+void icon_invalidate_bg(icon_t *icon) {
+    if (!icon) return;
+
+    if (icon->saved_bg) {
+        kfree(icon->saved_bg);
+        icon->saved_bg = NULL;
+    }
+}

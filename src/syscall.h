@@ -89,6 +89,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_WIN_GET_CONTROL     0x0B0D
 #define SYS_WIN_CTRL_SET_PROP   0x0B0E
 #define SYS_WIN_CTRL_GET_PROP   0x0B0F
+#define SYS_WIN_INVALIDATE_ICONS 0x0B10
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -668,4 +669,9 @@ static inline void ctrl_set_bg(void *form, int16_t id, int color) {
 /* Visibility */
 static inline void ctrl_set_visible(void *form, int16_t id, int visible) {
     sys_ctrl_set_prop(form, id, PROP_VISIBLE, visible);
+}
+
+static inline void sys_win_invalidate_icons(void) {
+    register int dummy_eax __asm__("eax") = SYS_WIN_INVALIDATE_ICONS;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
 }

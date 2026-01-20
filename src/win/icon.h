@@ -26,3 +26,4 @@ int icon_is_clicked(icon_t *icon, int mx, int my);
 void icon_set_selected(icon_t *icon, int selected);
 void icon_move(icon_t *icon, int new_x, int new_y);
 void icon_set_label(icon_t *icon, const char *new_label);
+void icon_invalidate_bg(icon_t *icon);
