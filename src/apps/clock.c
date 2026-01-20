@@ -61,6 +61,7 @@ static void redraw_clock(void) {
     if (!form) return;
 
     gui_form_t *f = form;
+    if (f->win.is_minimized) return;
     int cx = f->win.x + CLOCK_CENTER_X;
     int cy = f->win.y + 20 + CLOCK_CENTER_Y;
 
@@ -109,10 +110,13 @@ void _start(void) {
 
         /* Handle window state changes */
         if (event == -1 || event == -2) {
-            /* Window moved/restored - force redraw */
-            last_second = -1;
-            sys_win_draw(form);
-            redraw_clock();
+            gui_form_t *f = form;
+            if (!f->win.is_minimized) {
+                /* Window moved/restored - force redraw */
+                last_second = -1;
+                sys_win_draw(form);
+                redraw_clock();
+            }
             sys_win_redraw_all();
         }
 
