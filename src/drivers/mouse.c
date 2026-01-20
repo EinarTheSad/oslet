@@ -156,12 +156,16 @@ void mouse_save(int x, int y) {
     buffer_valid = 1;
 }
 
-void mouse_restore(void) {  
+void mouse_restore(void) {
     if (!buffer_valid) return;
-    
+
     for (int row = 0; row < 20; row++) {
         for (int col = 0; col < 12; col++) {
             gfx_putpixel(saved_x + col, saved_y + row, cursor_buffer[row * 12 + col]);
         }
     }
+}
+
+void mouse_invalidate_buffer(void) {
+    buffer_valid = 0;
 }

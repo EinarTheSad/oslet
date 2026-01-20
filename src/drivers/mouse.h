@@ -9,3 +9,4 @@ uint8_t mouse_get_buttons(void);
 void mouse_draw_cursor(int x, int y);
 void mouse_save(int x, int y);
 void mouse_restore(void);
+void mouse_invalidate_buffer(void);
