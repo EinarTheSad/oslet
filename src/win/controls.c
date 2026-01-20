@@ -338,6 +338,128 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
     }
 }
 
+void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg) {
+    bmf_font_t *font = &font_n;
+    window_theme_t *theme = theme_get_current();
+
+    /* Icon dimensions - use control size or defaults */
+    int icon_size = 32;
+    int label_max_w = control->w > 0 ? control->w : 48;
+    int total_w = label_max_w;
+
+    /* Calculate icon position (centered horizontally) */
+    int icon_x = abs_x + (total_w - icon_size) / 2;
+    int icon_y = abs_y;
+
+    /* Draw icon bitmap or default */
+    if (control->cached_bitmap) {
+        bitmap_draw(control->cached_bitmap, icon_x, icon_y);
+    } else {
+        /* Draw default icon rectangle */
+        gfx_fillrect(icon_x, icon_y, icon_size, icon_size, theme->button_color);
+        gfx_rect(icon_x, icon_y, icon_size, icon_size, theme->frame_dark);
+
+        /* Draw first 2 letters of label as initials */
+        if (font->data && control->text[0]) {
+            char initials[3];
+            initials[0] = control->text[0];
+            initials[1] = control->text[1] ? control->text[1] : '\0';
+            initials[2] = '\0';
+
+            int tw = bmf_measure_text(&font_b, 12, initials);
+            int tx = icon_x + (icon_size - tw) / 2;
+            int ty = icon_y + 10;
+            bmf_printf(tx, ty, &font_b, 12, theme->text_color, "%s", initials);
+        }
+    }
+
+    /* Draw selection highlight */
+    if (control->checked) {
+        /* Dither pattern over entire icon area */
+        int total_h = icon_size + 24;  /* Icon + label area */
+        for (int py = 0; py < total_h; py++) {
+            for (int px = 0; px < total_w; px++) {
+                if ((px + py) % 2 == 0) {
+                    gfx_putpixel(abs_x + px, abs_y + py, 1);  /* Dark blue */
+                }
+            }
+        }
+    }
+
+    /* Draw label below icon with word wrapping */
+    if (font->data && control->text[0]) {
+        uint8_t text_color = control->checked ? 15 : control->fg;  /* White if selected */
+        int text_y = abs_y + icon_size + 4;
+        const int MAX_LINE_WIDTH = label_max_w - 2;
+
+        char line[64];
+        char word[32];
+        int line_idx = 0;
+        int i = 0;
+
+        while (control->text[i]) {
+            /* Extract next word */
+            int word_idx = 0;
+            while (control->text[i] && control->text[i] != ' ' && word_idx < 31) {
+                word[word_idx++] = control->text[i++];
+            }
+            word[word_idx] = '\0';
+
+            /* Try adding word to current line */
+            char test_line[64];
+            if (line_idx > 0) {
+                int k = 0;
+                for (int j = 0; j < line_idx; j++) test_line[k++] = line[j];
+                test_line[k++] = ' ';
+                for (int j = 0; word[j]; j++) test_line[k++] = word[j];
+                test_line[k] = '\0';
+            } else {
+                int k = 0;
+                for (int j = 0; word[j]; j++) test_line[k++] = word[j];
+                test_line[k] = '\0';
+            }
+
+            int test_w = bmf_measure_text(font, 10, test_line);
+
+            if (test_w > MAX_LINE_WIDTH && line_idx > 0) {
+                /* Word doesn't fit - draw current line centered */
+                line[line_idx] = '\0';
+                int line_w = bmf_measure_text(font, 10, line);
+                int line_x = abs_x + (total_w - line_w) / 2;
+                bmf_printf(line_x, text_y, font, 10, text_color, "%s", line);
+                text_y += 11;
+
+                /* Start new line with current word */
+                line_idx = 0;
+                for (int j = 0; word[j]; j++) {
+                    line[line_idx++] = word[j];
+                }
+            } else {
+                /* Word fits - add to line */
+                if (line_idx > 0) {
+                    line[line_idx++] = ' ';
+                }
+                for (int j = 0; word[j]; j++) {
+                    if (line_idx < 63) line[line_idx++] = word[j];
+                }
+            }
+
+            /* Skip spaces */
+            while (control->text[i] == ' ') i++;
+        }
+
+        /* Draw remaining text */
+        if (line_idx > 0) {
+            line[line_idx] = '\0';
+            int final_w = bmf_measure_text(font, 10, line);
+            int final_x = abs_x + (total_w - final_w) / 2;
+            bmf_printf(final_x, text_y, font, 10, text_color, "%s", line);
+        }
+    }
+
+    (void)win_bg;  /* Reserved for future use */
+}
+
 void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y) {
     window_theme_t *theme = theme_get_current();
     bmf_font_t *font = &font_n;
@@ -417,6 +539,9 @@ void ctrl_draw(window_t *win, gui_control_t *control) {
     }
     else if (control->type == 7) { /* CTRL_FRAME */
         ctrl_draw_frame(control, abs_x, abs_y);
+    }
+    else if (control->type == 8) { /* CTRL_ICON */
+        ctrl_draw_icon(control, abs_x, abs_y, 7);  /* Use default gray background */
     }
 }
 
