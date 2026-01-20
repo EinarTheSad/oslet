@@ -113,6 +113,7 @@ clean:
 	@echo "Cleaning..."
 	rm -rf $(BUILD)
 	rm -f $(BIN)/*.elf
+	rm -f $(APPS)/*.elf
 
 clean-all: clean
 	rm -f $(DISK)
@@ -121,6 +122,7 @@ clean-all: clean
 # Binaries
 LIB_SRCS := $(wildcard $(LIB)/*.c)
 LIB_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(LIB_SRCS))
+APPS = $(SRC)/apps
 
 binstall:
 	@if [ ! -f "$(DISK)" ]; then \
@@ -131,7 +133,14 @@ binstall:
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
-	sudo cp $(BIN)/*.elf mnt/; \
+	if ls $(BIN)/*.elf 1>/dev/null 2>&1; then \
+		sudo cp $(BIN)/*.elf mnt/; \
+	fi; \
+	sudo mkdir -p mnt/OSLET/START; \
+	if ls $(APPS)/*.elf 1>/dev/null 2>&1; then \
+		sudo cp $(APPS)/*.elf mnt/OSLET/START/; \
+	fi; \
+	sudo cp $(BIN)/startman.ini mnt/OSLET/START/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt
@@ -148,7 +157,22 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BINCFLAGS) -c $< -o $@
 
+DESKTOP_SRCS := $(BIN)/desktop.c $(BIN)/progman.c $(BIN)/startman.c
+DESKTOP_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(DESKTOP_SRCS))
+
+$(BIN)/desktop.elf: $(DESKTOP_OBJS) $(LIB_OBJS)
+	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
+
+desktop: $(BIN)/desktop.elf
 fetchlet: $(BIN)/fetchlet.elf
 shell: $(BIN)/shell.elf
 edit: $(BIN)/edit.elf
-desktop: $(BIN)/desktop.elf
+
+$(APPS)/%.elf: $(BUILD)/apps/%.o $(LIB_OBJS)
+	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD)/apps/%.o: $(APPS)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
+clock: $(APPS)/clock.elf
