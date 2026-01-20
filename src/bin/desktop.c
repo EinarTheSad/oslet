@@ -1,9 +1,11 @@
 #include "../syscall.h"
 #include "../lib/stdio.h"
 #include "../lib/fonts.h"
+#include "progman.h"
 
 #define TASKBAR_HEIGHT 27
 #define TASKBAR_Y (480 - TASKBAR_HEIGHT)
+#define DESKTOP_COLOR COLOR_CYAN
 
 usr_bmf_font_t font_b;
 usr_bmf_font_t font_n;
@@ -12,10 +14,18 @@ sys_time_t current = {0};
 typedef struct {
     int x, y, w, h;
     int pressed;
-    char label[5];
+    char label[6];
 } taskbar_button_t;
 
-taskbar_button_t start_button;
+static taskbar_button_t start_button;
+static int last_clock_hour = -1;
+static int last_clock_minute = -1;
+
+extern const progmod_t startman_module;
+
+static void prog_register_all(void) {
+    progman_register(&startman_module);
+}
 
 void draw_simple_button(int x, int y, int w, int h, const char *label, int pressed) {
     uint8_t shad_a, shad_b;
@@ -36,7 +46,7 @@ void draw_simple_button(int x, int y, int w, int h, const char *label, int press
     sys_gfx_line(x+1, y+1, x+1, y+h-3, shad_b);
 
     sys_gfx_load_bmp("C:/ICONS/LET.ICO", x+3, y+2);
-    
+
     if (font_b.data && label) {
         int text_x = x + 22;
         int text_y = y + 7;
@@ -44,27 +54,7 @@ void draw_simple_button(int x, int y, int w, int h, const char *label, int press
     }
 }
 
-// Controls for Form1
-// Structure: type, x, y, w, h, fg, bg, text, id, font_type, font_size, border, border_color, cached_bitmap, pressed, checked, group_id, cursor_pos, max_length, scroll_offset, is_focused, sel_start, sel_end
-gui_control_t Form1_controls[] = {
-    {CTRL_PICTUREBOX, 5, 5, 108, 208, 0, 7, "SETUP.BMP", 1, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1},
-    {CTRL_BUTTON, 295, 191, 70, 23, 0, 7, "OK", 2, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1},
-    {CTRL_LABEL, 118, 12, 0, 0, 0, 15, "Welcome to osLET!", 3, 1, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1},
-    {CTRL_LABEL, 119, 40, 219, 114, 0, 15, "This window serves as a test of the\ncontrol system in osLET graphical\nuser interface.\n\nYou can drag this window freely using\nthe mouse, or click the button below\nto exit back to shell.", 5, 0, 12, 0, 0, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1}
-};
-
-void* create_Form1(void) {
-    void *form = sys_win_create_form("Welcome screen", 55, 50, 370, 240);
-    sys_win_set_icon(form, "C:/ICONS/EXE.ICO");
-
-    for (int i = 0; i < 4; i++) {
-        sys_win_add_control(form, &Form1_controls[i]);
-    }
-    sys_win_draw(form);
-    return form;
-}
-
-void init_start_button(void) {
+static void start_init(void) {
     start_button.x = 3;
     start_button.y = TASKBAR_Y + 3;
     start_button.w = 57;
@@ -72,10 +62,7 @@ void init_start_button(void) {
     start_button.pressed = 0;
 }
 
-int last_clock_hour = -1;
-int last_clock_minute = -1;
-
-void draw_clock(void) {
+static void clock_draw(void) {
     sys_get_time(&current);
     sys_gfx_rect(640-60, TASKBAR_Y + 3, 57, 21, COLOR_DARK_GRAY);
     sys_gfx_fillrect(640-59, TASKBAR_Y + 4, 55, 19, COLOR_LIGHT_GRAY);
@@ -84,16 +71,16 @@ void draw_clock(void) {
     last_clock_minute = current.minute;
 }
 
-int update_clock(void) {
+static int clock_update(void) {
     sys_get_time(&current);
     if (current.hour != last_clock_hour || current.minute != last_clock_minute) {
-        draw_clock();
+        clock_draw();
         return 1;
     }
     return 0;
 }
 
-void draw_taskbar(void) {
+static void taskbar_draw(void) {
     sys_gfx_fillrect(0, TASKBAR_Y, 640, TASKBAR_HEIGHT, COLOR_LIGHT_GRAY);
     sys_gfx_line(0, TASKBAR_Y, 640, TASKBAR_Y, COLOR_WHITE);
 
@@ -102,36 +89,70 @@ void draw_taskbar(void) {
                       "Start", start_button.pressed);
 }
 
-int handle_start_button_click(int mx, int my, unsigned char mb, int *state_changed) {
+static int start_click(int mx, int my, unsigned char mb, int *state_changed) {
     static unsigned char last_mb = 0;
     int old_pressed = start_button.pressed;
     int clicked = 0;
 
-    // Check if mouse is over button
     if (mx >= start_button.x && mx < start_button.x + start_button.w &&
         my >= start_button.y && my < start_button.y + start_button.h) {
 
-        if (mb & 1) {  // Left button is pressed
+        if (mb & 1) {
             start_button.pressed = 1;
         } else if ((last_mb & 1) && !(mb & 1)) {
-            // Button was pressed and now released (click!)
             start_button.pressed = 0;
             clicked = 1;
         }
     } else {
-        // Mouse moved away
         if (!(mb & 1)) {
             start_button.pressed = 0;
         }
     }
 
-    // Check if button state changed
     if (old_pressed != start_button.pressed) {
         *state_changed = 1;
     }
 
     last_mb = mb;
     return clicked;
+}
+
+static void desktop_redraw(void) {
+    sys_gfx_fillrect(0, 0, 640, TASKBAR_Y, DESKTOP_COLOR);
+    taskbar_draw();
+    clock_draw();
+    sys_win_redraw_all();
+}
+
+static void pump_all_program_events(int mx, int my) {
+    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
+        prog_instance_t *inst = progman_get_instance(i);
+        if (!inst || inst->state != PROG_STATE_RUNNING)
+            continue;
+
+        for (int j = 0; j < inst->window_count; j++) {
+            void *form = inst->windows[j];
+            if (!form) continue;
+
+            int event = sys_win_pump_events(form);
+            if (event != 0) {
+                int result = progman_route_event(form, event);
+
+                if (result == PROG_EVENT_CLOSE) {
+                    progman_close(inst->instance_id);
+                    desktop_redraw();
+                    break;
+                }
+
+                if (event == -1 || event == -2) {
+                    /* Window state changed */
+                    desktop_redraw();
+                }
+            }
+        }
+    }
+    (void)mx;
+    (void)my;
 }
 
 __attribute__((section(".entry"), used))
@@ -141,61 +162,51 @@ void _start(void) {
     unsigned char mb;
 
     sys_gfx_enter();
-    sys_gfx_fillrect(0, 0, 640, 480, COLOR_CYAN);
+    sys_gfx_fillrect(0, 0, 640, 480, DESKTOP_COLOR);
+
     usr_bmf_import(&font_b, "C:/FONTS/LSANS_B.BMF");
     usr_bmf_import(&font_n, "C:/FONTS/LSANS.BMF");
 
-    init_start_button();
-    draw_taskbar();
-    draw_clock();
+    progman_init();
+    prog_register_all();
 
-    void *Form1 = create_Form1();
+    start_init();
+    taskbar_draw();
+    clock_draw();
 
     int exit_requested = 0;
     int taskbar_needs_redraw = 0;
 
     while (!exit_requested) {
-        update_clock();
+        clock_update();
         sys_get_mouse_state(&mx, &my, &mb);
 
-        // Handle Start button clicks
+        /* Handle Start button */
         int button_state_changed = 0;
-        if (handle_start_button_click(mx, my, mb, &button_state_changed)) {
-            // Start button was clicked!
+        if (start_click(mx, my, mb, &button_state_changed)) {
+            /* Start button clicked - launch or focus Start Manager */
+            if (!progman_is_running("Start Manager")) {
+                progman_launch("Start Manager");
+            }
             taskbar_needs_redraw = 1;
         }
 
-        // Redraw taskbar if button state changed
         if (button_state_changed) {
             taskbar_needs_redraw = 1;
         }
 
         if (taskbar_needs_redraw) {
-            draw_taskbar();
-            draw_clock();
+            taskbar_draw();
+            clock_draw();
             taskbar_needs_redraw = 0;
         }
 
-        // Handle Form1 events
-        int event0 = Form1 ? sys_win_pump_events(Form1) : 0;
-        if (event0 > 0) {
-            /* Control clicked in Form1 - event = control ID */
-            if (event0 == 2) { /* OK */
-                sys_win_destroy_form(Form1);
-                Form1 = NULL;
-                sys_gfx_fillrect(0, 0, 640, 480-27, COLOR_CYAN);
-                sys_mouse_draw_cursor(mx, my, 1);
-            }
-        } else if (event0 == -2 || event0 == -1) {
-            /* Window was minimized or restored - redraw desktop and all windows */
-            sys_gfx_fillrect(0, 0, 640, 480, COLOR_CYAN);
-            draw_taskbar();
-            draw_clock();
-            sys_win_redraw_all();
-        }
+        progman_update_all();
+        pump_all_program_events(mx, my);
 
         sys_mouse_draw_cursor(mx, my, 0);
         sys_gfx_swap();
+        sys_yield();
     }
 
     sys_gfx_exit();

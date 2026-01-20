@@ -1,7 +1,8 @@
-.vscode/settings.json
+.vscode/
+.claude/
 build/
 *.img
 *.iso
+src/apps/*.elf
 src/bin/*.elf
-src/bin/*.o
 mnt/
