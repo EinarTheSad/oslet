@@ -171,7 +171,11 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
         case 0x05:
             if (!ebx) return -1;
             return task_spawn_and_wait((const char*)ebx);
-            
+
+        case 0x06:  /* SYS_PROC_SPAWN_ASYNC - spawn without waiting */
+            if (!ebx) return -1;
+            return task_spawn((const char*)ebx);
+
         default:
             return -1;
     }
@@ -657,7 +661,8 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
             if (ctrl->type != CTRL_BUTTON &&
                 ctrl->type != CTRL_CHECKBOX &&
                 ctrl->type != CTRL_RADIOBUTTON &&
-                ctrl->type != CTRL_TEXTBOX) {
+                ctrl->type != CTRL_TEXTBOX &&
+                ctrl->type != CTRL_ICON) {
                 continue;
             }
 
@@ -674,6 +679,10 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 hit_w = 100;  /* Generous hit area including label */
             } else if (ctrl->type == CTRL_RADIOBUTTON && ctrl->w == 12) {
                 hit_w = 100;  /* Generous hit area including label */
+            } else if (ctrl->type == CTRL_ICON) {
+                /* Icon hit area: 48x58 (32px icon + 24px label + 2px spacing) */
+                hit_w = ctrl->w > 0 ? ctrl->w : 48;
+                hit_h = ctrl->h > 0 ? ctrl->h : 58;
             }
 
             if (mx >= abs_x && mx < abs_x + hit_w &&
@@ -710,6 +719,10 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
 
                     return 1;  /* Always redraw to show cursor position */
                 }
+                /* For icon, just record the press (selection happens on release) */
+                else if (ctrl->type == CTRL_ICON) {
+                    return 0;  /* Press recorded, no visual change yet */
+                }
                 break;
             }
         }
@@ -719,6 +732,20 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
     if (!clicked_on_focusable && old_focus != -1) {
         form->focused_control_id = -1;
         return 1;  /* Focus changed, needs redraw */
+    }
+
+    /* If no control was pressed, deselect all icons in the form */
+    if (form->press_control_id == -1 && form->controls) {
+        int deselected = 0;
+        for (int i = 0; i < form->ctrl_count; i++) {
+            if (form->controls[i].type == CTRL_ICON && form->controls[i].checked) {
+                form->controls[i].checked = 0;
+                deselected = 1;
+            }
+        }
+        if (deselected) {
+            return 1;  /* Icons deselected, needs redraw */
+        }
     }
 
     return 0;
@@ -1001,6 +1028,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->icon_path[0] = '\0';
             form->focused_control_id = -1;  /* No control focused initially */
             form->textbox_selecting = 0;
+            form->last_icon_click_time = 0;
+            form->last_icon_click_id = -1;
 
             /* Register window with window manager */
             if (!wm_register_window(&global_wm, form)) {
@@ -1125,6 +1154,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 hit_w = 100;  /* Generous hit area including label */
                             } else if (ctrl->type == CTRL_RADIOBUTTON && ctrl->w == 12) {
                                 hit_w = 100;  /* Generous hit area including label */
+                            } else if (ctrl->type == CTRL_ICON) {
+                                /* Icon hit area: 48x58 (32px icon + 24px label + 2px spacing) */
+                                hit_w = ctrl->w > 0 ? ctrl->w : 48;
+                                hit_h = ctrl->h > 0 ? ctrl->h : 58;
                             }
 
                             /* Check if release is within same control */
@@ -1152,6 +1185,36 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     ctrl->checked = 1;
                                     needs_redraw = 1;
                                     /* Don't set clicked_id for radio - just redraw */
+                                }
+
+                                /* Handle icon click/double-click */
+                                else if (ctrl->type == CTRL_ICON) {
+                                    extern uint32_t timer_get_ticks(void);
+                                    uint32_t now = timer_get_ticks();
+
+                                    /* Deselect all other icons first */
+                                    for (int j = 0; j < form->ctrl_count; j++) {
+                                        gui_control_t *other = &form->controls[j];
+                                        if (other->type == CTRL_ICON && other->id != ctrl->id) {
+                                            other->checked = 0;
+                                        }
+                                    }
+
+                                    /* Check for double-click */
+                                    if (form->last_icon_click_id == ctrl->id &&
+                                        (now - form->last_icon_click_time) < WM_DOUBLECLICK_MS) {
+                                        /* Double-click - activate the icon and deselect it */
+                                        ctrl->checked = 0;
+                                        form->clicked_id = ctrl->id;
+                                        event_count = 1;
+                                        form->last_icon_click_id = -1;
+                                    } else {
+                                        /* Single click - just select */
+                                        ctrl->checked = 1;
+                                        form->last_icon_click_time = now;
+                                        form->last_icon_click_id = ctrl->id;
+                                    }
+                                    needs_redraw = 1;
                                 }
 
                                 /* Valid click detected for buttons and other controls */
@@ -1247,6 +1310,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (event_count > 0) {
                 /* If button was pressed, we need to redraw to show unpressed state */
                 if (needs_redraw) {
+                    extern void mouse_invalidate_buffer(void);
+                    mouse_invalidate_buffer();
                     wm_draw_all(&global_wm);
                 }
                 return form->clicked_id;
@@ -1254,6 +1319,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Return -1 if visual state changed and needs redraw */
             if (needs_redraw) {
+                extern void mouse_invalidate_buffer(void);
+                mouse_invalidate_buffer();
                 return (uint32_t)-1;
             }
 
@@ -1439,12 +1506,22 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 case 8: /* PROP_BG */
                     ctrl->bg = (uint8_t)value;
                     break;
-                case 9: /* PROP_IMAGE - same as text for picturebox */
+                case 9: /* PROP_IMAGE - for picturebox stores path in text, for icon loads bitmap directly */
                     if (value) {
-                        strcpy_s(ctrl->text, (const char*)value, 256);
-                        /* Clear cached bitmap so it reloads */
-                        if (ctrl->cached_bitmap) {
-                            ctrl->cached_bitmap = NULL;
+                        if (ctrl->type == CTRL_ICON) {
+                            /* For icons, load bitmap directly without overwriting text (label) */
+                            extern bitmap_t* bitmap_load_from_file(const char *path);
+                            if (ctrl->cached_bitmap) {
+                                extern void bitmap_free(bitmap_t *bmp);
+                                bitmap_free(ctrl->cached_bitmap);
+                            }
+                            ctrl->cached_bitmap = bitmap_load_from_file((const char*)value);
+                        } else {
+                            /* For picturebox, store path in text and clear cache */
+                            strcpy_s(ctrl->text, (const char*)value, 256);
+                            if (ctrl->cached_bitmap) {
+                                ctrl->cached_bitmap = NULL;
+                            }
                         }
                     }
                     break;

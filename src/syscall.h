@@ -22,6 +22,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_PROC_SLEEP      0x0203
 #define SYS_PROC_YIELD      0x0204
 #define SYS_PROC_SPAWN      0x0205
+#define SYS_PROC_SPAWN_ASYNC 0x0206
 
 /* AH = 03h - File Operations */
 #define SYS_FILE_OPEN       0x0300
@@ -113,6 +114,7 @@ typedef rtc_time_t sys_time_t;
 #define CTRL_RADIOBUTTON 5
 #define CTRL_TEXTBOX 6
 #define CTRL_FRAME 7
+#define CTRL_ICON 8
 
 #define FONT_NORMAL 0
 #define FONT_BOLD 1
@@ -161,6 +163,9 @@ typedef struct {
     int16_t focused_control_id;  // ID of control with keyboard focus (-1 = none)
     /* Textbox mouse selection tracking */
     uint8_t textbox_selecting;  // Currently selecting text with mouse
+    /* Icon double-click tracking */
+    uint32_t last_icon_click_time;
+    int16_t last_icon_click_id;
 } gui_form_t;
 
 typedef struct {
@@ -269,6 +274,12 @@ static inline int sys_exec(const char *path) {
 static inline int sys_spawn(const char *path) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN), "b"(path));
+    return ret;
+}
+
+static inline int sys_spawn_async(const char *path) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN_ASYNC), "b"(path));
     return ret;
 }
 
@@ -493,7 +504,7 @@ static inline void sys_gfx_fillrect_gradient(int x, int y, int w, int h,
 
 static inline int sys_get_time(sys_time_t *time) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_TIME_GET), "b"(time));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_TIME_GET), "b"(time) : "memory");
     return ret;
 }
 
