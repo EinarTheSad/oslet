@@ -1,5 +1,6 @@
 #include "wm.h"
 #include "window.h"
+#include "icon.h"
 
 void wm_init(window_manager_t *wm) {
     wm->count = 0;
@@ -158,4 +159,13 @@ int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, int x, int y) {
         return 1;
     }
     return 0;
+}
+
+void wm_invalidate_icon_backgrounds(window_manager_t *wm) {
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *form = wm->windows[i];
+        if (form && form->win.is_minimized && form->win.minimized_icon) {
+            icon_invalidate_bg(form->win.minimized_icon);
+        }
+    }
 }
