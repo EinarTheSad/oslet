@@ -139,23 +139,21 @@ void task_exit(void) {
 
 void task_sleep(uint32_t milliseconds) {
     if (!tasking_enabled || !current_task) return;
-    
+
     __asm__ volatile ("cli");
-    
+
     uint32_t current_ticks = timer_get_ticks();
     uint32_t sleep_ticks = (milliseconds * 100) / 1000;
-    
+    if (sleep_ticks < 1) sleep_ticks = 1;
+
     current_task->state = TASK_SLEEPING;
     current_task->sleep_until_ticks = current_ticks + sleep_ticks;
-    
+
     __asm__ volatile ("sti");
-    
-    /* Active wait with HLT - timer IRQ will wake us and check if sleep is done */
+
+    /* Yield to other processes - keep yielding until we're woken */
     while (current_task->state == TASK_SLEEPING) {
-        wakeup_sleeping_tasks();  /* Check if we should wake up */
-        if (current_task->state == TASK_SLEEPING) {
-            __asm__ volatile ("hlt");  /* Sleep until next interrupt */
-        }
+        task_yield();
     }
 }
 
@@ -250,15 +248,17 @@ static task_t *pick_next_task(void) {
         t = t->next;
     } while (t != start);
     
-    if (current_task->state == TASK_RUNNING) {
+    /* No READY task found - if current is SLEEPING, return it anyway
+       so the scheduler can do a HLT and wait for wakeup */
+    if (current_task->state == TASK_RUNNING || current_task->state == TASK_SLEEPING) {
         return current_task;
     }
-    
+
     if (task_list->state != TASK_TERMINATED) {
         task_list->state = TASK_READY;
         return task_list;
     }
-    
+
     return current_task;
 }
 
@@ -273,7 +273,15 @@ void schedule(void) {
     task_t *next = pick_next_task();
     
     if (next == current_task) {
-        __asm__ volatile ("sti");
+        /* No switch - restore stack that task_yield pushed */
+        __asm__ volatile (
+            "popl %%ebp\n\t"
+            "popl %%ebx\n\t"
+            "popl %%esi\n\t"
+            "popl %%edi\n\t"
+            "sti"
+            ::: "memory"
+        );
         return;
     }
     
@@ -410,12 +418,57 @@ int task_spawn_and_wait(const char *path) {
     __asm__ volatile ("cli");
     current_task->state = TASK_BLOCKED;
     __asm__ volatile ("sti");
-    
+
     /* Yield to child */
     task_yield();
-    
+
     /* Child finished, we're back */
     current_task->child_tid = 0;
-    
+
     return 0;
+}
+
+int task_spawn(const char *path) {
+    if (!path || !current_task) return -1;
+
+    /* Load child process */
+    exec_image_t image;
+    if (exec_load(path, &image) != 0) return -1;
+
+    /* Free file_data - it's been copied to process memory */
+    if (image.file_data) {
+        kfree(image.file_data);
+        image.file_data = NULL;
+    }
+
+    /* Extract filename from path */
+    const char *filename = path;
+    for (const char *p = path; *p; p++) {
+        if (*p == '/' || *p == '\\') filename = p + 1;
+    }
+
+    uint32_t child_tid = task_create((void (*)(void))image.entry_point,
+                                      filename,
+                                      PRIORITY_NORMAL);
+    if (!child_tid) {
+        int slot = image.file_size >> 24;
+        exec_cleanup_process(image.base_addr, image.end_addr, slot);
+        return -1;
+    }
+
+    /* Setup child process info */
+    task_t *child = task_find_by_tid(child_tid);
+    if (!child) {
+        int slot = image.file_size >> 24;
+        exec_cleanup_process(image.base_addr, image.end_addr, slot);
+        return -1;
+    }
+
+    /* Store exec info for cleanup on exit */
+    child->exec_base = image.base_addr;
+    child->exec_end = image.end_addr;
+    child->exec_slot = image.file_size >> 24;
+
+    /* Don't block - return immediately, child runs in parallel */
+    return (int)child_tid;
 }
