@@ -17,6 +17,7 @@
 #include "win/bitmap.h"
 #include "win/wm.h"
 #include "win/controls.h"
+#include "win/menu.h"
 
 #define MAX_OPEN_FILES 32
 
@@ -606,13 +607,18 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
     if (win_is_icon_clicked(&form->win, mx, my)) {
         if (wm_is_icon_doubleclick(&global_wm, current_time, mx, my)) {
             /* Double-click - restore window */
+            /* Release icon slot for reuse before restoring */
+            if (form->win.minimized_icon) {
+                wm_release_icon_slot(&global_wm,
+                                     form->win.minimized_icon->x,
+                                     form->win.minimized_icon->y);
+            }
             win_restore(&form->win);
             return 2;  /* Window restored */
         } else {
             /* Single click - select this icon, deselect others */
             /* Invalidate cursor buffer to prevent artifacts */
-            extern int buffer_valid;
-            buffer_valid = 0;
+            mouse_invalidate_buffer();
 
             pump_deselect_all_icons(&global_wm);
             if (form->win.minimized_icon) {
@@ -625,13 +631,27 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
     return 0;
 }
 
+static void init_window_menu(gui_form_t *form) {
+    if (form->window_menu_initialized) return;
+
+    menu_init(&form->window_menu);
+    menu_add_item(&form->window_menu, "Minimise", MENU_ACTION_MINIMIZE, MENU_ITEM_ENABLED);
+    menu_add_item(&form->window_menu, "Close", MENU_ACTION_CLOSE, MENU_ITEM_ENABLED);
+    form->window_menu_initialized = 1;
+}
+
 static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
     if (win_is_minimize_button(&form->win, mx, my)) {
-        int icon_x, icon_y;
-        wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
-        const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;
-        win_minimize(&form->win, icon_x, icon_y, icon_path);
-        return 1;  /* Window minimized */
+        /* Initialize menu if needed */
+        init_window_menu(form);
+
+        /* Calculate menu position - below the minimize button */
+        int menu_x = form->win.x + form->win.w - 80;
+        int menu_y = form->win.y + WM_TITLEBAR_HEIGHT + 2;
+
+        /* Show the window menu instead of minimizing */
+        menu_show(&form->window_menu, menu_x, menu_y);
+        return 2;  /* Menu shown, needs redraw but don't minimize */
     }
     return 0;
 }
@@ -1030,6 +1050,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->textbox_selecting = 0;
             form->last_icon_click_time = 0;
             form->last_icon_click_id = -1;
+            form->window_menu_initialized = 0;
+            /* Initialize menu structure to safe defaults */
+            form->window_menu.visible = 0;
+            form->window_menu.saved_bg = NULL;
+            form->window_menu.item_count = 0;
+            form->window_menu.hovered_item = -1;
 
             /* Register window with window manager */
             if (!wm_register_window(&global_wm, form)) {
@@ -1065,6 +1091,39 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             int event_count = 0;
             int needs_redraw = 0;  /* Track if visual state changed */
+
+            /* Handle window menu if visible */
+            if (form->window_menu.visible) {
+                int action = menu_handle_mouse(&form->window_menu, mx, my,
+                                               button_pressed, button_released);
+                if (action > 0) {
+                    /* Menu action selected */
+                    if (action == MENU_ACTION_MINIMIZE) {
+                        int icon_x, icon_y;
+                        wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
+                        const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;
+                        win_minimize(&form->win, icon_x, icon_y, icon_path);
+                        return -1;  /* Window minimized */
+                    } else if (action == MENU_ACTION_CLOSE) {
+                        /* Signal close request - return special value */
+                        return -3;  /* Close requested */
+                    }
+                } else if (action == -1) {
+                    /* Menu closed without selection */
+                    needs_redraw = 1;
+                } else if (button_pressed && !menu_contains_point(&form->window_menu, mx, my)) {
+                    /* Click outside menu - close it */
+                    menu_hide(&form->window_menu);
+                    needs_redraw = 1;
+                }
+                /* Don't process other events while menu is visible */
+                if (form->window_menu.visible || action != 0) {
+                    if (needs_redraw) {
+                        return (uint32_t)-1;
+                    }
+                    return 0;
+                }
+            }
 
             /* Handle mouse button press */
             if (button_pressed) {
@@ -1106,8 +1165,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     }
 
                     /* Check minimize button */
-                    if (pump_handle_minimize(form, mx, my)) {
-                        return -1;
+                    int min_result = pump_handle_minimize(form, mx, my);
+                    if (min_result == 2) {
+                        /* Menu shown */
+                        needs_redraw = 1;
+                    } else if (min_result == 1) {
+                        return -1;  /* Window minimized directly */
                     }
                     /* Check if titlebar was clicked */
                     else if (pump_handle_titlebar_click(form, mx, my)) {
@@ -1189,7 +1252,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                                 /* Handle icon click/double-click */
                                 else if (ctrl->type == CTRL_ICON) {
-                                    extern uint32_t timer_get_ticks(void);
                                     uint32_t now = timer_get_ticks();
 
                                     /* Deselect all other icons first */
@@ -1310,7 +1372,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (event_count > 0) {
                 /* If button was pressed, we need to redraw to show unpressed state */
                 if (needs_redraw) {
-                    extern void mouse_invalidate_buffer(void);
                     mouse_invalidate_buffer();
                     wm_draw_all(&global_wm);
                 }
@@ -1319,7 +1380,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Return -1 if visual state changed and needs redraw */
             if (needs_redraw) {
-                extern void mouse_invalidate_buffer(void);
                 mouse_invalidate_buffer();
                 return (uint32_t)-1;
             }
@@ -1403,6 +1463,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             gui_form_t *form = (gui_form_t*)ebx;
             if (!form) return 0;
 
+            /* Release icon slot if window was minimized */
+            if (form->win.is_minimized && form->win.minimized_icon) {
+                wm_release_icon_slot(&global_wm,
+                                     form->win.minimized_icon->x,
+                                     form->win.minimized_icon->y);
+            }
+
             /* Unregister from window manager */
             wm_unregister_window(&global_wm, form);
 
@@ -1415,6 +1482,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     }
                 }
                 kfree(form->controls);
+            }
+
+            /* Destroy window menu */
+            if (form->window_menu_initialized) {
+                menu_destroy(&form->window_menu);
             }
 
             /* Destroy window */
@@ -1510,9 +1582,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     if (value) {
                         if (ctrl->type == CTRL_ICON) {
                             /* For icons, load bitmap directly without overwriting text (label) */
-                            extern bitmap_t* bitmap_load_from_file(const char *path);
                             if (ctrl->cached_bitmap) {
-                                extern void bitmap_free(bitmap_t *bmp);
                                 bitmap_free(ctrl->cached_bitmap);
                             }
                             ctrl->cached_bitmap = bitmap_load_from_file((const char*)value);

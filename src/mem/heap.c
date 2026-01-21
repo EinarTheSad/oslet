@@ -2,6 +2,7 @@
 #include "pmm.h"
 #include "paging.h"
 #include "../console.h"
+#include "../drivers/vga.h"
 
 static volatile int heap_lock = 0;
 
@@ -21,8 +22,6 @@ block_t *heap_start = NULL;
 uintptr_t heap_end = 0;
 size_t total_allocated = 0;
 size_t total_freed = 0;
-
-extern void vga_set_color(uint8_t background, uint8_t foreground);
 
 static int expand_heap(size_t min_size) {
     size_t pages = (min_size + PAGE_SIZE - 1) / PAGE_SIZE;

@@ -5,9 +5,6 @@
 bitmap_t* bitmap_load_from_file(const char *path) {
     if (!path || !path[0]) return NULL;
 
-    // Use existing BMP loading function from graphics driver
-    extern uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
-
     bitmap_t *bmp = (bitmap_t*)kmalloc(sizeof(bitmap_t));
     if (!bmp) return NULL;
 
@@ -29,8 +26,6 @@ bitmap_t* bitmap_load_from_file(const char *path) {
 void bitmap_draw(bitmap_t *bmp, int x, int y) {
     if (!bmp || !bmp->data) return;
 
-    // Use existing cached bitmap drawing function
-    extern void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);
     gfx_draw_cached_bmp(bmp->data, bmp->width, bmp->height, x, y);
 }
 

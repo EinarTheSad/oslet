@@ -5,6 +5,7 @@
 #include "controls.h"
 #include "../syscall.h"
 #include "../drivers/graphics.h"
+#include "../drivers/mouse.h"
 #include "../fonts/bmf.h"
 #include "../mem/heap.h"
 #include "../console.h"
@@ -52,6 +53,11 @@ void win_draw(window_t *win) {
 }
 
 void win_destroy(window_t *win) {
+    /* Restore background before destroying */
+    if (win->saved_bg && !win->is_minimized) {
+        win_restore_background(win);
+    }
+
     win->is_visible = 0;
     if (win->saved_bg) {
         kfree(win->saved_bg);
@@ -205,11 +211,10 @@ int win_is_titlebar(window_t *win, int mx, int my) {
 
 void win_move(window_t *win, int dx, int dy) {
     /* Restore cursor before any window operations to prevent artifacts */
-    extern void mouse_restore(void);
     extern int buffer_valid;
     if (buffer_valid) {
         mouse_restore();
-        buffer_valid = 0;  /* Invalidate so desktop will redraw cursor */
+        mouse_invalidate_buffer();
     }
 
     win_restore_background(win);
@@ -239,8 +244,6 @@ void win_save_background(window_t *win) {
         if (!win->saved_bg) return;
     }
 
-    extern uint8_t gfx_getpixel(int x, int y);
-
     for (int py = 0; py < h; py++) {
         int sy = win->y + py - margin;
         if (sy < 0 || sy >= WM_SCREEN_HEIGHT) continue;
@@ -260,8 +263,6 @@ void win_restore_background(window_t *win) {
     int margin = WM_BG_MARGIN;
     int w = win->w + 2 * margin;
     int h = win->h + 2 * margin;
-
-    extern void gfx_putpixel(int x, int y, uint8_t color);
 
     for (int py = 0; py < h; py++) {
         int sy = win->y + py - margin;
@@ -291,8 +292,7 @@ void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path) 
     if (win->is_minimized) return;
 
     /* Invalidate cursor buffer since window is disappearing */
-    extern int buffer_valid;
-    buffer_valid = 0;
+    mouse_invalidate_buffer();
 
     win_restore_background(win);
 
@@ -306,8 +306,10 @@ void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path) 
             win->minimized_icon->user_data = win;  /* Link back to window */
         }
     } else {
-        /* Icon already exists (re-minimizing) - just reset selection state */
+        /* Icon already exists (re-minimizing) - move to new slot position */
         /* saved_bg is NULL after icon_hide(), will be recreated on next draw */
+        win->minimized_icon->x = icon_x;
+        win->minimized_icon->y = icon_y;
         icon_set_selected(win->minimized_icon, 0);
     }
 }
@@ -316,8 +318,7 @@ void win_restore(window_t *win) {
     if (!win->is_minimized) return;
 
     /* Invalidate cursor buffer since window is appearing */
-    extern int buffer_valid;
-    buffer_valid = 0;
+    mouse_invalidate_buffer();
 
     /* Hide icon but keep icon structure for reuse */
     if (win->minimized_icon) {

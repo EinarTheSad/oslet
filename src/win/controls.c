@@ -1,13 +1,13 @@
 #include "controls.h"
 #include "theme.h"
 #include "bitmap.h"
+#include "window.h"
 #include "../drivers/graphics.h"
 #include "../fonts/bmf.h"
 
 extern bmf_font_t font_b, font_n, font_i, font_bi;
 
 void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
-    extern void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label, int pressed);
 
     if (control->pressed) {
         win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 1);
