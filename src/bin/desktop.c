@@ -137,6 +137,13 @@ static void pump_all_program_events(int mx, int my) {
 
             int event = sys_win_pump_events(form);
             if (event != 0) {
+                /* Handle close from window menu (-3) */
+                if (event == -3) {
+                    progman_close(inst->instance_id);
+                    desktop_redraw();
+                    break;
+                }
+
                 int result = progman_route_event(form, event);
 
                 if (result == PROG_EVENT_CLOSE) {

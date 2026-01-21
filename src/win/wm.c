@@ -1,6 +1,7 @@
 #include "wm.h"
 #include "window.h"
 #include "icon.h"
+#include "menu.h"
 
 void wm_init(window_manager_t *wm) {
     wm->count = 0;
@@ -10,6 +11,7 @@ void wm_init(window_manager_t *wm) {
     wm->last_icon_click_time = 0;
     wm->last_icon_click_x = 0;
     wm->last_icon_click_y = 0;
+    wm->free_slot_count = 0;
 
     for (int i = 0; i < WM_MAX_WINDOWS; i++) {
         wm->windows[i] = NULL;
@@ -128,10 +130,24 @@ void wm_draw_all(window_manager_t *wm) {
                 win_draw_control(&form->win, &form->controls[j]);
             }
         }
+
+        // Draw window menu if visible (must be on top of controls)
+        if (!form->win.is_minimized && form->window_menu.visible) {
+            menu_draw(&form->window_menu);
+        }
     }
 }
 
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
+    // First check if there are any free slots to reuse
+    if (wm->free_slot_count > 0) {
+        wm->free_slot_count--;
+        *out_x = wm->free_slots[wm->free_slot_count].x;
+        *out_y = wm->free_slots[wm->free_slot_count].y;
+        return;
+    }
+
+    // No free slots - allocate a new position
     // Calculate X based on column (vertical stacking from left side)
     *out_x = WM_ICON_MARGIN + (wm->next_icon_column * (WM_ICON_SIZE + 8));
     *out_y = wm->next_icon_y;
@@ -144,6 +160,15 @@ void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
     if (wm->next_icon_y + WM_ICON_TOTAL_HEIGHT > WM_SCREEN_HEIGHT - 27 - WM_ICON_MARGIN) {
         wm->next_icon_y = WM_ICON_MARGIN;  // Reset to top
         wm->next_icon_column++;  // Move to next column
+    }
+}
+
+void wm_release_icon_slot(window_manager_t *wm, int x, int y) {
+    // Add slot to free list if there's room
+    if (wm->free_slot_count < WM_MAX_FREE_SLOTS) {
+        wm->free_slots[wm->free_slot_count].x = x;
+        wm->free_slots[wm->free_slot_count].y = y;
+        wm->free_slot_count++;
     }
 }
 
