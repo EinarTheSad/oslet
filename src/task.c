@@ -2,6 +2,7 @@
 #include "mem/heap.h"
 #include "console.h"
 #include "timer.h"
+#include "drivers/vga.h"
 #include <stddef.h>
 #include "syscall.h"
 #include "exec.h"
@@ -10,8 +11,6 @@ static task_t *task_list = NULL;
 static task_t *current_task = NULL;
 static uint32_t next_tid = 0;
 static volatile int tasking_enabled = 0;
-
-extern void vga_set_color(uint8_t background, uint8_t foreground);
 
 static const uint32_t QUANTUM_HIGH   = 10;
 static const uint32_t QUANTUM_NORMAL = 5;

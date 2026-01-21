@@ -1,10 +1,10 @@
 #include "paging.h"
 #include "pmm.h"
 #include "../console.h"
+#include "../drivers/vga.h"
 #include <stdint.h>
 #include "early_alloc.h"
 
-extern void vga_set_color(uint8_t background, uint8_t foreground);
 static uintptr_t current_pd_phys = 0;
 
 static inline uint32_t pd_index(uintptr_t a) { return (a >> 22) & 0x3FF; }

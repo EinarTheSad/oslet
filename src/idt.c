@@ -1,10 +1,9 @@
 #include <stdint.h>
 #include "console.h"
 #include "drivers/mouse.h"
+#include "drivers/vga.h"
 
-extern void vga_set_color(uint8_t background, uint8_t foreground);
 extern void syscall_handler_idt(void);
-extern void mouse_handler(void);
 
 struct idt_entry {
     uint16_t offset_low;

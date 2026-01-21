@@ -1,4 +1,5 @@
 #include "mouse.h"
+#include "graphics.h"
 #include "../irq/io.h"
 
 static int mouse_x = 320;
@@ -11,7 +12,6 @@ static int saved_x = -1, saved_y = -1;
 int buffer_valid = 0;
 
 extern void pic_send_eoi(int irq);
-extern void gfx_putpixel(int x, int y, uint8_t color);
 
 static void mouse_wait(uint8_t type) {
     uint32_t timeout = 100000;
@@ -144,8 +144,6 @@ void mouse_draw_cursor(int x, int y) {
 }
 
 void mouse_save(int x, int y) {
-    extern uint8_t gfx_getpixel(int x, int y);
-    
     for (int row = 0; row < 20; row++) {
         for (int col = 0; col < 12; col++) {
             cursor_buffer[row * 12 + col] = gfx_getpixel(x + col, y + row);

@@ -15,14 +15,14 @@
 #include "drivers/ata.h"
 #include "drivers/fat32.h"
 #include "gdt.h"
+#include "win/window.h"
+#include "win/theme.h"
 
 extern void idt_init(void);
 extern void pic_remap(void);
 extern void shell_init(void);
 extern void shell_run(void);
 extern uint8_t __kernel_end;
-extern void win_init_fonts(void);
-extern void theme_init(void);
 
 uint32_t boot_device = 0xFFFFFFFF;
 

@@ -45,8 +45,6 @@ void compositor_mark_dirty(compositor_t *comp, int x, int y, int w, int h) {
 void compositor_save_region(compositor_t *comp, int x, int y, int w, int h, uint8_t *dest) {
     if (!dest) return;
 
-    extern uint8_t gfx_getpixel(int x, int y);
-
     for (int py = 0; py < h; py++) {
         int sy = y + py;
         if (sy < 0 || sy >= comp->screen_height) continue;
@@ -62,8 +60,6 @@ void compositor_save_region(compositor_t *comp, int x, int y, int w, int h, uint
 
 void compositor_restore_region(compositor_t *comp, const uint8_t *src, int x, int y, int w, int h) {
     if (!src) return;
-
-    extern void gfx_putpixel(int x, int y, uint8_t color);
 
     for (int py = 0; py < h; py++) {
         int sy = y + py;

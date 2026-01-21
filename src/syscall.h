@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include "rtc.h"
 #include "win/window.h"
+#include "win/menu.h"
 
 typedef rtc_time_t sys_time_t;
 
@@ -167,6 +168,9 @@ typedef struct {
     /* Icon double-click tracking */
     uint32_t last_icon_click_time;
     int16_t last_icon_click_id;
+    /* Window menu (shown when clicking minimize button) */
+    menu_t window_menu;
+    uint8_t window_menu_initialized;
 } gui_form_t;
 
 typedef struct {
