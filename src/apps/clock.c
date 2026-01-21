@@ -108,6 +108,12 @@ void _start(void) {
 
         int event = sys_win_pump_events(form);
 
+        /* Handle close request from window menu */
+        if (event == -3) {
+            running = 0;
+            continue;
+        }
+
         /* Handle window state changes */
         if (event == -1 || event == -2) {
             gui_form_t *f = form;
