@@ -176,3 +176,4 @@ $(BUILD)/apps/%.o: $(APPS)/%.c
 	$(CC) $(BINCFLAGS) -c $< -o $@
 
 clock: $(APPS)/clock.elf
+calc: $(APPS)/calculator.elf
