@@ -11,3 +11,8 @@ char *strcat(char *dst, const char *src);
 char *strchr(const char *s, int c);
 char *strrchr(const char *s, int c);
 char *strncpy(char *dst, const char *src, size_t n);
+void str_trim(char *s);
+char toupper(char c);
+char tolower(char c);
+void str_toupper(char *s);
+void str_tolower(char *s);

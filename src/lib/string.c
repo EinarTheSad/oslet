@@ -62,18 +62,38 @@ char *strncpy(char *dst, const char *src, size_t n) {
     return ret;
 }
 
-static inline char _toupper(char c) {
+char toupper(char c) {
     if (c >= 'a' && c <= 'z') return c - 32;
     return c;
 }
 
+char tolower(char c) {
+    if (c >= 'A' && c <= 'Z') return c + 32;
+    return c;
+}
+
+void str_toupper(char *s) {
+    while (*s) { *s = toupper(*s); s++; }
+}
+
+void str_tolower(char *s) {
+    while (*s) { *s = tolower(*s); s++; }
+}
+
 int strcasecmp(const char *a, const char *b) {
     while (*a && *b) {
-        char ca = _toupper(*a);
-        char cb = _toupper(*b);
+        char ca = toupper(*a);
+        char cb = toupper(*b);
         if (ca != cb) return ca - cb;
         a++;
         b++;
     }
-    return _toupper(*a) - _toupper(*b);
+    return toupper(*a) - toupper(*b);
+}
+
+void str_trim(char *s) {
+    int len = strlen(s);
+    while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\r' || s[len-1] == '\n' || s[len-1] == '\t')) {
+        s[--len] = '\0';
+    }
 }
