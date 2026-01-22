@@ -198,6 +198,10 @@ static void cleanup_terminated_tasks(void) {
             extern void fd_cleanup_task(uint32_t tid);
             fd_cleanup_task(to_free->tid);
 
+            /* Clean up windows owned by this task */
+            extern void wm_cleanup_task(uint32_t tid);
+            wm_cleanup_task(to_free->tid);
+
             /* Clean up exec resources if this was a spawned process */
             if (to_free->exec_slot >= 0) {
                 exec_cleanup_process(to_free->exec_base, to_free->exec_end, to_free->exec_slot);
