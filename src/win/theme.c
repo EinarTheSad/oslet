@@ -3,6 +3,7 @@
 static window_theme_t default_theme = {
     .bg_color = 15,
     .titlebar_color = 1,
+    .titlebar_inactive = 8,
     .frame_dark = 8,
     .frame_light = 7,
     .text_color = 0,

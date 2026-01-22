@@ -4,6 +4,7 @@
 typedef struct {
     uint8_t bg_color;
     uint8_t titlebar_color;
+    uint8_t titlebar_inactive;
     uint8_t frame_dark;
     uint8_t frame_light;
     uint8_t text_color;

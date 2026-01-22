@@ -614,6 +614,8 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
                                      form->win.minimized_icon->y);
             }
             win_restore(&form->win);
+            /* Bring restored window to front and give it focus */
+            wm_bring_to_front(&global_wm, form);
             return 2;  /* Window restored */
         } else {
             /* Single click - select this icon, deselect others */
@@ -1056,6 +1058,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->window_menu.saved_bg = NULL;
             form->window_menu.item_count = 0;
             form->window_menu.hovered_item = -1;
+
+            /* Track owner task for cleanup on process exit */
+            task_t *current = task_get_current();
+            form->owner_tid = current ? current->tid : 0;
 
             /* Register window with window manager */
             if (!wm_register_window(&global_wm, form)) {
@@ -1673,6 +1679,49 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         
         default:
             return (uint32_t)-1;
+    }
+}
+
+/* Cleanup all windows owned by a task (called on task exit) */
+void wm_cleanup_task(uint32_t tid) {
+    if (!wm_initialized) return;
+
+    /* Iterate through all windows and destroy those owned by this task */
+    for (int i = global_wm.count - 1; i >= 0; i--) {
+        gui_form_t *form = global_wm.windows[i];
+        if (!form || form->owner_tid != tid) continue;
+
+        /* Release icon slot if window was minimized */
+        if (form->win.is_minimized && form->win.minimized_icon) {
+            wm_release_icon_slot(&global_wm,
+                                 form->win.minimized_icon->x,
+                                 form->win.minimized_icon->y);
+        }
+
+        /* Unregister from window manager */
+        wm_unregister_window(&global_wm, form);
+
+        /* Free cached bitmaps in controls */
+        if (form->controls) {
+            for (int j = 0; j < form->ctrl_count; j++) {
+                if (form->controls[j].cached_bitmap) {
+                    bitmap_free(form->controls[j].cached_bitmap);
+                    form->controls[j].cached_bitmap = NULL;
+                }
+            }
+            kfree(form->controls);
+        }
+
+        /* Destroy window menu */
+        if (form->window_menu_initialized) {
+            menu_destroy(&form->window_menu);
+        }
+
+        /* Destroy window (restores background) */
+        win_destroy(&form->win);
+
+        /* Free form */
+        kfree(form);
     }
 }
 

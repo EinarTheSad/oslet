@@ -119,7 +119,8 @@ void wm_draw_all(window_manager_t *wm) {
         gui_form_t *form = wm->windows[i];
         if (!form || !form->win.is_visible) continue;
 
-        win_draw(&form->win);
+        int is_focused = (i == wm->focused_index);
+        win_draw_focused(&form->win, is_focused);
 
         // Draw controls if not minimized
         if (!form->win.is_minimized && form->controls) {
