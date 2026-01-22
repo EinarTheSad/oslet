@@ -1,11 +1,124 @@
 #include "../syscall.h"
 #include "../lib/stdio.h"
+#include "../lib/stdlib.h"
+#include "../lib/string.h"
+#include "../lib/ini.h"
 #include "../lib/fonts.h"
 #include "progman.h"
 
 #define TASKBAR_HEIGHT 27
 #define TASKBAR_Y (480 - TASKBAR_HEIGHT)
-#define DESKTOP_COLOR COLOR_CYAN
+#define SCREEN_WIDTH 640
+#define SCREEN_HEIGHT 480
+#define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
+
+typedef struct {
+    uint8_t color;
+    char wallpaper[128];
+} desktop_settings_t;
+
+static desktop_settings_t settings;
+
+/* BMP header structures for reading dimensions */
+typedef struct {
+    uint16_t type;
+    uint32_t size;
+    uint16_t reserved1;
+    uint16_t reserved2;
+    uint32_t offset;
+} __attribute__((packed)) bmp_file_header_t;
+
+typedef struct {
+    uint32_t size;
+    int32_t width;
+    int32_t height;
+    uint16_t planes;
+    uint16_t bpp;
+} __attribute__((packed)) bmp_info_header_t;
+
+/* Parse INI file and load desktop settings */
+static void load_settings(void) {
+    /* Set defaults */
+    settings.color = 7;
+    settings.wallpaper[0] = '\0';
+
+    int fd = sys_open(SETTINGS_PATH, "r");
+    if (fd < 0) return;
+
+    char buffer[512];
+    int bytes = sys_read(fd, buffer, sizeof(buffer) - 1);
+    sys_close(fd);
+
+    if (bytes <= 0) return;
+    buffer[bytes] = '\0';
+
+    ini_parser_t ini;
+    ini_init(&ini, buffer);
+
+    const char *val;
+
+    val = ini_get(&ini, "DESKTOP", "COLOR");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) {
+            settings.color = (uint8_t)c;
+        }
+    }
+
+    val = ini_get(&ini, "DESKTOP", "WALLPAPER");
+    if (val && val[0] != '\0') {
+        strncpy(settings.wallpaper, val, sizeof(settings.wallpaper) - 1);
+        settings.wallpaper[sizeof(settings.wallpaper) - 1] = '\0';
+    }
+}
+
+/* Get BMP dimensions from file */
+static int get_bmp_dimensions(const char *path, int *width, int *height) {
+    int fd = sys_open(path, "r");
+    if (fd < 0) return -1;
+
+    bmp_file_header_t file_hdr;
+    bmp_info_header_t info_hdr;
+
+    if (sys_read(fd, &file_hdr, sizeof(file_hdr)) != sizeof(file_hdr)) {
+        sys_close(fd);
+        return -1;
+    }
+
+    if (file_hdr.type != 0x4D42) { /* "BM" */
+        sys_close(fd);
+        return -1;
+    }
+
+    if (sys_read(fd, &info_hdr, sizeof(info_hdr)) != sizeof(info_hdr)) {
+        sys_close(fd);
+        return -1;
+    }
+
+    sys_close(fd);
+
+    *width = info_hdr.width;
+    *height = (info_hdr.height < 0) ? -info_hdr.height : info_hdr.height;
+    return 0;
+}
+
+/* Draw wallpaper centered on desktop */
+static void draw_wallpaper(void) {
+    if (settings.wallpaper[0] == '\0') return;
+
+    int bmp_w, bmp_h;
+    if (get_bmp_dimensions(settings.wallpaper, &bmp_w, &bmp_h) != 0) return;
+
+    /* Calculate centered position */
+    int x = (SCREEN_WIDTH - bmp_w) / 2;
+    int y = (SCREEN_HEIGHT - bmp_h) / 2;
+
+    /* Clamp to desktop area */
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+
+    sys_gfx_load_bmp(settings.wallpaper, x, y);
+}
 
 usr_bmf_font_t font_b;
 usr_bmf_font_t font_n;
@@ -118,7 +231,8 @@ static int start_click(int mx, int my, unsigned char mb, int *state_changed) {
 }
 
 static void desktop_redraw(void) {
-    sys_gfx_fillrect(0, 0, 640, TASKBAR_Y, DESKTOP_COLOR);
+    sys_gfx_fillrect(0, 0, SCREEN_WIDTH, TASKBAR_Y, settings.color);
+    draw_wallpaper();
     taskbar_draw();
     clock_draw();
     sys_win_invalidate_icons();
@@ -170,7 +284,13 @@ void _start(void) {
     unsigned char mb;
 
     sys_gfx_enter();
-    sys_gfx_fillrect(0, 0, 640, 480, DESKTOP_COLOR);
+
+    /* Load desktop settings from INI file */
+    load_settings();
+
+    /* Draw desktop background and wallpaper */
+    sys_gfx_fillrect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, settings.color);
+    draw_wallpaper();
 
     usr_bmf_import(&font_b, "C:/FONTS/LSANS_B.BMF");
     usr_bmf_import(&font_n, "C:/FONTS/LSANS.BMF");
