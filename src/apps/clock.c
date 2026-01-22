@@ -91,7 +91,7 @@ static void redraw_clock(void) {
 __attribute__((section(".entry"), used))
 void _start(void) {
 
-    form = sys_win_create_form("Clock", 520, 10, WIN_W, WIN_H);
+    form = sys_win_create_form("Clock", 530, 0, WIN_W, WIN_H);
     if (!form) {
         sys_exit();
         return;
