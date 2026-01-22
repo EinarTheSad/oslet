@@ -141,6 +141,7 @@ binstall:
 		sudo cp $(APPS)/*.elf mnt/OSLET/START/; \
 	fi; \
 	sudo cp $(BIN)/startman.ini mnt/OSLET/START/; \
+	sudo cp $(APPS)/*.grp mnt/OSLET/START/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt
