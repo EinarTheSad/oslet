@@ -171,6 +171,8 @@ typedef struct {
     /* Window menu (shown when clicking minimize button) */
     menu_t window_menu;
     uint8_t window_menu_initialized;
+    /* Owner task ID for cleanup on process exit */
+    uint32_t owner_tid;
 } gui_form_t;
 
 typedef struct {
@@ -232,6 +234,7 @@ typedef struct {
 void syscall_init(void);
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx);
 void fd_cleanup_task(uint32_t tid);
+void wm_cleanup_task(uint32_t tid);
 
 /* Inline syscall wrappers */
 static inline void sys_write(const char *str) {

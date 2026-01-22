@@ -34,6 +34,10 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
 }
 
 void win_draw(window_t *win) {
+    win_draw_focused(win, 1);
+}
+
+void win_draw_focused(window_t *win, int is_focused) {
     if (!win->is_visible) return;
 
     if (win->is_minimized && win->minimized_icon) {
@@ -47,7 +51,7 @@ void win_draw(window_t *win) {
     }
 
     win_draw_frame(win->x, win->y, win->w, win->h);
-    win_draw_titlebar(win->x+2, win->y+2, win->w-4, win->title);
+    win_draw_titlebar(win->x+2, win->y+2, win->w-4, win->title, is_focused);
 
     win->dirty = 0;
 }
@@ -78,9 +82,11 @@ void win_draw_frame(int x, int y, int w, int h) {
     gfx_rect(x+1, y+1, w-2, h-2, theme->frame_light);
 }
 
-void win_draw_titlebar(int x, int y, int w, const char *title) {
+void win_draw_titlebar(int x, int y, int w, const char *title, int is_active) {
     window_theme_t *theme = theme_get_current();
-    gfx_fillrect(x, y, w, WM_TITLEBAR_HEIGHT, theme->titlebar_color);
+    uint8_t tb_color = is_active ? theme->titlebar_color : theme->titlebar_inactive;
+
+    gfx_fillrect(x, y, w, WM_TITLEBAR_HEIGHT, tb_color);
 
     if (font_b.data) {
         bmf_printf(x+5, y+5, &font_b, 12, 15, "%s", title);
