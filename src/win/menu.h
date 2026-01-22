@@ -28,6 +28,7 @@ typedef struct {
     menu_item_t items[MENU_MAX_ITEMS];
     int item_count;
     uint8_t *saved_bg;
+    int just_opened;  /* Ignore first button release after opening */
 } menu_t;
 
 void menu_init(menu_t *menu);

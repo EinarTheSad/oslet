@@ -7,6 +7,8 @@
 #include "../console.h"
 
 extern bmf_font_t font_n;
+extern void mouse_invalidate_buffer(void);
+extern void mouse_restore(void);
 
 #define MENU_BG_COLOR       15
 #define MENU_HOVER_COLOR    7
@@ -25,6 +27,7 @@ void menu_init(menu_t *menu) {
     menu->hovered_item = -1;
     menu->item_count = 0;
     menu->saved_bg = NULL;
+    menu->just_opened = 0;
 }
 
 void menu_destroy(menu_t *menu) {
@@ -100,9 +103,14 @@ static void menu_calculate_size(menu_t *menu) {
 void menu_show(menu_t *menu, int x, int y) {
     if (!menu || menu->item_count == 0) return;
 
+    /* Restore cursor before saving background to avoid capturing cursor pixels */
+    mouse_restore();
+    mouse_invalidate_buffer();
+
     menu_calculate_size(menu);
 
     /* Adjust position to keep menu on screen */
+    x -= 2;
     if (x + menu->w > WM_SCREEN_WIDTH) {
         x = WM_SCREEN_WIDTH - menu->w - 2;
     }
@@ -116,6 +124,7 @@ void menu_show(menu_t *menu, int x, int y) {
     menu->y = y;
     menu->visible = 1;
     menu->hovered_item = -1;
+    menu->just_opened = 1;
 
     /* Save background */
     int save_w = menu->w;
@@ -161,13 +170,17 @@ void menu_hide(menu_t *menu) {
         kfree(menu->saved_bg);
         menu->saved_bg = NULL;
     }
-
+    mouse_invalidate_buffer();
     menu->visible = 0;
     menu->hovered_item = -1;
 }
 
 void menu_draw(menu_t *menu) {
     if (!menu || !menu->visible) return;
+
+    /* Invalidate cursor buffer before drawing to prevent artifacts */
+    mouse_restore();
+    mouse_invalidate_buffer();
 
     gfx_fillrect(menu->x, menu->y, menu->w, menu->h, MENU_BG_COLOR);
     gfx_rect(menu->x, menu->y, menu->w, menu->h, MENU_BORDER_COLOR);
@@ -246,6 +259,12 @@ int menu_handle_mouse(menu_t *menu, int mx, int my, int button_pressed, int butt
 
     /* Handle click */
     if (button_released) {
+        /* Ignore the first button release after opening (from the opening click) */
+        if (menu->just_opened) {
+            menu->just_opened = 0;
+            return 0;
+        }
+
         if (new_hover >= 0 && (menu->items[new_hover].flags & MENU_ITEM_ENABLED)) {
             int action = menu->items[new_hover].action_id;
             menu_hide(menu);
