@@ -2,6 +2,7 @@
 #include "progman.h"
 #include "../syscall.h"
 #include "../lib/string.h"
+#include "../lib/ini.h"
 
 #define CTRL_APP_BASE 100
 #define CTRL_BACK_BUTTON 99
@@ -58,40 +59,17 @@ const progmod_t startman_module = {
     .flags = 0  /* Allow multiple instances for group windows */
 };
 
-static char to_upper(char c) {
-    if (c >= 'a' && c <= 'z')
-        return c - 'a' + 'A';
-    return c;
-}
-
-static char to_lower(char c) {
-    if (c >= 'A' && c <= 'Z')
-        return c - 'A' + 'a';
-    return c;
-}
-
-static void str_to_upper(char *s) {
-    while (*s) {
-        *s = to_upper(*s);
-        s++;
-    }
-}
-
 static void title_case(char *dst, const char *src, int max_len) {
     int i = 0;
-    int capitalize_next = 1;  /* Capitalize first letter */
+    int capitalize_next = 1;
 
     while (*src && i < max_len - 1) {
         if (*src == '_') {
             dst[i++] = ' ';
             capitalize_next = 1;
         } else {
-            if (capitalize_next) {
-                dst[i++] = to_upper(*src);
-                capitalize_next = 0;
-            } else {
-                dst[i++] = to_lower(*src);
-            }
+            dst[i++] = capitalize_next ? toupper(*src) : tolower(*src);
+            capitalize_next = 0;
         }
         src++;
     }
@@ -112,64 +90,15 @@ static int parse_ini(const char *elf_name, char *icon_path, int max_len) {
 
     buf[bytes] = '\0';
 
-    /* Create uppercase version of elf_name for comparison */
-    char upper_elf[32];
-    strncpy(upper_elf, elf_name, sizeof(upper_elf) - 1);
-    upper_elf[sizeof(upper_elf) - 1] = '\0';
-    str_to_upper(upper_elf);
+    ini_parser_t ini;
+    ini_init(&ini, buf);
 
-    /* Search for line starting with elf_name= */
-    char *line = buf;
-    while (*line) {
-        /* Skip whitespace */
-        while (*line == ' ' || *line == '\t' || *line == '\r' || *line == '\n')
-            line++;
-
-        if (*line == '\0')
-            break;
-
-        if (*line == '[') {
-            /* Skip section header */
-            while (*line && *line != '\n')
-                line++;
-            continue;
-        }
-
-        /* Check if line starts with our ELF name (case insensitive) */
-        char *p = line;
-        char *e = upper_elf;
-
-        /* Convert line chars to uppercase for comparison */
-        int match = 1;
-        while (*e && *p && *p != '=' && *p != '\n') {
-            if (to_upper(*p) != *e) {
-                match = 0;
-                break;
-            }
-            p++;
-            e++;
-        }
-
-        if (match && *e == '\0' && *p == '=') {
-            /* Found matching entry */
-            p++;  /* Skip '=' */
-
-            /* Copy path until end of line */
-            int i = 0;
-            while (*p && *p != '\r' && *p != '\n' && i < max_len - 1) {
-                icon_path[i++] = *p++;
-            }
-            icon_path[i] = '\0';
-            return 1;
-        }
-
-        /* Skip to next line */
-        while (*line && *line != '\n')
-            line++;
-        if (*line == '\n')
-            line++;
+    const char *val = ini_get(&ini, "ICONS", elf_name);
+    if (val) {
+        strncpy(icon_path, val, max_len - 1);
+        icon_path[max_len - 1] = '\0';
+        return 1;
     }
-
     return 0;
 }
 
@@ -185,32 +114,16 @@ static int is_grp_file(const char *name) {
 }
 
 static void elf_to_upper(char *dst, const char *src, int max_len) {
-    int i = 0;
-    while (*src && i < max_len - 1) {
-        dst[i++] = to_upper(*src++);
-    }
-    dst[i] = '\0';
-}
-
-/* Case-insensitive string comparison for sorting */
-static int strcasecmp_simple(const char *a, const char *b) {
-    while (*a && *b) {
-        char ca = to_lower(*a);
-        char cb = to_lower(*b);
-        if (ca != cb)
-            return ca - cb;
-        a++;
-        b++;
-    }
-    return to_lower(*a) - to_lower(*b);
+    strncpy(dst, src, max_len - 1);
+    dst[max_len - 1] = '\0';
+    str_toupper(dst);
 }
 
 /* Simple bubble sort for app entries (alphabetical by display name) */
 static void sort_apps(app_entry_t *apps, int count) {
     for (int i = 0; i < count - 1; i++) {
         for (int j = 0; j < count - i - 1; j++) {
-            if (strcasecmp_simple(apps[j].name, apps[j + 1].name) > 0) {
-                /* Swap entries */
+            if (strcasecmp(apps[j].name, apps[j + 1].name) > 0) {
                 app_entry_t tmp = apps[j];
                 apps[j] = apps[j + 1];
                 apps[j + 1] = tmp;
