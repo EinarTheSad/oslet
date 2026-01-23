@@ -815,7 +815,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     return bitmap;
 }
 
-void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y) {
+void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int dest_x, int dest_y, int transparent) {
     if (!backbuffer || !cached_data) return;
 
     /* Calculate actual dirty region */
@@ -840,8 +840,8 @@ void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x
 
             int screen_x = dest_x + x;
 
-            /* Skip transparent pixels (color index 5) */
-            if (screen_x >= 0 && screen_x < GFX_WIDTH && pixel != 5) {
+            /* Skip transparent pixels (color index 5) only if transparency enabled */
+            if (screen_x >= 0 && screen_x < GFX_WIDTH && (!transparent || pixel != 5)) {
                 putpixel_raw(screen_x, screen_y, pixel);
             }
         }
@@ -853,13 +853,21 @@ void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x
     }
 }
 
-int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y) {
+void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y) {
+    gfx_draw_cached_bmp_ex(cached_data, width, height, dest_x, dest_y, 1);
+}
+
+int gfx_load_bmp_4bit_ex(const char *path, int dest_x, int dest_y, int transparent) {
     int width, height;
     uint8_t *bitmap = gfx_load_bmp_to_buffer(path, &width, &height);
     if (!bitmap) return -1;
 
-    gfx_draw_cached_bmp(bitmap, width, height, dest_x, dest_y);
+    gfx_draw_cached_bmp_ex(bitmap, width, height, dest_x, dest_y, transparent);
     kfree(bitmap);
 
     return 0;
+}
+
+int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y) {
+    return gfx_load_bmp_4bit_ex(path, dest_x, dest_y, 1);
 }

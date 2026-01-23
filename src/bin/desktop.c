@@ -19,22 +19,10 @@ typedef struct {
 
 static desktop_settings_t settings;
 
-/* BMP header structures for reading dimensions */
-typedef struct {
-    uint16_t type;
-    uint32_t size;
-    uint16_t reserved1;
-    uint16_t reserved2;
-    uint32_t offset;
-} __attribute__((packed)) bmp_file_header_t;
-
-typedef struct {
-    uint32_t size;
-    int32_t width;
-    int32_t height;
-    uint16_t planes;
-    uint16_t bpp;
-} __attribute__((packed)) bmp_info_header_t;
+/* Cached wallpaper for fast redraw */
+static gfx_cached_bmp_t cached_wallpaper = {0};
+static int wallpaper_x = 0;
+static int wallpaper_y = 0;
 
 /* Parse INI file and load desktop settings */
 static void load_settings(void) {
@@ -72,52 +60,27 @@ static void load_settings(void) {
     }
 }
 
-/* Get BMP dimensions from file */
-static int get_bmp_dimensions(const char *path, int *width, int *height) {
-    int fd = sys_open(path, "r");
-    if (fd < 0) return -1;
-
-    bmp_file_header_t file_hdr;
-    bmp_info_header_t info_hdr;
-
-    if (sys_read(fd, &file_hdr, sizeof(file_hdr)) != sizeof(file_hdr)) {
-        sys_close(fd);
-        return -1;
-    }
-
-    if (file_hdr.type != 0x4D42) { /* "BM" */
-        sys_close(fd);
-        return -1;
-    }
-
-    if (sys_read(fd, &info_hdr, sizeof(info_hdr)) != sizeof(info_hdr)) {
-        sys_close(fd);
-        return -1;
-    }
-
-    sys_close(fd);
-
-    *width = info_hdr.width;
-    *height = (info_hdr.height < 0) ? -info_hdr.height : info_hdr.height;
-    return 0;
-}
-
-/* Draw wallpaper centered on desktop */
-static void draw_wallpaper(void) {
+/* Load wallpaper into memory cache (call once at startup) */
+static void cache_wallpaper(void) {
     if (settings.wallpaper[0] == '\0') return;
 
-    int bmp_w, bmp_h;
-    if (get_bmp_dimensions(settings.wallpaper, &bmp_w, &bmp_h) != 0) return;
+    if (sys_gfx_cache_bmp(settings.wallpaper, &cached_wallpaper) != 0) {
+        cached_wallpaper.data = 0;
+        return;
+    }
 
     /* Calculate centered position */
-    int x = (SCREEN_WIDTH - bmp_w) / 2;
-    int y = (SCREEN_HEIGHT - bmp_h) / 2;
+    wallpaper_x = (SCREEN_WIDTH - cached_wallpaper.width) / 2;
+    wallpaper_y = (SCREEN_HEIGHT - cached_wallpaper.height) / 2;
 
-    /* Clamp to desktop area */
-    if (x < 0) x = 0;
-    if (y < 0) y = 0;
+    if (wallpaper_x < 0) wallpaper_x = 0;
+    if (wallpaper_y < 0) wallpaper_y = 0;
+}
 
-    sys_gfx_load_bmp(settings.wallpaper, x, y);
+/* Draw wallpaper from cache (fast) */
+static void draw_wallpaper(void) {
+    if (!cached_wallpaper.data) return;
+    sys_gfx_draw_cached(&cached_wallpaper, wallpaper_x, wallpaper_y, 0);
 }
 
 usr_bmf_font_t font_b;
@@ -287,6 +250,9 @@ void _start(void) {
 
     /* Load desktop settings from INI file */
     load_settings();
+
+    /* Cache wallpaper in memory for fast redraws */
+    cache_wallpaper();
 
     /* Draw desktop background and wallpaper */
     sys_gfx_fillrect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, settings.color);

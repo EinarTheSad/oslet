@@ -556,11 +556,55 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             uint8_t c_start = (edx >> 16) & 0xFF;
             uint8_t c_end = (edx >> 8) & 0xFF;
             int orientation = edx & 0xFF;
-            
+
             gfx_fillrect_gradient(x, y, w, h, c_start, c_end, orientation);
             return 0;
         }
-            
+
+        case 0x0C: { /* Load BMP with transparency control */
+            if (!ebx) return (uint32_t)-1;
+            int x = (int)(ecx >> 16);
+            int y = (int)(ecx & 0xFFFF);
+            return gfx_load_bmp_4bit_ex((const char*)ebx, x, y, (int)edx);
+        }
+
+        case 0x0D: { /* Cache BMP to memory */
+            if (!ebx || !ecx) return (uint32_t)-1;
+            typedef struct { void *data; int width; int height; } cached_bmp_t;
+            cached_bmp_t *out = (cached_bmp_t*)ecx;
+            int w, h;
+            uint8_t *data = gfx_load_bmp_to_buffer((const char*)ebx, &w, &h);
+            if (!data) return (uint32_t)-1;
+            out->data = data;
+            out->width = w;
+            out->height = h;
+            return 0;
+        }
+
+        case 0x0E: { /* Draw cached BMP */
+            if (!ebx) return (uint32_t)-1;
+            typedef struct { void *data; int width; int height; } cached_bmp_t;
+            cached_bmp_t *bmp = (cached_bmp_t*)ebx;
+            if (!bmp->data) return (uint32_t)-1;
+            int x = (int)(ecx >> 16);
+            int y = (int)(ecx & 0xFFFF);
+            gfx_draw_cached_bmp_ex(bmp->data, bmp->width, bmp->height, x, y, (int)edx);
+            return 0;
+        }
+
+        case 0x0F: { /* Free cached BMP */
+            if (!ebx) return (uint32_t)-1;
+            typedef struct { void *data; int width; int height; } cached_bmp_t;
+            cached_bmp_t *bmp = (cached_bmp_t*)ebx;
+            if (bmp->data) {
+                kfree(bmp->data);
+                bmp->data = 0;
+                bmp->width = 0;
+                bmp->height = 0;
+            }
+            return 0;
+        }
+
         default:
             return (uint32_t)-1;
     }
