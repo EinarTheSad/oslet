@@ -73,6 +73,10 @@ typedef rtc_time_t sys_time_t;
 
 #define SYS_GFX_LOAD_BMP    0x090A
 #define SYS_GFX_FILLRECT_GRADIENT 0x090B
+#define SYS_GFX_LOAD_BMP_EX 0x090C
+#define SYS_GFX_CACHE_BMP   0x090D
+#define SYS_GFX_DRAW_CACHED 0x090E
+#define SYS_GFX_FREE_CACHED 0x090F
 
 /* AH = 0Ah - Mouse */
 #define SYS_MOUSE_GET_STATE  0x0A00
@@ -520,6 +524,38 @@ static inline int sys_gfx_load_bmp(const char *path, int x, int y) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP), "b"(path), "c"(x), "d"(y));
     return ret;
+}
+
+static inline int sys_gfx_load_bmp_ex(const char *path, int x, int y, int transparent) {
+    int ret;
+    uint32_t pos = ((uint32_t)x << 16) | ((uint32_t)y & 0xFFFF);
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP_EX), "b"(path), "c"(pos), "d"(transparent));
+    return ret;
+}
+
+/* Cached BMP handle (returned by sys_gfx_cache_bmp) */
+typedef struct {
+    void *data;
+    int width;
+    int height;
+} gfx_cached_bmp_t;
+
+/* Load BMP into memory cache, returns 0 on success */
+static inline int sys_gfx_cache_bmp(const char *path, gfx_cached_bmp_t *out) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_CACHE_BMP), "b"(path), "c"(out) : "memory");
+    return ret;
+}
+
+/* Draw cached BMP at position */
+static inline void sys_gfx_draw_cached(gfx_cached_bmp_t *bmp, int x, int y, int transparent) {
+    uint32_t pos = ((uint32_t)x << 16) | ((uint32_t)y & 0xFFFF);
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_DRAW_CACHED), "b"(bmp), "c"(pos), "d"(transparent));
+}
+
+/* Free cached BMP */
+static inline void sys_gfx_free_cached(gfx_cached_bmp_t *bmp) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FREE_CACHED), "b"(bmp));
 }
 
 static inline void sys_get_mouse_state(int *x, int *y, unsigned char *buttons) {
