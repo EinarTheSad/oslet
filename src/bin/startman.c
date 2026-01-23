@@ -387,8 +387,27 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
 
     /* Handle back button - open main Start Manager window and close this one */
     if (event == CTRL_BACK_BUTTON && state) {
-        g_pending_grp_path[0] = '\0';  /* Clear to open as main window */
-        progman_launch("Start Manager");
+        /* Check if main Start Manager window is already open */
+        int main_exists = 0;
+        int count = progman_get_running_count();
+        for (int i = 0; i < count; i++) {
+            prog_instance_t *other = progman_get_instance(i);
+            if (other && other->module &&
+                strcmp(other->module->name, "Start Manager") == 0 &&
+                other->user_data) {
+                startman_state_t *other_state = other->user_data;
+                if (other_state->is_main_window) {
+                    main_exists = 1;
+                    break;
+                }
+            }
+        }
+
+        /* Only launch new main window if one doesn't already exist */
+        if (!main_exists) {
+            g_pending_grp_path[0] = '\0';  /* Clear to open as main window */
+            progman_launch("Start Manager");
+        }
         return PROG_EVENT_CLOSE;
     }
 
