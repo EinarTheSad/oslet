@@ -180,7 +180,7 @@ void wm_set_icon_click(window_manager_t *wm, uint32_t time, int x, int y) {
 }
 
 int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, int x, int y) {
-    if ((time - wm->last_icon_click_time) < WM_DOUBLECLICK_MS &&
+    if ((time - wm->last_icon_click_time) < WM_DOUBLECLICK_TICKS &&
         wm->last_icon_click_x == x && wm->last_icon_click_y == y) {
         return 1;
     }
