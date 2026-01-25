@@ -14,7 +14,7 @@
 #define WM_ICON_TOTAL_HEIGHT (WM_ICON_SIZE + WM_ICON_LABEL_HEIGHT + 2)  // Icon + label + spacing
 #define WM_ICON_CENTER_OFFSET ((WM_ICON_TOTAL_WIDTH - WM_ICON_SIZE) / 2)  // Offset to center icon over label
 
-#define WM_DOUBLECLICK_MS 30
+#define WM_DOUBLECLICK_TICKS 30  /* 30 ticks at 100Hz = 300ms */
 
 #define WM_MAX_WINDOWS 16
 #define WM_MAX_CONTROLS_PER_FORM 64
