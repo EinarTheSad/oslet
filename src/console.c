@@ -4,8 +4,8 @@
 #define LONG_MIN (-2147483647L - 1)
 #define LONG_MAX 2147483647L
 
-const char *kernel_version = "0.6";
-const char *shell_version = "oslet-v04";
+const char *kernel_version = "0.7";
+const char *shell_version = "";
 const char *shell_name = "SHELL.ELF"; /* This can be any program! */
 
 static const console_t* CURRENT;

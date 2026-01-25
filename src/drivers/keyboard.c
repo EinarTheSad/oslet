@@ -215,9 +215,10 @@ int kbd_getchar_nonblock(void) {
 }
 
 size_t kbd_getline(char* out, size_t maxlen) {
-    size_t n = 0;
+    size_t n = 0;       /* Length of text */
+    size_t cursor = 0;  /* Cursor position */
     if (maxlen == 0) return 0;
-    
+
     int browsing = 0;
     int browse_idx = history_count;
     char temp_buf[HISTORY_MAXLEN];
@@ -229,24 +230,29 @@ size_t kbd_getline(char* out, size_t maxlen) {
         /* Arrow UP - previous command */
         if (c == KEY_UP) {
             if (history_count == 0) continue;
-            
+
             if (!browsing) {
                 memcpy_s(temp_buf, out, n);
                 temp_buf[n] = '\0';
                 browsing = 1;
                 browse_idx = history_count;
             }
-            
+
             if (browse_idx > 0) {
                 browse_idx--;
-                
+
+                /* Move cursor to end, then clear line */
+                while (cursor < n) {
+                    putchar(out[cursor]);
+                    cursor++;
+                }
                 while (n > 0) {
                     putchar('\b');
                     putchar(' ');
                     putchar('\b');
                     n--;
                 }
-                
+
                 const char *hist = cmd_history[browse_idx];
                 n = 0;
                 while (hist[n] && n < maxlen - 1) {
@@ -255,6 +261,7 @@ size_t kbd_getline(char* out, size_t maxlen) {
                     n++;
                 }
                 out[n] = '\0';
+                cursor = n;
             }
             continue;
         }
@@ -262,17 +269,22 @@ size_t kbd_getline(char* out, size_t maxlen) {
         /* Arrow DOWN - next command */
         if (c == KEY_DOWN) {
             if (!browsing) continue;
-            
+
             if (browse_idx < history_count - 1) {
                 browse_idx++;
-                
+
+                /* Move cursor to end, then clear line */
+                while (cursor < n) {
+                    putchar(out[cursor]);
+                    cursor++;
+                }
                 while (n > 0) {
                     putchar('\b');
                     putchar(' ');
                     putchar('\b');
                     n--;
                 }
-                
+
                 const char *hist = cmd_history[browse_idx];
                 n = 0;
                 while (hist[n] && n < maxlen - 1) {
@@ -281,16 +293,22 @@ size_t kbd_getline(char* out, size_t maxlen) {
                     n++;
                 }
                 out[n] = '\0';
+                cursor = n;
             } else if (browse_idx == history_count - 1) {
                 browse_idx = history_count;
-                
+
+                /* Move cursor to end, then clear line */
+                while (cursor < n) {
+                    putchar(out[cursor]);
+                    cursor++;
+                }
                 while (n > 0) {
                     putchar('\b');
                     putchar(' ');
                     putchar('\b');
                     n--;
                 }
-                
+
                 n = 0;
                 while (temp_buf[n] && n < maxlen - 1) {
                     out[n] = temp_buf[n];
@@ -298,7 +316,67 @@ size_t kbd_getline(char* out, size_t maxlen) {
                     n++;
                 }
                 out[n] = '\0';
+                cursor = n;
                 browsing = 0;
+            }
+            continue;
+        }
+
+        /* Arrow LEFT - move cursor left */
+        if (c == KEY_LEFT) {
+            if (cursor > 0) {
+                cursor--;
+                putchar('\b');
+            }
+            continue;
+        }
+
+        /* Arrow RIGHT - move cursor right */
+        if (c == KEY_RIGHT) {
+            if (cursor < n) {
+                putchar(out[cursor]);
+                cursor++;
+            }
+            continue;
+        }
+
+        /* Home - move cursor to beginning */
+        if (c == KEY_HOME) {
+            while (cursor > 0) {
+                cursor--;
+                putchar('\b');
+            }
+            continue;
+        }
+
+        /* End - move cursor to end */
+        if (c == KEY_END) {
+            while (cursor < n) {
+                putchar(out[cursor]);
+                cursor++;
+            }
+            continue;
+        }
+
+        /* Delete - delete character at cursor */
+        if (c == KEY_DELETE) {
+            if (cursor < n) {
+                /* Shift characters left */
+                for (size_t i = cursor; i < n - 1; i++) {
+                    out[i] = out[i + 1];
+                }
+                n--;
+                out[n] = '\0';
+
+                /* Redraw from cursor to end */
+                for (size_t i = cursor; i < n; i++) {
+                    putchar(out[i]);
+                }
+                putchar(' ');  /* Clear last character */
+                /* Move cursor back to position */
+                for (size_t i = cursor; i <= n; i++) {
+                    putchar('\b');
+                }
             }
             continue;
         }
@@ -312,21 +390,53 @@ size_t kbd_getline(char* out, size_t maxlen) {
         }
 
         if (c == '\b') {
-            if (n > 0) {
-                putchar('\b');
-                putchar(' ');
-                putchar('\b');
+            if (cursor > 0) {
+                cursor--;
+                /* Shift characters left */
+                for (size_t i = cursor; i < n - 1; i++) {
+                    out[i] = out[i + 1];
+                }
                 n--;
+                out[n] = '\0';
+
+                /* Redraw from cursor to end */
+                putchar('\b');
+                for (size_t i = cursor; i < n; i++) {
+                    putchar(out[i]);
+                }
+                putchar(' ');  /* Clear last character */
+                /* Move cursor back to position */
+                for (size_t i = cursor; i <= n; i++) {
+                    putchar('\b');
+                }
             }
             continue;
         }
 
-        putchar(c);
-
-        if (c == '\n') break;
+        if (c == '\n') {
+            putchar(c);
+            break;
+        }
 
         if (n < maxlen - 1) {
-            out[n++] = (char)c;
+            /* Insert character at cursor position */
+            /* Shift characters right */
+            for (size_t i = n; i > cursor; i--) {
+                out[i] = out[i - 1];
+            }
+            out[cursor] = (char)c;
+            n++;
+            out[n] = '\0';
+
+            /* Print from cursor to end */
+            for (size_t i = cursor; i < n; i++) {
+                putchar(out[i]);
+            }
+            cursor++;
+            /* Move cursor back to position */
+            for (size_t i = cursor; i < n; i++) {
+                putchar('\b');
+            }
         } else {
             putchar('\n');
             break;
