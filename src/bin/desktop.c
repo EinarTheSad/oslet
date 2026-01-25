@@ -77,7 +77,6 @@ static void cache_wallpaper(void) {
     if (wallpaper_y < 0) wallpaper_y = 0;
 }
 
-/* Draw wallpaper from cache (fast) */
 static void draw_wallpaper(void) {
     if (!cached_wallpaper.data) return;
     sys_gfx_draw_cached(&cached_wallpaper, wallpaper_x, wallpaper_y, 0);
@@ -98,9 +97,11 @@ static int last_clock_hour = -1;
 static int last_clock_minute = -1;
 
 extern const progmod_t startman_module;
+extern const progmod_t textmode_module;
 
 static void prog_register_all(void) {
     progman_register(&startman_module);
+    progman_register(&textmode_module);
 }
 
 void draw_simple_button(int x, int y, int w, int h, const char *label, int pressed) {
@@ -202,12 +203,10 @@ static void desktop_redraw(void) {
     sys_win_redraw_all();
 }
 
-/* Fast redraw - only windows, no wallpaper (for minor visual changes) */
 static void desktop_redraw_fast(void) {
     sys_win_redraw_all();
 }
 
-/* Partial redraw - only dirty rectangle area */
 static void desktop_redraw_rect(int x, int y, int w, int h) {
     /* Clip to desktop area (above taskbar) */
     if (y + h > TASKBAR_Y) h = TASKBAR_Y - y;
@@ -227,12 +226,10 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
         int dy2 = y + h;
 
         if (x < wp_x2 && dx2 > wallpaper_x && y < wp_y2 && dy2 > wallpaper_y) {
-            /* There's overlap - redraw whole wallpaper for simplicity */
+            /* There's overlap - TODO: partial bitmap drawing */
             draw_wallpaper();
         }
     }
-
-    /* Redraw all windows (they clip themselves) */
     sys_win_redraw_all();
 }
 
@@ -284,14 +281,9 @@ void _start(void) {
     unsigned char mb;
 
     sys_gfx_enter();
-
-    /* Load desktop settings from INI file */
     load_settings();
-
-    /* Cache wallpaper in memory for fast redraws */
     cache_wallpaper();
 
-    /* Draw desktop background and wallpaper */
     sys_gfx_fillrect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, settings.color);
     draw_wallpaper();
 
