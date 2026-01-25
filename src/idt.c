@@ -75,11 +75,20 @@ void irq_invoke_from_stub(int vector) {
 void isr_common_stub(int vector, int error_code) {
     vga_set_color(12,15);
     printf("[EXCEPTION] Vector=%d Error=0x%X\n", vector, (unsigned)error_code);
+
+    /* For page fault (vector 14), show CR2 (faulting address) */
+    if (vector == 14) {
+        uint32_t cr2;
+        __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
+        printf("Page Fault at address: 0x%08X\n", cr2);
+        printf("Reason: %s, %s, %s\n",
+            (error_code & 1) ? "protection" : "not present",
+            (error_code & 2) ? "write" : "read",
+            (error_code & 4) ? "user" : "kernel");
+    }
+
     for (;;) __asm__ volatile ("hlt");
 }
-
-/* Syscall handler for int 0x80 */
-/* moved to isr.S */
 
 void idt_init(void) {
     for (int i = 0; i < 256; ++i) idt_set_entry(i, 0, 0, 0);
