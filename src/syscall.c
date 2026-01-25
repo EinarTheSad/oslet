@@ -704,6 +704,8 @@ static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
 
 static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
     if (win_is_titlebar(&form->win, mx, my)) {
+        mouse_restore();
+        mouse_invalidate_buffer();
         form->dragging = 1;
         form->drag_start_x = mx;
         form->drag_start_y = my;
@@ -1314,7 +1316,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                                     /* Check for double-click */
                                     if (form->last_icon_click_id == ctrl->id &&
-                                        (now - form->last_icon_click_time) < WM_DOUBLECLICK_MS) {
+                                        (now - form->last_icon_click_time) < WM_DOUBLECLICK_TICKS) {
                                         /* Double-click - activate the icon and deselect it */
                                         ctrl->checked = 0;
                                         form->clicked_id = ctrl->id;
@@ -1355,7 +1357,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 /* If we just finished dragging, signal full redraw needed */
                 if (was_dragging) {
-                    return (uint32_t)-2;  /* -2 = drag ended, full redraw needed */
+                    global_wm.needs_full_redraw = 1;  /* Desktop will do full redraw */
+                    return (uint32_t)-2;  /* -2 = drag ended */
                 }
             }
 
@@ -1368,8 +1371,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     win_move(&form->win, dx, dy);
                     form->drag_start_x = mx;
                     form->drag_start_y = my;
-                    /* During drag, just redraw this window (no full screen redraw) */
-                    win_draw(&form->win);
+                    /* During drag: just redraw all windows (fast), no background */
+                    wm_draw_all(&global_wm);
                     needs_redraw = 0;  /* Already drawn */
                 }
             }
@@ -1430,6 +1433,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Return -1 if visual state changed and needs redraw */
             if (needs_redraw) {
+                mouse_restore();
                 mouse_invalidate_buffer();
                 return (uint32_t)-1;
             }
@@ -1544,6 +1548,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Free form */
             kfree(form);
+
+            /* Signal desktop to do full redraw */
+            global_wm.needs_full_redraw = 1;
 
             return 0;
         }
@@ -1696,6 +1703,23 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
         case 0x10: { /* SYS_WIN_INVALIDATE_ICONS */
             wm_invalidate_icon_backgrounds(&global_wm);
+            return 0;
+        }
+
+        case 0x11: { /* SYS_WIN_CHECK_REDRAW - Check and clear full redraw flag */
+            int result = global_wm.needs_full_redraw;
+            global_wm.needs_full_redraw = 0;
+            return result;
+        }
+
+        case 0x12: { /* SYS_WIN_GET_DIRTY_RECT - Get dirty rectangle */
+            int *out = (int*)ebx;
+            if (out) {
+                out[0] = global_wm.dirty_x;
+                out[1] = global_wm.dirty_y;
+                out[2] = global_wm.dirty_w;
+                out[3] = global_wm.dirty_h;
+            }
             return 0;
         }
 

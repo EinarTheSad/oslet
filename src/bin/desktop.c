@@ -202,6 +202,40 @@ static void desktop_redraw(void) {
     sys_win_redraw_all();
 }
 
+/* Fast redraw - only windows, no wallpaper (for minor visual changes) */
+static void desktop_redraw_fast(void) {
+    sys_win_redraw_all();
+}
+
+/* Partial redraw - only dirty rectangle area */
+static void desktop_redraw_rect(int x, int y, int w, int h) {
+    /* Clip to desktop area (above taskbar) */
+    if (y + h > TASKBAR_Y) h = TASKBAR_Y - y;
+    if (y < 0) { h += y; y = 0; }
+    if (x < 0) { w += x; x = 0; }
+    if (w <= 0 || h <= 0) return;
+
+    /* Fill background color in dirty area */
+    sys_gfx_fillrect(x, y, w, h, settings.color);
+
+    /* Redraw wallpaper portion if we have one */
+    if (cached_wallpaper.data) {
+        /* Calculate overlap between dirty rect and wallpaper */
+        int wp_x2 = wallpaper_x + cached_wallpaper.width;
+        int wp_y2 = wallpaper_y + cached_wallpaper.height;
+        int dx2 = x + w;
+        int dy2 = y + h;
+
+        if (x < wp_x2 && dx2 > wallpaper_x && y < wp_y2 && dy2 > wallpaper_y) {
+            /* There's overlap - redraw whole wallpaper for simplicity */
+            draw_wallpaper();
+        }
+    }
+
+    /* Redraw all windows (they clip themselves) */
+    sys_win_redraw_all();
+}
+
 static void pump_all_program_events(int mx, int my) {
     for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
         prog_instance_t *inst = progman_get_instance(i);
@@ -229,8 +263,11 @@ static void pump_all_program_events(int mx, int my) {
                     break;
                 }
 
-                if (event == -1 || event == -2) {
-                    /* Window state changed */
+                if (event == -1) {
+                    /* Minor visual change (icon selection) - fast redraw */
+                    desktop_redraw_fast();
+                } else if (event == -2) {
+                    /* Major window state change - full redraw */
                     desktop_redraw();
                 }
             }
@@ -297,6 +334,18 @@ void _start(void) {
 
         progman_update_all();
         pump_all_program_events(mx, my);
+
+        /* Check if redraw is needed */
+        int redraw_type = sys_win_check_redraw();
+        if (redraw_type == 1) {
+            /* Full redraw (window destroyed) */
+            desktop_redraw();
+        } else if (redraw_type == 2) {
+            /* Partial redraw (window moved) */
+            int dirty[4];
+            sys_win_get_dirty_rect(dirty);
+            desktop_redraw_rect(dirty[0], dirty[1], dirty[2], dirty[3]);
+        }
 
         sys_mouse_draw_cursor(mx, my, 0);
         sys_gfx_swap();

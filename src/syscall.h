@@ -95,6 +95,8 @@ typedef rtc_time_t sys_time_t;
 #define SYS_WIN_CTRL_SET_PROP   0x0B0E
 #define SYS_WIN_CTRL_GET_PROP   0x0B0F
 #define SYS_WIN_INVALIDATE_ICONS 0x0B10
+#define SYS_WIN_CHECK_REDRAW     0x0B11
+#define SYS_WIN_GET_DIRTY_RECT   0x0B12
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -717,4 +719,18 @@ static inline void ctrl_set_visible(void *form, int16_t id, int visible) {
 static inline void sys_win_invalidate_icons(void) {
     register int dummy_eax __asm__("eax") = SYS_WIN_INVALIDATE_ICONS;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
+}
+
+/* Check if full redraw is needed (window was destroyed) - returns 1=full, 2=dirty rect */
+static inline int sys_win_check_redraw(void) {
+    register int result __asm__("eax") = SYS_WIN_CHECK_REDRAW;
+    __asm__ volatile("int $0x80" : "+r"(result) :: "memory");
+    return result;
+}
+
+/* Get dirty rectangle (x, y, w, h) */
+static inline void sys_win_get_dirty_rect(int *out) {
+    register int eax __asm__("eax") = SYS_WIN_GET_DIRTY_RECT;
+    register int ebx __asm__("ebx") = (int)out;
+    __asm__ volatile("int $0x80" : "+r"(eax) : "r"(ebx) : "memory");
 }
