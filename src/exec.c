@@ -148,7 +148,7 @@ static int apply_relocations(const void *file_data, uint32_t load_base, uint32_t
                 case R_386_NONE:
                     break;
                 default:
-                    printf("[ELF] Unknown reloc type %u\n", type);
+                    printf("Unknown reloc type %u\n", type);
                     break;
             }
         }
@@ -164,7 +164,7 @@ int exec_load(const char *path, exec_image_t *image) {
     
     fat32_file_t *f = fat32_open(path, "r");
     if (!f) {
-        printf("[ELF] Cannot open: %s\n", path);
+        printf("Cannot open: %s\n", path);
         return -1;
     }
     
@@ -184,7 +184,7 @@ int exec_load(const char *path, exec_image_t *image) {
     }
     
     if (elf_validate(file_data, file_size) != 0) {
-        printf("[ELF] Invalid ELF\n");
+        printf("Invalid ELF\n");
         kfree(file_data);
         return -1;
     }
@@ -192,7 +192,7 @@ int exec_load(const char *path, exec_image_t *image) {
     /* Allocate a slot */
     int slot = alloc_slot();
     if (slot < 0) {
-        printf("[ELF] No free slots\n");
+        printf("No free slots\n");
         kfree(file_data);
         return -1;
     }

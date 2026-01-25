@@ -29,9 +29,6 @@ uint32_t boot_device = 0xFFFFFFFF;
 static void boot_sequence(void) {
     vga_use_as_console();
     vga_reset_textmode();
-    vga_set_color(1, 15); printf("Codename osLET %s\n", kernel_version);
-    vga_set_color(0, 7);
-    printf("Starting boot sequence...\n\n");
     
     typedef struct {
         uint32_t flags;
@@ -94,7 +91,7 @@ static void boot_sequence(void) {
         vga_set_color(0, 12);
         printf("FAIL");
         vga_set_color(0, 7);
-        printf(" ] Paging error, system halt!\n");
+        printf("] Paging error         \n");
         for (;;) __asm__ volatile ("hlt");
     }
     
@@ -142,33 +139,37 @@ static void boot_sequence(void) {
     printf("OK");
     vga_set_color(0, 7);
     printf(" ] Multitasking\n");
+
+    vga_set_color(0, 8);
+    printf("[ .. ] Attempting to identify drive C...");
     
     if (ata_identify() == 0) {
         // Give drive time to settle after IDENTIFY
-        for (volatile int i = 0; i < 100000; i++);
-
+        for (volatile int i = 0; i < 1000; i++);
         vga_set_color(0, 8);
-        printf("[ .. ] Attempting to auto-mount drive C...\n");
+        printf("\r[ .. ] Attempting to auto-mount drive C...");
         vga_set_color(0, 7);
         if (fat32_mount_auto('C') == 0) {
-            printf("[");
+            printf("\r[");
             vga_set_color(0, 10);
             printf(" OK");
             vga_set_color(0, 7);
-            printf(" ] Mounted drive C\n");
+            printf(" ] Mounted drive C                       \n");
         } else {
-            printf("[");
+            printf("\r[");
             vga_set_color(0, 12);
             printf("FAIL");
             vga_set_color(0, 7);
-            printf("] No filesystem!\n");
+            printf("] No filesystem!                         \n");
+            for (;;) __asm__ volatile ("hlt");
         }
     } else {
-        printf("[");
+        printf("\r[");
         vga_set_color(0, 12);
         printf("FAIL");
         vga_set_color(0, 7);
-        printf("] No ATA drive detected\n");
+        printf("] No ATA drive detected                      \n");
+        for (;;) __asm__ volatile ("hlt");
     }
 
     win_init_fonts();
@@ -192,7 +193,6 @@ static void boot_sequence(void) {
 void kmain(void) {
     boot_sequence();
     shell_init();
-    shell_run();
     
     for (;;) __asm__ volatile ("hlt");
 }

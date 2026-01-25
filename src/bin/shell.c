@@ -97,14 +97,6 @@ static int sys_stat(const char *path, sys_dirent_t *entry) {
     return -1;
 }
 
-static void str_toupper(char *str) {
-    while (*str) {
-        if (*str >= 'a' && *str <= 'z')
-            *str = *str - 32;
-        str++;
-    }
-}
-
 static int compare_entries(const void *a, const void *b) {
     const sys_dirent_t *ea = (const sys_dirent_t*)a;
     const sys_dirent_t *eb = (const sys_dirent_t*)b;
@@ -556,9 +548,7 @@ static void cmd_cp(int argc, char *argv[]) {
         }
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
     } else {
-        sys_setcolor(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
-        printf("Copied %d bytes: %s -> %s\n", result, src, dst);
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        printf("Copied %d bytes\n", result);
     }
 }
 
@@ -618,7 +608,7 @@ static void cmd_mv(int argc, char *argv[]) {
     }
 
     sys_setcolor(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
-    printf("Moved: %s -> %s\n", src, dst);
+    printf("Moved %d bytes\n", result);
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
 }
 
@@ -684,10 +674,6 @@ static void cmd_ren(int argc, char *argv[]) {
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         return;
     }
-
-    sys_setcolor(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
-    printf("Renamed: %s -> %s\n", oldname, newname);
-    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
 }
 
 static void cmd_cat(int argc, char *argv[]) {
@@ -775,6 +761,8 @@ static void cmd_cat(int argc, char *argv[]) {
         printf("No files match pattern '%s'\n", pattern);
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
     }
+
+    printf("\n");
 }
 
 static void cmd_cd(int argc, char *argv[]) {
@@ -1044,6 +1032,8 @@ static void cmd_rmdir(int argc, char *argv[]) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
         printf("Error: cannot remove directory '%s'\n", argv[1]);
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+    } else {
+        printf("Deleted: %s\n", argv[1]);
     }
 }
 
