@@ -827,22 +827,37 @@ void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int des
     if (dirty_x1 >= GFX_WIDTH) dirty_x1 = GFX_WIDTH - 1;
     if (dirty_y1 >= GFX_HEIGHT) dirty_y1 = GFX_HEIGHT - 1;
 
-    for (int y = 0; y < height; y++) {
-        int screen_y = dest_y + y;
+    int src_row_bytes = (width + 1) / 2;
 
-        if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
+    /* Fast path: no transparency, aligned coordinates, fully on screen */
+    if (!transparent && (dest_x & 1) == 0 && dest_x >= 0 && dest_x + width <= GFX_WIDTH) {
+        int dest_byte_x = dest_x / 2;
+        for (int y = 0; y < height; y++) {
+            int screen_y = dest_y + y;
+            if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
 
-        int src_offset = y * ((width + 1) / 2);
+            uint8_t *src = cached_data + y * src_row_bytes;
+            uint8_t *dst = backbuffer + screen_y * (GFX_WIDTH / 2) + dest_byte_x;
+            memcpy_s(dst, src, src_row_bytes);
+        }
+    } else {
+        /* Slow path: pixel-by-pixel for transparency or unaligned */
+        for (int y = 0; y < height; y++) {
+            int screen_y = dest_y + y;
+            if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
 
-        for (int x = 0; x < width; x++) {
-            int byte_idx = x / 2;
-            uint8_t pixel = (x & 1) ? (cached_data[src_offset + byte_idx] & 0x0F) : (cached_data[src_offset + byte_idx] >> 4);
+            int src_offset = y * src_row_bytes;
 
-            int screen_x = dest_x + x;
+            for (int x = 0; x < width; x++) {
+                int byte_idx = x / 2;
+                uint8_t pixel = (x & 1) ? (cached_data[src_offset + byte_idx] & 0x0F) : (cached_data[src_offset + byte_idx] >> 4);
 
-            /* Skip transparent pixels (color index 5) only if transparency enabled */
-            if (screen_x >= 0 && screen_x < GFX_WIDTH && (!transparent || pixel != 5)) {
-                putpixel_raw(screen_x, screen_y, pixel);
+                int screen_x = dest_x + x;
+
+                /* Skip transparent pixels (color index 5) only if transparency enabled */
+                if (screen_x >= 0 && screen_x < GFX_WIDTH && (!transparent || pixel != 5)) {
+                    putpixel_raw(screen_x, screen_y, pixel);
+                }
             }
         }
     }

@@ -21,6 +21,8 @@ typedef struct {
     int last_icon_click_y;
     icon_slot_t free_slots[WM_MAX_FREE_SLOTS];  // Pool of free icon slots
     int free_slot_count;                         // Number of available free slots
+    int needs_full_redraw;                       // Flag: desktop should do full redraw
+    int dirty_x, dirty_y, dirty_w, dirty_h;      // Dirty rectangle for partial redraw
 } window_manager_t;
 
 void wm_init(window_manager_t *wm);
