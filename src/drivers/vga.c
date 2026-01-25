@@ -232,7 +232,6 @@ static void vga_putc_internal(char c) {
         case '\b':
             if (cx > 0) {
                 cx--;
-                put_at(' ', cx, cy);
             }
             break;
 
