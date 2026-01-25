@@ -2,7 +2,6 @@
 #include "progman.h"
 #include "../syscall.h"
 #include "../lib/string.h"
-#include "../lib/ini.h"
 
 #define CTRL_APP_BASE 100
 #define CTRL_BACK_BUTTON 99
@@ -18,21 +17,18 @@
 #define WIN_X 65
 #define WIN_Y 80
 
-#define INI_PATH "C:/OSLET/START/STARTMAN.INI"
 #define MAIN_GRP_PATH "C:/OSLET/START/MAIN.GRP"
 #define MAX_APPS 32
 
-/* Entry types */
 #define ENTRY_ELF 0
 #define ENTRY_GRP 1
+#define ENTRY_MODULE 2
 
-/* App entry from filesystem scan */
 typedef struct {
-    char name[32];       /* Display name (without extension) */
-    char path[64];       /* Full path to ELF or GRP */
-    char elf_name[32];   /* Original filename (uppercase) for INI lookup */
-    char icon_path[64];  /* Icon path from INI or default */
-    int type;            /* ENTRY_ELF or ENTRY_GRP */
+    char name[32];       /* Display name */
+    char path[64];       /* Full path to ELF/GRP or module name */
+    char icon_path[64];  /* Icon path (from GRP or default) */
+    int type;            /* ENTRY_ELF, ENTRY_GRP, or ENTRY_MODULE */
 } app_entry_t;
 
 typedef struct {
@@ -40,7 +36,7 @@ typedef struct {
     int app_count;
     app_entry_t apps[MAX_APPS];
     char grp_path[64];
-    int is_main_window;  /* 1 if this is the main Start Manager window */
+    int is_main_window;
 } startman_state_t;
 
 static char g_pending_grp_path[64] = {0};
@@ -76,32 +72,6 @@ static void title_case(char *dst, const char *src, int max_len) {
     dst[i] = '\0';
 }
 
-static int parse_ini(const char *elf_name, char *icon_path, int max_len) {
-    int fd = sys_open(INI_PATH, "r");
-    if (fd < 0)
-        return 0;
-
-    char buf[512];
-    int bytes = sys_read(fd, buf, sizeof(buf) - 1);
-    sys_close(fd);
-
-    if (bytes <= 0)
-        return 0;
-
-    buf[bytes] = '\0';
-
-    ini_parser_t ini;
-    ini_init(&ini, buf);
-
-    const char *val = ini_get(&ini, "ICONS", elf_name);
-    if (val) {
-        strncpy(icon_path, val, max_len - 1);
-        icon_path[max_len - 1] = '\0';
-        return 1;
-    }
-    return 0;
-}
-
 static int is_grp_file(const char *name) {
     int len = strlen(name);
     if (len < 5) return 0;  /* Need at least "x.grp" */
@@ -113,13 +83,6 @@ static int is_grp_file(const char *name) {
             (ext[3] == 'P' || ext[3] == 'p'));
 }
 
-static void elf_to_upper(char *dst, const char *src, int max_len) {
-    strncpy(dst, src, max_len - 1);
-    dst[max_len - 1] = '\0';
-    str_toupper(dst);
-}
-
-/* Simple bubble sort for app entries (alphabetical by display name) */
 static void sort_apps(app_entry_t *apps, int count) {
     for (int i = 0; i < count - 1; i++) {
         for (int j = 0; j < count - i - 1; j++) {
@@ -132,7 +95,6 @@ static void sort_apps(app_entry_t *apps, int count) {
     }
 }
 
-/* Extract filename from path for display */
 static void extract_filename(char *dst, const char *path, int max_len) {
     const char *last_slash = path;
     const char *p = path;
@@ -149,8 +111,13 @@ static void extract_filename(char *dst, const char *path, int max_len) {
     dst[max_len - 1] = '\0';
 }
 
-/* Parse GRP file and load entries
- * GRP format: one path per line (ELF or GRP files)
+/* GRP format: one entry per line
+ *   C:/PATH/FILE.ELF              - ELF with default icon
+ *   C:/PATH/FILE.ELF|C:/ICON.ICO  - ELF with custom icon
+ *   C:/PATH/FILE.GRP              - GRP with default icon
+ *   C:/PATH/FILE.GRP|C:/ICON.ICO  - GRP with custom icon
+ *   !ModuleName                   - Internal module with default icon
+ *   !ModuleName|C:/ICON.ICO       - Internal module with custom icon
  * Lines starting with ; or # are comments
  * Empty lines are ignored
  */
@@ -186,17 +153,17 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
             continue;
         }
 
-        /* Extract path until end of line */
-        char path[64];
+        /* Extract entry until end of line */
+        char entry[128];
         int i = 0;
-        while (*line && *line != '\r' && *line != '\n' && i < 63) {
-            path[i++] = *line++;
+        while (*line && *line != '\r' && *line != '\n' && i < 127) {
+            entry[i++] = *line++;
         }
-        path[i] = '\0';
+        entry[i] = '\0';
 
         /* Trim trailing whitespace */
-        while (i > 0 && (path[i-1] == ' ' || path[i-1] == '\t'))
-            path[--i] = '\0';
+        while (i > 0 && (entry[i-1] == ' ' || entry[i-1] == '\t'))
+            entry[--i] = '\0';
 
         /* Skip to next line */
         while (*line && *line != '\n')
@@ -207,35 +174,67 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
         if (i == 0)
             continue;
 
-        /* Determine entry type and add to list */
+        /* Parse entry: split by | for optional icon path */
         app_entry_t *app = &state->apps[app_count];
-        strcpy(app->path, path);
+        char *pipe = strchr(entry, '|');
+        char path_part[64];
+        char icon_part[64] = {0};
 
-        /* Extract filename for INI lookup */
-        char filename[32];
-        extract_filename(filename, path, sizeof(filename));
-        elf_to_upper(app->elf_name, filename, sizeof(app->elf_name));
-
-        /* Extract display name (remove extension, apply title case) */
-        char raw_name[32];
-        int name_len = strlen(filename);
-        if (name_len > 4)
-            name_len -= 4;  /* Remove .ELF or .GRP */
-        if (name_len >= (int)sizeof(raw_name))
-            name_len = sizeof(raw_name) - 1;
-        for (int j = 0; j < name_len; j++)
-            raw_name[j] = filename[j];
-        raw_name[name_len] = '\0';
-        title_case(app->name, raw_name, sizeof(app->name));
-
-        /* Set type and icon */
-        if (is_grp_file(filename)) {
-            app->type = ENTRY_GRP;
-            strcpy(app->icon_path, "C:/ICONS/GROUP.ICO");
+        if (pipe) {
+            int path_len = pipe - entry;
+            if (path_len >= (int)sizeof(path_part))
+                path_len = sizeof(path_part) - 1;
+            strncpy(path_part, entry, path_len);
+            path_part[path_len] = '\0';
+            strncpy(icon_part, pipe + 1, sizeof(icon_part) - 1);
         } else {
-            app->type = ENTRY_ELF;
-            if (!parse_ini(app->elf_name, app->icon_path, sizeof(app->icon_path))) {
+            strncpy(path_part, entry, sizeof(path_part) - 1);
+            path_part[sizeof(path_part) - 1] = '\0';
+        }
+
+        /* Determine entry type */
+        if (path_part[0] == '!') {
+            /* Internal module */
+            app->type = ENTRY_MODULE;
+            strncpy(app->name, path_part + 1, sizeof(app->name) - 1);
+            app->name[sizeof(app->name) - 1] = '\0';
+            strcpy(app->path, app->name);
+            if (icon_part[0])
+                strcpy(app->icon_path, icon_part);
+            else
                 strcpy(app->icon_path, "C:/ICONS/EXE.ICO");
+        } else {
+            /* File path - extract filename for display name */
+            strcpy(app->path, path_part);
+
+            char filename[32];
+            extract_filename(filename, path_part, sizeof(filename));
+
+            /* Build display name (remove extension, apply title case) */
+            char raw_name[32];
+            int name_len = strlen(filename);
+            if (name_len > 4)
+                name_len -= 4;  /* Remove .ELF or .GRP */
+            if (name_len >= (int)sizeof(raw_name))
+                name_len = sizeof(raw_name) - 1;
+            for (int j = 0; j < name_len; j++)
+                raw_name[j] = filename[j];
+            raw_name[name_len] = '\0';
+            title_case(app->name, raw_name, sizeof(app->name));
+
+            /* Set type and default icon */
+            if (is_grp_file(filename)) {
+                app->type = ENTRY_GRP;
+                if (icon_part[0])
+                    strcpy(app->icon_path, icon_part);
+                else
+                    strcpy(app->icon_path, "C:/ICONS/GROUP.ICO");
+            } else {
+                app->type = ENTRY_ELF;
+                if (icon_part[0])
+                    strcpy(app->icon_path, icon_part);
+                else
+                    strcpy(app->icon_path, "C:/ICONS/EXE.ICO");
             }
         }
 
@@ -247,7 +246,6 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
     return app_count;
 }
 
-/* Open a new group window */
 static void open_group_window(const char *grp_path, const char *parent_grp);
 
 static int startman_init(prog_instance_t *inst) {
@@ -419,6 +417,9 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
             if (app->type == ENTRY_GRP) {
                 /* Open group in new window */
                 open_group_window(app->path, state->grp_path);
+            } else if (app->type == ENTRY_MODULE) {
+                /* Launch internal module */
+                progman_launch(app->path);
             } else {
                 /* Launch ELF */
                 sys_spawn_async(app->path);

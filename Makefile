@@ -141,7 +141,6 @@ binstall:
 	if ls $(APPS)/*.elf 1>/dev/null 2>&1; then \
 		sudo cp $(APPS)/*.elf mnt/OSLET/START/; \
 	fi; \
-	sudo cp $(BIN)/startman.ini mnt/OSLET/START/;
 	sudo cp $(BIN)/system.ini mnt/OSLET/; \
 	sudo cp $(APPS)/*.grp mnt/OSLET/START/; \
 	sudo umount mnt; \
@@ -160,7 +159,7 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BINCFLAGS) -c $< -o $@
 
-DESKTOP_SRCS := $(BIN)/desktop.c $(BIN)/progman.c $(BIN)/startman.c
+DESKTOP_SRCS := $(BIN)/desktop.c $(BIN)/progman.c $(BIN)/startman.c $(BIN)/textmode.c
 DESKTOP_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(DESKTOP_SRCS))
 
 $(BIN)/desktop.elf: $(DESKTOP_OBJS) $(LIB_OBJS)
