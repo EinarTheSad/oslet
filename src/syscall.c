@@ -650,7 +650,7 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
     uint32_t current_time = timer_get_ticks();
 
     if (win_is_icon_clicked(&form->win, mx, my)) {
-        if (wm_is_icon_doubleclick(&global_wm, current_time, mx, my)) {
+        if (wm_is_icon_doubleclick(&global_wm, current_time, form)) {
             /* Double-click - restore window */
             /* Release icon slot for reuse before restoring */
             if (form->win.minimized_icon) {
@@ -663,15 +663,20 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
             wm_bring_to_front(&global_wm, form);
             return 2;  /* Window restored */
         } else {
-            /* Single click - select this icon, deselect others */
+            /* Single click - select this icon, prepare for potential drag */
             /* Invalidate cursor buffer to prevent artifacts */
             mouse_invalidate_buffer();
 
             pump_deselect_all_icons(&global_wm);
             if (form->win.minimized_icon) {
                 icon_set_selected(form->win.minimized_icon, 1);
+                /* Record mouse position for drag detection (don't start drag yet) */
+                form->win.minimized_icon->drag_offset_x = mx;
+                form->win.minimized_icon->drag_offset_y = my;
+                form->win.minimized_icon->original_x = form->win.minimized_icon->x;
+                form->win.minimized_icon->original_y = form->win.minimized_icon->y;
             }
-            wm_set_icon_click(&global_wm, current_time, mx, my);
+            wm_set_icon_click(&global_wm, current_time, form);
             return 1;  /* Selection changed, needs redraw */
         }
     }
@@ -1239,10 +1244,25 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Handle mouse button release */
             if (button_released) {
-                /* End dragging - signal full redraw needed */
+                /* End window dragging - signal full redraw needed */
                 int was_dragging = form->dragging;
                 if (form->dragging) {
                     form->dragging = 0;
+                }
+
+                /* End icon dragging - snap to slot */
+                int was_icon_dragging = 0;
+                if (form->win.is_minimized && form->win.minimized_icon &&
+                    form->win.minimized_icon->dragging) {
+                    was_icon_dragging = 1;
+                    icon_t *icon = form->win.minimized_icon;
+
+                    /* Calculate snapped position */
+                    int snap_x, snap_y;
+                    wm_snap_to_slot(icon->x, icon->y, &snap_x, &snap_y);
+
+                    /* End drag and move to snapped position */
+                    icon_end_drag(icon, snap_x, snap_y);
                 }
 
                 /* Check if release is on the same control that was pressed */
@@ -1356,14 +1376,37 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* Clear press state after release */
                 form->press_control_id = -1;
 
-                /* If we just finished dragging, signal full redraw needed */
-                if (was_dragging) {
+                /* If we just finished dragging (window or icon), signal full redraw needed */
+                if (was_dragging || was_icon_dragging) {
                     global_wm.needs_full_redraw = 1;  /* Desktop will do full redraw */
                     return (uint32_t)-2;  /* -2 = drag ended */
                 }
             }
 
-            /* Handle active dragging */
+            /* Handle icon dragging (start drag after threshold, update during drag) */
+            if (form->win.is_minimized && form->win.minimized_icon &&
+                form->win.minimized_icon->selected && (mb & 1)) {
+                icon_t *icon = form->win.minimized_icon;
+
+                if (!icon->dragging) {
+                    /* Check if mouse moved enough to start dragging (threshold: 4px) */
+                    int dx = mx - icon->drag_offset_x;
+                    int dy = my - icon->drag_offset_y;
+                    if (dx * dx + dy * dy > 16) {  /* 4^2 = 16 */
+                        icon_start_drag(icon, icon->drag_offset_x, icon->drag_offset_y);
+                        icon_update_drag(icon, mx, my);
+                        wm_draw_all(&global_wm);
+                        needs_redraw = 0;
+                    }
+                } else {
+                    /* Continue dragging */
+                    icon_update_drag(icon, mx, my);
+                    wm_draw_all(&global_wm);
+                    needs_redraw = 0;
+                }
+            }
+
+            /* Handle active window dragging */
             if (form->dragging && (mb & 1)) {
                 int dx = mx - form->drag_start_x;
                 int dy = my - form->drag_start_y;

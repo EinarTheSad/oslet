@@ -104,7 +104,7 @@ static void prog_register_all(void) {
     progman_register(&textmode_module);
 }
 
-void draw_simple_button(int x, int y, int w, int h, const char *label, int pressed) {
+void start_button_draw(int x, int y, int w, int h, const char *label, int pressed) {
     uint8_t shad_a, shad_b;
 
     sys_gfx_rect(x, y, w, h, COLOR_BLACK);
@@ -142,6 +142,8 @@ static void start_init(void) {
 static void clock_draw(void) {
     sys_get_time(&current);
     sys_gfx_rect(640-60, TASKBAR_Y + 3, 57, 21, COLOR_DARK_GRAY);
+    sys_gfx_line(640-59, TASKBAR_Y + 23, 640-4, TASKBAR_Y + 23, COLOR_WHITE);
+    sys_gfx_line(640-4, TASKBAR_Y + 4, 640-4, TASKBAR_Y + 23, COLOR_WHITE);
     sys_gfx_fillrect(640-59, TASKBAR_Y + 4, 55, 19, COLOR_LIGHT_GRAY);
     usr_bmf_printf(640-38, TASKBAR_Y + 10, &font_n, 12, COLOR_BLACK, "%02u:%02u", current.hour, current.minute);
     last_clock_hour = current.hour;
@@ -161,7 +163,7 @@ static void taskbar_draw(void) {
     sys_gfx_fillrect(0, TASKBAR_Y, 640, TASKBAR_HEIGHT, COLOR_LIGHT_GRAY);
     sys_gfx_line(0, TASKBAR_Y, 640, TASKBAR_Y, COLOR_WHITE);
 
-    draw_simple_button(start_button.x, start_button.y,
+    start_button_draw(start_button.x, start_button.y,
                       start_button.w, start_button.h,
                       "Start", start_button.pressed);
 }

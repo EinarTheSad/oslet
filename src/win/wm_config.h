@@ -14,6 +14,10 @@
 #define WM_ICON_TOTAL_HEIGHT (WM_ICON_SIZE + WM_ICON_LABEL_HEIGHT + 2)  // Icon + label + spacing
 #define WM_ICON_CENTER_OFFSET ((WM_ICON_TOTAL_WIDTH - WM_ICON_SIZE) / 2)  // Offset to center icon over label
 
+// Icon slot grid spacing (must be >= TOTAL dimensions to prevent overlap)
+#define WM_ICON_SLOT_WIDTH  (WM_ICON_TOTAL_WIDTH + 8)   // 56px horizontal spacing
+#define WM_ICON_SLOT_HEIGHT (WM_ICON_TOTAL_HEIGHT + 8)  // 66px vertical spacing
+
 #define WM_DOUBLECLICK_TICKS 30  /* 30 ticks at 100Hz = 300ms */
 
 #define WM_MAX_WINDOWS 16

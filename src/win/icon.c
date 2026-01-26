@@ -123,6 +123,11 @@ void icon_create(icon_t *icon, int x, int y, const char *label, const char *bitm
     icon->saved_bg = NULL;
     icon->selected = 0;
     icon->user_data = NULL;
+    icon->dragging = 0;
+    icon->drag_offset_x = 0;
+    icon->drag_offset_y = 0;
+    icon->original_x = x;
+    icon->original_y = y;
 
     if (label) {
         strcpy_s(icon->label, label, 64);
@@ -315,4 +320,49 @@ void icon_invalidate_bg(icon_t *icon) {
 int icon_get_height(icon_t *icon) {
     if (!icon) return WM_ICON_TOTAL_HEIGHT;
     return icon->height;
+}
+
+void icon_start_drag(icon_t *icon, int mouse_x, int mouse_y) {
+    if (!icon) return;
+
+    icon->dragging = 1;
+    icon->drag_offset_x = mouse_x - icon->x;
+    icon->drag_offset_y = mouse_y - icon->y;
+    icon->original_x = icon->x;
+    icon->original_y = icon->y;
+}
+
+void icon_update_drag(icon_t *icon, int mouse_x, int mouse_y) {
+    if (!icon || !icon->dragging) return;
+
+    int new_x = mouse_x - icon->drag_offset_x;
+    int new_y = mouse_y - icon->drag_offset_y;
+
+    /* Clamp to screen bounds (leave room for taskbar) */
+    if (new_x < 0) new_x = 0;
+    if (new_y < 0) new_y = 0;
+    if (new_x > 640 - WM_ICON_TOTAL_WIDTH) new_x = 640 - WM_ICON_TOTAL_WIDTH;
+    if (new_y > 480 - 27 - icon->height) new_y = 480 - 27 - icon->height;
+
+    if (new_x != icon->x || new_y != icon->y) {
+        icon_move(icon, new_x, new_y);
+    }
+}
+
+void icon_end_drag(icon_t *icon, int new_x, int new_y) {
+    if (!icon) return;
+
+    icon->dragging = 0;
+    icon_move(icon, new_x, new_y);
+    /* Update original position to new snapped position */
+    icon->original_x = new_x;
+    icon->original_y = new_y;
+}
+
+void icon_cancel_drag(icon_t *icon) {
+    if (!icon) return;
+
+    icon->dragging = 0;
+    /* Move back to original position */
+    icon_move(icon, icon->original_x, icon->original_y);
 }

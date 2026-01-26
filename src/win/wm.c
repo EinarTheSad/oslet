@@ -9,8 +9,7 @@ void wm_init(window_manager_t *wm) {
     wm->next_icon_y = WM_ICON_MARGIN;
     wm->next_icon_column = 0;
     wm->last_icon_click_time = 0;
-    wm->last_icon_click_x = 0;
-    wm->last_icon_click_y = 0;
+    wm->last_icon_click_form = NULL;
     wm->free_slot_count = 0;
 
     for (int i = 0; i < WM_MAX_WINDOWS; i++) {
@@ -150,11 +149,11 @@ void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
 
     // No free slots - allocate a new position
     // Calculate X based on column (vertical stacking from left side)
-    *out_x = WM_ICON_MARGIN + (wm->next_icon_column * (WM_ICON_SIZE + 8));
+    *out_x = WM_ICON_MARGIN + (wm->next_icon_column * WM_ICON_SLOT_WIDTH);
     *out_y = wm->next_icon_y;
 
     // Advance position for next icon (vertical layout)
-    wm->next_icon_y += WM_ICON_TOTAL_HEIGHT + 10;
+    wm->next_icon_y += WM_ICON_SLOT_HEIGHT;
 
     // Check if we need to wrap to next column (accounting for taskbar at bottom)
     // Leave space for taskbar plus margin
@@ -173,15 +172,14 @@ void wm_release_icon_slot(window_manager_t *wm, int x, int y) {
     }
 }
 
-void wm_set_icon_click(window_manager_t *wm, uint32_t time, int x, int y) {
+void wm_set_icon_click(window_manager_t *wm, uint32_t time, gui_form_t *form) {
     wm->last_icon_click_time = time;
-    wm->last_icon_click_x = x;
-    wm->last_icon_click_y = y;
+    wm->last_icon_click_form = form;
 }
 
-int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, int x, int y) {
+int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, gui_form_t *form) {
     if ((time - wm->last_icon_click_time) < WM_DOUBLECLICK_TICKS &&
-        wm->last_icon_click_x == x && wm->last_icon_click_y == y) {
+        wm->last_icon_click_form == form) {
         return 1;
     }
     return 0;
@@ -194,4 +192,29 @@ void wm_invalidate_icon_backgrounds(window_manager_t *wm) {
             icon_invalidate_bg(form->win.minimized_icon);
         }
     }
+}
+
+void wm_snap_to_slot(int x, int y, int *out_x, int *out_y) {
+    int taskbar_height = 27;
+
+    /* Calculate nearest column and row */
+    int col = (x - WM_ICON_MARGIN + WM_ICON_SLOT_WIDTH / 2) / WM_ICON_SLOT_WIDTH;
+    int row = (y - WM_ICON_MARGIN + WM_ICON_SLOT_HEIGHT / 2) / WM_ICON_SLOT_HEIGHT;
+
+    /* Clamp to valid range */
+    if (col < 0) col = 0;
+    if (row < 0) row = 0;
+
+    /* Calculate snapped position */
+    *out_x = WM_ICON_MARGIN + col * WM_ICON_SLOT_WIDTH;
+    *out_y = WM_ICON_MARGIN + row * WM_ICON_SLOT_HEIGHT;
+
+    /* Ensure icon stays within desktop bounds (above taskbar) */
+    int max_x = WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH - WM_ICON_MARGIN;
+    int max_y = WM_SCREEN_HEIGHT - taskbar_height - WM_ICON_TOTAL_HEIGHT - WM_ICON_MARGIN;
+
+    if (*out_x > max_x) *out_x = max_x;
+    if (*out_y > max_y) *out_y = max_y;
+    if (*out_x < WM_ICON_MARGIN) *out_x = WM_ICON_MARGIN;
+    if (*out_y < WM_ICON_MARGIN) *out_y = WM_ICON_MARGIN;
 }
