@@ -143,8 +143,8 @@ void idt_init(void) {
     idt_set_entry(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_entry(47, (uint32_t)irq15, 0x08, 0x8E);
 
-    /* Syscall gate for task switching (int 0x80) */
-    idt_set_entry(0x80, (uint32_t)syscall_handler_idt, 0x08, 0x8E);
+    /* Syscall gate (int 0x80) - DPL=3 so user-mode can call it */
+    idt_set_entry(0x80, (uint32_t)syscall_handler_idt, 0x08, 0xEE);
     irq_install_handler(12, mouse_handler);
 
     load_idt();
