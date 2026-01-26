@@ -175,7 +175,7 @@ static inline void move_hw_cursor(void) {
 
 static inline void put_at(char c, int x, int y) {
     if ((unsigned)x < VGA_WIDTH && (unsigned)y < VGA_HEIGHT) {
-        VGA[y * VGA_WIDTH + x] = (uint16_t)c | ((uint16_t)vga_color << 8);
+        VGA[y * VGA_WIDTH + x] = (uint16_t)(uint8_t)c | ((uint16_t)vga_color << 8);
     }
 }
 

@@ -61,7 +61,7 @@ typedef struct {
     const char *title;
     char hotkey;
     int x_pos;
-} menu_item_t;
+} edit_menu_item_t;
 
 typedef struct {
     const char *text;
@@ -81,7 +81,7 @@ static int redo_top = -1;
 static int typing_batch = 0; /* 1 if currently in typing session */
 
 /* Menus */
-static menu_item_t menus[] = {
+static edit_menu_item_t menus[] = {
     {"File",   'F', 1},
     {"Edit",   'E', 7},
     {"Help",   'H', 13},
@@ -829,7 +829,6 @@ static void show_dropdown(int menu_idx) {
             break;
         } else if (ch == '\n' || ch == '\r') {
             /* Execute selected item */
-            int key = items[selected].key_code;
             draw_all();
             
             /* Handle action */

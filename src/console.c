@@ -92,6 +92,81 @@ char toupper_s(char c) {
     return (c >= 'a' && c <= 'z') ? c - 32 : c;
 }
 
+/* UTF-8 to CP437 conversion for box drawing and block characters */
+static uint8_t utf8_to_cp437(uint8_t b2, uint8_t b3) {
+    if (b2 == 0x94) {
+        switch (b3) {
+            case 0x80: return 0xC4;  /* ─ */
+            case 0x82: return 0xB3;  /* │ */
+            case 0x8C: return 0xDA;  /* ┌ */
+            case 0x90: return 0xBF;  /* ┐ */
+            case 0x94: return 0xC0;  /* └ */
+            case 0x98: return 0xD9;  /* ┘ */
+            case 0x9C: return 0xC3;  /* ├ */
+            case 0xA4: return 0xB4;  /* ┤ */
+            case 0xAC: return 0xC2;  /* ┬ */
+            case 0xB4: return 0xC1;  /* ┴ */
+            case 0xBC: return 0xC5;  /* ┼ */
+        }
+    } else if (b2 == 0x95) {
+        switch (b3) {
+            case 0x90: return 0xCD;  /* ═ */
+            case 0x91: return 0xBA;  /* ║ */
+            case 0x94: return 0xC9;  /* ╔ */
+            case 0x97: return 0xBB;  /* ╗ */
+            case 0x9A: return 0xC8;  /* ╚ */
+            case 0x9D: return 0xBC;  /* ╝ */
+        }
+    } else if (b2 == 0x96) {
+        switch (b3) {
+            case 0x80: return 0xDF;  /* ▀ */
+            case 0x84: return 0xDC;  /* ▄ */
+            case 0x88: return 0xDB;  /* █ */
+            case 0x8C: return 0xDD;  /* ▌ */
+            case 0x90: return 0xDE;  /* ▐ */
+            case 0x91: return 0xB0;  /* ░ */
+            case 0x92: return 0xB1;  /* ▒ */
+            case 0x93: return 0xB2;  /* ▓ */
+        }
+    }
+    return 0;
+}
+
+/* UTF-8 aware emit - buffers E2 xx xx sequences */
+static uint8_t utf8_buf[3];
+static int utf8_pos = 0;
+
+static void emit_console_utf8(char ch, void* user) {
+    uint8_t c = (uint8_t)ch;
+
+    if (utf8_pos == 0 && c == 0xE2) {
+        utf8_buf[utf8_pos++] = c;
+        return;
+    }
+
+    if (utf8_pos == 1) {
+        utf8_buf[utf8_pos++] = c;
+        return;
+    }
+
+    if (utf8_pos == 2) {
+        utf8_buf[utf8_pos] = c;
+        uint8_t cp437 = utf8_to_cp437(utf8_buf[1], utf8_buf[2]);
+        utf8_pos = 0;
+        if (cp437 != 0) {
+            emit_console((char)cp437, user);
+        } else {
+            /* Unknown sequence - emit original bytes */
+            emit_console((char)utf8_buf[0], user);
+            emit_console((char)utf8_buf[1], user);
+            emit_console((char)utf8_buf[2], user);
+        }
+        return;
+    }
+
+    emit_console(ch, user);
+}
+
 /* Supports: %c %s %d %u %x %X %p %% with width/zero-pad basics */
 int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
     int written = 0;
@@ -284,7 +359,8 @@ int puts(const char* s) {
 int vprintf(const char* fmt, va_list ap) {
     if (!CURRENT) return -1;
     va_list cp; va_copy(cp, ap);
-    int n = kvprintf(fmt, cp, emit_console, NULL);
+    utf8_pos = 0;  /* Reset UTF-8 buffer */
+    int n = kvprintf(fmt, cp, emit_console_utf8, NULL);
     va_end(cp);
     return n;
 }

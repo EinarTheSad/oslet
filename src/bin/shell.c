@@ -22,7 +22,7 @@
 
 #define printf paged_printf
 
-const char *shell_version = "oslet-v05";
+const char *shell_version = "oslet-v05.5";
 
 static int pager_enabled = 0;
 static int pager_line_count = 0;
@@ -63,6 +63,8 @@ static int paged_printf(const char *fmt, ...) {
     int len = vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
     buf[sizeof(buf) - 1] = '\0';
+    size_t slen = strlen(buf);
+    utf8_to_cp437_string(buf, slen);
     paged_write(buf);
     return len;
 }
@@ -242,7 +244,7 @@ void _start(void) {
         print_prompt();
         int n = sys_readline(line, sizeof(line));
         if (n <= 0) {
-            __asm__ volatile ("hlt");
+            sys_yield();
             continue;
         }
         
@@ -412,7 +414,7 @@ static void cmd_exit(int argc, char *argv[]) {
 
 static void cmd_mem(int argc, char *argv[]) {
     (void)argc; (void)argv;
-    sys_meminfo_t meminfo;
+    sys_meminfo_t meminfo = {0};
     sys_get_meminfo(&meminfo);
     double total = (double)meminfo.total_kb;
     double free = (double)meminfo.free_kb;
@@ -1145,58 +1147,14 @@ static void cmd_ver(int argc, char *argv[]) {
 
 static void cmd_reboot(int argc, char *argv[]) {
     (void)argc; (void)argv;
-    
+
     printf("Rebooting...\n");
-    sys_sleep(500);
-    
-    /* Disable interrupts */
-    __asm__ volatile("cli");
-    
-    /* Try keyboard controller reset (most reliable) */
-    uint8_t temp;
-    do {
-        temp = inb(0x64);
-        if (temp & 0x01) inb(0x60);
-    } while (temp & 0x02);
-    
-    outb(0x64, 0xFE);  /* Pulse reset line */
-    
-    /* Wait a bit */
-    sys_sleep(10);
-    
-    /* Try ACPI reset (newer systems) */
-    outb(0xCF9, 0x06);
-    
-    /* Try triple fault as last resort */
-    __asm__ volatile(
-        "mov $0, %esp\n"
-        "ljmp $0xFFFF, $0x0000\n"
-    );
-    
-    /* Should never reach here */
-    sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-    printf("\nReboot failed\n");
-    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+    sys_reboot();
 }
 
 static void cmd_shutdown(int argc, char *argv[]) {
     (void)argc; (void)argv;
-    
+
     printf("Shutting down...\n");
-    sys_sleep(500);
-    
-    /* Try ACPI shutdown first (QEMU, modern hardware) */
-    outw(0x604, 0x2000);  /* QEMU */
-    outw(0xB004, 0x2000); /* Bochs, older QEMU */
-    
-    /* Try VirtualBox */
-    outw(0x4004, 0x3400);
-    
-    /* APM shutdown (legacy) */
-    outw(0x1000, 0x0001 | 0x2000 | 0x4000);
-    
-    /* If still running, just stop and let the user pull the plug */
-    sys_clear();
-    printf("It is now safe to turn off the computer");
-    for (;;) __asm__ volatile ("hlt");
+    sys_shutdown();
 }
