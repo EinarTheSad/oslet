@@ -17,8 +17,7 @@ typedef struct {
     int next_icon_y;                       // Y position for next minimized icon (vertical layout)
     int next_icon_column;                  // Current column for icon placement
     uint32_t last_icon_click_time;         // For double-click detection
-    int last_icon_click_x;
-    int last_icon_click_y;
+    gui_form_t *last_icon_click_form;      // Which form's icon was clicked
     icon_slot_t free_slots[WM_MAX_FREE_SLOTS];  // Pool of free icon slots
     int free_slot_count;                         // Number of available free slots
     int needs_full_redraw;                       // Flag: desktop should do full redraw
@@ -38,6 +37,9 @@ void wm_draw_all(window_manager_t *wm);
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y);
 void wm_release_icon_slot(window_manager_t *wm, int x, int y);
 
-void wm_set_icon_click(window_manager_t *wm, uint32_t time, int x, int y);
-int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, int x, int y);
+void wm_set_icon_click(window_manager_t *wm, uint32_t time, gui_form_t *form);
+int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, gui_form_t *form);
 void wm_invalidate_icon_backgrounds(window_manager_t *wm);
+
+// Snap icon position to nearest slot grid position
+void wm_snap_to_slot(int x, int y, int *out_x, int *out_y);
