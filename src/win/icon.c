@@ -7,7 +7,114 @@
 #include "../mem/heap.h"
 #include "../console.h"
 
+#define ICON_BG_MARGIN 15
+
 extern bmf_font_t font_b, font_n;
+
+typedef struct {
+    int x, y, total_width;
+    uint8_t color;
+} label_draw_params_t;
+
+static int label_wordwrap_process(const char *label, int max_line_width,
+                                  label_draw_params_t *draw) {
+    if (!label || !label[0] || !font_n.data) return 1;
+
+    char line[64];
+    char word[32];
+    int line_idx = 0;
+    int line_count = 0;
+    int text_y = draw ? draw->y : 0;
+    int i = 0;
+
+    while (label[i]) {
+        /* Extract next word */
+        int word_idx = 0;
+        while (label[i] && label[i] != ' ' && word_idx < 31) {
+            word[word_idx++] = label[i++];
+        }
+        word[word_idx] = '\0';
+
+        /* Try adding word to current line */
+        char test_line[64];
+        if (line_idx > 0) {
+            int k = 0;
+            for (int j = 0; j < line_idx; j++) test_line[k++] = line[j];
+            test_line[k++] = ' ';
+            for (int j = 0; word[j]; j++) test_line[k++] = word[j];
+            test_line[k] = '\0';
+        } else {
+            int k = 0;
+            for (int j = 0; word[j]; j++) test_line[k++] = word[j];
+            test_line[k] = '\0';
+        }
+
+        int test_w = bmf_measure_text(&font_n, 10, test_line);
+
+        if (test_w > max_line_width && line_idx > 0) {
+            /* Word doesn't fit - finish current line */
+            line[line_idx] = '\0';
+            line_count++;
+
+            if (draw) {
+                int line_w = bmf_measure_text(&font_n, 10, line);
+                int line_x = draw->x + (draw->total_width - line_w) / 2;
+                bmf_printf(line_x, text_y, &font_n, 10, draw->color, "%s", line);
+                text_y += 11;
+            }
+
+            /* Start new line with current word */
+            line_idx = 0;
+            for (int j = 0; word[j]; j++) {
+                line[line_idx++] = word[j];
+            }
+        } else {
+            /* Word fits - add it to line */
+            if (line_idx > 0) {
+                line[line_idx++] = ' ';
+            }
+            for (int j = 0; word[j]; j++) {
+                if (line_idx < 63) line[line_idx++] = word[j];
+            }
+        }
+
+        /* Skip spaces */
+        while (label[i] == ' ') i++;
+    }
+
+    /* Handle remaining text */
+    if (line_idx > 0) {
+        line[line_idx] = '\0';
+        line_count++;
+
+        if (draw) {
+            int final_w = bmf_measure_text(&font_n, 10, line);
+            int final_x = draw->x + (draw->total_width - final_w) / 2;
+            bmf_printf(final_x, text_y, &font_n, 10, draw->color, "%s", line);
+        }
+    }
+
+    return line_count > 0 ? line_count : 1;
+}
+
+int icon_count_label_lines(const char *label, int max_line_width) {
+    return label_wordwrap_process(label, max_line_width, NULL);
+}
+
+int icon_calc_total_height(int icon_size, int label_lines) {
+    return icon_size + 5 + label_lines * 11 + 2;
+}
+
+void icon_draw_label_wrapped(const char *label, int x, int y, int total_width,
+                             int max_line_width, uint8_t color) {
+    label_draw_params_t params = { x, y, total_width, color };
+    label_wordwrap_process(label, max_line_width, &params);
+}
+
+static int icon_calc_height(const char *label) {
+    int lines = icon_count_label_lines(label, 49);
+    return icon_calc_total_height(WM_ICON_SIZE, lines);
+}
 
 void icon_create(icon_t *icon, int x, int y, const char *label, const char *bitmap_path) {
     icon->x = x;
@@ -17,42 +124,47 @@ void icon_create(icon_t *icon, int x, int y, const char *label, const char *bitm
     icon->selected = 0;
     icon->user_data = NULL;
 
-    /* Copy label */
     if (label) {
         strcpy_s(icon->label, label, 64);
     } else {
         icon->label[0] = '\0';
     }
 
-    /* Copy bitmap path */
     if (bitmap_path) {
         strcpy_s(icon->bitmap_path, bitmap_path, 64);
     } else {
         icon->bitmap_path[0] = '\0';
     }
+
+    icon->height = icon_calc_height(icon->label);
 }
 
 void icon_draw(icon_t *icon) {
     if (!icon) return;
 
     int total_width = WM_ICON_TOTAL_WIDTH;
-    int total_height = WM_ICON_TOTAL_HEIGHT;
+    int total_height = icon->height;
+
+    int bg_width = total_width + ICON_BG_MARGIN * 2;
+    int bg_height = total_height + ICON_BG_MARGIN * 2;
+    int bg_start_x = icon->x - ICON_BG_MARGIN;
+    int bg_start_y = icon->y - ICON_BG_MARGIN;
 
     /* Save background before first drawing */
     if (!icon->saved_bg) {
-        icon->saved_bg = kmalloc(total_width * total_height);
+        icon->saved_bg = kmalloc(bg_width * bg_height);
         if (icon->saved_bg) {
-            for (int y = 0; y < total_height; y++) {
-                for (int x = 0; x < total_width; x++) {
-                    icon->saved_bg[y * total_width + x] = gfx_getpixel(icon->x + x, icon->y + y);
+            for (int y = 0; y < bg_height; y++) {
+                for (int x = 0; x < bg_width; x++) {
+                    icon->saved_bg[y * bg_width + x] = gfx_getpixel(bg_start_x + x, bg_start_y + y);
                 }
             }
         }
     } else {
         /* Restore original background before redrawing */
-        for (int y = 0; y < total_height; y++) {
-            for (int x = 0; x < total_width; x++) {
-                gfx_putpixel(icon->x + x, icon->y + y, icon->saved_bg[y * total_width + x]);
+        for (int y = 0; y < bg_height; y++) {
+            for (int x = 0; x < bg_width; x++) {
+                gfx_putpixel(bg_start_x + x, bg_start_y + y, icon->saved_bg[y * bg_width + x]);
             }
         }
     }
@@ -104,92 +216,29 @@ void icon_draw(icon_t *icon) {
     }
 
     /* Draw label below icon with word wrapping */
-    if (font_n.data && icon->label[0]) {
+    if (icon->label[0]) {
         window_theme_t *theme = theme_get_current();
-        const int MAX_LINE_WIDTH = 49;
-        char line[64];
-        char word[32];
-        int line_idx = 0;
+        uint8_t text_color = icon->selected ? 15 : theme->text_color;
         int text_y = icon->y + WM_ICON_SIZE + 5;
-        int i = 0;
-
-        /* Choose text color based on selection state */
-        uint8_t text_color = icon->selected ? 15 : theme->text_color; /* White if selected */
-
-        while (icon->label[i]) {
-            /* Extract next word */
-            int word_idx = 0;
-            while (icon->label[i] && icon->label[i] != ' ' && word_idx < 31) {
-                word[word_idx++] = icon->label[i++];
-            }
-            word[word_idx] = '\0';
-
-            /* Try adding word to current line */
-            char test_line[64];
-            if (line_idx > 0) {
-                /* Add space before word if line not empty */
-                int k = 0;
-                for (int j = 0; j < line_idx; j++) test_line[k++] = line[j];
-                test_line[k++] = ' ';
-                for (int j = 0; word[j]; j++) test_line[k++] = word[j];
-                test_line[k] = '\0';
-            } else {
-                /* First word on line */
-                int k = 0;
-                for (int j = 0; word[j]; j++) test_line[k++] = word[j];
-                test_line[k] = '\0';
-            }
-
-            int test_w = bmf_measure_text(&font_n, 10, test_line);
-
-            if (test_w > MAX_LINE_WIDTH && line_idx > 0) {
-                /* Word doesn't fit - draw current line centered and start new */
-                line[line_idx] = '\0';
-                int line_w = bmf_measure_text(&font_n, 10, line);
-                int line_x = icon->x + (total_width - line_w) / 2;
-                bmf_printf(line_x, text_y, &font_n, 10, text_color, "%s", line);
-                text_y += 11;
-
-                /* Start new line with current word */
-                line_idx = 0;
-                for (int j = 0; word[j]; j++) {
-                    line[line_idx++] = word[j];
-                }
-            } else {
-                /* Word fits - add it to line */
-                if (line_idx > 0) {
-                    line[line_idx++] = ' ';
-                }
-                for (int j = 0; word[j]; j++) {
-                    if (line_idx < 63) line[line_idx++] = word[j];
-                }
-            }
-
-            /* Skip spaces */
-            while (icon->label[i] == ' ') i++;
-        }
-
-        /* Draw remaining text centered */
-        if (line_idx > 0) {
-            line[line_idx] = '\0';
-            int final_w = bmf_measure_text(&font_n, 10, line);
-            int final_x = icon->x + (total_width - final_w) / 2;
-            bmf_printf(final_x, text_y, &font_n, 10, text_color, "%s", line);
-        }
+        icon_draw_label_wrapped(icon->label, icon->x, text_y, total_width, 49, text_color);
     }
 }
 
 void icon_hide(icon_t *icon) {
     if (!icon) return;
 
-    /* Restore background */
+    /* Restore background (with margin) */
     if (icon->saved_bg) {
         int total_width = WM_ICON_TOTAL_WIDTH;
-        int total_height = WM_ICON_TOTAL_HEIGHT;
+        int total_height = icon->height;
+        int bg_width = total_width + ICON_BG_MARGIN * 2;
+        int bg_height = total_height + ICON_BG_MARGIN * 2;
+        int bg_start_x = icon->x - ICON_BG_MARGIN;
+        int bg_start_y = icon->y - ICON_BG_MARGIN;
 
-        for (int y = 0; y < total_height; y++) {
-            for (int x = 0; x < total_width; x++) {
-                gfx_putpixel(icon->x + x, icon->y + y, icon->saved_bg[y * total_width + x]);
+        for (int y = 0; y < bg_height; y++) {
+            for (int x = 0; x < bg_width; x++) {
+                gfx_putpixel(bg_start_x + x, bg_start_y + y, icon->saved_bg[y * bg_width + x]);
             }
         }
 
@@ -212,9 +261,8 @@ void icon_destroy(icon_t *icon) {
 int icon_is_clicked(icon_t *icon, int mx, int my) {
     if (!icon) return 0;
 
-    /* Click area includes both icon and label */
     int total_width = WM_ICON_TOTAL_WIDTH;
-    int total_height = WM_ICON_TOTAL_HEIGHT;
+    int total_height = icon->height;
 
     if (mx >= icon->x && mx < icon->x + total_width &&
         my >= icon->y && my < icon->y + total_height) {
@@ -231,22 +279,8 @@ void icon_set_selected(icon_t *icon, int selected) {
 void icon_move(icon_t *icon, int new_x, int new_y) {
     if (!icon) return;
 
-    /* Restore old background */
-    if (icon->saved_bg) {
-        int total_width = WM_ICON_TOTAL_WIDTH;
-        int total_height = WM_ICON_TOTAL_HEIGHT;
+    icon_hide(icon);
 
-        for (int y = 0; y < total_height; y++) {
-            for (int x = 0; x < total_width; x++) {
-                gfx_putpixel(icon->x + x, icon->y + y, icon->saved_bg[y * total_width + x]);
-            }
-        }
-
-        kfree(icon->saved_bg);
-        icon->saved_bg = NULL;
-    }
-
-    /* Update position */
     icon->x = new_x;
     icon->y = new_y;
 }
@@ -259,6 +293,14 @@ void icon_set_label(icon_t *icon, const char *new_label) {
     } else {
         icon->label[0] = '\0';
     }
+
+    int old_height = icon->height;
+    icon->height = icon_calc_height(icon->label);
+
+    if (icon->height != old_height && icon->saved_bg) {
+        kfree(icon->saved_bg);
+        icon->saved_bg = NULL;
+    }
 }
 
 void icon_invalidate_bg(icon_t *icon) {
@@ -268,4 +310,9 @@ void icon_invalidate_bg(icon_t *icon) {
         kfree(icon->saved_bg);
         icon->saved_bg = NULL;
     }
+}
+
+int icon_get_height(icon_t *icon) {
+    if (!icon) return WM_ICON_TOTAL_HEIGHT;
+    return icon->height;
 }

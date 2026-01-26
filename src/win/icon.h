@@ -5,6 +5,7 @@ typedef struct bitmap_s bitmap_t;
 
 typedef struct {
     int x, y;
+    int height;                  /* Actual height (depends on label line count) */
     char label[64];
     char bitmap_path[64];
     bitmap_t *bitmap;
@@ -27,3 +28,10 @@ void icon_set_selected(icon_t *icon, int selected);
 void icon_move(icon_t *icon, int new_x, int new_y);
 void icon_set_label(icon_t *icon, const char *new_label);
 void icon_invalidate_bg(icon_t *icon);
+int icon_get_height(icon_t *icon);
+
+/* Shared helper functions for icon drawing (used by controls.c too) */
+int icon_count_label_lines(const char *label, int max_line_width);
+int icon_calc_total_height(int icon_size, int label_lines);
+void icon_draw_label_wrapped(const char *label, int x, int y, int total_width,
+                             int max_line_width, uint8_t color);
