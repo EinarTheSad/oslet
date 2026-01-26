@@ -6,6 +6,76 @@
 #define PRINTF_BUF_SIZE 1024
 typedef long ssize_t;
 
+/* UTF-8 to CP437 conversion for box drawing and block characters.
+ * UTF-8 box drawing: E2 94 xx (U+2500-U+257F) and E2 95 xx (U+2550-U+256C)
+ * UTF-8 block elements: E2 96 xx (U+2580-U+259F)
+ */
+static uint8_t utf8_to_cp437(uint8_t b2, uint8_t b3) {
+    /* Box drawing light (U+2500-U+253F): E2 94 xx */
+    if (b2 == 0x94) {
+        if (b3 == 0x80) return 0xC4;  /* ─ HORIZONTAL */
+        if (b3 == 0x82) return 0xB3;  /* │ VERTICAL */
+        if (b3 == 0x8C) return 0xDA;  /* ┌ DOWN AND RIGHT */
+        if (b3 == 0x90) return 0xBF;  /* ┐ DOWN AND LEFT */
+        if (b3 == 0x94) return 0xC0;  /* └ UP AND RIGHT */
+        if (b3 == 0x98) return 0xD9;  /* ┘ UP AND LEFT */
+        if (b3 == 0x9C) return 0xC3;  /* ├ VERTICAL AND RIGHT */
+        if (b3 == 0xA4) return 0xB4;  /* ┤ VERTICAL AND LEFT */
+        if (b3 == 0xAC) return 0xC2;  /* ┬ DOWN AND HORIZONTAL */
+        if (b3 == 0xB4) return 0xC1;  /* ┴ UP AND HORIZONTAL */
+        if (b3 == 0xBC) return 0xC5;  /* ┼ VERTICAL AND HORIZONTAL */
+    }
+    /* Box drawing double (U+2550-U+256C): E2 95 xx */
+    else if (b2 == 0x95) {
+        if (b3 == 0x90) return 0xCD;  /* ═ DOUBLE HORIZONTAL */
+        if (b3 == 0x91) return 0xBA;  /* ║ DOUBLE VERTICAL */
+        if (b3 == 0x94) return 0xC9;  /* ╔ DOUBLE DOWN AND RIGHT */
+        if (b3 == 0x97) return 0xBB;  /* ╗ DOUBLE DOWN AND LEFT */
+        if (b3 == 0x9A) return 0xC8;  /* ╚ DOUBLE UP AND RIGHT */
+        if (b3 == 0x9D) return 0xBC;  /* ╝ DOUBLE UP AND LEFT */
+    }
+    /* Block elements (U+2580-U+259F): E2 96 xx */
+    else if (b2 == 0x96) {
+        if (b3 == 0x80) return 0xDF;  /* ▀ UPPER HALF BLOCK */
+        if (b3 == 0x84) return 0xDC;  /* ▄ LOWER HALF BLOCK */
+        if (b3 == 0x88) return 0xDB;  /* █ FULL BLOCK */
+        if (b3 == 0x8C) return 0xDD;  /* ▌ LEFT HALF BLOCK */
+        if (b3 == 0x90) return 0xDE;  /* ▐ RIGHT HALF BLOCK */
+        if (b3 == 0x91) return 0xB0;  /* ░ LIGHT SHADE */
+        if (b3 == 0x92) return 0xB1;  /* ▒ MEDIUM SHADE */
+        if (b3 == 0x93) return 0xB2;  /* ▓ DARK SHADE */
+    }
+    return 0;  /* Unknown - return 0 to indicate no match */
+}
+
+/* Convert UTF-8 string to CP437 in-place, returns new length */
+size_t utf8_to_cp437_string(char *buf, size_t len) {
+    size_t read_pos = 0;
+    size_t write_pos = 0;
+
+    while (read_pos < len) {
+        uint8_t c = (uint8_t)buf[read_pos];
+
+        /* Check for UTF-8 3-byte sequence starting with E2 (box drawing/blocks) */
+        if (c == 0xE2 && read_pos + 3 <= len) {
+            uint8_t b2 = (uint8_t)buf[read_pos + 1];
+            uint8_t b3 = (uint8_t)buf[read_pos + 2];
+            uint8_t cp437 = utf8_to_cp437(b2, b3);
+
+            if (cp437 != 0) {
+                buf[write_pos++] = (char)cp437;
+                read_pos += 3;
+                continue;
+            }
+        }
+
+        /* Pass through other characters unchanged */
+        buf[write_pos++] = buf[read_pos++];
+    }
+
+    buf[write_pos] = '\0';
+    return write_pos;
+}
 
 int putchar(int c) {
     char printf_buf[PRINTF_BUF_SIZE];  /* Stack allocation */
@@ -17,7 +87,13 @@ int putchar(int c) {
 }
 
 int puts(const char *s) {
-    sys_write(s);
+    char buf[PRINTF_BUF_SIZE];
+    size_t len = strlen(s);
+    if (len >= PRINTF_BUF_SIZE) len = PRINTF_BUF_SIZE - 1;
+    for (size_t i = 0; i < len; i++) buf[i] = s[i];
+    buf[len] = '\0';
+    utf8_to_cp437_string(buf, len);
+    sys_write(buf);
     sys_write("\n");
     return 0;
 }
@@ -516,23 +592,27 @@ int snprintf(char *buf, size_t size, const char *fmt, ...) {
 }
 
 int vprintf(const char *fmt, va_list ap) {
-    char printf_buf[PRINTF_BUF_SIZE];  /* Stack allocation */
-    
-    int len = vsnprintf(printf_buf, sizeof(printf_buf), fmt, ap);
+    char printf_buf[PRINTF_BUF_SIZE];
+
+    vsnprintf(printf_buf, sizeof(printf_buf), fmt, ap);
     printf_buf[sizeof(printf_buf) - 1] = '\0';
+    size_t len = strlen(printf_buf);
+    utf8_to_cp437_string(printf_buf, len);
     sys_write(printf_buf);
-    return len;
+    return (int)len;
 }
 
 int printf(const char *fmt, ...) {
-    char printf_buf[PRINTF_BUF_SIZE];  /* Stack allocation */
-    
+    char printf_buf[PRINTF_BUF_SIZE];
+
     va_list ap;
     va_start(ap, fmt);
-    int len = vsnprintf(printf_buf, sizeof(printf_buf), fmt, ap);
+    vsnprintf(printf_buf, sizeof(printf_buf), fmt, ap);
     va_end(ap);
 
     printf_buf[sizeof(printf_buf) - 1] = '\0';
+    size_t len = strlen(printf_buf);
+    utf8_to_cp437_string(printf_buf, len);
     sys_write(printf_buf);
-    return len;
+    return (int)len;
 }

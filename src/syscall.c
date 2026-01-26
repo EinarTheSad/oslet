@@ -18,6 +18,7 @@
 #include "win/wm.h"
 #include "win/controls.h"
 #include "win/menu.h"
+#include "irq/io.h"
 
 #define MAX_OPEN_FILES 32
 
@@ -1728,6 +1729,79 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
     }
 }
 
+static uint32_t handle_power(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    (void)ebx; (void)ecx; (void)edx;
+
+    switch (al) {
+        case 0x00: { /* SYS_POWER_SHUTDOWN */
+            __asm__ volatile("cli");
+
+            /* Try ACPI shutdown (QEMU, modern hardware) */
+            outw(0x604, 0x2000);  /* QEMU */
+            outw(0xB004, 0x2000); /* Bochs, older QEMU */
+
+            /* Try VirtualBox */
+            outw(0x4004, 0x3400);
+
+            /* Try APM shutdown (legacy hardware) */
+            /* APM: AX=5307h (Set Power State), BX=0001h (all devices), CX=0003h (off) */
+            __asm__ volatile(
+                "movw $0x5307, %%ax\n"
+                "movw $0x0001, %%bx\n"
+                "movw $0x0003, %%cx\n"
+                "int $0x15\n"
+                ::: "ax", "bx", "cx"
+            );
+
+            /* If still running, show message and halt */
+            vga_clear();
+            vga_set_color(0, 6);
+            vga_set_cursor(19,11);
+            printf("┌────────────────────────────────────────┐\n");
+            for (int i = 0; i < 19; i++) printf(" ");
+            printf("│It is now safe to turn off your computer│\n");
+            for (int i = 0; i < 19; i++) printf(" ");
+            printf("└────────────────────────────────────────┘");
+            vga_set_cursor(0,0);
+            for (;;) __asm__ volatile("hlt");
+            return 0;
+        }
+
+        case 0x01: { /* SYS_POWER_REBOOT */
+            __asm__ volatile("cli");
+
+            /* Try keyboard controller reset (most reliable) */
+            uint8_t temp;
+            do {
+                temp = inb(0x64);
+                if (temp & 0x01) inb(0x60);
+            } while (temp & 0x02);
+
+            outb(0x64, 0xFE);  /* Pulse CPU reset line */
+
+            /* If that didn't work, try ACPI reset */
+            for (volatile int i = 0; i < 100000; i++);
+            outb(0xCF9, 0x06);
+
+            /* Last resort - halt */
+            vga_clear();
+            vga_set_color(0, 6);
+            vga_set_cursor(20,11);
+            printf("┌──────────────────────────────────────┐\n");
+            for (int i = 0; i < 20; i++) printf(" ");
+            printf("│Press the reset button on your PC unit│\n");
+            for (int i = 0; i < 20; i++) printf(" ");
+            printf("└──────────────────────────────────────┘");
+            vga_set_cursor(0,0);
+            for (;;) __asm__ volatile("hlt");
+            return 0;
+        }
+
+        default:
+            return (uint32_t)-1;
+    }
+}
+
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     uint32_t ah = (eax >> 8) & 0xFF;
     uint32_t al = eax & 0xFF;
@@ -1744,7 +1818,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x09: return handle_graphics(al, ebx, ecx, edx);
         case 0x0A: return handle_mouse(al, ebx, ecx, edx);
         case 0x0B: return handle_window(al, ebx, ecx, edx);
-        
+        case 0x0C: return handle_power(al, ebx, ecx, edx);
+
         default:
             return (uint32_t)-1;
     }

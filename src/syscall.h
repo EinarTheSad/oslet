@@ -82,6 +82,10 @@ typedef rtc_time_t sys_time_t;
 #define SYS_MOUSE_GET_STATE  0x0A00
 #define SYS_MOUSE_DRAW_CURSOR 0x0A01
 
+/* AH = 0Ch - Power Management */
+#define SYS_POWER_SHUTDOWN  0x0C00
+#define SYS_POWER_REBOOT    0x0C01
+
 /* AH = 0Bh - Windows */
 #define SYS_WIN_MSGBOX          0x0B00
 #define SYS_WIN_CREATE_FORM     0x0B05
@@ -433,6 +437,14 @@ static inline uint32_t sys_uptime(void) {
     uint32_t ticks;
     __asm__ volatile("int $0x80" : "=a"(ticks) : "a"(SYS_TIME_UPTIME));
     return ticks;
+}
+
+static inline void sys_shutdown(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_POWER_SHUTDOWN));
+}
+
+static inline void sys_reboot(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_POWER_REBOOT));
 }
 
 static inline void sys_gfx_enter(void) {
