@@ -9,11 +9,14 @@
 extern bmf_font_t font_b, font_n, font_i, font_bi;
 
 void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    /* Use theme button_color when bg is -1 (unset) */
+    uint8_t btn_color = (control->bg == -1) ? theme->button_color : control->bg;
 
     if (control->pressed) {
-        win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 1);
+        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, control->text, 1);
     } else {
-        win_draw_button(abs_x, abs_y, control->w, control->h, control->bg, control->text, 0);
+        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, control->text, 0);
     }
 }
 
@@ -90,7 +93,10 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
         int label_w = control->w > 0 ? control->w : max_line_width + 4;
         int label_h = control->h > 0 ? control->h : text_h;
 
-        gfx_fillrect(abs_x, abs_y, label_w, label_h, control->bg);
+        /* Labels with bg=-1 are transparent (no background fill) */
+        if (control->bg != -1) {
+            gfx_fillrect(abs_x, abs_y, label_w, label_h, control->bg);
+        }
 
         if (control->border) {
             gfx_rect(abs_x, abs_y, label_w, label_h, control->border_color);
@@ -400,6 +406,137 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
     (void)win_bg;  /* Reserved for future use */
 }
 
+/* Helper: get item text from dropdown options (items separated by |) */
+static const char* dropdown_get_item(const char *text, int index, char *buf, int buf_size) {
+    const char *p = text;
+    int current = 0;
+    int len = 0;
+
+    while (*p && current < index) {
+        if (*p == '|') current++;
+        p++;
+    }
+
+    while (*p && *p != '|' && len < buf_size - 1) {
+        buf[len++] = *p++;
+    }
+    buf[len] = '\0';
+    return buf;
+}
+
+/* Count items in dropdown (pipe-separated) */
+static int dropdown_count_items(const char *text) {
+    if (!text || !text[0]) return 0;
+    int count = 1;
+    const char *p = text;
+    while (*p) {
+        if (*p == '|') count++;
+        p++;
+    }
+    return count;
+}
+
+void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    bmf_font_t *font = &font_n;
+    int size = control->font_size > 0 ? control->font_size : 12;
+
+    int btn_w = 16;
+    int field_w = control->w - btn_w;
+
+    /* Draw text field background */
+    gfx_fillrect(abs_x, abs_y, field_w, control->h, COLOR_WHITE);
+
+    /* 3D sunken border for text field */
+    gfx_hline(abs_x, abs_y, field_w, theme->frame_dark);
+    gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);
+    gfx_hline(abs_x, abs_y + control->h - 1, field_w, theme->frame_light);
+    gfx_vline(abs_x + field_w - 1, abs_y, control->h, theme->frame_light);
+
+    /* Inner shadow */
+    gfx_hline(abs_x + 1, abs_y + 1, field_w - 2, COLOR_DARK_GRAY);
+    gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_DARK_GRAY);
+
+    /* Draw dropdown button */
+    int btn_x = abs_x + field_w;
+    gfx_fillrect(btn_x, abs_y, btn_w, control->h, theme->button_color);
+
+    /* Button 3D border */
+    if (control->pressed) {
+        gfx_hline(btn_x, abs_y, btn_w, theme->frame_dark);
+        gfx_vline(btn_x, abs_y, control->h, theme->frame_dark);
+        gfx_hline(btn_x, abs_y + control->h - 1, btn_w, COLOR_WHITE);
+        gfx_vline(btn_x + btn_w - 1, abs_y, control->h, COLOR_WHITE);
+    } else {
+        gfx_hline(btn_x, abs_y, btn_w, COLOR_WHITE);
+        gfx_vline(btn_x, abs_y, control->h, COLOR_WHITE);
+        gfx_hline(btn_x, abs_y + control->h - 1, btn_w, theme->frame_dark);
+        gfx_vline(btn_x + btn_w - 1, abs_y, control->h, theme->frame_dark);
+    }
+
+    /* Draw arrow in button */
+    int arrow_x = btn_x + btn_w / 2;
+    int arrow_y = abs_y + control->h / 2 - 2;
+    for (int i = 0; i < 4; i++) {
+        gfx_hline(arrow_x - 3 + i, arrow_y + i, 7 - i * 2, COLOR_BLACK);
+    }
+
+    /* Draw selected item text */
+    if (font->data) {
+        char item_text[64];
+        int selected = control->cursor_pos;  /* cursor_pos used as selected_index */
+        dropdown_get_item(control->text, selected, item_text, sizeof(item_text));
+
+        int text_x = abs_x + 4;
+        int text_y = abs_y + (control->h - 12) / 2 + 3;
+        bmf_printf(text_x, text_y, font, size, control->fg, "%s", item_text);
+    }
+    /* Note: dropdown list is drawn separately via ctrl_draw_dropdown_list for z-order */
+}
+
+/* Draw only the dropdown list (called after all controls for z-order) */
+void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
+    if (!control->dropdown_open) return;
+
+    window_theme_t *theme = theme_get_current();
+    bmf_font_t *font = &font_n;
+    int size = control->font_size > 0 ? control->font_size : 12;
+
+    int abs_x = win->x + control->x;
+    int abs_y = win->y + control->y + 20;
+
+    int item_count = dropdown_count_items(control->text);
+    int item_h = 16;
+    int list_h = item_count * item_h;
+    int list_y = abs_y + control->h;
+
+    /* Allow list to extend beyond window - no clipping */
+
+    /* List background */
+    gfx_fillrect(abs_x, list_y, control->w, list_h, COLOR_WHITE);
+    gfx_rect(abs_x, list_y, control->w, list_h, theme->frame_dark);
+
+    /* Draw items */
+    for (int i = 0; i < item_count; i++) {
+        char item_text[64];
+        dropdown_get_item(control->text, i, item_text, sizeof(item_text));
+
+        int item_y = list_y + i * item_h;
+
+        /* Highlight selected item */
+        if (i == control->cursor_pos) {
+            gfx_fillrect(abs_x + 1, item_y, control->w - 2, item_h, COLOR_BLUE);
+            if (font->data) {
+                bmf_printf(abs_x + 4, item_y + 3, font, size, COLOR_WHITE, "%s", item_text);
+            }
+        } else {
+            if (font->data) {
+                bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
+            }
+        }
+    }
+}
+
 void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y) {
     window_theme_t *theme = theme_get_current();
     bmf_font_t *font = &font_n;
@@ -482,6 +619,9 @@ void ctrl_draw(window_t *win, gui_control_t *control) {
     }
     else if (control->type == 8) { /* CTRL_ICON */
         ctrl_draw_icon(control, abs_x, abs_y, 7);  /* Use default gray background */
+    }
+    else if (control->type == 9) { /* CTRL_DROPDOWN */
+        ctrl_draw_dropdown(control, abs_x, abs_y);
     }
 }
 

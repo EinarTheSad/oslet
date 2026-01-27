@@ -136,6 +136,19 @@ void wm_draw_all(window_manager_t *wm) {
             menu_draw(&form->window_menu);
         }
     }
+
+    // Draw open dropdown lists on top of ALL windows (last pass)
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *form = wm->windows[i];
+        if (!form || !form->win.is_visible || form->win.is_minimized) continue;
+        if (!form->controls) continue;
+
+        for (int j = 0; j < form->ctrl_count; j++) {
+            if (form->controls[j].type == CTRL_DROPDOWN && form->controls[j].dropdown_open) {
+                win_draw_dropdown_list(&form->win, &form->controls[j]);
+            }
+        }
+    }
 }
 
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {

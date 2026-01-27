@@ -49,3 +49,4 @@ int win_msgbox_handle_click(msgbox_t *box, int mx, int my);
 
 
 void win_draw_control(window_t *win, void *ctrl);
+void win_draw_dropdown_list(window_t *win, void *ctrl);

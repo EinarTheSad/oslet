@@ -130,6 +130,11 @@ void win_draw_control(window_t *win, void *ctrl) {
     ctrl_draw(win, control);
 }
 
+void win_draw_dropdown_list(window_t *win, void *ctrl) {
+    gui_control_t *control = (gui_control_t*)ctrl;
+    ctrl_draw_dropdown_list(win, control);
+}
+
 void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const char *title) {
     int msg_len = 0;
     while (msg[msg_len]) msg_len++;

@@ -367,6 +367,60 @@
             font-size: 10px;
         }
 
+        .control-dropdown {
+            background: white;
+            display: flex;
+            align-items: stretch;
+            font-size: 12px;
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        .control-dropdown .dropdown-field {
+            flex: 1;
+            padding: 3px 4px;
+            border-top: 1px solid #808080;
+            border-left: 1px solid #808080;
+            border-bottom: 1px solid #dfdfdf;
+            border-right: none;
+            box-shadow: inset 1px 1px 0 #404040;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .control-dropdown .dropdown-btn {
+            width: 16px;
+            background: #a0a0a0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #000;
+            box-sizing: border-box;
+        }
+
+        .control-dropdown .dropdown-btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            border: 1px solid;
+            border-top-color: #ffffff;
+            border-left-color: #ffffff;
+            border-right-color: #555555;
+            border-bottom-color: #555555;
+            pointer-events: none;
+        }
+
+        .control-dropdown .dropdown-arrow {
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            border-top: 4px solid black;
+        }
+
         #properties {
             width: 250px;
             background: #1e1e1e;
@@ -550,6 +604,7 @@
         <button class="tool-btn" onclick="selectTool('radiobutton')">RadioButton</button>
         <button class="tool-btn" onclick="selectTool('textbox')">TextBox</button>
         <button class="tool-btn" onclick="selectTool('frame')">Frame</button>
+        <button class="tool-btn" onclick="selectTool('dropdown')">Dropdown</button>
         <button class="tool-btn" onclick="selectTool('select')" style="margin-top: 20px;">Select (Esc)</button>
     </div>
 
@@ -782,6 +837,9 @@
                     font_size: c.font_size,
                     border: c.border,
                     border_color: c.border_color,
+                    checked: c.checked,
+                    group_id: c.group_id,
+                    max_length: c.max_length,
                     action: c.action
                 })))),
                 nextControlId: win.nextControlId
@@ -820,6 +878,9 @@
                     font_size: c.font_size,
                     border: c.border,
                     border_color: c.border_color,
+                    checked: c.checked,
+                    group_id: c.group_id,
+                    max_length: c.max_length,
                     action: c.action
                 })))),
                 nextControlId: win.nextControlId
@@ -855,6 +916,9 @@
                     font_size: c.font_size,
                     border: c.border,
                     border_color: c.border_color,
+                    checked: c.checked,
+                    group_id: c.group_id,
+                    max_length: c.max_length,
                     action: c.action
                 })))),
                 nextControlId: win.nextControlId
@@ -1169,6 +1233,39 @@
                 el.style.boxSizing = 'border-box';
                 el.style.overflow = 'hidden';
                 el.textContent = control.text;
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'control-resize-handle br';
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    resizingControl = true;
+                    resizeControlStart.x = e.clientX;
+                    resizeControlStart.y = e.clientY;
+                    resizeControlStart.w = control.w;
+                    resizeControlStart.h = control.h;
+                    draggedControl = control;
+                });
+                el.appendChild(resizeHandle);
+            } else if (control.type === 'dropdown') {
+                el.style.width = control.w + 'px';
+                el.style.height = control.h + 'px';
+
+                const field = document.createElement('div');
+                field.className = 'dropdown-field';
+                // Show first item (before first |)
+                const firstItem = control.text.split('|')[0] || '';
+                field.textContent = firstItem;
+
+                const btn = document.createElement('div');
+                btn.className = 'dropdown-btn';
+                btn.style.position = 'relative';
+
+                const arrow = document.createElement('div');
+                arrow.className = 'dropdown-arrow';
+                btn.appendChild(arrow);
+
+                el.appendChild(field);
+                el.appendChild(btn);
 
                 const resizeHandle = document.createElement('div');
                 resizeHandle.className = 'control-resize-handle br';
@@ -1546,6 +1643,9 @@
                 case 'frame':
                     w = 150; h = 100; text = 'Frame';
                     break;
+                case 'dropdown':
+                    w = 120; h = 20; text = 'Option 1|Option 2|Option 3';
+                    break;
                 case 'label':
                     w = 0; h = 0; text = 'Label'; bg = 15;
                     break;
@@ -1641,7 +1741,8 @@
                 'checkbox': 'CTRL_CHECKBOX',
                 'radiobutton': 'CTRL_RADIOBUTTON',
                 'textbox': 'CTRL_TEXTBOX',
-                'frame': 'CTRL_FRAME'
+                'frame': 'CTRL_FRAME',
+                'dropdown': 'CTRL_DROPDOWN'
             };
             const typeLabel = typeMap[c.type] || 'UNKNOWN';
 
@@ -1796,6 +1897,19 @@
                 `;
             }
 
+            // Add options property for dropdown (pipe-separated)
+            if (c.type === 'dropdown') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Options (separated by |)</div>
+                        <textarea class="prop-input" rows="4" onchange="updateText(this.value)">${c.text}</textarea>
+                    </div>
+                    <div class="prop-group">
+                        <div class="prop-label">Items: ${c.text.split('|').length}</div>
+                    </div>
+                `;
+            }
+
             document.getElementById('prop-content').innerHTML = html;
         }
 
@@ -1855,8 +1969,8 @@
         function updateText(value) {
             selectedControl.text = value.replace(/\n/g, '\\n');
 
-            // For frames, we need to recreate the entire element because of complex structure
-            if (selectedControl.type === 'frame') {
+            // For frames and dropdowns, we need to recreate the entire element because of complex structure
+            if (selectedControl.type === 'frame' || selectedControl.type === 'dropdown') {
                 const win = getCurrentWindow();
                 if (win && selectedControl.el) {
                     selectedControl.el.remove();
@@ -2355,7 +2469,8 @@
                             'checkbox': 'CTRL_CHECKBOX',
                             'radiobutton': 'CTRL_RADIOBUTTON',
                             'textbox': 'CTRL_TEXTBOX',
-                            'frame': 'CTRL_FRAME'
+                            'frame': 'CTRL_FRAME',
+                            'dropdown': 'CTRL_DROPDOWN'
                         };
                         const typeStr = typeMap[c.type] || 'CTRL_BUTTON';
                         const comma = i < win.controls.length - 1 ? ',' : '';
@@ -2373,9 +2488,11 @@
                         const checked = c.checked || 0;
                         const group_id = c.group_id || 0;
                         const max_length = c.max_length || 0;
+                        // For dropdown, count items (separated by |)
+                        const item_count = c.type === 'dropdown' ? (c.text.split('|').length) : 0;
                         // Structure: type, x, y, w, h, fg, bg, text, id, font_type, font_size, border, border_color,
-                        //            cached_bitmap, pressed, checked, group_id, cursor_pos, max_length, scroll_offset, is_focused, sel_start, sel_end
-                        code += `    {${typeStr}, ${c.x}, ${c.y}, ${w}, ${h}, ${c.fg}, ${c.bg}, "${c.text}", ${c.id}, ${c.font_type}, ${c.font_size}, ${c.border}, ${c.border_color}, NULL, 0, ${checked}, ${group_id}, 0, ${max_length}, 0, 0, -1, -1}${comma}\n`;
+                        //            cached_bitmap, pressed, checked, group_id, cursor_pos, max_length, scroll_offset, is_focused, sel_start, sel_end, dropdown_open, item_count
+                        code += `    {${typeStr}, ${c.x}, ${c.y}, ${w}, ${h}, ${c.fg}, ${c.bg}, "${c.text}", ${c.id}, ${c.font_type}, ${c.font_size}, ${c.border}, ${c.border_color}, NULL, 0, ${checked}, ${group_id}, 0, ${max_length}, 0, 0, -1, -1, 0, ${item_count}}${comma}\n`;
                     });
 
                     code += `};\n\n`;
@@ -2744,8 +2861,18 @@
                 // If no creation functions found, try new inline format (varname = sys_win_create_form)
                 if (windowMatches.length === 0) {
                     // New format: form = sys_win_create_form("Title", x, y, w, h);
-                    const newFormatRegex = /(\w+)\s*=\s*sys_win_create_form\s*\(\s*"([^"]+)"\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/g;
+                    // Support both numeric literals and #define constants
+                    const newFormatRegex = /(\w+)\s*=\s*sys_win_create_form\s*\(\s*"([^"]+)"\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)/g;
                     const newFormatMatches = [...code.matchAll(newFormatRegex)];
+
+                    // Helper to resolve #define constants or return numeric value
+                    const resolveValue = (val) => {
+                        if (/^\d+$/.test(val)) return parseInt(val);
+                        // Look for #define in code
+                        const defineRegex = new RegExp('#define\\s+' + val + '\\s+(\\d+)');
+                        const defineMatch = code.match(defineRegex);
+                        return defineMatch ? parseInt(defineMatch[1]) : 100; // default fallback
+                    };
 
                     if (newFormatMatches.length > 0) {
                         windowMatches = newFormatMatches.map(match => {
@@ -2753,16 +2880,17 @@
                                 match[0],
                                 match[1],  // variable name as window name
                                 match[2],  // title
-                                match[3],  // x
-                                match[4],  // y
-                                match[5],  // w
-                                match[6]   // h
+                                resolveValue(match[3]),  // x (resolved from constant or literal)
+                                resolveValue(match[4]),  // y
+                                resolveValue(match[5]),  // w
+                                resolveValue(match[6])   // h
                             ];
                         });
                         console.log('Found new format windows:', windowMatches.map(m => m[1]));
                     } else {
                         // Fallback: simple inline format without variable assignment
-                        const inlineRegex = /sys_win_create_form\("([^"]+)",\s*(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\)/g;
+                        // Support both numeric literals and #define constants
+                        const inlineRegex = /sys_win_create_form\("([^"]+)",\s*(\w+),\s*(\w+),\s*(\w+),\s*(\w+)\)/g;
                         const inlineMatches = [...code.matchAll(inlineRegex)];
 
                         if (inlineMatches.length === 0) {
@@ -2770,16 +2898,24 @@
                             return;
                         }
 
+                        // Helper to resolve #define constants (needed here if newFormatMatches was empty)
+                        const resolveValueFallback = (val) => {
+                            if (/^\d+$/.test(val)) return parseInt(val);
+                            const defineRegex = new RegExp('#define\\s+' + val + '\\s+(\\d+)');
+                            const defineMatch = code.match(defineRegex);
+                            return defineMatch ? parseInt(defineMatch[1]) : 100;
+                        };
+
                         // Convert inline format to window format
                         windowMatches = inlineMatches.map((match, idx) => {
                             return [
                                 match[0],
                                 `Form${idx + 1}`, // window name
                                 match[1],          // title
-                                match[2],          // x
-                                match[3],          // y
-                                match[4],          // w
-                                match[5]           // h
+                                resolveValueFallback(match[2]),  // x
+                                resolveValueFallback(match[3]),  // y
+                                resolveValueFallback(match[4]),  // w
+                                resolveValueFallback(match[5])   // h
                             ];
                         });
                     }
@@ -2968,7 +3104,8 @@
                                 'CTRL_CHECKBOX': 'checkbox',
                                 'CTRL_RADIOBUTTON': 'radiobutton',
                                 'CTRL_TEXTBOX': 'textbox',
-                                'CTRL_FRAME': 'frame'
+                                'CTRL_FRAME': 'frame',
+                                'CTRL_DROPDOWN': 'dropdown'
                             };
                             const type = typeMap[typeStr] || 'button';
 
@@ -3005,6 +3142,118 @@
 
                             win.controls.push(control);
                         });
+                    } else {
+                        // Alternative parser: dynamic control creation format
+                        // Handles: gui_control_t varname = {0}; varname.type = ...; sys_win_add_control(form, &varname);
+                        console.log('No static control array found, trying dynamic format parser...');
+
+                        // Extract #define constants from the code
+                        const defines = {};
+                        const defineRegex = /#define\s+(\w+)\s+(\d+)/g;
+                        let defMatch;
+                        while ((defMatch = defineRegex.exec(code)) !== null) {
+                            defines[defMatch[1]] = parseInt(defMatch[2]);
+                        }
+
+                        // Helper to evaluate expressions with defines
+                        function evalExprDyn(expr) {
+                            if (!expr) return 0;
+                            expr = expr.trim();
+                            if (/^\d+$/.test(expr)) return parseInt(expr);
+                            // Check if it's a defined constant
+                            if (defines[expr] !== undefined) return defines[expr];
+                            // Replace defined constants in expression
+                            for (const [name, val] of Object.entries(defines)) {
+                                expr = expr.replace(new RegExp('\\b' + name + '\\b', 'g'), val);
+                            }
+                            try {
+                                if (/^[\d\s+\-*\/()]+$/.test(expr)) {
+                                    return Math.floor(eval(expr));
+                                }
+                            } catch (e) {}
+                            return 0;
+                        }
+
+                        // Find each control block: from "gui_control_t varname" to "sys_win_add_control(..., &varname)"
+                        // This handles repeated variable names correctly by parsing each block independently
+                        const controlBlockRegex = /gui_control_t\s+(\w+)\s*=\s*\{0\}\s*;([\s\S]*?)sys_win_add_control\s*\([^,]+,\s*&\1\s*\)/g;
+                        let blockMatch;
+
+                        while ((blockMatch = controlBlockRegex.exec(code)) !== null) {
+                            const varName = blockMatch[1];
+                            const blockCode = blockMatch[2];
+
+                            const control = {
+                                type: 'button',
+                                x: 0, y: 0, w: 80, h: 24,
+                                fg: 0, bg: 7,
+                                text: '',
+                                id: 0,
+                                font_type: 0, font_size: 12,
+                                border: 0, border_color: 0,
+                                checked: 0, group_id: 0, max_length: 0
+                            };
+
+                            // Extract field assignments within this block only: varname.field = value;
+                            const fieldRegex = new RegExp(varName + '\\.(\\w+)\\s*=\\s*([^;]+);', 'g');
+                            let fieldMatch;
+                            while ((fieldMatch = fieldRegex.exec(blockCode)) !== null) {
+                                const field = fieldMatch[1];
+                                let value = fieldMatch[2].trim();
+
+                                switch (field) {
+                                    case 'type':
+                                        const typeMap = {
+                                            'CTRL_BUTTON': 'button',
+                                            'CTRL_LABEL': 'label',
+                                            'CTRL_PICTUREBOX': 'picturebox',
+                                            'CTRL_CHECKBOX': 'checkbox',
+                                            'CTRL_RADIOBUTTON': 'radiobutton',
+                                            'CTRL_TEXTBOX': 'textbox',
+                                            'CTRL_FRAME': 'frame',
+                                            'CTRL_DROPDOWN': 'dropdown'
+                                        };
+                                        control.type = typeMap[value] || 'button';
+                                        break;
+                                    case 'x': control.x = evalExprDyn(value); break;
+                                    case 'y': control.y = evalExprDyn(value); break;
+                                    case 'w': control.w = evalExprDyn(value); break;
+                                    case 'h': control.h = evalExprDyn(value); break;
+                                    case 'fg': control.fg = evalExprDyn(value); break;
+                                    case 'bg': control.bg = evalExprDyn(value); break;
+                                    case 'id': control.id = evalExprDyn(value); break;
+                                    case 'font_type': control.font_type = evalExprDyn(value); break;
+                                    case 'font_size': control.font_size = evalExprDyn(value); break;
+                                    case 'border': control.border = evalExprDyn(value); break;
+                                    case 'border_color': control.border_color = evalExprDyn(value); break;
+                                    case 'checked': control.checked = evalExprDyn(value); break;
+                                    case 'group_id': control.group_id = evalExprDyn(value); break;
+                                    case 'max_length': control.max_length = evalExprDyn(value); break;
+                                    case 'item_count': control.item_count = evalExprDyn(value); break;
+                                    case 'cursor_pos': control.cursor_pos = evalExprDyn(value); break;
+                                }
+                            }
+
+                            // Extract text from strcpy/strncpy calls within this block
+                            const strcpyRegex = new RegExp(`strn?cpy\\s*\\(\\s*${varName}\\.text\\s*,\\s*"([^"]*)"`, 'g');
+                            const strcpyMatch = strcpyRegex.exec(blockCode);
+                            if (strcpyMatch) {
+                                control.text = strcpyMatch[1];
+                            }
+
+                            // Add button action placeholder
+                            if (control.type === 'button') {
+                                control.action = { type: 'none', target: '', source_id: 0, target_id: 0, value: '', prop: 'fg', custom_code: '' };
+                                parseButtonAction(code, windowName, control);
+                            }
+
+                            if (control.id >= win.nextControlId) {
+                                win.nextControlId = control.id + 1;
+                            }
+
+                            console.log(`Parsed dynamic ${control.type} id=${control.id}: "${control.text}" at (${control.x},${control.y}) ${control.w}x${control.h}`);
+                            win.controls.push(control);
+                        }
                     }
 
                     project.windows.push(win);

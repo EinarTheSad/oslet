@@ -17,7 +17,7 @@ typedef struct {
     char wallpaper[128];
 } desktop_settings_t;
 
-static desktop_settings_t settings;
+desktop_settings_t settings;  /* Global - cpanel needs access */
 
 /* Cached wallpaper for fast redraw */
 static gfx_cached_bmp_t cached_wallpaper = {0};
@@ -33,7 +33,7 @@ static void load_settings(void) {
     int fd = sys_open(SETTINGS_PATH, "r");
     if (fd < 0) return;
 
-    char buffer[512];
+    char buffer[1024];
     int bytes = sys_read(fd, buffer, sizeof(buffer) - 1);
     sys_close(fd);
 
@@ -57,6 +57,63 @@ static void load_settings(void) {
     if (val && val[0] != '\0') {
         strncpy(settings.wallpaper, val, sizeof(settings.wallpaper) - 1);
         settings.wallpaper[sizeof(settings.wallpaper) - 1] = '\0';
+    }
+
+    /* Load theme settings */
+    sys_theme_t *theme = sys_win_get_theme();
+
+    val = ini_get(&ini, "THEME", "BG_COLOR");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->bg_color = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "TITLEBAR_COLOR");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->titlebar_color = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "TITLEBAR_INACTIVE");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->titlebar_inactive = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "FRAME_DARK");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->frame_dark = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "FRAME_LIGHT");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->frame_light = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "TEXT_COLOR");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->text_color = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "BUTTON_COLOR");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->button_color = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "TASKBAR_COLOR");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->taskbar_color = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "START_BUTTON_COLOR");
+    if (val) {
+        int c = atoi(val);
+        if (c >= 0 && c <= 15) theme->start_button_color = (uint8_t)c;
     }
 }
 
@@ -98,23 +155,27 @@ static int last_clock_minute = -1;
 
 extern const progmod_t startman_module;
 extern const progmod_t textmode_module;
+extern const progmod_t cpl_theme_module;
 
 static void prog_register_all(void) {
     progman_register(&startman_module);
     progman_register(&textmode_module);
+    progman_register(&cpl_theme_module);
 }
 
 void start_button_draw(int x, int y, int w, int h, const char *label, int pressed) {
+    sys_theme_t *theme = sys_win_get_theme();
     uint8_t shad_a, shad_b;
+    uint8_t btn_color = theme->start_button_color;
 
     sys_gfx_rect(x, y, w, h, COLOR_BLACK);
-    sys_gfx_fillrect(x+2, y+2, w-3, h-3, COLOR_LIGHT_GRAY);
+    sys_gfx_fillrect(x+2, y+2, w-3, h-3, btn_color);
 
     if (pressed) {
         shad_a = COLOR_WHITE;
-        shad_b = COLOR_DARK_GRAY;
+        shad_b = theme->frame_dark;
     } else {
-        shad_a = COLOR_DARK_GRAY;
+        shad_a = theme->frame_dark;
         shad_b = COLOR_WHITE;
     }
 
@@ -127,7 +188,7 @@ void start_button_draw(int x, int y, int w, int h, const char *label, int presse
     if (font_b.data && label) {
         int text_x = x + 22;
         int text_y = y + 7;
-        usr_bmf_printf(text_x, text_y, &font_b, 12, COLOR_BLACK, "%s", label);
+        usr_bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
     }
 }
 
@@ -140,12 +201,13 @@ static void start_init(void) {
 }
 
 static void clock_draw(void) {
+    sys_theme_t *theme = sys_win_get_theme();
     sys_get_time(&current);
-    sys_gfx_rect(640-60, TASKBAR_Y + 3, 57, 21, COLOR_DARK_GRAY);
+    sys_gfx_rect(640-60, TASKBAR_Y + 3, 57, 21, theme->frame_dark);
     sys_gfx_line(640-59, TASKBAR_Y + 23, 640-4, TASKBAR_Y + 23, COLOR_WHITE);
     sys_gfx_line(640-4, TASKBAR_Y + 4, 640-4, TASKBAR_Y + 23, COLOR_WHITE);
-    sys_gfx_fillrect(640-59, TASKBAR_Y + 4, 55, 19, COLOR_LIGHT_GRAY);
-    usr_bmf_printf(640-38, TASKBAR_Y + 10, &font_n, 12, COLOR_BLACK, "%02u:%02u", current.hour, current.minute);
+    sys_gfx_fillrect(640-59, TASKBAR_Y + 4, 55, 19, theme->taskbar_color);
+    usr_bmf_printf(640-38, TASKBAR_Y + 10, &font_n, 12, theme->text_color, "%02u:%02u", current.hour, current.minute);
     last_clock_hour = current.hour;
     last_clock_minute = current.minute;
 }
@@ -160,7 +222,8 @@ static int clock_update(void) {
 }
 
 static void taskbar_draw(void) {
-    sys_gfx_fillrect(0, TASKBAR_Y, 640, TASKBAR_HEIGHT, COLOR_LIGHT_GRAY);
+    sys_theme_t *theme = sys_win_get_theme();
+    sys_gfx_fillrect(0, TASKBAR_Y, 640, TASKBAR_HEIGHT, theme->taskbar_color);
     sys_gfx_line(0, TASKBAR_Y, 640, TASKBAR_Y, COLOR_WHITE);
 
     start_button_draw(start_button.x, start_button.y,
@@ -203,6 +266,24 @@ static void desktop_redraw(void) {
     clock_draw();
     sys_win_invalidate_icons();
     sys_win_redraw_all();
+}
+
+/* Called by cpanel after Apply/OK */
+void desktop_apply_settings(uint8_t color, const char *wallpaper) {
+    int wallpaper_changed = strcmp(settings.wallpaper, wallpaper) != 0;
+
+    settings.color = color;
+    strncpy(settings.wallpaper, wallpaper, sizeof(settings.wallpaper) - 1);
+
+    if (wallpaper_changed) {
+        if (cached_wallpaper.data) {
+            sys_gfx_free_cached(&cached_wallpaper);
+            cached_wallpaper.data = 0;
+        }
+        cache_wallpaper();
+    }
+
+    desktop_redraw();
 }
 
 static void desktop_redraw_fast(void) {

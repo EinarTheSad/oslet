@@ -7,7 +7,10 @@ static window_theme_t default_theme = {
     .frame_dark = 8,
     .frame_light = 7,
     .text_color = 0,
-    .button_color = 7
+    .button_color = 7,
+    .taskbar_color = 7,
+    .start_button_color = 7,
+    .desktop_color = 3
 };
 
 static window_theme_t *current_theme = &default_theme;

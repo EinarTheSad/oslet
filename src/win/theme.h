@@ -9,6 +9,9 @@ typedef struct {
     uint8_t frame_light;
     uint8_t text_color;
     uint8_t button_color;
+    uint8_t taskbar_color;
+    uint8_t start_button_color;
+    uint8_t desktop_color;
 } window_theme_t;
 
 void theme_init(void);
