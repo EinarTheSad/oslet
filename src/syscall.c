@@ -19,6 +19,7 @@
 #include "win/controls.h"
 #include "win/menu.h"
 #include "irq/io.h"
+#include "win/theme.h"
 
 #define MAX_OPEN_FILES 32
 
@@ -727,6 +728,48 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
     int clicked_on_focusable = 0;
 
     if (form->controls) {
+        /* FIRST: Check if click is on any open dropdown list (highest priority) */
+        for (int i = 0; i < form->ctrl_count; i++) {
+            gui_control_t *ctrl = &form->controls[i];
+            if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown_open) continue;
+
+            int abs_x = form->win.x + ctrl->x;
+            int abs_y = form->win.y + ctrl->y + 20;
+            int list_y = abs_y + ctrl->h;
+            int list_h = ctrl->item_count * 16;
+
+            /* Check if click is in dropdown list area */
+            if (mx >= abs_x && mx < abs_x + ctrl->w &&
+                my >= list_y && my < list_y + list_h) {
+                /* Clicked on list item - select it */
+                int clicked_item = (my - list_y) / 16;
+                if (clicked_item >= 0 && clicked_item < ctrl->item_count) {
+                    ctrl->cursor_pos = clicked_item;
+                }
+                ctrl->dropdown_open = 0;
+                form->press_control_id = ctrl->id;
+                /* Signal desktop to do full redraw (clears artifacts outside window) */
+                global_wm.needs_full_redraw = 1;
+                return 1;  /* needs_redraw */
+            }
+            /* Check if click is on dropdown control itself */
+            else if (mx >= abs_x && mx < abs_x + ctrl->w &&
+                     my >= abs_y && my < abs_y + ctrl->h) {
+                ctrl->dropdown_open = 0;
+                form->press_control_id = ctrl->id;
+                /* Signal desktop to do full redraw (clears artifacts outside window) */
+                global_wm.needs_full_redraw = 1;
+                return 1;  /* needs_redraw */
+            }
+            /* Click outside open dropdown - close it */
+            else {
+                ctrl->dropdown_open = 0;
+                /* Signal desktop to do full redraw (clears artifacts outside window) */
+                global_wm.needs_full_redraw = 1;
+                /* Don't return - continue to check other controls */
+            }
+        }
+
         /* Iterate backwards to check top-most (last drawn) controls first */
         for (int i = form->ctrl_count - 1; i >= 0; i--) {
             gui_control_t *ctrl = &form->controls[i];
@@ -736,7 +779,8 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 ctrl->type != CTRL_CHECKBOX &&
                 ctrl->type != CTRL_RADIOBUTTON &&
                 ctrl->type != CTRL_TEXTBOX &&
-                ctrl->type != CTRL_ICON) {
+                ctrl->type != CTRL_ICON &&
+                ctrl->type != CTRL_DROPDOWN) {
                 continue;
             }
 
@@ -757,6 +801,9 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 /* Icon hit area: 48x58 (32px icon + 24px label + 2px spacing) */
                 hit_w = ctrl->w > 0 ? ctrl->w : 48;
                 hit_h = ctrl->h > 0 ? ctrl->h : 58;
+            } else if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                /* Extend hit area to include dropdown list */
+                hit_h = ctrl->h + (ctrl->item_count * 16);
             }
 
             if (mx >= abs_x && mx < abs_x + hit_w &&
@@ -796,6 +843,21 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 /* For icon, just record the press (selection happens on release) */
                 else if (ctrl->type == CTRL_ICON) {
                     return 0;  /* Press recorded, no visual change yet */
+                }
+                /* For dropdown - open it (closing/selection handled in priority check above) */
+                else if (ctrl->type == CTRL_DROPDOWN) {
+                    if (!ctrl->dropdown_open) {
+                        /* Count items in text */
+                        int count = 1;
+                        const char *p = ctrl->text;
+                        while (*p) {
+                            if (*p == '|') count++;
+                            p++;
+                        }
+                        ctrl->item_count = count;
+                        ctrl->dropdown_open = 1;
+                        return 1;  /* needs_redraw */
+                    }
                 }
                 break;
             }
@@ -1294,6 +1356,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 /* Icon hit area: 48x58 (32px icon + 24px label + 2px spacing) */
                                 hit_w = ctrl->w > 0 ? ctrl->w : 48;
                                 hit_h = ctrl->h > 0 ? ctrl->h : 58;
+                            } else if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                                /* Extended hit area when dropdown is open */
+                                hit_h = ctrl->h + (ctrl->item_count * 16);
                             }
 
                             /* Check if release is within same control */
@@ -1349,6 +1414,14 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                         form->last_icon_click_time = now;
                                         form->last_icon_click_id = ctrl->id;
                                     }
+                                    needs_redraw = 1;
+                                }
+
+                                /* Handle dropdown - selection generates event */
+                                else if (ctrl->type == CTRL_DROPDOWN) {
+                                    /* Dropdown click was already handled in press, just generate event */
+                                    form->clicked_id = ctrl->id;
+                                    event_count = 1;
                                     needs_redraw = 1;
                                 }
 
@@ -1553,6 +1626,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 form->controls[i].is_focused =
                     (form->controls[i].id == form->focused_control_id) ? 1 : 0;
                 win_draw_control(&form->win, &form->controls[i]);
+            }
+
+            /* Draw open dropdown lists on top */
+            for (int i = 0; i < form->ctrl_count; i++) {
+                if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown_open) {
+                    win_draw_dropdown_list(&form->win, &form->controls[i]);
+                }
             }
             return 0;
         }
@@ -1765,6 +1845,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 out[3] = global_wm.dirty_h;
             }
             return 0;
+        }
+
+        case 0x13: { /* SYS_WIN_GET_THEME - Get current theme pointer */
+            return (uint32_t)theme_get_current();
         }
 
         default:

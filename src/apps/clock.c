@@ -65,8 +65,10 @@ static void redraw_clock(void) {
     int cx = f->win.x + CLOCK_CENTER_X;
     int cy = f->win.y + 20 + CLOCK_CENTER_Y;
 
+    sys_theme_t *t = sys_win_get_theme();
+
     /* Clear clock area */
-    sys_gfx_fillrect(f->win.x + 5, f->win.y + 25, WIN_W - 10, WIN_H - 30, COLOR_WHITE);
+    sys_gfx_fillrect(f->win.x + 5, f->win.y + 25, WIN_W - 10, WIN_H - 30, t->bg_color);
 
     draw_face(cx, cy, CLOCK_RADIUS);
 

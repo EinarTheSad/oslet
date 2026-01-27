@@ -21,7 +21,7 @@
 #define WM_DOUBLECLICK_TICKS 30  /* 30 ticks at 100Hz = 300ms */
 
 #define WM_MAX_WINDOWS 16
-#define WM_MAX_CONTROLS_PER_FORM 64
+#define WM_MAX_CONTROLS_PER_FORM 128
 
 #define WM_BG_MARGIN 10
 

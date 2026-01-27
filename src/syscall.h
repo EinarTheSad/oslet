@@ -101,6 +101,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_WIN_INVALIDATE_ICONS 0x0B10
 #define SYS_WIN_CHECK_REDRAW     0x0B11
 #define SYS_WIN_GET_DIRTY_RECT   0x0B12
+#define SYS_WIN_GET_THEME        0x0B13
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -127,6 +128,7 @@ typedef rtc_time_t sys_time_t;
 #define CTRL_TEXTBOX 6
 #define CTRL_FRAME 7
 #define CTRL_ICON 8
+#define CTRL_DROPDOWN 9
 
 #define FONT_NORMAL 0
 #define FONT_BOLD 1
@@ -139,25 +141,27 @@ typedef struct bitmap_s bitmap_t;
 typedef struct {
     uint8_t type;
     uint16_t x, y, w, h;
-    uint8_t fg, bg;
+    int fg, bg;
     char text[256];
     uint16_t id;
     uint8_t font_type;
     uint8_t font_size;
     uint8_t border;
     uint8_t border_color;
-    bitmap_t *cached_bitmap;  // Changed from uint8_t*
+    bitmap_t *cached_bitmap;
     uint8_t pressed;
-    uint8_t checked;  // For checkbox and radio button
-    uint16_t group_id;  // For radio button groups
+    uint8_t checked;
+    uint16_t group_id;
     /* Textbox-specific fields */
-    uint16_t cursor_pos;  // Cursor position in text
-    uint16_t max_length;  // Maximum text length (0 = use default 255)
-    uint16_t scroll_offset;  // For horizontal scrolling when text overflows
-    uint8_t is_focused;  // Set by form before drawing (for textbox cursor)
-    /* Text selection */
-    int16_t sel_start;  // Selection start (-1 = no selection)
-    int16_t sel_end;    // Selection end
+    uint16_t cursor_pos;
+    uint16_t max_length;
+    uint16_t scroll_offset;
+    uint8_t is_focused;
+    int16_t sel_start;
+    int16_t sel_end;
+    /* Dropdown-specific fields (cursor_pos used as selected_index) */
+    uint8_t dropdown_open;
+    uint8_t item_count;
 } gui_control_t;
 
 typedef struct {
@@ -170,18 +174,13 @@ typedef struct {
     uint8_t dragging;
     int16_t drag_start_x;
     int16_t drag_start_y;
-    char icon_path[64];  // Icon path for minimized window
-    /* Focus tracking for keyboard input */
-    int16_t focused_control_id;  // ID of control with keyboard focus (-1 = none)
-    /* Textbox mouse selection tracking */
-    uint8_t textbox_selecting;  // Currently selecting text with mouse
-    /* Icon double-click tracking */
+    char icon_path[64];
+    int16_t focused_control_id;
+    uint8_t textbox_selecting;
     uint32_t last_icon_click_time;
     int16_t last_icon_click_id;
-    /* Window menu (shown when clicking minimize button) */
     menu_t window_menu;
     uint8_t window_menu_initialized;
-    /* Owner task ID for cleanup on process exit */
     uint32_t owner_tid;
 } gui_form_t;
 
@@ -240,6 +239,24 @@ typedef struct {
     int x, y, w, h;
 } gfx_rect_params_t;
 
+typedef struct {
+    void *data;
+    int width;
+    int height;
+} gfx_cached_bmp_t;
+
+typedef struct {
+    uint8_t bg_color;
+    uint8_t titlebar_color;
+    uint8_t titlebar_inactive;
+    uint8_t frame_dark;
+    uint8_t frame_light;
+    uint8_t text_color;
+    uint8_t button_color;
+    uint8_t taskbar_color;
+    uint8_t start_button_color;
+    uint8_t desktop_color;
+} sys_theme_t;
 
 void syscall_init(void);
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx);
@@ -547,27 +564,17 @@ static inline int sys_gfx_load_bmp_ex(const char *path, int x, int y, int transp
     return ret;
 }
 
-/* Cached BMP handle (returned by sys_gfx_cache_bmp) */
-typedef struct {
-    void *data;
-    int width;
-    int height;
-} gfx_cached_bmp_t;
-
-/* Load BMP into memory cache, returns 0 on success */
 static inline int sys_gfx_cache_bmp(const char *path, gfx_cached_bmp_t *out) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_CACHE_BMP), "b"(path), "c"(out) : "memory");
     return ret;
 }
 
-/* Draw cached BMP at position */
 static inline void sys_gfx_draw_cached(gfx_cached_bmp_t *bmp, int x, int y, int transparent) {
     uint32_t pos = ((uint32_t)x << 16) | ((uint32_t)y & 0xFFFF);
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_DRAW_CACHED), "b"(bmp), "c"(pos), "d"(transparent));
 }
 
-/* Free cached BMP */
 static inline void sys_gfx_free_cached(gfx_cached_bmp_t *bmp) {
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FREE_CACHED), "b"(bmp));
 }
@@ -597,9 +604,9 @@ static inline int sys_win_msgbox(const char *msg, const char *btn, const char *t
 
 static inline void sys_busywait(uint32_t ms) {
     uint32_t start = sys_uptime();
-    uint32_t end = start + (ms / 10);  /* uptime is in ticks (10ms) */
+    uint32_t end = start + (ms / 10);
     while (sys_uptime() < end) {
-        __asm__ volatile("pause");  /* CPU hint for spinloop */
+        __asm__ volatile("pause");
     }
 }
 
@@ -616,7 +623,6 @@ static inline void sys_win_add_control(void *form, gui_control_t *ctrl) {
     register void *dummy_ebx __asm__("ebx") = form;
     register gui_control_t *dummy_ecx __asm__("ecx") = ctrl;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx));
-    /* This has to be done, or else the controls don't show */
 }
 
 static inline int sys_win_pump_events(void *form) {
@@ -655,7 +661,6 @@ static inline gui_control_t* sys_win_get_control(void *form, int16_t id) {
     return ret;
 }
 
-/* Low-level property syscalls - pack control_id and prop_id into ecx */
 static inline void sys_ctrl_set_prop(void *form, int16_t ctrl_id, int prop_id, uint32_t value) {
     uint32_t packed = ((uint32_t)ctrl_id << 16) | (prop_id & 0xFFFF);
     register int dummy_eax __asm__("eax") = SYS_WIN_CTRL_SET_PROP;
@@ -682,7 +687,7 @@ static inline uint32_t sys_ctrl_get_prop(void *form, int16_t ctrl_id, int prop_i
  *   int checked = ctrl_get_checked(form, 4);   // if (CheckBox.Checked)
  */
 
-/* Text property (PROP_TEXT) */
+
 static inline void ctrl_set_text(void *form, int16_t id, const char *text) {
     sys_ctrl_set_prop(form, id, PROP_TEXT, (uint32_t)text);
 }
@@ -690,7 +695,6 @@ static inline const char* ctrl_get_text(void *form, int16_t id) {
     return (const char*)sys_ctrl_get_prop(form, id, PROP_TEXT);
 }
 
-/* Checked property (PROP_CHECKED) */
 static inline void ctrl_set_checked(void *form, int16_t id, int checked) {
     sys_ctrl_set_prop(form, id, PROP_CHECKED, checked);
 }
@@ -698,24 +702,20 @@ static inline int ctrl_get_checked(void *form, int16_t id) {
     return (int)sys_ctrl_get_prop(form, id, PROP_CHECKED);
 }
 
-/* Image path property (PROP_IMAGE) - for PictureBox */
 static inline void ctrl_set_image(void *form, int16_t id, const char *path) {
     sys_ctrl_set_prop(form, id, PROP_IMAGE, (uint32_t)path);
 }
 
-/* Position properties */
 static inline void ctrl_set_pos(void *form, int16_t id, int x, int y) {
     sys_ctrl_set_prop(form, id, PROP_X, x);
     sys_ctrl_set_prop(form, id, PROP_Y, y);
 }
 
-/* Size properties */
 static inline void ctrl_set_size(void *form, int16_t id, int w, int h) {
     sys_ctrl_set_prop(form, id, PROP_W, w);
     sys_ctrl_set_prop(form, id, PROP_H, h);
 }
 
-/* Color properties */
 static inline void ctrl_set_fg(void *form, int16_t id, int color) {
     sys_ctrl_set_prop(form, id, PROP_FG, color);
 }
@@ -723,7 +723,6 @@ static inline void ctrl_set_bg(void *form, int16_t id, int color) {
     sys_ctrl_set_prop(form, id, PROP_BG, color);
 }
 
-/* Visibility */
 static inline void ctrl_set_visible(void *form, int16_t id, int visible) {
     sys_ctrl_set_prop(form, id, PROP_VISIBLE, visible);
 }
@@ -733,16 +732,20 @@ static inline void sys_win_invalidate_icons(void) {
     __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
 }
 
-/* Check if full redraw is needed (window was destroyed) - returns 1=full, 2=dirty rect */
 static inline int sys_win_check_redraw(void) {
     register int result __asm__("eax") = SYS_WIN_CHECK_REDRAW;
     __asm__ volatile("int $0x80" : "+r"(result) :: "memory");
     return result;
 }
 
-/* Get dirty rectangle (x, y, w, h) */
 static inline void sys_win_get_dirty_rect(int *out) {
     register int eax __asm__("eax") = SYS_WIN_GET_DIRTY_RECT;
     register int ebx __asm__("ebx") = (int)out;
     __asm__ volatile("int $0x80" : "+r"(eax) : "r"(ebx) : "memory");
+}
+
+static inline sys_theme_t* sys_win_get_theme(void) {
+    sys_theme_t *ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_GET_THEME));
+    return ret;
 }
