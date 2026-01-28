@@ -93,3 +93,9 @@ int gfx_load_bmp_4bit_ex(const char *path, int dest_x, int dest_y, int transpare
 uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
 void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);
 void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int dest_x, int dest_y, int transparent);
+
+/* Draw a portion (src_x,src_y,src_w,src_h) of the cached bitmap to (dest_x,dest_y) */
+void gfx_draw_cached_bmp_region(uint8_t *cached_data, int width, int height,
+                                int dest_x, int dest_y,
+                                int src_x, int src_y, int src_w, int src_h,
+                                int transparent);

@@ -17,6 +17,7 @@ typedef struct {
     int drag_offset_x;           /* Mouse offset from icon origin when drag started */
     int drag_offset_y;
     int original_x, original_y;  /* Position before drag (for cancel/snap-back) */
+    int click_start_x, click_start_y;  /* Mouse position at click (for drag threshold detection) */
 } icon_t;
 
 /*

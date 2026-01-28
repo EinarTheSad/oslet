@@ -1,5 +1,6 @@
 .vscode/
 .claude/
+.github/
 build/
 *.img
 *.iso

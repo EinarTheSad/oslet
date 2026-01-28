@@ -607,6 +607,47 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             return 0;
         }
 
+        case 0x10: { /* Draw partial region of cached BMP */
+            if (!ebx) return (uint32_t)-1;
+
+            /* Userland passes a pointer to this struct in EBX */
+            typedef struct {
+                void *bmp;      /* gfx_cached_bmp_t* */
+                int dest_x;
+                int dest_y;
+                int src_x;
+                int src_y;
+                int src_w;
+                int src_h;
+                int transparent;
+            } draw_region_t;
+
+            draw_region_t *r = (draw_region_t*)ebx;
+            if (!r->bmp) return (uint32_t)-1;
+
+            typedef struct { void *data; int width; int height; } cached_bmp_t;
+            cached_bmp_t *bmp = (cached_bmp_t*)r->bmp;
+            if (!bmp->data) return (uint32_t)-1;
+
+            int sx = r->src_x;
+            int sy = r->src_y;
+            int sw = r->src_w;
+            int sh = r->src_h;
+
+            /* Clip source to bitmap bounds */
+            if (sx < 0) { sw += sx; sx = 0; }
+            if (sy < 0) { sh += sy; sy = 0; }
+            if (sx >= bmp->width || sy >= bmp->height) return 0;
+            if (sx + sw > bmp->width) sw = bmp->width - sx;
+            if (sy + sh > bmp->height) sh = bmp->height - sy;
+            if (sw <= 0 || sh <= 0) return 0;
+
+            gfx_draw_cached_bmp_region((uint8_t*)bmp->data, bmp->width, bmp->height,
+                                       r->dest_x, r->dest_y,
+                                       sx, sy, sw, sh, r->transparent);
+            return 0;
+        }
+
         default:
             return (uint32_t)-1;
     }
@@ -638,13 +679,42 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
     }
 }
 
-/* Helper functions for SYS_WIN_PUMP_EVENTS */
+#define ICON_DIRTY_MARGIN 15
+
+static void pump_set_icons_dirty_rect(window_manager_t *wm) {
+    int min_x = 640, min_y = 480, max_x = 0, max_y = 0;
+    int found = 0;
+
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] && wm->windows[i]->win.is_minimized && wm->windows[i]->win.minimized_icon) {
+            icon_t *icon = wm->windows[i]->win.minimized_icon;
+            int ix = icon->x - ICON_DIRTY_MARGIN;
+            int iy = icon->y - ICON_DIRTY_MARGIN;
+            int ix2 = icon->x + WM_ICON_TOTAL_WIDTH + ICON_DIRTY_MARGIN;
+            int iy2 = icon->y + icon_get_height(icon) + ICON_DIRTY_MARGIN;
+
+            if (ix < min_x) min_x = ix;
+            if (iy < min_y) min_y = iy;
+            if (ix2 > max_x) max_x = ix2;
+            if (iy2 > max_y) max_y = iy2;
+            found = 1;
+        }
+    }
+
+    if (found) {
+        if (min_x < 0) min_x = 0;
+        if (min_y < 0) min_y = 0;
+        wm_set_dirty_rect(wm, min_x, min_y, max_x - min_x, max_y - min_y);
+    }
+}
+
 static void pump_deselect_all_icons(window_manager_t *wm) {
     for (int i = 0; i < wm->count; i++) {
         if (wm->windows[i] && wm->windows[i]->win.is_minimized && wm->windows[i]->win.minimized_icon) {
             icon_set_selected(wm->windows[i]->win.minimized_icon, 0);
         }
     }
+    pump_set_icons_dirty_rect(wm);
 }
 
 static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
@@ -671,9 +741,9 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
             pump_deselect_all_icons(&global_wm);
             if (form->win.minimized_icon) {
                 icon_set_selected(form->win.minimized_icon, 1);
-                /* Record mouse position for drag detection (don't start drag yet) */
-                form->win.minimized_icon->drag_offset_x = mx;
-                form->win.minimized_icon->drag_offset_y = my;
+                /* Record mouse position for drag threshold detection */
+                form->win.minimized_icon->click_start_x = mx;
+                form->win.minimized_icon->click_start_y = my;
                 form->win.minimized_icon->original_x = form->win.minimized_icon->x;
                 form->win.minimized_icon->original_y = form->win.minimized_icon->y;
             }
@@ -1462,12 +1532,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 icon_t *icon = form->win.minimized_icon;
 
                 if (!icon->dragging) {
-                    /* Check if mouse moved enough to start dragging (threshold: 4px) */
-                    int dx = mx - icon->drag_offset_x;
-                    int dy = my - icon->drag_offset_y;
-                    if (dx * dx + dy * dy > 16) {  /* 4^2 = 16 */
-                        icon_start_drag(icon, icon->drag_offset_x, icon->drag_offset_y);
-                        icon_update_drag(icon, mx, my);
+                    /* Check if mouse moved enough to start dragging (threshold: half slot width) */
+                    int dx = mx - icon->click_start_x;
+                    int dy = my - icon->click_start_y;
+                    int threshold = WM_ICON_SLOT_WIDTH / 2;  /* 28px */
+                    if (dx * dx + dy * dy > threshold * threshold) {
+                        icon_start_drag(icon, mx, my);
                         wm_draw_all(&global_wm);
                         needs_redraw = 0;
                     }
@@ -1597,6 +1667,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->is_focused = 0;
                 dest->sel_start = -1;
                 dest->sel_end = -1;
+                /* Dropdown-specific fields - ensure closed on init */
+                dest->dropdown_open = 0;
+                dest->item_count = ctrl->item_count;
 
                 strcpy_s(dest->text, ctrl->text, 256);
 
