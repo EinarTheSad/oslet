@@ -7,7 +7,7 @@
 #include "../mem/heap.h"
 #include "../console.h"
 
-#define ICON_BG_MARGIN 15
+#define ICON_BG_MARGIN 4
 
 extern bmf_font_t font_b, font_n;
 
@@ -128,6 +128,8 @@ void icon_create(icon_t *icon, int x, int y, const char *label, const char *bitm
     icon->drag_offset_y = 0;
     icon->original_x = x;
     icon->original_y = y;
+    icon->click_start_x = 0;
+    icon->click_start_y = 0;
 
     if (label) {
         strcpy_s(icon->label, label, 64);

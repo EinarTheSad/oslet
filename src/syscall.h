@@ -77,6 +77,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_GFX_CACHE_BMP   0x090D
 #define SYS_GFX_DRAW_CACHED 0x090E
 #define SYS_GFX_FREE_CACHED 0x090F
+#define SYS_GFX_DRAW_CACHED_PARTIAL 0x0910 /* Draw a sub-rect of a cached BMP */
 
 /* AH = 0Ah - Mouse */
 #define SYS_MOUSE_GET_STATE  0x0A00
@@ -573,6 +574,36 @@ static inline int sys_gfx_cache_bmp(const char *path, gfx_cached_bmp_t *out) {
 static inline void sys_gfx_draw_cached(gfx_cached_bmp_t *bmp, int x, int y, int transparent) {
     uint32_t pos = ((uint32_t)x << 16) | ((uint32_t)y & 0xFFFF);
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_DRAW_CACHED), "b"(bmp), "c"(pos), "d"(transparent));
+}
+
+/* Draw a sub-rectangle of a cached bitmap
+   Parameters packed into a small struct on the stack and pointer passed in EBX. Returns 0 on success, -1 on error. */
+static inline int sys_gfx_draw_cached_partial(gfx_cached_bmp_t *bmp, int dest_x, int dest_y,
+                                              int src_x, int src_y, int src_w, int src_h,
+                                              int transparent) {
+    int ret;
+    struct {
+        gfx_cached_bmp_t *bmp;
+        int dest_x;
+        int dest_y;
+        int src_x;
+        int src_y;
+        int src_w;
+        int src_h;
+        int transparent;
+    } params;
+
+    params.bmp = bmp;
+    params.dest_x = dest_x;
+    params.dest_y = dest_y;
+    params.src_x = src_x;
+    params.src_y = src_y;
+    params.src_w = src_w;
+    params.src_h = src_h;
+    params.transparent = transparent;
+
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_DRAW_CACHED_PARTIAL), "b"(&params) : "memory");
+    return ret;
 }
 
 static inline void sys_gfx_free_cached(gfx_cached_bmp_t *bmp) {

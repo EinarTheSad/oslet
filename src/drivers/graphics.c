@@ -872,6 +872,58 @@ void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x
     gfx_draw_cached_bmp_ex(cached_data, width, height, dest_x, dest_y, 1);
 }
 
+/* Draw only a sub-rectangle of a cached bitmap. This mirrors the slow path in gfx_draw_cached_bmp_ex
+   but reads pixels from the given source rectangle (src_x,src_y,src_w,src_h) and writes them at
+   (dest_x,dest_y) on screen. */
+void gfx_draw_cached_bmp_region(uint8_t *cached_data, int width, int height, int dest_x, int dest_y,
+                                int src_x, int src_y, int src_w, int src_h, int transparent) {
+    if (!backbuffer || !cached_data) return;
+
+    /* Clip source rectangle to bitmap bounds */
+    if (src_x < 0) { src_w += src_x; src_x = 0; }
+    if (src_y < 0) { src_h += src_y; src_y = 0; }
+    if (src_x >= width || src_y >= height) return;
+    if (src_x + src_w > width) src_w = width - src_x;
+    if (src_y + src_h > height) src_h = height - src_y;
+    if (src_w <= 0 || src_h <= 0) return;
+
+    int src_row_bytes = (width + 1) / 2;
+
+    for (int y = 0; y < src_h; y++) {
+        int screen_y = dest_y + y;
+        if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
+
+        int src_offset = (src_y + y) * src_row_bytes;
+
+        for (int x = 0; x < src_w; x++) {
+            int sx = src_x + x;
+            int byte_idx = sx / 2;
+            uint8_t pixel = (sx & 1) ? (cached_data[src_offset + byte_idx] & 0x0F) : (cached_data[src_offset + byte_idx] >> 4);
+
+            int screen_x = dest_x + x;
+
+            if (screen_x >= 0 && screen_x < GFX_WIDTH && (!transparent || pixel != 5)) {
+                putpixel_raw(screen_x, screen_y, pixel);
+            }
+        }
+    }
+
+    /* Mark the actually drawn region as dirty (clip to screen) */
+    int x0 = dest_x;
+    int y0 = dest_y;
+    int x1 = dest_x + src_w - 1;
+    int y1 = dest_y + src_h - 1;
+
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= GFX_WIDTH) x1 = GFX_WIDTH - 1;
+    if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
+
+    if (x1 >= x0 && y1 >= y0) {
+        mark_dirty(x0, y0, x1 - x0 + 1, y1 - y0 + 1);
+    }
+}
+
 int gfx_load_bmp_4bit_ex(const char *path, int dest_x, int dest_y, int transparent) {
     int width, height;
     uint8_t *bitmap = gfx_load_bmp_to_buffer(path, &width, &height);

@@ -231,3 +231,10 @@ void wm_snap_to_slot(int x, int y, int *out_x, int *out_y) {
     if (*out_x < WM_ICON_MARGIN) *out_x = WM_ICON_MARGIN;
     if (*out_y < WM_ICON_MARGIN) *out_y = WM_ICON_MARGIN;
 }
+
+void wm_set_dirty_rect(window_manager_t *wm, int x, int y, int w, int h) {
+    wm->dirty_x = x;
+    wm->dirty_y = y;
+    wm->dirty_w = w;
+    wm->dirty_h = h;
+}

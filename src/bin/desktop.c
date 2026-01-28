@@ -268,7 +268,7 @@ static void desktop_redraw(void) {
     sys_win_redraw_all();
 }
 
-/* Called by cpanel after Apply/OK */
+/* Called by cpanel */
 void desktop_apply_settings(uint8_t color, const char *wallpaper) {
     int wallpaper_changed = strcmp(settings.wallpaper, wallpaper) != 0;
 
@@ -286,10 +286,6 @@ void desktop_apply_settings(uint8_t color, const char *wallpaper) {
     desktop_redraw();
 }
 
-static void desktop_redraw_fast(void) {
-    sys_win_redraw_all();
-}
-
 static void desktop_redraw_rect(int x, int y, int w, int h) {
     /* Clip to desktop area (above taskbar) */
     if (y + h > TASKBAR_Y) h = TASKBAR_Y - y;
@@ -297,7 +293,6 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
     if (x < 0) { w += x; x = 0; }
     if (w <= 0 || h <= 0) return;
 
-    /* Fill background color in dirty area */
     sys_gfx_fillrect(x, y, w, h, settings.color);
 
     /* Redraw wallpaper portion if we have one */
@@ -309,11 +304,34 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
         int dy2 = y + h;
 
         if (x < wp_x2 && dx2 > wallpaper_x && y < wp_y2 && dy2 > wallpaper_y) {
-            /* There's overlap - TODO: partial bitmap drawing */
-            draw_wallpaper();
+            /* There's overlap - draw only the intersecting portion of the wallpaper */
+            int ix0 = x < wallpaper_x ? wallpaper_x : x;
+            int iy0 = y < wallpaper_y ? wallpaper_y : y;
+            int ix1 = (dx2 - 1) < (wp_x2 - 1) ? (dx2 - 1) : (wp_x2 - 1);
+            int iy1 = (dy2 - 1) < (wp_y2 - 1) ? (dy2 - 1) : (wp_y2 - 1);
+
+            int src_x = ix0 - wallpaper_x;
+            int src_y = iy0 - wallpaper_y;
+            int src_w = ix1 - ix0 + 1;
+            int src_h = iy1 - iy0 + 1;
+
+            /* Draw the sub-rectangle (opaque) */
+            sys_gfx_draw_cached_partial(&cached_wallpaper, ix0, iy0, src_x, src_y, src_w, src_h, 0);
         }
     }
+    sys_win_invalidate_icons();
     sys_win_redraw_all();
+}
+
+static void desktop_redraw_fast(void) {
+    /* Get dirty rect around icons and redraw that area */
+    int dirty[4];
+    sys_win_get_dirty_rect(dirty);
+    if (dirty[2] > 0 && dirty[3] > 0) {
+        desktop_redraw_rect(dirty[0], dirty[1], dirty[2], dirty[3]);
+    } else {
+        sys_win_redraw_all();
+    }
 }
 
 static void pump_all_program_events(int mx, int my) {
