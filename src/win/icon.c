@@ -343,8 +343,8 @@ void icon_update_drag(icon_t *icon, int mouse_x, int mouse_y) {
     /* Clamp to screen bounds (leave room for taskbar) */
     if (new_x < 0) new_x = 0;
     if (new_y < 0) new_y = 0;
-    if (new_x > 640 - WM_ICON_TOTAL_WIDTH) new_x = 640 - WM_ICON_TOTAL_WIDTH;
-    if (new_y > 480 - 27 - icon->height) new_y = 480 - 27 - icon->height;
+    if (new_x > WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH) new_x = WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH;
+    if (new_y > WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - icon->height) new_y = WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - icon->height;
 
     if (new_x != icon->x || new_y != icon->y) {
         icon_move(icon, new_x, new_y);

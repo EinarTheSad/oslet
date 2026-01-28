@@ -1,8 +1,9 @@
 #pragma once
 #include <stdint.h>
+#include "../win/wm_config.h"
 
-#define GFX_WIDTH       640
-#define GFX_HEIGHT      480
+#define GFX_WIDTH       WM_SCREEN_WIDTH
+#define GFX_HEIGHT      WM_SCREEN_HEIGHT
 #define GFX_PLANES      4
 #define GFX_BUFFER_SIZE ((GFX_WIDTH * GFX_HEIGHT) / 2)  /* 153600 bytes - 2 pixels per byte */
 #define GFX_VRAM        ((uint8_t*)0xA0000)
