@@ -246,7 +246,8 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
     return app_count;
 }
 
-static void open_group_window(const char *grp_path, const char *parent_grp);
+static char g_pending_grp_icon[64] = {0};
+static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path);
 
 static int startman_init(prog_instance_t *inst) {
     startman_state_t *state = sys_malloc(sizeof(startman_state_t));
@@ -325,7 +326,13 @@ static int startman_init(prog_instance_t *inst) {
         sys_free(state);
         return -1;
     }
-    sys_win_set_icon(state->form, "C:/ICONS/GROUP.ICO");
+    /* Set form icon: subgroup windows may override with pending group icon */
+    if (!state->is_main_window && g_pending_grp_icon[0]) {
+        sys_win_set_icon(state->form, g_pending_grp_icon);
+        g_pending_grp_icon[0] = '\0';
+    } else {
+        sys_win_set_icon(state->form, "C:/ICONS/GROUP.ICO");
+    }
 
     /* Add back button only for subgroup windows */
     if (!state->is_main_window) {
@@ -416,13 +423,17 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
             app_entry_t *app = &state->apps[app_index];
             if (app->type == ENTRY_GRP) {
                 /* Open group in new window */
-                open_group_window(app->path, state->grp_path);
+                open_group_window(app->path, state->grp_path, app->icon_path);
             } else if (app->type == ENTRY_MODULE) {
-                /* Launch internal module */
-                progman_launch(app->path);
+                /* Launch internal module (propagate icon override) */
+                progman_launch_with_icon(app->path, app->icon_path);
             } else {
                 /* Launch ELF */
-                sys_spawn_async(app->path);
+                int child_tid = sys_spawn_async(app->path);
+                if (child_tid > 0) {
+                    /* Ask kernel to set default icon for the newly spawned task */
+                    sys_proc_set_icon(child_tid, app->icon_path);
+                }
             }
         }
         return PROG_EVENT_HANDLED;
@@ -444,10 +455,17 @@ static void startman_cleanup(prog_instance_t *inst) {
 }
 
 /* Open a new group window by launching a new startman instance */
-static void open_group_window(const char *grp_path, const char *parent_grp) {
+static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path) {
     (void)parent_grp;
-    /* Store GRP path for the new instance to pick up */
-    strcpy(g_pending_grp_path, grp_path);
+    /* Store GRP path and icon for the new instance to pick up */
+    strncpy(g_pending_grp_path, grp_path, sizeof(g_pending_grp_path) - 1);
+    g_pending_grp_path[sizeof(g_pending_grp_path) - 1] = '\0';
+    if (icon_path && icon_path[0]) {
+        strncpy(g_pending_grp_icon, icon_path, sizeof(g_pending_grp_icon) - 1);
+        g_pending_grp_icon[sizeof(g_pending_grp_icon) - 1] = '\0';
+    } else {
+        g_pending_grp_icon[0] = '\0';
+    }
     /* Launch new startman instance */
     progman_launch("Start Manager");
 }

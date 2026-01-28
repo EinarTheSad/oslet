@@ -190,6 +190,14 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             if (!ebx) return -1;
             return task_spawn((const char*)ebx);
 
+        case 0x07: { /* SYS_PROC_SET_ICON */
+            if (!ebx || !ecx) return (uint32_t)-1;
+            task_t *t = task_find_by_tid((uint32_t)ebx);
+            if (!t) return (uint32_t)-1;
+            strcpy_s(t->icon_path, (const char*)ecx, 64);
+            return 0;
+        }
+
         default:
             return -1;
     }
@@ -1257,6 +1265,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Track owner task for cleanup on process exit */
             task_t *current = task_get_current();
             form->owner_tid = current ? current->tid : 0;
+
+            /* If the owning task has a default icon, apply it to the form */
+            if (current && current->icon_path[0]) {
+                strcpy_s(form->icon_path, current->icon_path, 64);
+            }
 
             /* Register window with window manager */
             if (!wm_register_window(&global_wm, form)) {

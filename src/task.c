@@ -37,6 +37,7 @@ void tasking_init(void) {
     current_task->sleep_until_ticks = 0;
     current_task->quantum_remaining = QUANTUM_HIGH;
     current_task->stack = NULL;
+    current_task->icon_path[0] = '\0';
     current_task->next = current_task;
     
     task_list = current_task;
@@ -73,6 +74,7 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     task->state = TASK_READY;
     task->priority = priority;
     task->sleep_until_ticks = 0;
+    task->icon_path[0] = '\0';
     
     switch (priority) {
         case PRIORITY_HIGH:   task->quantum_remaining = QUANTUM_HIGH; break;

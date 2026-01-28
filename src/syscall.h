@@ -24,6 +24,13 @@ typedef rtc_time_t sys_time_t;
 #define SYS_PROC_YIELD      0x0204
 #define SYS_PROC_SPAWN      0x0205
 #define SYS_PROC_SPAWN_ASYNC 0x0206
+#define SYS_PROC_SET_ICON   0x0207
+
+static inline int sys_proc_set_icon(int tid, const char *icon_path) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SET_ICON), "b"(tid), "c"(icon_path));
+    return ret;
+}
 
 /* AH = 03h - File Operations */
 #define SYS_FILE_OPEN       0x0300
@@ -253,6 +260,7 @@ typedef struct {
     uint8_t frame_dark;
     uint8_t frame_light;
     uint8_t text_color;
+    uint8_t icon_text_color; /* desktop icon label color */
     uint8_t button_color;
     uint8_t taskbar_color;
     uint8_t start_button_color;
