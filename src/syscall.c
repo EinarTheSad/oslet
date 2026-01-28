@@ -1344,6 +1344,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Handle mouse button press */
             if (button_pressed) {
+                /* If click landed on desktop (no window/icon), deselect any selected icons */
+                if (topmost == NULL) {
+                    pump_deselect_all_icons(&global_wm);
+                    needs_redraw = 1;
+                }
+
                 /* Ignore presses for windows that are not the topmost at the mouse position. This
                    prevents clicks on controls/titlebars of windows that are overlapped by another
                    (focused) window. */
@@ -1565,14 +1571,18 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 icon_t *icon = form->win.minimized_icon;
 
                 if (!icon->dragging) {
-                    /* Check if mouse moved enough to start dragging */
-                    int dx = mx - icon->click_start_x;
-                    int dy = my - icon->click_start_y;
-                    int threshold = WM_ICON_SLOT_WIDTH / 4;
-                    if (dx * dx + dy * dy > threshold * threshold) {
-                        icon_start_drag(icon, mx, my);
-                        wm_draw_all(&global_wm);
-                        needs_redraw = 0;
+                    /* Only start drag if the press originated within the icon or the mouse is currently over the icon area */
+                    if (win_is_icon_clicked(&form->win, icon->click_start_x, icon->click_start_y) ||
+                        win_is_icon_clicked(&form->win, mx, my)) {
+                        /* Check if mouse moved enough to start dragging */
+                        int dx = mx - icon->click_start_x;
+                        int dy = my - icon->click_start_y;
+                        int threshold = WM_ICON_SLOT_WIDTH / 4;
+                        if (dx * dx + dy * dy > threshold * threshold) {
+                            icon_start_drag(icon, mx, my);
+                            wm_draw_all(&global_wm);
+                            needs_redraw = 0;
+                        }
                     }
                 } else {
                     /* Continue dragging */
@@ -2003,16 +2013,6 @@ static uint32_t handle_power(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t e
 
             /* Try VirtualBox */
             outw(0x4004, 0x3400);
-
-            /* Try APM shutdown (legacy hardware) */
-            /* APM: AX=5307h (Set Power State), BX=0001h (all devices), CX=0003h (off) */
-            __asm__ volatile(
-                "movw $0x5307, %%ax\n"
-                "movw $0x0001, %%bx\n"
-                "movw $0x0003, %%cx\n"
-                "int $0x15\n"
-                ::: "ax", "bx", "cx"
-            );
 
             /* If still running, show message and halt */
             vga_clear();
