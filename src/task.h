@@ -35,6 +35,7 @@ typedef struct task {
     uint32_t exec_base;
     uint32_t exec_end;
     int exec_slot;
+    char icon_path[64];
     struct task *next;
 } task_t;
 

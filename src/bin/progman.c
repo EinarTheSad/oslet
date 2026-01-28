@@ -67,6 +67,8 @@ int progman_is_running(const char *name) {
     return 0;
 }
 
+static char g_pending_module_icon[64] = {0};
+
 int progman_launch(const char *name) {
     const progmod_t *module = find_module_by_name(name);
     if (!module)
@@ -102,7 +104,31 @@ int progman_launch(const char *name) {
         }
     }
 
+    /* If a module launch was requested with an icon override, apply it to created windows */
+    if (g_pending_module_icon[0]) {
+        for (int i = 0; i < inst->window_count; i++) {
+            if (inst->windows[i]) {
+                sys_win_set_icon(inst->windows[i], g_pending_module_icon);
+            }
+        }
+    }
+
     return inst->instance_id;
+}
+
+int progman_launch_with_icon(const char *name, const char *icon_path) {
+    if (icon_path && icon_path[0]) {
+        strncpy(g_pending_module_icon, icon_path, sizeof(g_pending_module_icon) - 1);
+        g_pending_module_icon[sizeof(g_pending_module_icon) - 1] = '\0';
+    } else {
+        g_pending_module_icon[0] = '\0';
+    }
+
+    int res = progman_launch(name);
+
+    /* Clear pending icon after launch attempt */
+    g_pending_module_icon[0] = '\0';
+    return res;
 }
 
 void progman_close(uint16_t instance_id) {

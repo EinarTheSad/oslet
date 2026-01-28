@@ -8,6 +8,7 @@ typedef struct {
     uint8_t frame_dark;
     uint8_t frame_light;
     uint8_t text_color;
+    uint8_t icon_text_color; /* separate color for desktop icon labels */
     uint8_t button_color;
     uint8_t taskbar_color;
     uint8_t start_button_color;

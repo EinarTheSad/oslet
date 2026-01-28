@@ -206,7 +206,7 @@ void icon_draw(icon_t *icon) {
             int tx = icon_draw_x + (WM_ICON_SIZE - tw) / 2;
             int ty = icon->y + 10;
 
-            bmf_printf(tx, ty, &font_b, 12, theme->text_color, "%s", icon_label);
+            bmf_printf(tx, ty, &font_b, 12, theme->icon_text_color, "%s", icon_label);
         }
     }
 
@@ -225,7 +225,7 @@ void icon_draw(icon_t *icon) {
     /* Draw label below icon with word wrapping */
     if (icon->label[0]) {
         window_theme_t *theme = theme_get_current();
-        uint8_t text_color = icon->selected ? 15 : theme->text_color;
+        uint8_t text_color = icon->selected ? 15 : theme->icon_text_color;
         int text_y = icon->y + WM_ICON_SIZE + 5;
         icon_draw_label_wrapped(icon->label, icon->x, text_y, total_width, 49, text_color);
     }

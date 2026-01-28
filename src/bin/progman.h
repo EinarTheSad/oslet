@@ -7,6 +7,7 @@
 void progman_init(void);
 int progman_register(const progmod_t *module);
 int progman_launch(const char *name);
+int progman_launch_with_icon(const char *name, const char *icon_path);
 void progman_close(uint16_t instance_id);
 void progman_update_all(void);
 int progman_route_event(void *form, int event);
