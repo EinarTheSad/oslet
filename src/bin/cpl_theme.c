@@ -39,10 +39,10 @@ extern void desktop_apply_settings(uint8_t color, const char *wallpaper);
 #define CTRL_BTN_OK      51
 #define CTRL_BTN_CANCEL  52
 
-#define WIN_WIDTH  280
-#define WIN_HEIGHT 270
-#define WIN_X      180
-#define WIN_Y      120
+#define WIN_WIDTH  274
+#define WIN_HEIGHT 296
+#define WIN_X      183
+#define WIN_Y      92
 
 /* Color names for dropdown */
 static const char *color_options =
@@ -216,7 +216,7 @@ static void apply_theme(cpl_theme_state_t *state) {
     sys_theme_t *theme = sys_win_get_theme();
     theme->bg_color = state->theme_winbg;
     theme->titlebar_color = state->theme_titlebar;
-    theme->icon_text_color = state->theme_text_color; /* icon-only */
+    theme->icon_text_color = state->theme_text_color;
     theme->button_color = state->theme_titlebtn;
     theme->taskbar_color = state->theme_taskbar;
     theme->start_button_color = state->theme_startbtn;
@@ -231,7 +231,7 @@ static void add_dropdown_row(void *form, int y, const char *label, int lbl_id, i
     lbl.w = 80;
     lbl.h = 16;
     lbl.fg = 0;
-    lbl.bg = -1; /* transparent */
+    lbl.bg = -1;
     lbl.id = lbl_id;
     strncpy(lbl.text, label, sizeof(lbl.text) - 1);
     sys_win_add_control(form, &lbl);
@@ -239,13 +239,13 @@ static void add_dropdown_row(void *form, int y, const char *label, int lbl_id, i
     gui_control_t drop = {0};
     drop.type = CTRL_DROPDOWN;
     drop.x = 95;
-    drop.y = y - 2;
+    drop.y = y;
     drop.w = 165;
     drop.h = 18;
     drop.fg = 0;
     drop.bg = 15;
     drop.id = drop_id;
-    drop.cursor_pos = selected;  /* cursor_pos = selected_index */
+    drop.cursor_pos = selected;
     drop.item_count = 16;
     strncpy(drop.text, color_options, sizeof(drop.text) - 1);
     sys_win_add_control(form, &drop);
@@ -270,12 +270,12 @@ static int cpl_theme_init(prog_instance_t *inst) {
     frame_theme.type = CTRL_FRAME;
     frame_theme.x = 6;
     frame_theme.y = 5;
-    frame_theme.w = 264;
-    frame_theme.h = 127;
+    frame_theme.w = 262;
+    frame_theme.h = 137;
     frame_theme.fg = 0;
-    frame_theme.bg = 15;
+    frame_theme.bg = -1;
     frame_theme.id = CTRL_FRAME_THEME;
-    strcpy(frame_theme.text, "Window Theme");
+    strcpy(frame_theme.text, "System theme");
     sys_win_add_control(state->form, &frame_theme);
 
     /* Theme dropdowns */
@@ -289,35 +289,35 @@ static int cpl_theme_init(prog_instance_t *inst) {
     gui_control_t frame_desk = {0};
     frame_desk.type = CTRL_FRAME;
     frame_desk.x = 6;
-    frame_desk.y = 137;
-    frame_desk.w = 264;
-    frame_desk.h = 75;
+    frame_desk.y = 147;
+    frame_desk.w = 262;
+    frame_desk.h = 93;
     frame_desk.fg = 0;
-    frame_desk.bg = 15;
+    frame_desk.bg = -1;
     frame_desk.id = CTRL_FRAME_DESKTOP;
     strcpy(frame_desk.text, "Desktop");
     sys_win_add_control(state->form, &frame_desk);
 
     /* Desktop color dropdown */
-    add_dropdown_row(state->form, 157, "Color:", CTRL_LBL_DESK_COLOR, CTRL_DROP_DESKTOP, state->desktop_color);
+    add_dropdown_row(state->form, 167, "Color:", CTRL_LBL_DESK_COLOR, CTRL_DROP_DESKTOP, state->desktop_color);
     /* Icon text color dropdown (Black/White) */
     uint8_t icon_text_selected = (state->theme_text_color == 15) ? 1 : 0;
     gui_control_t lbl_icon = {0};
     lbl_icon.type = CTRL_LABEL;
     lbl_icon.x = 12;
-    lbl_icon.y = 176;
+    lbl_icon.y = 189;
     lbl_icon.w = 80;
     lbl_icon.h = 16;
     lbl_icon.fg = 0;
-    lbl_icon.bg = -1; /* transparent */
+    lbl_icon.bg = -1;
     lbl_icon.id = CTRL_LBL_ICON_TEXT;
-    strncpy(lbl_icon.text, "Icon Text:", sizeof(lbl_icon.text) - 1);
+    strncpy(lbl_icon.text, "Icon text:", sizeof(lbl_icon.text) - 1);
     sys_win_add_control(state->form, &lbl_icon);
 
     gui_control_t drop_icon = {0};
     drop_icon.type = CTRL_DROPDOWN;
     drop_icon.x = 95;
-    drop_icon.y = 174;
+    drop_icon.y = 189;
     drop_icon.w = 165;
     drop_icon.h = 18;
     drop_icon.fg = 0;
@@ -331,7 +331,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
     gui_control_t lbl_wp = {0};
     lbl_wp.type = CTRL_LABEL;
     lbl_wp.x = 12;
-    lbl_wp.y = 184;
+    lbl_wp.y = 211;
     lbl_wp.w = 60;
     lbl_wp.h = 14;
     lbl_wp.fg = 0;
@@ -342,9 +342,9 @@ static int cpl_theme_init(prog_instance_t *inst) {
 
     gui_control_t txt_wp = {0};
     txt_wp.type = CTRL_TEXTBOX;
-    txt_wp.x = 75;
-    txt_wp.y = 181;
-    txt_wp.w = 185;
+    txt_wp.x = 95;
+    txt_wp.y = 211;
+    txt_wp.w = 165;
     txt_wp.h = 18;
     txt_wp.fg = 0;
     txt_wp.bg = 15;
@@ -357,7 +357,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
     gui_control_t btn_apply = {0};
     btn_apply.type = CTRL_BUTTON;
     btn_apply.x = 30;
-    btn_apply.y = 220;
+    btn_apply.y = 246;
     btn_apply.w = 65;
     btn_apply.h = 22;
     btn_apply.fg = 0;
@@ -369,7 +369,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
     gui_control_t btn_ok = {0};
     btn_ok.type = CTRL_BUTTON;
     btn_ok.x = 105;
-    btn_ok.y = 220;
+    btn_ok.y = 246;
     btn_ok.w = 65;
     btn_ok.h = 22;
     btn_ok.fg = 0;
@@ -381,7 +381,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
     gui_control_t btn_cancel = {0};
     btn_cancel.type = CTRL_BUTTON;
     btn_cancel.x = 180;
-    btn_cancel.y = 220;
+    btn_cancel.y = 246;
     btn_cancel.w = 65;
     btn_cancel.h = 22;
     btn_cancel.fg = 0;
