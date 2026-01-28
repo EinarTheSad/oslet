@@ -305,7 +305,14 @@ void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path) 
     /* Invalidate cursor buffer since window is disappearing */
     mouse_invalidate_buffer();
 
+    /* Restore the area occupied by the window */
     win_restore_background(win);
+
+    /* Free saved background like in win_destroy so minimizing redraws like closing */
+    if (win->saved_bg) {
+        kfree(win->saved_bg);
+        win->saved_bg = NULL;
+    }
 
     win->is_minimized = 1;
 
