@@ -1995,6 +1995,24 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             return 1;
         }
 
+        case 0x16: { /* SYS_WIN_RESTORE_FORM - Restore given form (if minimized) and bring to front */
+            gui_form_t *form = (gui_form_t*)ebx;
+            if (!form) return 0;
+
+            if (form->win.is_minimized) {
+                if (form->win.minimized_icon) {
+                    wm_release_icon_slot(&global_wm,
+                                         form->win.minimized_icon->x,
+                                         form->win.minimized_icon->y);
+                }
+                win_restore(&form->win);
+            }
+
+            wm_bring_to_front(&global_wm, form);
+            global_wm.needs_full_redraw = 1;
+            return 2; /* Indicate full redraw */
+        }
+
         default:
             return (uint32_t)-1;
     }
