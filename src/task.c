@@ -396,7 +396,7 @@ int task_spawn_and_wait(const char *path) {
                                       PRIORITY_NORMAL);
     if (!child_tid) {
         /* Failed - clean up everything */
-        int slot = image.file_size >> 24;
+        int slot = image.slot;
         exec_cleanup_process(image.base_addr, image.end_addr, slot);
         return -1;
     }
@@ -404,7 +404,7 @@ int task_spawn_and_wait(const char *path) {
     /* Setup parent-child relationship */
     task_t *child = task_find_by_tid(child_tid);
     if (!child) {
-        int slot = image.file_size >> 24;
+        int slot = image.slot;
         exec_cleanup_process(image.base_addr, image.end_addr, slot);
         return -1;
     }
@@ -415,7 +415,7 @@ int task_spawn_and_wait(const char *path) {
     /* Store exec info for cleanup on exit */
     child->exec_base = image.base_addr;
     child->exec_end = image.end_addr;
-    child->exec_slot = image.file_size >> 24;
+    child->exec_slot = image.slot;
     
     /* Block parent and wait for child to finish */
     __asm__ volatile ("cli");
@@ -454,7 +454,7 @@ int task_spawn(const char *path) {
                                       filename,
                                       PRIORITY_NORMAL);
     if (!child_tid) {
-        int slot = image.file_size >> 24;
+        int slot = image.slot;
         exec_cleanup_process(image.base_addr, image.end_addr, slot);
         return -1;
     }
@@ -462,7 +462,7 @@ int task_spawn(const char *path) {
     /* Setup child process info */
     task_t *child = task_find_by_tid(child_tid);
     if (!child) {
-        int slot = image.file_size >> 24;
+        int slot = image.slot;
         exec_cleanup_process(image.base_addr, image.end_addr, slot);
         return -1;
     }
@@ -470,7 +470,7 @@ int task_spawn(const char *path) {
     /* Store exec info for cleanup on exit */
     child->exec_base = image.base_addr;
     child->exec_end = image.end_addr;
-    child->exec_slot = image.file_size >> 24;
+    child->exec_slot = image.slot;
 
     /* Don't block - return immediately, child runs in parallel */
     return (int)child_tid;

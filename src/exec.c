@@ -50,19 +50,23 @@ int exec_init(void) {
 }
 
 static int alloc_slot(void) {
+    __asm__ volatile ("cli");
     for (int i = 0; i < MAX_PROCESS_SLOTS; i++) {
         if (!slot_used[i]) {
             slot_used[i] = 1;
+            __asm__ volatile ("sti");
             return i;
         }
     }
+    __asm__ volatile ("sti");
     return -1;
 }
 
 static void free_slot(int slot) {
-    if (slot >= 0 && slot < MAX_PROCESS_SLOTS) {
-        slot_used[slot] = 0;
-    }
+    if (slot < 0 || slot >= MAX_PROCESS_SLOTS) return;
+    __asm__ volatile ("cli");
+    slot_used[slot] = 0;
+    __asm__ volatile ("sti");
 }
 
 static uint32_t slot_to_base(int slot) {
@@ -251,12 +255,11 @@ int exec_load(const char *path, exec_image_t *image) {
     image->brk = image->end_addr;
     image->file_data = file_data;
     image->file_size = file_size;
-    
-    /* Store slot in file_size high bits */
-    image->file_size = (slot << 24) | (file_size & 0x00FFFFFF);
+    /* Store slot separately and keep original file_size intact */
+    image->slot = slot;
     
     return 0;
-}
+} 
 
 int exec_run(exec_image_t *image) {
     if (!image || !image->entry_point) return -1;
@@ -270,7 +273,7 @@ int exec_run(exec_image_t *image) {
                                 "elf_proc",
                                 PRIORITY_NORMAL);
     if (!tid) {
-        int slot = image->file_size >> 24;
+        int slot = image->slot;
         free_slot(slot);
         return -1;
     }
@@ -292,11 +295,11 @@ void exec_free(exec_image_t *image) {
     }
     
     /* Free slot */
-    int slot = image->file_size >> 24;
+    int slot = image->slot;
     free_slot(slot);
     
     memset_s(image, 0, sizeof(exec_image_t));
-}
+} 
 
 void exec_cleanup_process(uint32_t base_addr, uint32_t end_addr, int slot) {
     if (base_addr && end_addr > base_addr) {

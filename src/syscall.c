@@ -36,57 +36,67 @@ typedef struct {
 static file_descriptor_t fd_table[MAX_OPEN_FILES];
 
 static void fd_init(void) {
+    __asm__ volatile ("cli");
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         fd_table[i].file = NULL;
         fd_table[i].in_use = 0;
         fd_table[i].owner_tid = 0;
     }
+    __asm__ volatile ("sti");
 }
 
 static int fd_alloc(fat32_file_t *file) {
     task_t *current = task_get_current();
     uint32_t tid = current ? current->tid : 0;
 
+    __asm__ volatile ("cli");
     for (int i = 3; i < MAX_OPEN_FILES; i++) {
         if (!fd_table[i].in_use) {
             fd_table[i].file = file;
             fd_table[i].in_use = 1;
             fd_table[i].owner_tid = tid;
+            __asm__ volatile ("sti");
             return i;
         }
     }
+    __asm__ volatile ("sti");
     return -1;
 }
 
 static fat32_file_t* fd_get(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return NULL;
-    if (!fd_table[fd].in_use) return NULL;
+    __asm__ volatile ("cli");
+    if (!fd_table[fd].in_use) { __asm__ volatile ("sti"); return NULL; }
 
     /* Check ownership - only the owning task can access this fd */
     task_t *current = task_get_current();
-    if (current && fd_table[fd].owner_tid != current->tid) {
-        return NULL;  /* Access denied - wrong task */
-    }
+    if (current && fd_table[fd].owner_tid != current->tid) { __asm__ volatile ("sti"); return NULL; }
 
-    return fd_table[fd].file;
+    fat32_file_t *file = fd_table[fd].file;
+    __asm__ volatile ("sti");
+    return file;
 }
 
 static void fd_free(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return;
 
+    __asm__ volatile ("cli");
     /* Check ownership before freeing */
     task_t *current = task_get_current();
     if (current && fd_table[fd].owner_tid != 0 && fd_table[fd].owner_tid != current->tid) {
+        __asm__ volatile ("sti");
         return;  /* Access denied - can't close another task's fd */
     }
 
     fd_table[fd].in_use = 0;
     fd_table[fd].file = NULL;
     fd_table[fd].owner_tid = 0;
+    __asm__ volatile ("sti");
 }
 
 /* Cleanup all file descriptors owned by a task (called on task exit) */
 void fd_cleanup_task(uint32_t tid) {
+    __asm__ volatile ("cli");
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (fd_table[i].in_use && fd_table[i].owner_tid == tid) {
             if (fd_table[i].file) {
@@ -97,6 +107,7 @@ void fd_cleanup_task(uint32_t tid) {
             fd_table[i].owner_tid = 0;
         }
     }
+    __asm__ volatile ("sti");
 }
 
 static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
