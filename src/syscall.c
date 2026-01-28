@@ -1320,7 +1320,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
                         const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;
                         win_minimize(&form->win, icon_x, icon_y, icon_path);
-                        return -1;  /* Window minimized */
+                        return -2;  /* Window minimized (major state change) */
                     } else if (action == MENU_ACTION_CLOSE) {
                         /* Signal close request - return special value */
                         return -3;  /* Close requested */
