@@ -70,6 +70,7 @@ typedef struct {
     uint32_t brk;              /* Program break (end of data segment) */
     void    *file_data;        /* Raw file data (temporary) */
     uint32_t file_size;        /* Size of raw file */
+    int     slot;             /* Allocated process slot index */
 } exec_image_t;
 
 /* Process address space manager */
