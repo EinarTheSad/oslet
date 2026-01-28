@@ -170,7 +170,7 @@ void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
 
     // Check if we need to wrap to next column (accounting for taskbar at bottom)
     // Leave space for taskbar plus margin
-    if (wm->next_icon_y + WM_ICON_TOTAL_HEIGHT > WM_SCREEN_HEIGHT - 27 - WM_ICON_MARGIN) {
+    if (wm->next_icon_y + WM_ICON_TOTAL_HEIGHT > WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_MARGIN) {
         wm->next_icon_y = WM_ICON_MARGIN;  // Reset to top
         wm->next_icon_column++;  // Move to next column
     }
@@ -208,7 +208,7 @@ void wm_invalidate_icon_backgrounds(window_manager_t *wm) {
 }
 
 void wm_snap_to_slot(int x, int y, int *out_x, int *out_y) {
-    int taskbar_height = 27;
+    int taskbar_height = WM_TASKBAR_HEIGHT;
 
     /* Calculate nearest column and row */
     int col = (x - WM_ICON_MARGIN + WM_ICON_SLOT_WIDTH / 2) / WM_ICON_SLOT_WIDTH;

@@ -693,7 +693,7 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
 #define ICON_DIRTY_MARGIN 15
 
 static void pump_set_icons_dirty_rect(window_manager_t *wm) {
-    int min_x = 640, min_y = 480, max_x = 0, max_y = 0;
+    int min_x = WM_SCREEN_WIDTH, min_y = WM_SCREEN_HEIGHT, max_x = 0, max_y = 0;
     int found = 0;
 
     for (int i = 0; i < wm->count; i++) {

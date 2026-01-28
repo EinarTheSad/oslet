@@ -1,15 +1,14 @@
 #include "../syscall.h"
+#include "../win/wm_config.h"
+#include "../lib/wallpaper.h"
+#include "../lib/rect.h"
 #include "../lib/stdio.h"
 #include "../lib/stdlib.h"
 #include "../lib/string.h"
 #include "../lib/ini.h"
 #include "../lib/fonts.h"
 #include "progman.h"
-
-#define TASKBAR_HEIGHT 27
-#define TASKBAR_Y (480 - TASKBAR_HEIGHT)
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
+#define TASKBAR_Y (WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT)
 #define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
 
 typedef struct {
@@ -121,22 +120,19 @@ static void load_settings(void) {
 static void cache_wallpaper(void) {
     if (settings.wallpaper[0] == '\0') return;
 
-    if (sys_gfx_cache_bmp(settings.wallpaper, &cached_wallpaper) != 0) {
+    int x = 0, y = 0;
+    if (wallpaper_cache(settings.wallpaper, &cached_wallpaper, &x, &y) != 0) {
         cached_wallpaper.data = 0;
         return;
     }
 
-    /* Calculate centered position */
-    wallpaper_x = (SCREEN_WIDTH - cached_wallpaper.width) / 2;
-    wallpaper_y = (SCREEN_HEIGHT - cached_wallpaper.height) / 2;
-
-    if (wallpaper_x < 0) wallpaper_x = 0;
-    if (wallpaper_y < 0) wallpaper_y = 0;
+    wallpaper_x = x;
+    wallpaper_y = y;
 }
 
 static void draw_wallpaper(void) {
     if (!cached_wallpaper.data) return;
-    sys_gfx_draw_cached(&cached_wallpaper, wallpaper_x, wallpaper_y, 0);
+    wallpaper_draw(&cached_wallpaper, wallpaper_x, wallpaper_y, 0);
 }
 
 usr_bmf_font_t font_b;
@@ -203,11 +199,11 @@ static void start_init(void) {
 static void clock_draw(void) {
     sys_theme_t *theme = sys_win_get_theme();
     sys_get_time(&current);
-    sys_gfx_rect(640-60, TASKBAR_Y + 3, 57, 21, theme->frame_dark);
-    sys_gfx_line(640-59, TASKBAR_Y + 23, 640-4, TASKBAR_Y + 23, COLOR_WHITE);
-    sys_gfx_line(640-4, TASKBAR_Y + 4, 640-4, TASKBAR_Y + 23, COLOR_WHITE);
-    sys_gfx_fillrect(640-59, TASKBAR_Y + 4, 55, 19, theme->taskbar_color);
-    usr_bmf_printf(640-38, TASKBAR_Y + 10, &font_n, 12, theme->text_color, "%02u:%02u", current.hour, current.minute);
+    sys_gfx_rect(WM_SCREEN_WIDTH-60, TASKBAR_Y + 3, 57, 21, theme->frame_dark);
+    sys_gfx_line(WM_SCREEN_WIDTH-59, TASKBAR_Y + 23, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, COLOR_WHITE);
+    sys_gfx_line(WM_SCREEN_WIDTH-4, TASKBAR_Y + 4, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, COLOR_WHITE);
+    sys_gfx_fillrect(WM_SCREEN_WIDTH-59, TASKBAR_Y + 4, 55, 19, theme->taskbar_color);
+    usr_bmf_printf(WM_SCREEN_WIDTH-38, TASKBAR_Y + 10, &font_n, 12, theme->text_color, "%02u:%02u", current.hour, current.minute);
     last_clock_hour = current.hour;
     last_clock_minute = current.minute;
 }
@@ -223,8 +219,8 @@ static int clock_update(void) {
 
 static void taskbar_draw(void) {
     sys_theme_t *theme = sys_win_get_theme();
-    sys_gfx_fillrect(0, TASKBAR_Y, 640, TASKBAR_HEIGHT, theme->taskbar_color);
-    sys_gfx_line(0, TASKBAR_Y, 640, TASKBAR_Y, COLOR_WHITE);
+    sys_gfx_fillrect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT, theme->taskbar_color);
+    sys_gfx_line(0, TASKBAR_Y, WM_SCREEN_WIDTH, TASKBAR_Y, COLOR_WHITE);
 
     start_button_draw(start_button.x, start_button.y,
                       start_button.w, start_button.h,
@@ -260,7 +256,7 @@ static int start_click(int mx, int my, unsigned char mb, int *state_changed) {
 }
 
 static void desktop_redraw(void) {
-    sys_gfx_fillrect(0, 0, SCREEN_WIDTH, TASKBAR_Y, settings.color);
+    sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, TASKBAR_Y, settings.color);
     draw_wallpaper();
     taskbar_draw();
     clock_draw();
@@ -297,26 +293,13 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
 
     /* Redraw wallpaper portion if we have one */
     if (cached_wallpaper.data) {
-        /* Calculate overlap between dirty rect and wallpaper */
-        int wp_x2 = wallpaper_x + cached_wallpaper.width;
-        int wp_y2 = wallpaper_y + cached_wallpaper.height;
-        int dx2 = x + w;
-        int dy2 = y + h;
-
-        if (x < wp_x2 && dx2 > wallpaper_x && y < wp_y2 && dy2 > wallpaper_y) {
-            /* There's overlap - draw only the intersecting portion of the wallpaper */
-            int ix0 = x < wallpaper_x ? wallpaper_x : x;
-            int iy0 = y < wallpaper_y ? wallpaper_y : y;
-            int ix1 = (dx2 - 1) < (wp_x2 - 1) ? (dx2 - 1) : (wp_x2 - 1);
-            int iy1 = (dy2 - 1) < (wp_y2 - 1) ? (dy2 - 1) : (wp_y2 - 1);
-
-            int src_x = ix0 - wallpaper_x;
-            int src_y = iy0 - wallpaper_y;
-            int src_w = ix1 - ix0 + 1;
-            int src_h = iy1 - iy0 + 1;
-
-            /* Draw the sub-rectangle (opaque) */
-            sys_gfx_draw_cached_partial(&cached_wallpaper, ix0, iy0, src_x, src_y, src_w, src_h, 0);
+        int ix, iy, iw, ih;
+        if (rect_intersect(x, y, w, h,
+                           wallpaper_x, wallpaper_y, cached_wallpaper.width, cached_wallpaper.height,
+                           &ix, &iy, &iw, &ih)) {
+            int src_x = ix - wallpaper_x;
+            int src_y = iy - wallpaper_y;
+            wallpaper_draw_partial(&cached_wallpaper, ix, iy, src_x, src_y, iw, ih, 0);
         }
     }
     sys_win_invalidate_icons();
@@ -385,7 +368,7 @@ void _start(void) {
     load_settings();
     cache_wallpaper();
 
-    sys_gfx_fillrect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, settings.color);
+    sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT, settings.color);
     draw_wallpaper();
 
     usr_bmf_import(&font_b, "C:/FONTS/LSANS_B.BMF");
