@@ -159,8 +159,8 @@
         }
 
         #screen-bounds {
-            --wm-screen-width: 640px; /* Use CSS variable for designer bounds */
-            --wm-screen-height: 480px;
+            width: 640px;
+            height: 480px;
             background: #008080;
             border: 1px solid #666666;
             position: relative;
@@ -1494,10 +1494,8 @@
                 let newLeft = e.clientX - screenRect.left - formDragOffset.x;
                 let newTop = e.clientY - screenRect.top - formDragOffset.y;
 
-                const WM_SCREEN_WIDTH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--wm-screen-width')) || 640;
-                const WM_SCREEN_HEIGHT = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--wm-screen-height')) || 480;
-                newLeft = Math.max(0, Math.min(newLeft, WM_SCREEN_WIDTH - win.w));
-                newTop = Math.max(0, Math.min(newTop, WM_SCREEN_HEIGHT - win.h));
+                newLeft = Math.max(0, Math.min(newLeft, 640 - win.w));
+                newTop = Math.max(0, Math.min(newTop, 480 - win.h));
 
                 form.style.left = newLeft + 'px';
                 form.style.top = newTop + 'px';
@@ -1514,13 +1512,11 @@
                 const currentTop = parseInt(form.style.top) || 0;
 
                 if (resizeType === 'right' || resizeType === 'corner') {
-                    const WM_SCREEN_WIDTH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--wm-screen-width')) || 640;
-                    const maxWidth = WM_SCREEN_WIDTH - currentLeft;
+                    const maxWidth = 640 - currentLeft;
                     win.w = Math.max(100, Math.min(maxWidth, resizeStart.w + dx));
                 }
                 if (resizeType === 'bottom' || resizeType === 'corner') {
-                    const WM_SCREEN_HEIGHT = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--wm-screen-height')) || 480;
-                    const maxHeight = WM_SCREEN_HEIGHT - currentTop;
+                    const maxHeight = 480 - currentTop;
                     win.h = Math.max(80, Math.min(maxHeight, resizeStart.h + dy));
                 }
 
