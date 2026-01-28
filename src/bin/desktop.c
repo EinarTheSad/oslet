@@ -10,6 +10,8 @@
 #include "progman.h"
 #define TASKBAR_Y (WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT)
 #define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
+#define KEY_ALT_TAB 0xC0
+#define KEY_ALT_RELEASE 0xC1
 
 typedef struct {
     uint8_t color;
@@ -387,6 +389,18 @@ void _start(void) {
     while (!exit_requested) {
         clock_update();
         sys_get_mouse_state(&mx, &my, &mb);
+
+        /* Global keyboard shortcuts: Alt+Tab to cycle window focus */
+        int gk = sys_get_alt_key();  /* Only consumes Alt+Tab / Alt-release, leaves other keys untouched */
+        if (gk == KEY_ALT_TAB) {
+            /* Preview next window (does not change z-order until Alt released) */
+            sys_win_cycle_preview();
+            desktop_redraw();
+        } else if (gk == KEY_ALT_RELEASE) {
+            /* Alt released - commit previewed window to top */
+            sys_win_cycle_commit();
+            desktop_redraw();
+        }
 
         /* Handle Start button */
         int button_state_changed = 0;

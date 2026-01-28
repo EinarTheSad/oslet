@@ -107,7 +107,11 @@ static void keyboard_irq(void) {
         
         if (is_release) {
             /* Extended modifier releases */
-            if (code == 0x38) mod_alt = 0;   /* Right Alt */
+            if (code == 0x38) {
+                /* Right Alt released - notify and clear modifier */
+                buf_push(KEY_ALT_RELEASE);
+                mod_alt = 0;
+            }
             if (code == 0x1D) mod_ctrl = 0;  /* Right Ctrl */
             return;
         }
@@ -142,7 +146,13 @@ static void keyboard_irq(void) {
             mod_ctrl = !is_release;
             return;
         case 0x38: /* Left Alt */
-            mod_alt = !is_release;
+            if (is_release) {
+                /* Left Alt released - notify userland/kernel to commit Alt-Tab */
+                buf_push(KEY_ALT_RELEASE);
+                mod_alt = 0;
+            } else {
+                mod_alt = 1;
+            }
             return;
         case 0x3A: /* Caps Lock - toggle on press only */
             if (!is_release) mod_caps ^= 1;
@@ -170,15 +180,19 @@ static void keyboard_irq(void) {
     if (code == 0x57) { buf_push(KEY_F11); return; }
     if (code == 0x58) { buf_push(KEY_F12); return; }
     
-    /* Alt + Letter combinations */
+    /* Alt + Letter combinations, and Alt+Tab */
     if (mod_alt) {
         int letter_idx = sc_to_letter_index(code);
         if (letter_idx >= 0) {
             buf_push(KEY_ALT_A + letter_idx);
             return;
         }
-        /* Alt pressed but not a letter - could handle Alt+number here */
-        /* For now, just ignore non-letter Alt combinations */
+        /* Alt + Tab: treat specially and push KEY_ALT_TAB */
+        if (code == 0x0F) { /* Tab scancode */
+            buf_push(KEY_ALT_TAB);
+            return;
+        }
+        /* Alt pressed but not a handled combo - ignore */
         return;
     }
     
@@ -212,6 +226,11 @@ int kbd_getchar_nonblock(void) {
         return 0;  /* No key available */
     }
     return buf_pop();
+}
+
+int kbd_peek_nonblock(void) {
+    if (buf_empty()) return 0;
+    return kbuf[ktail];
 }
 
 size_t kbd_getline(char* out, size_t maxlen) {

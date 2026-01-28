@@ -1296,6 +1296,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             int my = mouse_get_y();
             uint8_t mb = mouse_get_buttons();
 
+            /* Determine which window is topmost at mouse position */
+            gui_form_t *topmost = wm_get_window_at(&global_wm, mx, my);
+
             /* Detect button transitions */
             uint8_t button_pressed = (mb & 1) && !(form->last_mouse_buttons & 1);
             uint8_t button_released = !(mb & 1) && (form->last_mouse_buttons & 1);
@@ -1341,7 +1344,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Handle mouse button press */
             if (button_pressed) {
-                if (form->win.is_minimized) {
+                /* Ignore presses for windows that are not the topmost at the mouse position. This
+                   prevents clicks on controls/titlebars of windows that are overlapped by another
+                   (focused) window. */
+                if (topmost != form) {
+                    /* If click landed on another window, do not process this press for this form. */
+                } else if (form->win.is_minimized) {
                     /* Check for click on icon (single or double) */
                     int icon_result = pump_handle_icon_click(form, mx, my);
                     if (icon_result == 2) {
@@ -1372,6 +1380,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         }
                     }
                 } else {
+                    /* Click landed on topmost window - process normally */
                     /* Check if click is within window bounds - bring to front if so */
                     if (mx >= form->win.x && mx < form->win.x + form->win.w &&
                         my >= form->win.y && my < form->win.y + form->win.h) {
@@ -1556,10 +1565,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 icon_t *icon = form->win.minimized_icon;
 
                 if (!icon->dragging) {
-                    /* Check if mouse moved enough to start dragging (threshold: half slot width) */
+                    /* Check if mouse moved enough to start dragging */
                     int dx = mx - icon->click_start_x;
                     int dy = my - icon->click_start_y;
-                    int threshold = WM_ICON_SLOT_WIDTH / 2;  /* 28px */
+                    int threshold = WM_ICON_SLOT_WIDTH / 4;
                     if (dx * dx + dy * dy > threshold * threshold) {
                         icon_start_drag(icon, mx, my);
                         wm_draw_all(&global_wm);
@@ -1625,8 +1634,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 }
             }
 
-            /* Handle keyboard input for focused textbox */
-            if (!form->win.is_minimized && form->focused_control_id >= 0) {
+            /* Handle keyboard input for focused textbox. Only the globally focused window
+               should receive keyboard events (prevents background windows from consuming keys) */
+            if (!form->win.is_minimized && form->focused_control_id >= 0 &&
+                global_wm.focused_index >= 0 && global_wm.windows[global_wm.focused_index] == form) {
                 if (pump_handle_keyboard(form)) {
                     needs_redraw = 1;
                 }
@@ -1948,6 +1959,32 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             return (uint32_t)theme_get_current();
         }
 
+        case 0x14: { /* SYS_WIN_CYCLE_PREVIEW - Cycle focus to next window (preview only) */
+            if (global_wm.count <= 1) return 0;
+            int start = global_wm.focused_index;
+            int i = start;
+            for (int k = 0; k < global_wm.count; k++) {
+                i = (i + 1) % global_wm.count;
+                gui_form_t *f = global_wm.windows[i];
+                if (f && !f->win.is_minimized && f->win.is_visible) {
+                    /* Set focused index but DO NOT change z-order - preview behavior */
+                    global_wm.focused_index = i;
+                    global_wm.needs_full_redraw = 1;
+                    return 1;
+                }
+            }
+            return 0;
+        }
+
+        case 0x15: { /* SYS_WIN_CYCLE_COMMIT - Bring the currently focused window to front */
+            if (global_wm.focused_index < 0 || global_wm.focused_index >= global_wm.count) return 0;
+            gui_form_t *f = global_wm.windows[global_wm.focused_index];
+            if (!f || f->win.is_minimized || !f->win.is_visible) return 0;
+            wm_bring_to_front(&global_wm, f);
+            global_wm.needs_full_redraw = 1;
+            return 1;
+        }
+
         default:
             return (uint32_t)-1;
     }
@@ -2043,6 +2080,25 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x0A: return handle_mouse(al, ebx, ecx, edx);
         case 0x0B: return handle_window(al, ebx, ecx, edx);
         case 0x0C: return handle_power(al, ebx, ecx, edx);
+        case 0x0D: {
+            /* Input namespace - subcodes in AL */
+            switch (al) {
+                case 0x00: /* SYS_GET_KEY_NONBLOCK */
+                    return (uint32_t)kbd_getchar_nonblock();
+                case 0x01: { /* SYS_GET_ALT_KEY - peek+consume only Alt+Tab / AltRelease */
+                    int k = kbd_peek_nonblock();
+                    if (k == 0) return 0;
+                    if (k == KEY_ALT_TAB || k == KEY_ALT_RELEASE) {
+                        /* Consume and return */
+                        (void)kbd_getchar_nonblock();
+                        return (uint32_t)k;
+                    }
+                    return 0;
+                }
+                default:
+                    return (uint32_t)-1;
+            }
+        }
 
         default:
             return (uint32_t)-1;

@@ -65,9 +65,12 @@
 #define KEY_ALT_X   0xB7
 #define KEY_ALT_Y   0xB8
 #define KEY_ALT_Z   0xB9
+#define KEY_ALT_TAB 0xC0
+#define KEY_ALT_RELEASE 0xC1
 
 void keyboard_init(void);
 
-int kbd_getchar(void);  /* Returns int to support extended keys (blocking) */
-int kbd_getchar_nonblock(void);  /* Non-blocking: returns 0 if no key available */
+int kbd_getchar(void);
+int kbd_getchar_nonblock(void);
+int kbd_peek_nonblock(void);
 size_t kbd_getline(char* buf, size_t maxlen);

@@ -94,6 +94,10 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_POWER_SHUTDOWN  0x0C00
 #define SYS_POWER_REBOOT    0x0C01
 
+/* AH = 0Dh - Input */
+#define SYS_GET_KEY_NONBLOCK 0x0D00
+#define SYS_GET_ALT_KEY      0x0D01  /* Peek+consume only Alt+Tab / AltRelease */
+
 /* AH = 0Bh - Windows */
 #define SYS_WIN_MSGBOX          0x0B00
 #define SYS_WIN_CREATE_FORM     0x0B05
@@ -110,6 +114,10 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_CHECK_REDRAW     0x0B11
 #define SYS_WIN_GET_DIRTY_RECT   0x0B12
 #define SYS_WIN_GET_THEME        0x0B13
+#define SYS_WIN_CYCLE_PREVIEW    0x0B14
+#define SYS_WIN_CYCLE_COMMIT     0x0B15
+
+/* Control property IDs for sys_ctrl_set/get */
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -670,6 +678,18 @@ static inline int sys_win_pump_events(void *form) {
     return ret;
 }
 
+static inline int sys_win_cycle_preview(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_CYCLE_PREVIEW));
+    return ret;
+}
+
+static inline int sys_win_cycle_commit(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_CYCLE_COMMIT));
+    return ret;
+}
+
 static inline void sys_win_draw(void *form) {
     register int dummy_eax __asm__("eax") = SYS_WIN_DRAW;
     register void *dummy_ebx __asm__("ebx") = form;
@@ -692,6 +712,18 @@ static inline void sys_win_set_icon(void *form, const char *icon_path) {
 static inline void sys_win_redraw_all(void) {
     register int dummy_eax __asm__("eax") = SYS_WIN_REDRAW_ALL;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
+}
+
+static inline int sys_get_key_nonblock(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GET_KEY_NONBLOCK));
+    return ret;
+}
+
+static inline int sys_get_alt_key(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GET_ALT_KEY));
+    return ret;
 }
 
 static inline gui_control_t* sys_win_get_control(void *form, int16_t id) {
