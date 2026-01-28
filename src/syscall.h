@@ -116,6 +116,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_GET_THEME        0x0B13
 #define SYS_WIN_CYCLE_PREVIEW    0x0B14
 #define SYS_WIN_CYCLE_COMMIT     0x0B15
+#define SYS_WIN_RESTORE_FORM     0x0B16
 
 /* Control property IDs for sys_ctrl_set/get */
 
@@ -687,6 +688,12 @@ static inline int sys_win_cycle_preview(void) {
 static inline int sys_win_cycle_commit(void) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_CYCLE_COMMIT));
+    return ret;
+}
+
+static inline int sys_win_restore_form(void *form) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_RESTORE_FORM), "b"(form));
     return ret;
 }
 

@@ -408,6 +408,27 @@ void _start(void) {
             /* Start button clicked - launch or focus Start Manager */
             if (!progman_is_running("Start Manager")) {
                 progman_launch("Start Manager");
+            } else {
+                /* Try to restore/focus an existing Start Manager window (prefer main instance if present) */
+                int found = 0;
+                int count = progman_get_running_count();
+                for (int i = 0; i < count; i++) {
+                    prog_instance_t *other = progman_get_instance(i);
+                    if (!other || !other->module) continue;
+                    if (strcmp(other->module->name, "Start Manager") != 0) continue;
+
+                    /* Prefer an instance that has an existing window */
+                    if (other->window_count > 0 && other->windows[0]) {
+                        sys_win_restore_form(other->windows[0]);
+                        found = 1;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    /* No suitable instance window found; start a new one */
+                    progman_launch("Start Manager");
+                }
             }
             taskbar_needs_redraw = 1;
         }
