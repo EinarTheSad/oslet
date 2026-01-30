@@ -179,6 +179,7 @@ typedef struct {
     /* Dropdown-specific fields (cursor_pos used as selected_index) */
     uint8_t dropdown_open;
     uint8_t item_count;
+    int8_t hovered_item;
 } gui_control_t;
 
 typedef struct {

@@ -811,6 +811,43 @@ static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
     return 0;
 }
 
+static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my) {
+    /* Update hover state for any open dropdown list */
+    int needs_redraw = 0;
+
+    if (!form->controls) return 0;
+
+    for (int i = 0; i < form->ctrl_count; i++) {
+        gui_control_t *ctrl = &form->controls[i];
+        if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown_open) continue;
+
+        int abs_x = form->win.x + ctrl->x;
+        int abs_y = form->win.y + ctrl->y + 20;
+        int list_y = abs_y + ctrl->h;
+        int item_h = 16;
+        int old_hover = ctrl->hovered_item;
+
+        /* Check if mouse is in dropdown list area */
+        if (mx >= abs_x && mx < abs_x + ctrl->w &&
+            my >= list_y && my < list_y + (ctrl->item_count * item_h)) {
+            /* Calculate which item is hovered */
+            int hovered = (my - list_y) / item_h;
+            if (hovered != old_hover) {
+                ctrl->hovered_item = hovered;
+                needs_redraw = 1;
+            }
+        } else {
+            /* Mouse not over dropdown list */
+            if (old_hover != -1) {
+                ctrl->hovered_item = -1;
+                needs_redraw = 1;
+            }
+        }
+    }
+
+    return needs_redraw;
+}
+
 static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
     form->press_control_id = -1;
     int old_focus = form->focused_control_id;
@@ -1647,6 +1684,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 }
             }
 
+            /* Update dropdown hover state (on any mouse move) */
+            if (pump_update_dropdown_hover(form, mx, my)) {
+                needs_redraw = 1;
+            }
+
             /* Handle keyboard input for focused textbox. Only the globally focused window
                should receive keyboard events (prevents background windows from consuming keys) */
             if (!form->win.is_minimized && form->focused_control_id >= 0 &&
@@ -1718,6 +1760,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* Dropdown-specific fields - ensure closed on init */
                 dest->dropdown_open = 0;
                 dest->item_count = ctrl->item_count;
+                dest->hovered_item = -1;
 
                 strcpy_s(dest->text, ctrl->text, 256);
 

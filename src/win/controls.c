@@ -523,11 +523,16 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
 
         int item_y = list_y + i * item_h;
 
-        /* Highlight selected item */
+        /* Highlight selected item in blue, hovered item in gray */
         if (i == control->cursor_pos) {
             gfx_fillrect(abs_x + 1, item_y, control->w - 2, item_h, COLOR_BLUE);
             if (font->data) {
                 bmf_printf(abs_x + 4, item_y + 3, font, size, COLOR_WHITE, "%s", item_text);
+            }
+        } else if (i == control->hovered_item) {
+            gfx_fillrect(abs_x + 1, item_y, control->w - 2, item_h, 7);  /* Light gray hover color */
+            if (font->data) {
+                bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
             }
         } else {
             if (font->data) {
@@ -536,6 +541,7 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
         }
     }
 }
+
 
 void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y) {
     window_theme_t *theme = theme_get_current();
