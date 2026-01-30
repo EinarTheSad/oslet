@@ -385,19 +385,18 @@ void _start(void) {
 
     int exit_requested = 0;
     int taskbar_needs_redraw = 0;
+    int gk = 0;
 
     while (!exit_requested) {
         clock_update();
         sys_get_mouse_state(&mx, &my, &mb);
 
-        /* Global keyboard shortcuts: Alt+Tab to cycle window focus */
-        int gk = sys_get_alt_key();  /* Only consumes Alt+Tab / Alt-release, leaves other keys untouched */
+        gk = sys_get_alt_key();
         if (gk == KEY_ALT_TAB) {
-            /* Preview next window (does not change z-order until Alt released) */
             sys_win_cycle_preview();
             desktop_redraw();
-        } else if (gk == KEY_ALT_RELEASE) {
-            /* Alt released - commit previewed window to top */
+        }
+        if (gk == KEY_ALT_RELEASE) {
             sys_win_cycle_commit();
             desktop_redraw();
         }
@@ -405,7 +404,6 @@ void _start(void) {
         /* Handle Start button */
         int button_state_changed = 0;
         if (start_click(mx, my, mb, &button_state_changed)) {
-            /* Start button clicked - launch or focus Start Manager */
             if (!progman_is_running("Start Manager")) {
                 progman_launch("Start Manager");
             } else {

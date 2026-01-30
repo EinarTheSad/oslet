@@ -119,7 +119,7 @@ void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *labe
 
     if (font_b.data && label) {
         int text_w = bmf_measure_text(&font_b, 12, label);
-        int text_x = x + (w - text_w) / 2 + 2;
+        int text_x = x + (w - text_w) / 2 + 1;
         int text_y = y + (h / 2) - 3;
         bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
     }
@@ -135,75 +135,323 @@ void win_draw_dropdown_list(window_t *win, void *ctrl) {
     ctrl_draw_dropdown_list(win, control);
 }
 
+static int contains_any(const char *s, const char *chars) {
+    if (!s || !chars) return 0;
+    for (; *s; s++) {
+        for (const char *c = chars; *c; c++) {
+            if (*s == *c)
+                return 1;
+        }
+    }
+    return 0;
+}
+
 void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const char *title) {
-    int msg_len = 0;
-    while (msg[msg_len]) msg_len++;
-    
-    int btn_len = 0;
-    while (btn[btn_len]) btn_len++;
-    
-    int msg_w = 0;
-    int btn_text_w = 0;
-    
-    if (font_n.data) {
-        msg_w = bmf_measure_text(&font_n, 12, msg);
+    /* Initialize fields */
+    box->message[0] = '\0';
+    box->icon[0] = '\0';
+    for (int i = 0; i < 3; i++) {
+        box->buttons[i][0] = '\0';
+        box->button_w[i] = 0;
+        box->button_x[i] = 0;
     }
-    
-    if (font_b.data) {
-        btn_text_w = bmf_measure_text(&font_b, 12, btn);
+    box->button_count = 0;
+    box->default_button = 0;
+
+    strcpy_s(box->message, msg ? msg : "", 256);
+
+    const char *p = btn ? btn : "OK";
+
+    /* Parse ICON= prefix (case-insensitive) */
+    if (p[0] &&
+        ((p[0] == 'I' || p[0] == 'i') &&
+         (p[1] == 'C' || p[1] == 'c') &&
+         (p[2] == 'O' || p[2] == 'o') &&
+         (p[3] == 'N' || p[3] == 'n') &&
+         p[4] == '=')) {
+
+        const char *semi = p + 5;
+        const char *q = semi;
+
+        while (*q && *q != ';') q++;
+
+        if (*q == ';') {
+            int len = (int)(q - semi);
+            int copy_len = len < (int)sizeof(box->icon) - 1
+                         ? len
+                         : (int)sizeof(box->icon) - 1;
+
+            for (int i = 0; i < copy_len; i++) {
+                char c = semi[i];
+                if (c >= 'A' && c <= 'Z') c += 32;
+                box->icon[i] = c;
+            }
+            box->icon[copy_len] = '\0';
+            p = q + 1;
+        } else {
+            int i = 0;
+            while (semi[i] && i < (int)sizeof(box->icon) - 1) {
+                char c = semi[i];
+                if (c >= 'A' && c <= 'Z') c += 32;
+                box->icon[i] = c;
+                i++;
+            }
+            box->icon[i] = '\0';
+            strcpy_s(box->buttons[0], "OK", 32);
+            box->button_count = 1;
+            p = NULL;
+        }
     }
-    
-    int btn_w = btn_text_w + 24;
-    int btn_h = 18;
-    
-    int content_w = msg_w > btn_w ? msg_w : btn_w;
-    int win_w = content_w + 40;
-    int win_h = 82;
-    
-    if (win_w < 120) win_w = 120;
-    
-    int win_x = (WM_SCREEN_WIDTH - win_w) / 2;
+
+    /* Parse buttons separated by '|' */
+    if (p && box->button_count == 0) {
+        const char *q = p;
+        int idx = 0;
+
+        while (*q && idx < 3) {
+            const char *bar = q;
+            int len = 0;
+
+            while (*bar && *bar != '|') {
+                len++;
+                bar++;
+            }
+
+            if (len > 0) {
+                int copy_len = len < 31 ? len : 31;
+                for (int i = 0; i < copy_len; i++)
+                    box->buttons[idx][i] = q[i];
+                box->buttons[idx][copy_len] = '\0';
+                idx++;
+            }
+
+            if (*bar == '|')
+                q = bar + 1;
+            else
+                break;
+        }
+
+        if (idx == 0) {
+            strcpy_s(box->buttons[0], "OK", 32);
+            box->button_count = 1;
+        } else {
+            box->button_count = idx;
+        }
+    }
+
+    /* Measure message text (multiline) */
+    char lines[8][256];
+    int line_count = text_split_lines(box->message, lines, 8);
+    int max_line_w = 0;
+    int total_text_w = 0;
+
+    for (int i = 0; i < line_count; i++) {
+        int w = bmf_measure_text(&font_n, 12, lines[i]);
+        if (w > max_line_w)
+            max_line_w = w;
+        total_text_w += w;
+    }
+
+    int avg_line_w = (line_count > 0)
+                   ? total_text_w / line_count
+                   : 0;
+
+    /* Compute button sizes */
+    const int BTN_SPACING = 6;
+    const int MIN_BTN_W   = 60;
+
+    int total_btn_w = 0;
+
+    for (int i = 0; i < box->button_count; i++) {
+        int tw = bmf_measure_text(&font_b, 12, box->buttons[i]);
+        int bw = tw + 16;
+        if (bw < MIN_BTN_W) bw = MIN_BTN_W;
+        box->button_w[i] = bw;
+        box->button_h = 22;
+        total_btn_w += bw;
+    }
+
+    total_btn_w += (box->button_count - 1) * BTN_SPACING;
+
+    /* Window width calculation */
+    const int H_PADDING = 16;
+    const int ICON_PAD  = 16;
+
+    int content_w;
+
+    if (line_count == 1) {
+        content_w = max_line_w;
+    } else {
+        content_w = avg_line_w;
+        if (content_w < max_line_w * 3 / 4)
+            content_w = max_line_w * 3 / 4;
+    }
+
+    if (content_w < total_btn_w)
+        content_w = total_btn_w;
+
+    if (box->icon[0]) {
+        content_w += ICON_PAD + WM_ICON_SIZE + ICON_PAD;
+    }
+
+    int win_w = content_w + H_PADDING * 2;
+
+    if (win_w < 180) win_w = 180;
+    if (win_w > 360) win_w = 360;
+
+    /* Height calculation */
+    int line_h = text_measure_height("AQYJaqpjy129", &font_n, 12);
+    int text_h = line_h * line_count;
+
+    int win_h = 24
+              + 8
+              + text_h
+              + 12
+              + box->button_h
+              + 12;
+
+    int win_x = (WM_SCREEN_WIDTH  - win_w) / 2;
     int win_y = (WM_SCREEN_HEIGHT - win_h) / 2;
 
     win_create(&box->base, win_x, win_y, win_w, win_h, title);
 
-    strcpy_s(box->message, msg, 256);
-    strcpy_s(box->button_text, btn, 32);
-    
-    /* Store button offsets relative to window */
-    box->button_x = (win_w - btn_w) / 2;
-    box->button_y = 57;
-    box->button_w = btn_w;
-    box->button_h = btn_h;
+    /* Button positions */
+    int start_x = (win_w - total_btn_w) / 2;
+    int cur_x   = start_x;
+
+    for (int i = 0; i < box->button_count; i++) {
+        box->button_x[i] = cur_x;
+        box->button_y    = win_h - box->button_h - 6;
+        cur_x += box->button_w[i] + BTN_SPACING;
+    }
 }
 
 void win_msgbox_draw(msgbox_t *box) {
     win_draw(&box->base);
-    
-    if (font_n.data) {
-        int text_w = bmf_measure_text(&font_n, 12, box->message);
-        int text_x = box->base.x + (box->base.w - text_w) / 2;
-        bmf_printf(text_x, box->base.y + 31, &font_n, 12, 0, "%s", box->message);
-    }
-    
-    /* Calculate absolute button position */
-    int abs_btn_x = box->base.x + box->button_x;
-    int abs_btn_y = box->base.y + box->button_y;
 
-    window_theme_t *theme = theme_get_current();
-    win_draw_button(abs_btn_x, abs_btn_y,
-                    box->button_w, box->button_h,
-                    theme->button_color, box->button_text, 0);
+    const int H_PADDING  = 8;
+    const int ICON_PAD   = 16;
+    const int TOP_PAD    = 24;
+    const int BTN_PAD    = 12;
+
+    /* Icon */
+    int icon_center_y = 0;
+
+    if (box->icon[0]) {
+        int ix = box->base.x + ICON_PAD;
+        int iy = box->base.y + TOP_PAD;
+
+        icon_center_y = iy + WM_ICON_SIZE / 2;
+
+        int is_path = contains_any(box->icon, ":/\\.") ? 1 : 0;
+        int drawn = 0;
+
+        if (is_path) {
+            gui_control_t pic = {0};
+            pic.type = CTRL_PICTUREBOX;
+            pic.w = WM_ICON_SIZE;
+            pic.h = WM_ICON_SIZE;
+            pic.bg = -1;
+            strcpy_s(pic.text, box->icon, sizeof(pic.text));
+            ctrl_draw_picturebox(&pic, ix, iy);
+            drawn = 1;
+        } else {
+            char token[128];
+            int j = 0;
+
+            while (box->icon[j] && j < (int)sizeof(token) - 10) {
+                char c = box->icon[j];
+                if (c >= 'a' && c <= 'z') c -= 32;
+                token[j++] = c;
+            }
+            token[j] = '\0';
+
+            if (j > 0) {
+                char path[160];
+                snprintf(path, sizeof(path), "C:/ICONS/%s.ICO", token);
+                bitmap_t *bmp = bitmap_load_from_file(path);
+                if (bmp) {
+                    bitmap_draw(bmp, ix, iy);
+                    bitmap_free(bmp);
+                    drawn = 1;
+                }
+            }
+
+            if (!drawn) {
+                gfx_circle(ix+16, iy+16, 32, 7);
+            }
+        }
+    }
+
+    /* Split lines */
+    char lines[8][256];
+    int line_count = text_split_lines(box->message, lines, 8);
+
+    int line_h = text_measure_height("AQYJaqpjy129", &font_n, 12);
+    int text_block_h = line_h * line_count;
+
+    /* Define text area */
+    int text_area_x = box->base.x + H_PADDING;
+    int text_area_w = box->base.w - H_PADDING * 2;
+
+    if (box->icon[0]) {
+        text_area_x += WM_ICON_SIZE + ICON_PAD;
+        text_area_w -= WM_ICON_SIZE + ICON_PAD;
+    }
+
+    int text_y;
+
+    if (box->icon[0]) {
+        if (line_count == 1) {
+            text_y = icon_center_y - line_h / 2;
+        } else text_y = icon_center_y - text_block_h / 2;
+    } else {
+        text_y = box->base.y + (box->base.h / 2) - line_h / 2;
+    }
+
+    /* Draw text */
+    for (int i = 0; i < line_count; i++) {
+        int lw = bmf_measure_text(&font_n, 12, lines[i]);
+        int lx = text_area_x + (text_area_w - lw) / 2;
+
+        bmf_printf(
+            lx,
+            text_y + i * line_h,
+            &font_n,
+            12,
+            0,
+            "%s",
+            lines[i]
+        );
+    }
+
+    /* Buttons */
+    for (int i = 0; i < box->button_count; i++) {
+        gui_control_t btn = {0};
+        btn.type = CTRL_BUTTON;
+        btn.w    = box->button_w[i];
+        btn.h    = box->button_h;
+        btn.bg   = -1;
+        btn.font_size = 12;
+        btn.font_type = 1;
+        strcpy_s(btn.text, box->buttons[i], sizeof(btn.text));
+
+        ctrl_draw_button(
+            &btn,
+            box->base.x + box->button_x[i],
+            box->base.y + box->button_y
+        );
+    }
 }
 
 int win_msgbox_handle_click(msgbox_t *box, int mx, int my) {
-    /* Calculate absolute button position */
-    int abs_btn_x = box->base.x + box->button_x;
-    int abs_btn_y = box->base.y + box->button_y;
-    
-    if (mx >= abs_btn_x && mx < abs_btn_x + box->button_w &&
-        my >= abs_btn_y && my < abs_btn_y + box->button_h) {
-        return 1;
+    for (int i = 0; i < box->button_count; i++) {
+        int abs_x = box->base.x + box->button_x[i];
+        int abs_y = box->base.y + box->button_y;
+        if (mx >= abs_x && mx < abs_x + box->button_w[i] &&
+            my >= abs_y && my < abs_y + box->button_h) {
+            return i + 1; /* return 1-based index of clicked button */
+        }
     }
     return 0;
 }
