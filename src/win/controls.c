@@ -579,8 +579,8 @@ void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y) {
 
     // Other sides
     gfx_vline(abs_x, border_y, control->h - (border_y - abs_y), theme->frame_dark);
-    gfx_hline(abs_x, abs_y + control->h - 1, control->w, theme->frame_light);
-    gfx_vline(abs_x + control->w - 1, border_y, control->h - (border_y - abs_y), theme->frame_light);
+    gfx_hline(abs_x, abs_y + control->h - 1, control->w, theme->frame_dark); /* Can be changed to light */
+    gfx_vline(abs_x + control->w - 1, border_y, control->h - (border_y - abs_y), theme->frame_dark); /* Can be changed to light */
 
     // Draw title text with background
     if (control->text[0] && font->data) {
@@ -618,7 +618,7 @@ void ctrl_draw(window_t *win, gui_control_t *control) {
         ctrl_draw_frame(control, abs_x, abs_y);
     }
     else if (control->type == 8) { /* CTRL_ICON */
-        ctrl_draw_icon(control, abs_x, abs_y, 7);  /* Use default gray background */
+        ctrl_draw_icon(control, abs_x, abs_y, 7);
     }
     else if (control->type == 9) { /* CTRL_DROPDOWN */
         ctrl_draw_dropdown(control, abs_x, abs_y);

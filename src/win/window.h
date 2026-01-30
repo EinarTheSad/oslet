@@ -15,12 +15,19 @@ typedef struct {
     icon_t *minimized_icon;
 } window_t;
 
+typedef enum { MB_ICON_NONE = 0, MB_ICON_INFO, MB_ICON_WARN, MB_ICON_ERROR } msgbox_icon_t;
+
 typedef struct {
     window_t base;
     char message[256];
-    char button_text[32];
-    int button_x, button_y;
-    int button_w, button_h;
+    char icon[64]; /* optional icon token or path (e.g., "info", "warn", "error") */
+    char buttons[3][32];
+    int button_count;
+    int default_button; /* 0-based index */
+    int button_x[3]; /* relative to window */
+    int button_y;    /* relative to window */
+    int button_w[3];
+    int button_h;    
 } msgbox_t;
 
 void win_init_fonts(void);

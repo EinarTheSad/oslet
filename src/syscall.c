@@ -1182,13 +1182,16 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 if (button_released) {
                     /* Check if button was clicked */
-                    if (!dragging && win_msgbox_handle_click(box, mx, my)) {
-                        /* Button clicked - restore cursor and window background */
-                        mouse_restore();
-                        win_restore_background(&box->base);
-                        gfx_swap_buffers();
-                        kfree(box);
-                        return 1;
+                    if (!dragging) {
+                        int clicked = win_msgbox_handle_click(box, mx, my);
+                        if (clicked) {
+                            /* Button clicked - restore cursor and window background */
+                            mouse_restore();
+                            win_restore_background(&box->base);
+                            gfx_swap_buffers();
+                            kfree(box);
+                            return clicked;
+                        }
                     }
                     dragging = 0;
                 }
