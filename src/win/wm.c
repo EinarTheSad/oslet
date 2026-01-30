@@ -101,9 +101,26 @@ gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
                 return form;
             }
         } else {
-            // Check window area
-            if (x >= form->win.x && x < form->win.x + form->win.w &&
-                y >= form->win.y && y < form->win.y + form->win.h) {
+            int click_w = form->win.w;
+            int click_h = form->win.h;
+            
+            // Extend click area to include any open dropdown lists
+            if (form->controls) {
+                for (int j = 0; j < form->ctrl_count; j++) {
+                    if (form->controls[j].type == CTRL_DROPDOWN && 
+                        form->controls[j].dropdown_open) {
+                        int dropdown_bottom = form->controls[j].y + 20 + form->controls[j].h + 
+                                            (form->controls[j].item_count * 16);
+                        if (dropdown_bottom > click_h) {
+                            click_h = dropdown_bottom;
+                        }
+                    }
+                }
+            }
+            
+            // Check window area (including extended dropdown area)
+            if (x >= form->win.x && x < form->win.x + click_w &&
+                y >= form->win.y && y < form->win.y + click_h) {
                 return form;
             }
         }
