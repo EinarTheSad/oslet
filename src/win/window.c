@@ -243,22 +243,16 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     char lines[8][256];
     int line_count = text_split_lines(box->message, lines, 8);
     int max_line_w = 0;
-    int total_text_w = 0;
 
     for (int i = 0; i < line_count; i++) {
         int w = bmf_measure_text(&font_n, 12, lines[i]);
         if (w > max_line_w)
             max_line_w = w;
-        total_text_w += w;
     }
-
-    int avg_line_w = (line_count > 0)
-                   ? total_text_w / line_count
-                   : 0;
 
     /* Compute button sizes */
     const int BTN_SPACING = 6;
-    const int MIN_BTN_W   = 60;
+    const int MIN_BTN_W   = 65;
 
     int total_btn_w = 0;
 
@@ -273,55 +267,81 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
 
     total_btn_w += (box->button_count - 1) * BTN_SPACING;
 
-    /* Window width calculation */
-    const int H_PADDING = 16;
-    const int ICON_PAD  = 16;
+    const int MARGIN_LEFT = 10;
+    const int MARGIN_RIGHT = 10;
+    const int MARGIN_TOP = 10;
+    const int MARGIN_BOTTOM = 8;
+    const int ICON_TEXT_GAP = 10;
+    const int TEXT_BUTTON_GAP = 12;
+    const int TITLEBAR_H = 24;
+
+    int has_icon = box->icon[0] ? 1 : 0;
+
+    /* Calculate content area width */
+    int text_content_w = max_line_w;
+    int min_content_w = total_btn_w;
 
     int content_w;
-
-    if (line_count == 1) {
-        content_w = max_line_w;
+    if (has_icon) {
+        if (line_count == 1) {
+            /* Single line: icon + gap + text, minimum for buttons */
+            content_w = WM_ICON_SIZE + ICON_TEXT_GAP + text_content_w;
+            if (content_w < min_content_w)
+                content_w = min_content_w;
+        } else {
+            /* Multiline: give text reasonable width, icon beside it */
+            int text_area_w = text_content_w;
+            if (text_area_w < 160) text_area_w = 160;
+            if (text_area_w > 280) text_area_w = 280;
+            content_w = WM_ICON_SIZE + ICON_TEXT_GAP + text_area_w;
+            if (content_w < min_content_w)
+                content_w = min_content_w;
+        }
     } else {
-        content_w = avg_line_w;
-        if (content_w < max_line_w * 3 / 4)
-            content_w = max_line_w * 3 / 4;
+        /* No icon: just text width */
+        if (line_count == 1) {
+            content_w = text_content_w;
+        } else {
+            /* Multiline: reasonable width */
+            content_w = text_content_w;
+            if (content_w < 160) content_w = 160;
+            if (content_w > 280) content_w = 280;
+        }
+        if (content_w < min_content_w)
+            content_w = min_content_w;
     }
 
-    if (content_w < total_btn_w)
-        content_w = total_btn_w;
-
-    if (box->icon[0]) {
-        content_w += ICON_PAD + WM_ICON_SIZE + ICON_PAD;
-    }
-
-    int win_w = content_w + H_PADDING * 2;
-
-    if (win_w < 180) win_w = 180;
-    if (win_w > 360) win_w = 360;
+    int win_w = MARGIN_LEFT + content_w + MARGIN_RIGHT;
+    if (win_w < 160) win_w = 160;
+    if (win_w > 400) win_w = 400;
 
     /* Height calculation */
     int line_h = text_measure_height("AQYJaqpjy129", &font_n, 12);
-    int text_h = line_h * line_count;
+    int text_h = line_h * line_count + (line_count > 1 ? 2 : 0);
 
-    int win_h = 24
-              + 8
-              + text_h
-              + 12
-              + box->button_h
-              + 12;
+    /* Content height: max of icon or text */
+    int content_h;
+    if (has_icon) {
+        int icon_h = WM_ICON_SIZE;
+        content_h = (text_h > icon_h) ? text_h : icon_h;
+    } else {
+        content_h = text_h;
+    }
+
+    int win_h = TITLEBAR_H + MARGIN_TOP + content_h + TEXT_BUTTON_GAP + box->button_h + MARGIN_BOTTOM;
 
     int win_x = (WM_SCREEN_WIDTH  - win_w) / 2;
     int win_y = (WM_SCREEN_HEIGHT - win_h) / 2;
 
     win_create(&box->base, win_x, win_y, win_w, win_h, title);
 
-    /* Button positions */
+    /* Button positions - centered at bottom */
     int start_x = (win_w - total_btn_w) / 2;
     int cur_x   = start_x;
 
     for (int i = 0; i < box->button_count; i++) {
         box->button_x[i] = cur_x;
-        box->button_y    = win_h - box->button_h - 6;
+        box->button_y    = win_h - MARGIN_BOTTOM - box->button_h;
         cur_x += box->button_w[i] + BTN_SPACING;
     }
 }
@@ -329,19 +349,33 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
 void win_msgbox_draw(msgbox_t *box) {
     win_draw(&box->base);
 
-    const int H_PADDING  = 8;
-    const int ICON_PAD   = 16;
-    const int TOP_PAD    = 24;
-    const int BTN_PAD    = 12;
+    const int MARGIN_LEFT = 10;
+    const int MARGIN_TOP = 10;
+    const int ICON_TEXT_GAP = 10;
+    const int TITLEBAR_H = 24;
 
-    /* Icon */
+    int has_icon = box->icon[0] ? 1 : 0;
+
+    /* Split lines for text measurement */
+    char lines[8][256];
+    int line_count = text_split_lines(box->message, lines, 8);
+    int line_h = text_measure_height("AQYJaqpjy129", &font_n, 12);
+    int text_block_h = line_h * line_count + (line_count > 1 ? 2 : 0);
+
+    int content_y = box->base.y + TITLEBAR_H + MARGIN_TOP;
+
+    /* Draw icon if present */
+    int icon_x = 0;
+    int icon_y = 0;
     int icon_center_y = 0;
 
-    if (box->icon[0]) {
-        int ix = box->base.x + ICON_PAD;
-        int iy = box->base.y + TOP_PAD;
-
-        icon_center_y = iy + WM_ICON_SIZE / 2;
+    if (has_icon) {
+        icon_x = box->base.x + MARGIN_LEFT;
+        
+        /* Icon vertical centering */
+        int content_h = (text_block_h > WM_ICON_SIZE) ? text_block_h : WM_ICON_SIZE;
+        icon_y = content_y + (content_h - WM_ICON_SIZE) / 2;
+        icon_center_y = icon_y + WM_ICON_SIZE / 2;
 
         int is_path = contains_any(box->icon, ":/\\.") ? 1 : 0;
         int drawn = 0;
@@ -353,7 +387,7 @@ void win_msgbox_draw(msgbox_t *box) {
             pic.h = WM_ICON_SIZE;
             pic.bg = -1;
             strcpy_s(pic.text, box->icon, sizeof(pic.text));
-            ctrl_draw_picturebox(&pic, ix, iy);
+            ctrl_draw_picturebox(&pic, icon_x, icon_y);
             drawn = 1;
         } else {
             char token[128];
@@ -371,52 +405,59 @@ void win_msgbox_draw(msgbox_t *box) {
                 snprintf(path, sizeof(path), "C:/ICONS/%s.ICO", token);
                 bitmap_t *bmp = bitmap_load_from_file(path);
                 if (bmp) {
-                    bitmap_draw(bmp, ix, iy);
+                    bitmap_draw(bmp, icon_x, icon_y);
                     bitmap_free(bmp);
                     drawn = 1;
                 }
             }
 
             if (!drawn) {
-                gfx_circle(ix+16, iy+16, 32, 7);
+                /* Fallback placeholder circle */
+                gfx_circle(icon_x + WM_ICON_SIZE/2, icon_y + WM_ICON_SIZE/2, WM_ICON_SIZE/2 - 2, 7);
             }
         }
     }
 
-    /* Split lines */
-    char lines[8][256];
-    int line_count = text_split_lines(box->message, lines, 8);
-
-    int line_h = text_measure_height("AQYJaqpjy129", &font_n, 12);
-    int text_block_h = line_h * line_count;
-
-    /* Define text area */
-    int text_area_x = box->base.x + H_PADDING;
-    int text_area_w = box->base.w - H_PADDING * 2;
-
-    if (box->icon[0]) {
-        text_area_x += WM_ICON_SIZE + ICON_PAD;
-        text_area_w -= WM_ICON_SIZE + ICON_PAD;
-    }
-
-    int text_y;
-
-    if (box->icon[0]) {
-        if (line_count == 1) {
-            text_y = icon_center_y - line_h / 2;
-        } else text_y = icon_center_y - text_block_h / 2;
+    /* Calculate text area */
+    int text_x;
+    int text_area_w;
+    
+    if (has_icon) {
+        text_x = box->base.x + MARGIN_LEFT + WM_ICON_SIZE + ICON_TEXT_GAP;
+        text_area_w = box->base.w - MARGIN_LEFT - WM_ICON_SIZE - ICON_TEXT_GAP - MARGIN_LEFT;
     } else {
-        text_y = box->base.y + (box->base.h / 2) - line_h / 2;
+        text_x = box->base.x + MARGIN_LEFT;
+        text_area_w = box->base.w - MARGIN_LEFT * 2;
     }
 
-    /* Draw text */
+    /* Text vertical positioning */
+    int text_y;
+    
+    if (has_icon) {
+        /* Center text vertically relative to icon */
+        int content_h = (text_block_h > WM_ICON_SIZE) ? text_block_h : WM_ICON_SIZE;
+        text_y = content_y + (content_h - text_block_h) / 2;
+    } else {
+        /* Center text in the content area */
+        text_y = content_y;
+    }
+
+    /* Draw text lines */
     for (int i = 0; i < line_count; i++) {
         int lw = bmf_measure_text(&font_n, 12, lines[i]);
-        int lx = text_area_x + (text_area_w - lw) / 2;
+        int lx;
+        
+        if (line_count == 1) {
+            /* Single line: left-align in text area */
+            lx = text_x;
+        } else {
+            /* Multiline: left-align for better readability */
+            lx = text_x;
+        }
 
         bmf_printf(
             lx,
-            text_y + i * line_h,
+            text_y + 5 + i * (line_h + (line_count > 1 ? 1 : 0)),
             &font_n,
             12,
             0,
@@ -425,7 +466,7 @@ void win_msgbox_draw(msgbox_t *box) {
         );
     }
 
-    /* Buttons */
+    /* Draw buttons */
     for (int i = 0; i < box->button_count; i++) {
         gui_control_t btn = {0};
         btn.type = CTRL_BUTTON;
