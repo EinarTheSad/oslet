@@ -367,7 +367,6 @@ void win_msgbox_draw(msgbox_t *box) {
     /* Draw icon if present */
     int icon_x = 0;
     int icon_y = 0;
-    int icon_center_y = 0;
 
     if (has_icon) {
         icon_x = box->base.x + MARGIN_LEFT;
@@ -375,7 +374,6 @@ void win_msgbox_draw(msgbox_t *box) {
         /* Icon vertical centering */
         int content_h = (text_block_h > WM_ICON_SIZE) ? text_block_h : WM_ICON_SIZE;
         icon_y = content_y + (content_h - WM_ICON_SIZE) / 2;
-        icon_center_y = icon_y + WM_ICON_SIZE / 2;
 
         int is_path = contains_any(box->icon, ":/\\.") ? 1 : 0;
         int drawn = 0;
@@ -420,14 +418,11 @@ void win_msgbox_draw(msgbox_t *box) {
 
     /* Calculate text area */
     int text_x;
-    int text_area_w;
     
     if (has_icon) {
         text_x = box->base.x + MARGIN_LEFT + WM_ICON_SIZE + ICON_TEXT_GAP;
-        text_area_w = box->base.w - MARGIN_LEFT - WM_ICON_SIZE - ICON_TEXT_GAP - MARGIN_LEFT;
     } else {
         text_x = box->base.x + MARGIN_LEFT;
-        text_area_w = box->base.w - MARGIN_LEFT * 2;
     }
 
     /* Text vertical positioning */
@@ -444,7 +439,6 @@ void win_msgbox_draw(msgbox_t *box) {
 
     /* Draw text lines */
     for (int i = 0; i < line_count; i++) {
-        int lw = bmf_measure_text(&font_n, 12, lines[i]);
         int lx;
         
         if (line_count == 1) {

@@ -240,12 +240,12 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
     // Draw 3D sunken border effect
     gfx_hline(abs_x, abs_y, control->w, theme->frame_dark);  // Top
     gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);  // Left
-    gfx_hline(abs_x, abs_y + control->h - 1, control->w, theme->frame_light);  // Bottom
+    gfx_hline(abs_x + 1, abs_y + control->h - 1, control->w - 1, theme->frame_light);  // Bottom
     gfx_vline(abs_x + control->w - 1, abs_y, control->h, theme->frame_light);  // Right
 
     // Inner shadow
     gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_DARK_GRAY);
-    gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_DARK_GRAY);
+    gfx_vline(abs_x + 1, abs_y + 1, control->h - 1, COLOR_DARK_GRAY);
 
     // Text area dimensions (inside borders)
     int text_area_x = abs_x + 3;
@@ -441,7 +441,7 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
     bmf_font_t *font = &font_n;
     int size = control->font_size > 0 ? control->font_size : 12;
 
-    int btn_w = 16;
+    int btn_w = 18;
     int field_w = control->w - btn_w;
 
     /* Draw text field background */
@@ -450,36 +450,37 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
     /* 3D sunken border for text field */
     gfx_hline(abs_x, abs_y, field_w, theme->frame_dark);
     gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);
-    gfx_hline(abs_x, abs_y + control->h - 1, field_w, theme->frame_light);
-    gfx_vline(abs_x + field_w - 1, abs_y, control->h, theme->frame_light);
+    gfx_hline(abs_x+1, abs_y + control->h - 1, field_w, theme->frame_light);
 
     /* Inner shadow */
-    gfx_hline(abs_x + 1, abs_y + 1, field_w - 2, COLOR_DARK_GRAY);
-    gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_DARK_GRAY);
+    gfx_hline(abs_x + 1, abs_y + 1, field_w - 1, COLOR_DARK_GRAY);
+    gfx_vline(abs_x + 1, abs_y + 1, control->h - 1, COLOR_DARK_GRAY);
 
     /* Draw dropdown button */
     int btn_x = abs_x + field_w;
     gfx_fillrect(btn_x, abs_y, btn_w, control->h, theme->button_color);
 
     /* Button 3D border */
+    gfx_rect(btn_x, abs_y, btn_w, control->h, COLOR_BLACK);
     if (control->pressed) {
-        gfx_hline(btn_x, abs_y, btn_w, theme->frame_dark);
-        gfx_vline(btn_x, abs_y, control->h, theme->frame_dark);
-        gfx_hline(btn_x, abs_y + control->h - 1, btn_w, COLOR_WHITE);
-        gfx_vline(btn_x + btn_w - 1, abs_y, control->h, COLOR_WHITE);
+        gfx_hline(btn_x + 1, abs_y + 1, btn_w - 2, theme->frame_dark);
+        gfx_vline(btn_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
+        gfx_hline(btn_x + 1, abs_y + control->h - 2, btn_w - 2, COLOR_WHITE);
+        gfx_vline(btn_x + btn_w - 2, abs_y + 1, control->h - 2, COLOR_WHITE);
     } else {
-        gfx_hline(btn_x, abs_y, btn_w, COLOR_WHITE);
-        gfx_vline(btn_x, abs_y, control->h, COLOR_WHITE);
-        gfx_hline(btn_x, abs_y + control->h - 1, btn_w, theme->frame_dark);
-        gfx_vline(btn_x + btn_w - 1, abs_y, control->h, theme->frame_dark);
+        gfx_hline(btn_x + 1, abs_y + 1, btn_w - 2, COLOR_WHITE);
+        gfx_vline(btn_x + 1, abs_y + 1, control->h - 2, COLOR_WHITE);
+        gfx_hline(btn_x + 1, abs_y + control->h - 2, btn_w - 2, theme->frame_dark);
+        gfx_vline(btn_x + btn_w - 2, abs_y + 1, control->h - 2, theme->frame_dark);
     }
 
     /* Draw arrow in button */
     int arrow_x = btn_x + btn_w / 2;
-    int arrow_y = abs_y + control->h / 2 - 2;
+    int arrow_y = abs_y + control->h / 2;
     for (int i = 0; i < 4; i++) {
         gfx_hline(arrow_x - 3 + i, arrow_y + i, 7 - i * 2, COLOR_BLACK);
     }
+    gfx_fillrect(arrow_x - 1, arrow_y - 3, 3, 3, COLOR_BLACK);
 
     /* Draw selected item text */
     if (font->data) {
