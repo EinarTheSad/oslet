@@ -28,13 +28,13 @@ void wallpaper_free(gfx_cached_bmp_t *out) {
     out->height = 0;
 }
 
-void wallpaper_draw(gfx_cached_bmp_t *out, int x, int y, int transparent) {
+void wallpaper_draw(gfx_cached_bmp_t *out, int x, int y) {
     if (!out || !out->data) return;
-    sys_gfx_draw_cached(out, x, y, transparent);
+    sys_gfx_draw_cached(out, x, y, 0);
 }
 
 int wallpaper_draw_partial(gfx_cached_bmp_t *out, int dest_x, int dest_y,
-                               int src_x, int src_y, int src_w, int src_h, int transparent) {
+                               int src_x, int src_y, int src_w, int src_h) {
     if (!out || !out->data) return -1;
-    return sys_gfx_draw_cached_partial(out, dest_x, dest_y, src_x, src_y, src_w, src_h, transparent);
+    return sys_gfx_draw_cached_partial(out, dest_x, dest_y, src_x, src_y, src_w, src_h, 0);
 }
