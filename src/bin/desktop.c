@@ -134,7 +134,7 @@ static void cache_wallpaper(void) {
 
 static void draw_wallpaper(void) {
     if (!cached_wallpaper.data) return;
-    wallpaper_draw(&cached_wallpaper, wallpaper_x, wallpaper_y, 0);
+    wallpaper_draw(&cached_wallpaper, wallpaper_x, wallpaper_y);
 }
 
 usr_bmf_font_t font_b;
@@ -301,7 +301,7 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
                            &ix, &iy, &iw, &ih)) {
             int src_x = ix - wallpaper_x;
             int src_y = iy - wallpaper_y;
-            wallpaper_draw_partial(&cached_wallpaper, ix, iy, src_x, src_y, iw, ih, 0);
+            wallpaper_draw_partial(&cached_wallpaper, ix, iy, src_x, src_y, iw, ih);
         }
     }
     sys_win_invalidate_icons();
