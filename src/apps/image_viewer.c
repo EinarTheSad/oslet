@@ -17,21 +17,22 @@
 
 /* Controls for Form1 */
 static gui_control_t Form1_controls[] = {
-    { .type = CTRL_PICTUREBOX, .x = 5, .y = 5, .w = 467, .h = 350, .fg = 0, .bg = 7, .text = "", .id = ID_PICTURE, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_BUTTON, .x = 121, .y = 367, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Previous", .id = ID_PREV, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_BUTTON, .x = 287, .y = 367, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Next", .id = ID_NEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_BUTTON, .x = 198, .y = 358, .w = 82, .h = 40, .fg = 0, .bg = -1, .text = "Full screen", .id = ID_FULLSCREEN, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 }
+    { .type = CTRL_PICTUREBOX, .x = 8, .y = 5, .w = 467, .h = 350, .fg = 0, .bg = 7, .text = "", .id = ID_PICTURE, .font_type = 0, .font_size = 12, .border = 1, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
+    { .type = CTRL_BUTTON, .x = 126, .y = 369, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Previous", .id = ID_PREV, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
+    { .type = CTRL_BUTTON, .x = 292, .y = 369, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Next", .id = ID_NEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
+    { .type = CTRL_BUTTON, .x = 203, .y = 360, .w = 82, .h = 40, .fg = 0, .bg = -1, .text = "Full screen", .id = ID_FULLSCREEN, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 }
 };
 
 /* Controls for Form2 */
 static gui_control_t Form2_controls[] = {
-    { .type = CTRL_TEXTBOX, .x = 46, .y = 5, .w = 195, .h = 20, .fg = 0, .bg = -1, .text = "", .id = ID_PATH_TEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_LABEL, .x = 5, .y = 5, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "Path:", .id = 2, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_BUTTON, .x = 59, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = 7, .text = "OK", .id = ID_OK, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_BUTTON, .x = 133, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = 7, .text = "Cancel", .id = ID_CANCEL, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 }
+    { .type = CTRL_TEXTBOX, .x = 46, .y = 5, .w = 198, .h = 20, .fg = 0, .bg = -1, .text = "", .id = ID_PATH_TEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
+    { .type = CTRL_LABEL, .x = 9, .y = 6, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "Path:", .id = 2, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
+    { .type = CTRL_BUTTON, .x = 56, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "OK", .id = ID_OK, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
+    { .type = CTRL_BUTTON, .x = 130, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Cancel", .id = ID_CANCEL, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 }
 };
 
 static int ends_with_icase(const char *str, const char *suf) {
+    if (!str || !suf) return 0;
     int n = strlen(str);
     int m = strlen(suf);
     if (m > n) return 0;
@@ -62,14 +63,41 @@ static int gather_bmps(const char *dir, sys_dirent_t *entries, int max_entries) 
     return out;
 }
 
+static int find_last_sep(const char *path) {
+    int last = -1;
+    for (int i = 0; path[i]; i++) {
+        if (path[i] == '/') last = i;
+    }
+    return last;
+}
+
+static void toggle_fullscreen(void *form, int *fullscreen_ptr, const char *cur_path) {
+    if (!cur_path || !cur_path[0]) return;
+    
+    if (!*fullscreen_ptr) {
+        *fullscreen_ptr = 1;
+        sys_mouse_invalidate();
+        sys_gfx_fillrect(0, 0, 640, 480, COLOR_DARK_GRAY);
+        sys_gfx_load_bmp_scaled(cur_path, 0, 0, 640, 480);
+        sys_mouse_invalidate();
+        sys_gfx_swap();
+    } else {
+        *fullscreen_ptr = 0;
+        sys_win_draw(form);
+        sys_win_redraw_all();
+        sys_win_force_full_redraw();
+        sys_mouse_invalidate();
+        sys_gfx_swap();
+    }
+}
+
 /* Helper: navigate directory by delta (-1 previous, +1 next). If fullscreen is true
    the function will also redraw the fullscreen overlay with the new image. */
 static void navigate_dir(void *form, int delta, int fullscreen) {
     const char *cur = ctrl_get_text(form, ID_PICTURE);
     if (!cur || !cur[0]) return;
 
-    int last_sep = -1;
-    for (int i = 0; cur[i]; i++) if (cur[i] == '/') last_sep = i;
+    int last_sep = find_last_sep(cur);
     if (last_sep <= 0) return;
 
     char dir[256];
@@ -96,26 +124,27 @@ static void navigate_dir(void *form, int delta, int fullscreen) {
 
     char newpath[256];
     int n = snprintf(newpath, sizeof(newpath), "%s/%s", dir, entries[idx].name);
-    if (n > 0) {
-            ctrl_set_image(form, ID_PICTURE, newpath);
-            sys_win_draw(form);
-            sys_win_redraw_all();
-            /* Invalidate mouse buffer after changing image to avoid cursor artifacts */
-            sys_mouse_invalidate();
-
+    if (n > 0 && n < (int)sizeof(newpath)) {
+        ctrl_set_image(form, ID_PICTURE, newpath);
+        
+        if (fullscreen) {
             /* If fullscreen, draw overlay and scaled image */
-            if (fullscreen) {
-                sys_gfx_fillrect(0, 0, 640, 480, COLOR_DARK_GRAY);
-                sys_gfx_load_bmp_scaled(newpath, 0, 0, 640, 480);
-                sys_gfx_swap();
-            }
+            sys_gfx_fillrect(0, 0, 640, 480, COLOR_DARK_GRAY);
+            sys_gfx_load_bmp_scaled(newpath, 0, 0, 640, 480);
+            sys_mouse_invalidate();
+            sys_gfx_swap();
+        } else {
+            /* In windowed mode, redraw form */
+            sys_win_draw(form);
+            sys_mouse_invalidate();
         }
+    }
 }
 
 
 __attribute__((section(".entry"), used))
 void _start(void) {
-    void *form = sys_win_create_form("Image Viewer", 78, 16, 480, 425);
+    void *form = sys_win_create_form("Image Viewer", 78, 16, 483, 427);
     if (!form) {
         sys_exit();
         return;
@@ -127,9 +156,7 @@ void _start(void) {
 
     sys_win_set_icon(form, "C:/ICONS/VIEWER.ICO");
     sys_win_draw(form);
-    //sys_win_redraw_all();
     sys_win_force_full_redraw();
-    sys_mouse_invalidate();
 
     int running = 1;
     int fullscreen = 0;
@@ -142,8 +169,9 @@ void _start(void) {
             continue;
         }
         if (ev == -1 || ev == -2) {
+            /* Window moved/restored/minimized state change */
             sys_win_draw(form);
-            sys_win_redraw_all();
+            sys_win_force_full_redraw();
         }
 
         if (ev > 0) {
@@ -162,6 +190,7 @@ void _start(void) {
                 }
                 sys_win_draw(dlg);
                 sys_win_redraw_all();
+                sys_mouse_invalidate();
 
                 int dlg_running = 1;
                 while (dlg_running) {
@@ -172,6 +201,7 @@ void _start(void) {
                         break;
                     }
                     if (ev2 == -1 || ev2 == -2) {
+                        /* Dialog state changed (moved/minimized/restored) */
                         sys_win_draw(dlg);
                         sys_win_redraw_all();
                     }
@@ -200,24 +230,7 @@ void _start(void) {
             } else if (ev == ID_FULLSCREEN) {
                 /* Toggle fullscreen */
                 const char *cur = ctrl_get_text(form, ID_PICTURE);
-                if (!cur || !cur[0]) continue;
-                if (!fullscreen) {
-                    fullscreen = 1;
-                    /* Invalidate mouse buffer, then draw overlay and scaled bitmap to screen */
-                    sys_mouse_invalidate();
-                    sys_gfx_fillrect(0, 0, 640, 480, COLOR_DARK_GRAY);
-                    sys_gfx_load_bmp_scaled(cur, 0, 0, 640, 480);
-                    sys_gfx_swap();
-                } else {
-                    fullscreen = 0;
-                    /* Restore windowed UI and ensure desktop/taskbar get redrawn */
-                    sys_win_draw(form);
-                    sys_win_redraw_all();
-                    /* Request desktop full redraw and invalidate mouse buffer, then swap */
-                    sys_win_force_full_redraw();
-                    sys_mouse_invalidate();
-                    sys_gfx_swap();
-                }
+                toggle_fullscreen(form, &fullscreen, cur);
             }
         }
 
@@ -236,30 +249,11 @@ void _start(void) {
             } else if (k == '\n' || k == '\r') {
                 /* Toggle fullscreen */
                 const char *cur = ctrl_get_text(form, ID_PICTURE);
-                if (!cur || !cur[0]) { /* nothing */; }
-                else if (!fullscreen) {
-                    fullscreen = 1;
-                    /* Invalidate mouse buffer, then draw overlay and scaled bitmap to screen */
-                    sys_mouse_invalidate();
-                    sys_gfx_fillrect(0, 0, 640, 480, COLOR_DARK_GRAY);
-                    sys_gfx_load_bmp_scaled(cur, 0, 0, 640, 480);
-                    sys_gfx_swap();
-                } else {
-                    fullscreen = 0;
-                    sys_win_draw(form);
-                    sys_win_redraw_all();
-                    sys_win_force_full_redraw();
-                    sys_mouse_invalidate();
-                    sys_gfx_swap();
-                }
+                toggle_fullscreen(form, &fullscreen, cur);
             } else if (k == KEY_ESC) {
                 if (fullscreen) {
-                    fullscreen = 0;
-                    sys_win_draw(form);
-                    sys_win_redraw_all();
-                    sys_win_force_full_redraw();
-                    sys_mouse_invalidate();
-                    sys_gfx_swap();
+                    const char *cur = ctrl_get_text(form, ID_PICTURE);
+                    toggle_fullscreen(form, &fullscreen, cur);
                 }
             }
         }
