@@ -1457,7 +1457,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     int icon_result = pump_handle_icon_click(form, mx, my);
                     if (icon_result == 2) {
                         /* Double-click - window restored */
-                        return -1;
+                        return -2;  /* Major state change - window restored */
                     } else if (icon_result == 1) {
                         /* Single click - selection changed */
                         needs_redraw = 1;

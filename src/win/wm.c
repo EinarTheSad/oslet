@@ -3,6 +3,8 @@
 #include "icon.h"
 #include "menu.h"
 
+extern void mouse_invalidate_buffer(void);
+
 void wm_init(window_manager_t *wm) {
     wm->count = 0;
     wm->focused_index = -1;
@@ -166,6 +168,7 @@ void wm_draw_all(window_manager_t *wm) {
             }
         }
     }
+    mouse_invalidate_buffer();
 }
 
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
