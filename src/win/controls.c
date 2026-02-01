@@ -126,14 +126,61 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
     gfx_rect(abs_x, abs_y, control->w, control->h, theme->button_color);
 
     if (control->text[0]) {
-        /* Load bitmap to cache if not already loaded */
-        if (!control->cached_bitmap) {
-            control->cached_bitmap = bitmap_load_from_file(control->text);
+        /* Load original bitmap to cache if not already loaded */
+        if (!control->cached_bitmap_orig) {
+            control->cached_bitmap_orig = bitmap_load_from_file(control->text);
+            /* When loading a new image, drop any previous scaled cache */
+            if (control->cached_bitmap_scaled) {
+                bitmap_free(control->cached_bitmap_scaled);
+                control->cached_bitmap_scaled = NULL;
+            }
         }
 
-        /* Draw from cached bitmap */
-        if (control->cached_bitmap) {
-            bitmap_draw(control->cached_bitmap, abs_x, abs_y);
+        /* Draw from cached bitmap, scaling down if necessary (preserve aspect ratio) */
+        if (control->cached_bitmap_orig) {
+            bitmap_t *orig = control->cached_bitmap_orig;
+            int bw = orig->width;
+            int bh = orig->height;
+
+            if (bw > control->w || bh > control->h) {
+                /* Need to scale down to fit inside control while preserving aspect ratio */
+                int new_w, new_h;
+                if ((int64_t)bw * control->h > (int64_t)bh * control->w) {
+                    /* width-limited */
+                    new_w = control->w;
+                    new_h = (bh * control->w) / bw;
+                    if (new_h <= 0) new_h = 1;
+                } else {
+                    /* height-limited */
+                    new_h = control->h;
+                    new_w = (bw * control->h) / bh;
+                    if (new_w <= 0) new_w = 1;
+                }
+
+                /* Create or update scaled cache if size changed */
+                if (!control->cached_bitmap_scaled ||
+                    control->cached_bitmap_scaled->width != new_w ||
+                    control->cached_bitmap_scaled->height != new_h) {
+                    if (control->cached_bitmap_scaled) {
+                        bitmap_free(control->cached_bitmap_scaled);
+                        control->cached_bitmap_scaled = NULL;
+                    }
+                    control->cached_bitmap_scaled = bitmap_scale_nearest(orig, new_w, new_h);
+                }
+
+                if (control->cached_bitmap_scaled) {
+                    int dx = abs_x + (control->w - control->cached_bitmap_scaled->width) / 2;
+                    int dy = abs_y + (control->h - control->cached_bitmap_scaled->height) / 2;
+                    /* Draw scaled bitmap without transparency */
+                    bitmap_draw_opaque(control->cached_bitmap_scaled, dx, dy);
+                }
+            } else {
+                /* Bitmap smaller - center without scaling */
+                int dx = abs_x + (control->w - bw) / 2;
+                int dy = abs_y + (control->h - bh) / 2;
+                /* Draw original bitmap without transparency */
+                bitmap_draw_opaque(orig, dx, dy);
+            }
         }
     }
 }
@@ -363,8 +410,8 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
     int icon_y = abs_y;
 
     /* Draw icon bitmap or default */
-    if (control->cached_bitmap) {
-        bitmap_draw(control->cached_bitmap, icon_x, icon_y);
+    if (control->cached_bitmap_orig) {
+        bitmap_draw(control->cached_bitmap_orig, icon_x, icon_y);
     } else {
         /* Draw default icon rectangle */
         gfx_fillrect(icon_x, icon_y, icon_size, icon_size, theme->button_color);

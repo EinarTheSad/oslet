@@ -85,10 +85,12 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_GFX_DRAW_CACHED 0x090E
 #define SYS_GFX_FREE_CACHED 0x090F
 #define SYS_GFX_DRAW_CACHED_PARTIAL 0x0910 /* Draw a sub-rect of a cached BMP */
+#define SYS_GFX_LOAD_BMP_SCALED 0x0911 /* Load BMP and draw scaled-to-region (no transparency) */
 
 /* AH = 0Ah - Mouse */
 #define SYS_MOUSE_GET_STATE  0x0A00
 #define SYS_MOUSE_DRAW_CURSOR 0x0A01
+#define SYS_MOUSE_INVALIDATE 0x0A02
 
 /* AH = 0Ch - Power Management */
 #define SYS_POWER_SHUTDOWN  0x0C00
@@ -117,6 +119,8 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_CYCLE_PREVIEW    0x0B14
 #define SYS_WIN_CYCLE_COMMIT     0x0B15
 #define SYS_WIN_RESTORE_FORM     0x0B16
+#define SYS_WIN_FORCE_FULL_REDRAW 0x0B17
+#define SYS_WIN_IS_FOCUSED 0x0B18
 
 /* Control property IDs for sys_ctrl_set/get */
 
@@ -165,7 +169,8 @@ typedef struct {
     uint8_t font_size;
     uint8_t border;
     uint8_t border_color;
-    bitmap_t *cached_bitmap;
+    bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
+    bitmap_t *cached_bitmap_scaled;  /* Scaled bitmap cached for current control size */
     uint8_t pressed;
     uint8_t checked;
     uint16_t group_id;
@@ -624,6 +629,16 @@ static inline int sys_gfx_draw_cached_partial(gfx_cached_bmp_t *bmp, int dest_x,
     return ret;
 }
 
+/* Load BMP and draw scaled to region (no transparency). Returns 0 on success, -1 on error. */
+static inline int sys_gfx_load_bmp_scaled(const char *path, int dest_x, int dest_y, int dest_w, int dest_h) {
+    int ret;
+    uint32_t pos = ((uint32_t)dest_x << 16) | (dest_y & 0xFFFF);
+    uint32_t size = ((uint32_t)dest_w << 16) | (dest_h & 0xFFFF);
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP_SCALED), "b"(path), "c"(pos), "d"(size));
+    return ret;
+}
+
+
 static inline void sys_gfx_free_cached(gfx_cached_bmp_t *bmp) {
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FREE_CACHED), "b"(bmp));
 }
@@ -645,6 +660,10 @@ static inline void sys_mouse_draw_cursor(int x, int y, int full_redraw) {
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
+static inline void sys_mouse_invalidate(void) {
+    register int dummy_eax __asm__("eax") = SYS_MOUSE_INVALIDATE;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
+}
 static inline int sys_win_msgbox(const char *msg, const char *btn, const char *title) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MSGBOX), "b"(msg), "c"(btn), "d"(title));
@@ -695,6 +714,17 @@ static inline int sys_win_cycle_commit(void) {
 static inline int sys_win_restore_form(void *form) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_RESTORE_FORM), "b"(form));
+    return ret;
+}
+
+static inline void sys_win_force_full_redraw(void) {
+    register int dummy_eax __asm__("eax") = SYS_WIN_FORCE_FULL_REDRAW;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
+}
+
+static inline int sys_win_is_focused(void *form) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_IS_FOCUSED), "b"(form));
     return ret;
 }
 

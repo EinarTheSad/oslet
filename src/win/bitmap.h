@@ -9,5 +9,7 @@ typedef struct bitmap_s {
 } bitmap_t;
 
 bitmap_t* bitmap_load_from_file(const char *path);
+bitmap_t* bitmap_scale_nearest(bitmap_t *src, int new_w, int new_h);
 void bitmap_draw(bitmap_t *bmp, int x, int y);
+void bitmap_draw_opaque(bitmap_t *bmp, int x, int y);
 void bitmap_free(bitmap_t *bmp);

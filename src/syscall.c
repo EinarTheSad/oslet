@@ -626,6 +626,55 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             return 0;
         }
 
+        case 0x11: { /* SYS_GFX_LOAD_BMP_SCALED - Load BMP and draw scaled (no transparency) */
+            if (!ebx) return (uint32_t)-1;
+            int dest_x = (int)(ecx >> 16);
+            int dest_y = (int)(ecx & 0xFFFF);
+            int dest_w = (int)(edx >> 16);
+            int dest_h = (int)(edx & 0xFFFF);
+
+            int src_w, src_h;
+            uint8_t *bmp = gfx_load_bmp_to_buffer((const char*)ebx, &src_w, &src_h);
+            if (!bmp) return (uint32_t)-1;
+
+            /* If bitmap is larger than target, scale down preserving aspect ratio. If smaller, center it (no scaling). */
+            if (src_w > dest_w || src_h > dest_h) {
+                bitmap_t src;
+                src.data = bmp;
+                src.width = src_w;
+                src.height = src_h;
+                src.bits_per_pixel = 4;
+
+                /* Compute target size preserving aspect ratio */
+                int new_w, new_h;
+                if ((int64_t)src_w * dest_h > (int64_t)src_h * dest_w) {
+                    new_w = dest_w;
+                    new_h = (src_h * dest_w) / src_w;
+                    if (new_h <= 0) new_h = 1;
+                } else {
+                    new_h = dest_h;
+                    new_w = (src_w * dest_h) / src_h;
+                    if (new_w <= 0) new_w = 1;
+                }
+
+                bitmap_t *scaled = bitmap_scale_nearest(&src, new_w, new_h);
+                kfree(bmp); /* free original raw buffer */
+
+                if (!scaled) return (uint32_t)-1;
+                int dx = dest_x + (dest_w - scaled->width) / 2;
+                int dy = dest_y + (dest_h - scaled->height) / 2;
+                gfx_draw_cached_bmp_ex(scaled->data, scaled->width, scaled->height, dx, dy, 0);
+                bitmap_free(scaled);
+            } else {
+                /* No scaling - center the image within destination rect */
+                int dx = dest_x + (dest_w - src_w) / 2;
+                int dy = dest_y + (dest_h - src_h) / 2;
+                gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dx, dy, 0);
+                kfree(bmp);
+            }
+            return 0;
+        }
+
         case 0x10: { /* Draw partial region of cached BMP */
             if (!ebx) return (uint32_t)-1;
 
@@ -690,6 +739,11 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
             
             mouse_save(ebx, ecx);
             mouse_draw_cursor(ebx, ecx);
+            return 0;
+        }
+
+        case 0x02: {
+            mouse_invalidate_buffer();
             return 0;
         }
         
@@ -900,13 +954,14 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
         for (int i = form->ctrl_count - 1; i >= 0; i--) {
             gui_control_t *ctrl = &form->controls[i];
 
-            /* Skip non-interactive controls */
+            /* Skip non-interactive controls (treat picturebox as interactive so clicks are detected) */
             if (ctrl->type != CTRL_BUTTON &&
                 ctrl->type != CTRL_CHECKBOX &&
                 ctrl->type != CTRL_RADIOBUTTON &&
                 ctrl->type != CTRL_TEXTBOX &&
                 ctrl->type != CTRL_ICON &&
-                ctrl->type != CTRL_DROPDOWN) {
+                ctrl->type != CTRL_DROPDOWN &&
+                ctrl->type != CTRL_PICTUREBOX) {
                 continue;
             }
 
@@ -1746,7 +1801,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->font_size = ctrl->font_size;
                 dest->border = ctrl->border;
                 dest->border_color = ctrl->border_color;
-                dest->cached_bitmap = NULL;
+                dest->cached_bitmap_orig = NULL;
+                dest->cached_bitmap_scaled = NULL;
                 dest->pressed = 0;
                 dest->checked = ctrl->checked;
                 dest->group_id = ctrl->group_id;
@@ -1818,9 +1874,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Free cached bitmaps in controls */
             if (form->controls) {
                 for (int i = 0; i < form->ctrl_count; i++) {
-                    if (form->controls[i].cached_bitmap) {
-                        bitmap_free(form->controls[i].cached_bitmap);
-                        form->controls[i].cached_bitmap = NULL;
+                    if (form->controls[i].cached_bitmap_orig) {
+                        bitmap_free(form->controls[i].cached_bitmap_orig);
+                        form->controls[i].cached_bitmap_orig = NULL;
+                    }
+                    if (form->controls[i].cached_bitmap_scaled) {
+                        bitmap_free(form->controls[i].cached_bitmap_scaled);
+                        form->controls[i].cached_bitmap_scaled = NULL;
                     }
                 }
                 kfree(form->controls);
@@ -1927,15 +1987,25 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     if (value) {
                         if (ctrl->type == CTRL_ICON) {
                             /* For icons, load bitmap directly without overwriting text (label) */
-                            if (ctrl->cached_bitmap) {
-                                bitmap_free(ctrl->cached_bitmap);
+                            if (ctrl->cached_bitmap_orig) {
+                                bitmap_free(ctrl->cached_bitmap_orig);
+                                ctrl->cached_bitmap_orig = NULL;
                             }
-                            ctrl->cached_bitmap = bitmap_load_from_file((const char*)value);
+                            if (ctrl->cached_bitmap_scaled) {
+                                bitmap_free(ctrl->cached_bitmap_scaled);
+                                ctrl->cached_bitmap_scaled = NULL;
+                            }
+                            ctrl->cached_bitmap_orig = bitmap_load_from_file((const char*)value);
                         } else {
                             /* For picturebox, store path in text and clear cache */
                             strcpy_s(ctrl->text, (const char*)value, 256);
-                            if (ctrl->cached_bitmap) {
-                                ctrl->cached_bitmap = NULL;
+                            if (ctrl->cached_bitmap_orig) {
+                                bitmap_free(ctrl->cached_bitmap_orig);
+                                ctrl->cached_bitmap_orig = NULL;
+                            }
+                            if (ctrl->cached_bitmap_scaled) {
+                                bitmap_free(ctrl->cached_bitmap_scaled);
+                                ctrl->cached_bitmap_scaled = NULL;
                             }
                         }
                     }
@@ -2057,6 +2127,21 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             wm_bring_to_front(&global_wm, form);
             global_wm.needs_full_redraw = 1;
             return 2; /* Indicate full redraw */
+        }
+
+        case 0x17: { /* SYS_WIN_FORCE_FULL_REDRAW - request a desktop full redraw */
+            global_wm.needs_full_redraw = 1;
+            return 1;
+        }
+
+        case 0x18: { /* SYS_WIN_IS_FOCUSED - return 1 if given form is focused/topmost */
+            gui_form_t *form = (gui_form_t*)ebx;
+            if (!form) return 0;
+            if (global_wm.focused_index >= 0 && global_wm.focused_index < global_wm.count &&
+                global_wm.windows[global_wm.focused_index] == form) {
+                return 1;
+            }
+            return 0;
         }
 
         default:
@@ -2191,9 +2276,13 @@ void wm_cleanup_task(uint32_t tid) {
         /* Free cached bitmaps in controls */
         if (form->controls) {
             for (int j = 0; j < form->ctrl_count; j++) {
-                if (form->controls[j].cached_bitmap) {
-                    bitmap_free(form->controls[j].cached_bitmap);
-                    form->controls[j].cached_bitmap = NULL;
+                if (form->controls[j].cached_bitmap_orig) {
+                    bitmap_free(form->controls[j].cached_bitmap_orig);
+                    form->controls[j].cached_bitmap_orig = NULL;
+                }
+                if (form->controls[j].cached_bitmap_scaled) {
+                    bitmap_free(form->controls[j].cached_bitmap_scaled);
+                    form->controls[j].cached_bitmap_scaled = NULL;
                 }
             }
             kfree(form->controls);

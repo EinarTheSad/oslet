@@ -179,3 +179,4 @@ $(BUILD)/apps/%.o: $(APPS)/%.c
 
 clock: $(APPS)/clock.elf
 calc: $(APPS)/calculator.elf
+viewer: $(APPS)/image_viewer.elf
