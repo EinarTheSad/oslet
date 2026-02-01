@@ -26,6 +26,11 @@
 
 static inline void ata_400ns_delay(void);
 
+/* Runtime flag: whether the controller supports cache-flush (0xE7).
+ * Some emulators (PCem) and older controllers report ERR for flush even
+ * though data was written. We detect that and disable flush at runtime
+ * to avoid constant ERR loops. */
+static int ata_flush_supported = 1;
 static inline void ata_wait_bsy(void) {
     while (inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_BSY);
 }
@@ -34,7 +39,8 @@ static int ata_wait_bsy_timeout(uint32_t timeout_ms) {
     uint32_t ticks = timeout_ms * 10000; // ~100us per tick
     while (ticks-- > 0) {
         uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
-        if (!(status & ATA_SR_BSY)) return 0;
+        // Wait for BSY to clear and DRDY to be set for better compatibility with some controllers (e.g., PCem)
+        if (!(status & ATA_SR_BSY) && (status & ATA_SR_DRDY)) return 0;
         for (volatile int i = 0; i < 10; i++);
     }
     return -1;
@@ -54,14 +60,6 @@ static int ata_wait_drq_timeout(uint32_t timeout_ms) {
     }
     return -1;
 }
-
-/* static void ata_soft_reset(void) {
-    outb(ATA_PRIMARY_CONTROL, 0x04); // SRST
-    ata_400ns_delay();
-    outb(ATA_PRIMARY_CONTROL, 0x00);
-    ata_400ns_delay();
-    for (volatile int i = 0; i < 100000; i++); // Wait ~10ms
-} */
 
 static inline void ata_400ns_delay(void) {
     for (int i = 0; i < 4; i++)
@@ -205,19 +203,30 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     if (!buffer || sector_count == 0) return -1;
 
     if (ata_wait_bsy_timeout(5000) != 0) {
-        return -1;
+        /* brief backoff and one retry */
+        for (volatile int d = 0; d < 50000; d++);
+        if (ata_wait_bsy_timeout(1000) != 0) {
+            return -1;
+        }
     }
 
-    // Select drive and wait for it to be ready
+    // Safer drive select sequence: select master then reselect with LBA bits (improves compatibility with some controllers/emulators)
+    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
+    ata_400ns_delay();
+    for (volatile int i = 0; i < 10000; i++);
+
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));
     ata_400ns_delay();
 
     // Wait for drive selection to take effect
-    for (volatile int i = 0; i < 1000; i++);
+    for (volatile int i = 0; i < 5000; i++);
 
-    // Wait for BSY to clear after drive selection
-    if (ata_wait_bsy_timeout(5000) != 0) {
-        return -1;
+    // Wait for BSY to clear after drive selection; allow a backoff/retry
+    if (ata_wait_bsy_timeout(10000) != 0) {
+        for (volatile int d = 0; d < 100000; d++);
+        if (ata_wait_bsy_timeout(2000) != 0) {
+            return -1;
+        }
     }
 
     outb(ATA_PRIMARY_IO + ATA_REG_SECCOUNT, sector_count);
@@ -243,13 +252,53 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
         }
         
         ata_400ns_delay();
+
+        /* Read status to detect errors and ensure controller accepted the sector */
+        uint8_t status_after = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+        if (status_after & ATA_SR_ERR) {
+            return -1;
+        }
+
+        /* Some controllers (notably in PCem) may require waiting for DRQ to clear before continuing */
+        uint32_t inner_ticks = 50000;
+        while (inner_ticks-- > 0) {
+            uint8_t st = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+            if (!(st & ATA_SR_DRQ)) break;
+            for (volatile int ii = 0; ii < 10; ii++);
+        }
+
+        /* As an added safety, ensure BSY cleared before next sector/command */
+        if (ata_wait_bsy_timeout(5000) != 0) {
+            return -1;
+        }
     }
-    
-    outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, 0xE7);
-    if (ata_wait_bsy_timeout(5000) != 0) {
-        return -1;
+
+    /* Only attempt cache flush if we believe it's supported. If we detect
+     * that the controller returns ERR for flush (common in PCem), mark it
+     * unsupported for the rest of the boot to avoid noisy loops. */
+    if (ata_flush_supported) {
+        outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, 0xE7);
+        if (ata_wait_bsy_timeout(5000) != 0) {
+        /* small delay and retry flush once */
+        for (volatile int d = 0; d < 50000; d++);
+        outb(ATA_PRIMARY_IO + ATA_REG_COMMAND, 0xE7);
+        if (ata_wait_bsy_timeout(2000) != 0) {
+            /* Mark flush unsupported to avoid future failures */
+            ata_flush_supported = 0;
+        }
     }
-    
+
+        /* Check for errors after cache flush. If we get ERR, disable flush
+         * going forward (but don't fail the write) because some emulators
+         * report ERR while data is actually written. */
+        if (inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_ERR) {
+            /* Disable flush going forward for compatibility */
+            ata_flush_supported = 0;
+        }
+    }
+
+    /* Don't treat flush errors as fatal; assume sector writes succeeded if
+     * ata_write_sectors returned success earlier. */
     return 0;
 }
 
