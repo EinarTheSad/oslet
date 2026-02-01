@@ -209,7 +209,9 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             if (!ebx || !ecx) return (uint32_t)-1;
             
             fat32_file_t *file = fat32_open((const char*)ebx, (const char*)ecx);
-            if (!file) return (uint32_t)-1;
+            if (!file) {
+                return (uint32_t)-1;
+            }
             
             int fd = fd_alloc(file);
             if (fd < 0) {
