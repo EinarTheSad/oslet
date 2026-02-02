@@ -1,5 +1,6 @@
 #include "ini.h"
 #include "string.h"
+#include "stdlib.h"
 
 void ini_init(ini_parser_t *ini, char *buffer) {
     ini->data = buffer;
@@ -74,4 +75,18 @@ const char* ini_get(ini_parser_t *ini, const char *section, const char *key) {
     }
 
     return NULL;
+}
+
+int ini_get_int(ini_parser_t *ini, const char *section, const char *key, int default_val) {
+    const char *val = ini_get(ini, section, key);
+    if (!val) return default_val;
+    return atoi(val);
+}
+
+int ini_get_color(ini_parser_t *ini, const char *section, const char *key, int default_val) {
+    const char *val = ini_get(ini, section, key);
+    if (!val) return default_val;
+    int c = atoi(val);
+    if (c < 0 || c > 15) return default_val;
+    return c;
 }

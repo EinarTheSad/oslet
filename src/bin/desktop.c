@@ -18,12 +18,29 @@ typedef struct {
     char wallpaper[128];
 } desktop_settings_t;
 
+typedef struct {
+    int x, y, w, h;
+    int pressed;
+    char label[6];
+} taskbar_button_t;
+
+extern const progmod_t startman_module;
+extern const progmod_t textmode_module;
+extern const progmod_t cpl_theme_module;
+
 desktop_settings_t settings;  /* Global - cpanel needs access */
+usr_bmf_font_t font_b;
+usr_bmf_font_t font_n;
+sys_time_t current = {0};
 
 /* Cached wallpaper for fast redraw */
 static gfx_cached_bmp_t cached_wallpaper = {0};
 static int wallpaper_x = 0;
 static int wallpaper_y = 0;
+
+static taskbar_button_t start_button;
+static int last_clock_hour = -1;
+static int last_clock_minute = -1;
 
 /* Parse INI file and load desktop settings */
 static void load_settings(void) {
@@ -44,78 +61,24 @@ static void load_settings(void) {
     ini_parser_t ini;
     ini_init(&ini, buffer);
 
-    const char *val;
+    settings.color = (uint8_t)ini_get_color(&ini, "DESKTOP", "COLOR", settings.color);
 
-    val = ini_get(&ini, "DESKTOP", "COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) {
-            settings.color = (uint8_t)c;
-        }
-    }
-
-    val = ini_get(&ini, "DESKTOP", "WALLPAPER");
+    const char *val = ini_get(&ini, "DESKTOP", "WALLPAPER");
     if (val && val[0] != '\0') {
         strncpy(settings.wallpaper, val, sizeof(settings.wallpaper) - 1);
         settings.wallpaper[sizeof(settings.wallpaper) - 1] = '\0';
     }
 
-    /* Load theme settings */
     sys_theme_t *theme = sys_win_get_theme();
-
-    val = ini_get(&ini, "THEME", "BG_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->bg_color = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "TITLEBAR_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->titlebar_color = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "TITLEBAR_INACTIVE");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->titlebar_inactive = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "FRAME_DARK");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->frame_dark = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "FRAME_LIGHT");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->frame_light = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "TEXT_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->text_color = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "BUTTON_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->button_color = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "TASKBAR_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->taskbar_color = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "START_BUTTON_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) theme->start_button_color = (uint8_t)c;
-    }
+    theme->bg_color = (uint8_t)ini_get_color(&ini, "THEME", "BG_COLOR", theme->bg_color);
+    theme->titlebar_color = (uint8_t)ini_get_color(&ini, "THEME", "TITLEBAR_COLOR", theme->titlebar_color);
+    theme->titlebar_inactive = (uint8_t)ini_get_color(&ini, "THEME", "TITLEBAR_INACTIVE", theme->titlebar_inactive);
+    theme->frame_dark = (uint8_t)ini_get_color(&ini, "THEME", "FRAME_DARK", theme->frame_dark);
+    theme->frame_light = (uint8_t)ini_get_color(&ini, "THEME", "FRAME_LIGHT", theme->frame_light);
+    theme->text_color = (uint8_t)ini_get_color(&ini, "THEME", "TEXT_COLOR", theme->text_color);
+    theme->button_color = (uint8_t)ini_get_color(&ini, "THEME", "BUTTON_COLOR", theme->button_color);
+    theme->taskbar_color = (uint8_t)ini_get_color(&ini, "THEME", "TASKBAR_COLOR", theme->taskbar_color);
+    theme->start_button_color = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", theme->start_button_color);
 }
 
 /* Load wallpaper into memory cache (call once at startup) */
@@ -136,24 +99,6 @@ static void draw_wallpaper(void) {
     if (!cached_wallpaper.data) return;
     wallpaper_draw(&cached_wallpaper, wallpaper_x, wallpaper_y);
 }
-
-usr_bmf_font_t font_b;
-usr_bmf_font_t font_n;
-sys_time_t current = {0};
-
-typedef struct {
-    int x, y, w, h;
-    int pressed;
-    char label[6];
-} taskbar_button_t;
-
-static taskbar_button_t start_button;
-static int last_clock_hour = -1;
-static int last_clock_minute = -1;
-
-extern const progmod_t startman_module;
-extern const progmod_t textmode_module;
-extern const progmod_t cpl_theme_module;
 
 static void prog_register_all(void) {
     progman_register(&startman_module);
@@ -320,11 +265,8 @@ static void desktop_redraw_fast(void) {
 }
 
 static void pump_all_program_events(int mx, int my) {
-    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
-        prog_instance_t *inst = progman_get_instance(i);
-        if (!inst || inst->state != PROG_STATE_RUNNING)
-            continue;
-
+    prog_instance_t *inst;
+    PROGMAN_FOREACH_RUNNING(inst) {
         for (int j = 0; j < inst->window_count; j++) {
             void *form = inst->windows[j];
             if (!form) continue;

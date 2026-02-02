@@ -31,44 +31,18 @@ static gui_control_t Form2_controls[] = {
     { .type = CTRL_BUTTON, .x = 130, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Cancel", .id = ID_CANCEL, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 }
 };
 
-static int ends_with_icase(const char *str, const char *suf) {
-    if (!str || !suf) return 0;
-    int n = strlen(str);
-    int m = strlen(suf);
-    if (m > n) return 0;
-    const char *a = str + (n - m);
-    for (int i = 0; i < m; i++) {
-        char ca = a[i];
-        char cb = suf[i];
-        if (ca >= 'A' && ca <= 'Z') ca = ca - 'A' + 'a';
-        if (cb >= 'A' && cb <= 'Z') cb = cb - 'A' + 'a';
-        if (ca != cb) return 0;
-    }
-    return 1;
-}
-
-/* Build list of BMP and ICO files in given directory. Returns number of entries (max out_entries)
-   entries should be an array of sys_dirent_t provided by caller. */
 static int gather_bmps(const char *dir, sys_dirent_t *entries, int max_entries) {
     int n = sys_readdir(dir, entries, max_entries);
     if (n <= 0) return 0;
     int out = 0;
     for (int i = 0; i < n && out < max_entries; i++) {
         if (!entries[i].is_directory) {
-            if (ends_with_icase(entries[i].name, ".bmp") || ends_with_icase(entries[i].name, ".ico")) {
+            if (str_ends_with_icase(entries[i].name, ".bmp") || str_ends_with_icase(entries[i].name, ".ico")) {
                 entries[out++] = entries[i];
             }
         }
     }
     return out;
-}
-
-static int find_last_sep(const char *path) {
-    int last = -1;
-    for (int i = 0; path[i]; i++) {
-        if (path[i] == '/') last = i;
-    }
-    return last;
 }
 
 static void toggle_fullscreen(void *form, int *fullscreen_ptr, const char *cur_path) {
@@ -97,11 +71,11 @@ static void navigate_dir(void *form, int delta, int fullscreen) {
     const char *cur = ctrl_get_text(form, ID_PICTURE);
     if (!cur || !cur[0]) return;
 
-    int last_sep = find_last_sep(cur);
-    if (last_sep <= 0) return;
+    const char *last_sep_ptr = strrchr(cur, '/');
+    if (!last_sep_ptr || last_sep_ptr == cur) return;
 
     char dir[256];
-    int dirlen = last_sep; /* up to but not including '/' */
+    int dirlen = last_sep_ptr - cur;
     if (dirlen >= (int)sizeof(dir) - 1) return;
     for (int i = 0; i < dirlen; i++) dir[i] = cur[i];
     dir[dirlen] = '\0';
@@ -110,7 +84,7 @@ static void navigate_dir(void *form, int delta, int fullscreen) {
     int total = gather_bmps(dir, entries, 256);
     if (total <= 0) return;
 
-    const char *filename = cur + last_sep + 1;
+    const char *filename = last_sep_ptr + 1;
     int idx = -1;
     for (int i = 0; i < total; i++) {
         if (strcmp(entries[i].name, filename) == 0) { idx = i; break; }

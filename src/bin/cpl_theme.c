@@ -111,60 +111,24 @@ static void load_settings(cpl_theme_state_t *state) {
     ini_parser_t ini;
     ini_init(&ini, buffer);
 
-    const char *val;
+    state->desktop_color = (uint8_t)ini_get_color(&ini, "DESKTOP", "COLOR", state->desktop_color);
 
-    val = ini_get(&ini, "DESKTOP", "COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) state->desktop_color = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "DESKTOP", "WALLPAPER");
+    const char *val = ini_get(&ini, "DESKTOP", "WALLPAPER");
     if (val && val[0]) {
         strncpy(state->wallpaper, val, sizeof(state->wallpaper) - 1);
         state->wallpaper[sizeof(state->wallpaper) - 1] = '\0';
     }
 
-    val = ini_get(&ini, "THEME", "BG_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) state->theme_winbg = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "TITLEBAR_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) state->theme_titlebar = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "BUTTON_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) state->theme_titlebtn = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "TASKBAR_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) state->theme_taskbar = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "THEME", "START_BUTTON_COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) state->theme_startbtn = (uint8_t)c;
-    }
-
+    state->theme_winbg = (uint8_t)ini_get_color(&ini, "THEME", "BG_COLOR", state->theme_winbg);
+    state->theme_titlebar = (uint8_t)ini_get_color(&ini, "THEME", "TITLEBAR_COLOR", state->theme_titlebar);
+    state->theme_titlebtn = (uint8_t)ini_get_color(&ini, "THEME", "BUTTON_COLOR", state->theme_titlebtn);
+    state->theme_taskbar = (uint8_t)ini_get_color(&ini, "THEME", "TASKBAR_COLOR", state->theme_taskbar);
+    state->theme_startbtn = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", state->theme_startbtn);
+    
     val = ini_get(&ini, "THEME", "ICON_TEXT_COLOR");
     if (val) {
         int c = atoi(val);
         if (c == 0 || c == 15) state->theme_text_color = (uint8_t)c;
-    }
-
-    val = ini_get(&ini, "DESKTOP", "COLOR");
-    if (val) {
-        int c = atoi(val);
-        if (c >= 0 && c <= 15) state->desktop_color = (uint8_t)c;
     }
 
 store_orig:
