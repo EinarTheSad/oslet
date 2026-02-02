@@ -7,21 +7,22 @@ static const progmod_t *registry[PROGMAN_REGISTRY_MAX];
 static int registry_count = 0;
 
 /* Running instances */
-static prog_instance_t instances[PROGMAN_INSTANCES_MAX];
+prog_instance_t instances[PROGMAN_INSTANCES_MAX];
 static uint16_t next_instance_id = 1;
 
 void progman_init(void) {
     registry_count = 0;
     next_instance_id = 1;
 
-    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
-        instances[i].module = 0;
-        instances[i].instance_id = 0;
-        instances[i].state = PROG_STATE_IDLE;
-        instances[i].window_count = 0;
-        instances[i].user_data = 0;
+    prog_instance_t *inst;
+    PROGMAN_FOREACH_INSTANCE(inst) {
+        inst->module = 0;
+        inst->instance_id = 0;
+        inst->state = PROG_STATE_IDLE;
+        inst->window_count = 0;
+        inst->user_data = 0;
         for (int j = 0; j < PROG_MAX_WINDOWS; j++) {
-            instances[i].windows[j] = 0;
+            inst->windows[j] = 0;
         }
     }
 }
@@ -49,18 +50,18 @@ static const progmod_t* find_module_by_name(const char *name) {
 }
 
 static prog_instance_t* find_free_instance(void) {
-    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
-        if (instances[i].state == PROG_STATE_IDLE)
-            return &instances[i];
+    prog_instance_t *inst;
+    PROGMAN_FOREACH_INSTANCE(inst) {
+        if (inst->state == PROG_STATE_IDLE)
+            return inst;
     }
     return 0;
 }
 
 int progman_is_running(const char *name) {
-    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
-        if (instances[i].state == PROG_STATE_RUNNING &&
-            instances[i].module &&
-            strcmp(instances[i].module->name, name) == 0) {
+    prog_instance_t *inst;
+    PROGMAN_FOREACH_RUNNING(inst) {
+        if (inst->module && strcmp(inst->module->name, name) == 0) {
             return 1;
         }
     }
@@ -132,11 +133,9 @@ int progman_launch_with_icon(const char *name, const char *icon_path) {
 }
 
 void progman_close(uint16_t instance_id) {
-    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
-        if (instances[i].instance_id == instance_id &&
-            instances[i].state == PROG_STATE_RUNNING) {
-
-            prog_instance_t *inst = &instances[i];
+    prog_instance_t *inst;
+    PROGMAN_FOREACH_RUNNING(inst) {
+        if (inst->instance_id == instance_id) {
             inst->state = PROG_STATE_CLOSING;
 
             /* Call cleanup */
@@ -164,11 +163,10 @@ void progman_close(uint16_t instance_id) {
 }
 
 void progman_update_all(void) {
-    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
-        if (instances[i].state == PROG_STATE_RUNNING &&
-            instances[i].module &&
-            instances[i].module->update) {
-            instances[i].module->update(&instances[i]);
+    prog_instance_t *inst;
+    PROGMAN_FOREACH_RUNNING(inst) {
+        if (inst->module && inst->module->update) {
+            inst->module->update(inst);
         }
     }
 }
@@ -176,13 +174,11 @@ void progman_update_all(void) {
 prog_instance_t* progman_find_by_window(void *form) {
     if (!form) return 0;
 
-    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
-        if (instances[i].state != PROG_STATE_RUNNING)
-            continue;
-
-        for (int j = 0; j < instances[i].window_count; j++) {
-            if (instances[i].windows[j] == form)
-                return &instances[i];
+    prog_instance_t *inst;
+    PROGMAN_FOREACH_RUNNING(inst) {
+        for (int j = 0; j < inst->window_count; j++) {
+            if (inst->windows[j] == form)
+                return inst;
         }
     }
     return 0;
@@ -217,9 +213,9 @@ const progmod_t* progman_get_registered(int index) {
 
 int progman_get_running_count(void) {
     int count = 0;
-    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
-        if (instances[i].state == PROG_STATE_RUNNING)
-            count++;
+    prog_instance_t *inst;
+    PROGMAN_FOREACH_RUNNING(inst) {
+        count++;
     }
     return count;
 }

@@ -48,6 +48,8 @@ void win_restore_background(window_t *win);
 void win_draw_frame(int x, int y, int w, int h);
 void win_draw_titlebar(int x, int y, int w, const char *title, int is_active);
 void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label, int pressed);
+void win_draw_3d_border_raised(int x, int y, int w, int h);
+void win_draw_3d_border_sunken(int x, int y, int w, int h);
 
 
 void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const char *title);

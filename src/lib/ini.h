@@ -18,3 +18,9 @@ int ini_next(ini_parser_t *ini, char *section, char *key, char *value);
 /* Get value for key in section. Returns NULL if not found.
  * Restarts parsing from beginning. */
 const char* ini_get(ini_parser_t *ini, const char *section, const char *key);
+
+/* Get integer value. Returns default_val if not found or invalid. */
+int ini_get_int(ini_parser_t *ini, const char *section, const char *key, int default_val);
+
+/* Get color value (0-15). Returns default_val if not found or out of range. */
+int ini_get_color(ini_parser_t *ini, const char *section, const char *key, int default_val);

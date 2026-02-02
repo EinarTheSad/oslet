@@ -101,21 +101,31 @@ void win_draw_titlebar(int x, int y, int w, const char *title, int is_active) {
     gfx_fillrect(btn_x+2, btn_y+6, 10, 2, 15);
 }
 
+void win_draw_3d_border_raised(int x, int y, int w, int h) {
+    window_theme_t *theme = theme_get_current();
+    gfx_rect(x, y, w, h, theme->text_color);
+    gfx_rect(x+1, y+1, w-2, h-2, theme->frame_dark);
+    gfx_hline(x+1, y+1, w-3, 15);
+    gfx_vline(x+1, y+1, h-3, 15);
+}
+
+void win_draw_3d_border_sunken(int x, int y, int w, int h) {
+    window_theme_t *theme = theme_get_current();
+    gfx_rect(x, y, w, h, theme->text_color);
+    gfx_rect(x+1, y+1, w-2, h-2, 15);
+    gfx_hline(x+1, y+1, w-3, theme->frame_dark);
+    gfx_vline(x+1, y+1, h-3, theme->frame_dark);
+}
+
 void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label, int pressed) {
     window_theme_t *theme = theme_get_current();
-    int shad_a, shad_b;
-    gfx_rect(x, y, w, h, theme->text_color);
     gfx_fillrect(x+2, y+2, w-3, h-3, color);
-    if (pressed == 1) {
-        shad_a = 15;
-        shad_b = theme->frame_dark;
+    
+    if (pressed) {
+        win_draw_3d_border_sunken(x, y, w, h);
     } else {
-        shad_a = theme->frame_dark;
-        shad_b = 15;
+        win_draw_3d_border_raised(x, y, w, h);
     }
-    gfx_rect(x+1, y+1, w-2, h-2, shad_a);
-    gfx_hline(x+1, y+1, w-3, shad_b);
-    gfx_vline(x+1, y+1, h-3, shad_b);
 
     if (font_b.data && label) {
         int text_w = bmf_measure_text(&font_b, 12, label);

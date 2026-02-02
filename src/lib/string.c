@@ -97,3 +97,65 @@ void str_trim(char *s) {
         s[--len] = '\0';
     }
 }
+
+int str_ends_with_icase(const char *str, const char *suffix) {
+    if (!str || !suffix) return 0;
+    int n = strlen(str);
+    int m = strlen(suffix);
+    if (m > n) return 0;
+    const char *a = str + (n - m);
+    for (int i = 0; i < m; i++) {
+        char ca = a[i];
+        char cb = suffix[i];
+        if (ca >= 'A' && ca <= 'Z') ca = ca - 'A' + 'a';
+        if (cb >= 'A' && cb <= 'Z') cb = cb - 'A' + 'a';
+        if (ca != cb) return 0;
+    }
+    return 1;
+}
+
+int str_match_wildcard(const char *pattern, const char *str) {
+    while (*pattern && *str) {
+        if (*pattern == '*') {
+            pattern++;
+            if (*pattern == '\0') return 1;
+
+            if (*pattern == '.') {
+                const char *dot = strchr(str, '.');
+                if (!dot) return 0;
+                str = dot;
+                continue;
+            }
+
+            while (*str) {
+                if (str_match_wildcard(pattern, str))
+                    return 1;
+                str++;
+            }
+            return 0;
+        }
+        else if (*pattern == '?') {
+            /* '?' matches any single character */
+            pattern++;
+            str++;
+        }
+        else {
+            /* Case-insensitive character match */
+            char pc = *pattern;
+            char sc = *str;
+            if (pc >= 'A' && pc <= 'Z') pc = pc - 'A' + 'a';
+            if (sc >= 'A' && sc <= 'Z') sc = sc - 'A' + 'a';
+
+            if (pc == sc) {
+                pattern++;
+                str++;
+                continue;
+            }
+            return 0;
+        }
+    }
+
+    while (*pattern == '*') pattern++;
+
+    return (*pattern == '\0' && *str == '\0');
+}

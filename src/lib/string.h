@@ -16,3 +16,5 @@ char toupper(char c);
 char tolower(char c);
 void str_toupper(char *s);
 void str_tolower(char *s);
+int str_ends_with_icase(const char *str, const char *suffix);
+int str_match_wildcard(const char *pattern, const char *str);
