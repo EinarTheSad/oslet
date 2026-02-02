@@ -2146,6 +2146,56 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             return 0;
         }
 
+        case 0x19: { /* SYS_WIN_DRAW_BUFFER - draw a user buffer into a form but clipped to regions where the form is topmost */
+            struct {
+                gui_form_t *form;
+                const uint8_t *buffer;
+                int buf_w;
+                int buf_h;
+                int src_x;
+                int src_y;
+                int src_w;
+                int src_h;
+                int dest_x;
+                int dest_y;
+                int transparent;
+            } *p = (void*)ebx;
+
+            if (!p || !p->form || !p->buffer) return -1;
+
+            /* Clip source rectangle to buffer bounds */
+            int sx = p->src_x < 0 ? 0 : p->src_x;
+            int sy = p->src_y < 0 ? 0 : p->src_y;
+            int sw = p->src_w;
+            int sh = p->src_h;
+            if (sx + sw > p->buf_w) sw = p->buf_w - sx;
+            if (sy + sh > p->buf_h) sh = p->buf_h - sy;
+            if (sw <= 0 || sh <= 0) return -1;
+
+            /* Destination is relative to the window client area (titlebar offset = 20) */
+            int dest_base_x = p->form->win.x + p->dest_x;
+            int dest_base_y = p->form->win.y + 20 + p->dest_y;
+
+            for (int y = 0; y < sh; y++) {
+                int screen_y = dest_base_y + y;
+                if (screen_y < 0 || screen_y >= WM_SCREEN_HEIGHT) continue;
+                for (int x = 0; x < sw; x++) {
+                    int screen_x = dest_base_x + x;
+                    if (screen_x < 0 || screen_x >= WM_SCREEN_WIDTH) continue;
+
+                    /* Only draw if this form is topmost at this pixel */
+                    gui_form_t *top = wm_get_window_at(&global_wm, screen_x, screen_y);
+                    if (top != p->form) continue;
+
+                    int px = p->buffer[(sy + y) * p->buf_w + (sx + x)];
+                    if (p->transparent && px == 5) continue; /* color 5 as transparent for compatibility */
+                    gfx_putpixel(screen_x, screen_y, (uint8_t)px);
+                }
+            }
+
+            return 0;
+        }
+
         default:
             return (uint32_t)-1;
     }

@@ -7,6 +7,10 @@
 #define WIN_W 110
 #define WIN_H 130
 
+/* Client area (where the clock face lives) */
+#define CL_W (WIN_W - 10)
+#define CL_H (WIN_H - 30)
+
 /* Sin/cos lookup table (values * 1000) for 0-59 (6 degree steps) */
 static const int sin_table[60] = {
        0,  105,  208,  309,  407,  500,  588,  669,  743,  809,
@@ -31,17 +35,81 @@ static int last_second = -1;
 static int last_minute = -1;
 static int last_hour = -1;
 
+static uint8_t *client_buf = NULL;
+
+static inline void buf_putpixel(int x, int y, uint8_t color) {
+    if (!client_buf) return;
+    if (x < 0 || x >= CL_W || y < 0 || y >= CL_H) return;
+    client_buf[y * CL_W + x] = color;
+}
+
+static void buf_fillrect(int x, int y, int w, int h, uint8_t color) {
+    if (!client_buf) return;
+    if (w <= 0 || h <= 0) return;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = x + w - 1;
+    int y1 = y + h - 1;
+    if (x1 >= CL_W) x1 = CL_W - 1;
+    if (y1 >= CL_H) y1 = CL_H - 1;
+    for (int py = y0; py <= y1; py++) {
+        for (int px = x0; px <= x1; px++) {
+            client_buf[py * CL_W + px] = color;
+        }
+    }
+}
+
+static inline int iabs(int v) { return v < 0 ? -v : v; }
+
+/* Bresenham line into client buffer */
+static void buf_line(int x0, int y0, int x1, int y1, uint8_t color) {
+    int dx = iabs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -iabs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    while (1) {
+        buf_putpixel(x0, y0, color);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+/* Midpoint circle into client buffer */
+static void buf_circle(int cx, int cy, int r, uint8_t color) {
+    if (r < 0) return;
+    int x = r;
+    int y = 0;
+    int err = 0;
+    while (x >= y) {
+        buf_putpixel(cx + x, cy + y, color);
+        buf_putpixel(cx - x, cy + y, color);
+        buf_putpixel(cx + x, cy - y, color);
+        buf_putpixel(cx - x, cy - y, color);
+        buf_putpixel(cx + y, cy + x, color);
+        buf_putpixel(cx - y, cy + x, color);
+        buf_putpixel(cx + y, cy - x, color);
+        buf_putpixel(cx - y, cy - x, color);
+        if (err <= 0) {
+            y += 1; err += 2*y + 1;
+        }
+        if (err > 0) {
+            x -= 1; err -= 2*x + 1;
+        }
+    }
+}
+
 static void draw_hand(int cx, int cy, int length, int angle_idx, uint8_t color) {
     int sin_val = get_sin(angle_idx);
     int cos_val = get_cos(angle_idx);
     int ex = cx + (length * sin_val) / 1000;
     int ey = cy - (length * cos_val) / 1000;
-    sys_gfx_line(cx, cy, ex, ey, color);
+    buf_line(cx, cy, ex, ey, color);
 }
 
 static void draw_face(int cx, int cy, int r) {
-    sys_gfx_circle(cx, cy, r, COLOR_BLACK);
-    sys_gfx_circle(cx, cy, r - 2, COLOR_DARK_GRAY);
+    buf_circle(cx, cy, r, COLOR_BLACK);
+    buf_circle(cx, cy, r - 2, COLOR_DARK_GRAY);
 
     for (int i = 0; i < 12; i++) {
         int angle_idx = i * 5;
@@ -53,7 +121,7 @@ static void draw_face(int cx, int cy, int r) {
         int iy = cy - (inner_r * cos_val) / 1000;
         int ox = cx + (outer_r * sin_val) / 1000;
         int oy = cy - (outer_r * cos_val) / 1000;
-        sys_gfx_line(ix, iy, ox, oy, COLOR_LIGHT_GRAY);
+        buf_line(ix, iy, ox, oy, COLOR_LIGHT_GRAY);
     }
 }
 
@@ -62,13 +130,18 @@ static void redraw_clock(void) {
 
     gui_form_t *f = form;
     if (f->win.is_minimized) return;
-    int cx = f->win.x + CLOCK_CENTER_X;
-    int cy = f->win.y + 20 + CLOCK_CENTER_Y;
 
     sys_theme_t *t = sys_win_get_theme();
 
-    /* Clear clock area */
-    sys_gfx_fillrect(f->win.x + 5, f->win.y + 25, WIN_W - 10, WIN_H - 30, t->bg_color);
+    /* Ensure client buffer exists */
+    if (!client_buf) return;
+
+    /* Fill background (client area coordinates 0..CL_W-1,0..CL_H-1) */
+    buf_fillrect(0, 0, CL_W, CL_H, t->bg_color);
+
+    /* Center inside client */
+    int cx = CL_W / 2; /* equals CLOCK_CENTER_X - 5 */
+    int cy = CL_H / 2; /* equals CLOCK_CENTER_Y - 5 */
 
     draw_face(cx, cy, CLOCK_RADIUS);
 
@@ -83,7 +156,15 @@ static void redraw_clock(void) {
     draw_hand(cx, cy, CLOCK_RADIUS * 7 / 10, min_pos, COLOR_BLACK);
     draw_hand(cx, cy, CLOCK_RADIUS * 8 / 10, sec_pos, COLOR_LIGHT_RED);
 
-    sys_gfx_fillrect(cx - 2, cy - 2, 4, 4, COLOR_BLUE);
+    /* Center dot */
+    int dotx = cx - 2;
+    int doty = cy - 2;
+    for (int dy = 0; dy < 4; dy++) {
+        for (int dx = 0; dx < 4; dx++) buf_putpixel(dotx + dx, doty + dy, COLOR_BLUE);
+    }
+
+    /* Blit client buffer into the form at (5,5) relative to client area; kernel will clip to topmost regions */
+    sys_win_draw_buffer(form, client_buf, CL_W, CL_H, 0, 0, CL_W, CL_H, 5, 5, 0);
 
     last_hour = time.hour;
     last_minute = time.minute;
@@ -99,6 +180,14 @@ void _start(void) {
         return;
     }
     sys_win_set_icon(form, "C:/ICONS/CLOCK.ICO");
+
+    /* Allocate client buffer (100x100) */
+    client_buf = sys_malloc(CL_W * CL_H);
+    if (!client_buf) {
+        sys_win_destroy_form(form);
+        sys_exit();
+        return;
+    }
 
     sys_win_draw(form);
     redraw_clock();
@@ -139,6 +228,11 @@ void _start(void) {
         }
 
         sys_yield();
+    }
+
+    if (client_buf) {
+        sys_free(client_buf);
+        client_buf = NULL;
     }
 
     sys_win_destroy_form(form);

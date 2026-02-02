@@ -121,6 +121,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_RESTORE_FORM     0x0B16
 #define SYS_WIN_FORCE_FULL_REDRAW 0x0B17
 #define SYS_WIN_IS_FOCUSED 0x0B18
+#define SYS_WIN_DRAW_BUFFER 0x0B19  /* Draw a raw pixel buffer into a form with clipping to avoid overwriting other windows */
 
 /* Control property IDs for sys_ctrl_set/get */
 
@@ -728,6 +729,43 @@ static inline int sys_win_is_focused(void *form) {
     return ret;
 }
 
+/* Draw a raw pixel buffer into a form. Buffer format: one byte per pixel (color index 0-15).
+   Parameters: form, buffer pointer, buffer width/height, src_x,src_y,src_w,src_h, dest_x,dest_y (relative to client area), transparent (0=no,1=skip color 5)
+   Returns 0 on success or -1 on error. */
+static inline int sys_win_draw_buffer(void *form, const uint8_t *buffer, int buf_w, int buf_h,
+                                      int src_x, int src_y, int src_w, int src_h,
+                                      int dest_x, int dest_y, int transparent) {
+    int ret;
+    struct {
+        void *form;
+        const uint8_t *buffer;
+        int buf_w;
+        int buf_h;
+        int src_x;
+        int src_y;
+        int src_w;
+        int src_h;
+        int dest_x;
+        int dest_y;
+        int transparent;
+    } params;
+
+    params.form = form;
+    params.buffer = buffer;
+    params.buf_w = buf_w;
+    params.buf_h = buf_h;
+    params.src_x = src_x;
+    params.src_y = src_y;
+    params.src_w = src_w;
+    params.src_h = src_h;
+    params.dest_x = dest_x;
+    params.dest_y = dest_y;
+    params.transparent = transparent;
+
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_DRAW_BUFFER), "b"(&params) : "memory");
+    return ret;
+}
+
 static inline void sys_win_draw(void *form) {
     register int dummy_eax __asm__("eax") = SYS_WIN_DRAW;
     register void *dummy_ebx __asm__("ebx") = form;
@@ -857,4 +895,30 @@ static inline sys_theme_t* sys_win_get_theme(void) {
     sys_theme_t *ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_GET_THEME));
     return ret;
+}
+
+/* Event loop helper for standard applications */
+typedef int (*sys_event_handler_t)(void *form, int event, void *userdata);
+
+static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handler, void *userdata) {
+    int running = 1;
+    while (running) {
+        int event = sys_win_pump_events(form);
+        
+        if (event == -3) {
+            running = 0;
+            continue;
+        }
+        
+        if (event == -1 || event == -2) {
+            sys_win_draw(form);
+            sys_win_redraw_all();
+        }
+        
+        if (event > 0 && handler && handler(form, event, userdata) != 0) {
+            running = 0;
+        }
+        
+        sys_yield();
+    }
 }
