@@ -8,21 +8,19 @@
 #define COLOR_NORMAL_FG    COLOR_LIGHT_GRAY
 #define COLOR_ERROR_BG     COLOR_BLACK
 #define COLOR_ERROR_FG     COLOR_LIGHT_RED
-#define COLOR_SUCCESS_BG   COLOR_BLACK
-#define COLOR_SUCCESS_FG   COLOR_LIGHT_GREEN
 #define COLOR_INFO_BG      COLOR_BLACK
 #define COLOR_INFO_FG      COLOR_LIGHT_CYAN
 #define COLOR_DIR_FG       COLOR_YELLOW 
 
 #define MAX_ARGS 8
 #define FAT32_MAX_PATH 256
-#define PAGE_LINES 23
+#define PAGE_LINES 25
 
 #define COMMAND_COUNT (sizeof(commands) / sizeof((commands)[0]))
 
 #define printf paged_printf
 
-const char *shell_version = "oslet-v05.5";
+const char *shell_version = "oslet-v06";
 
 static int pager_enabled = 0;
 static int pager_line_count = 0;
@@ -40,11 +38,9 @@ static void paged_write(const char *str) {
         if (str[i] == '\n') {
             pager_line_count++;
             if (pager_line_count >= PAGE_LINES) {
-                sys_setcolor(COLOR_INFO_BG, COLOR_INFO_FG);
-                sys_write("-- More --");
-                sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+                sys_write("Press any key to continue");
                 int key = sys_getchar();
-                sys_write("\r          \r");
+                sys_write("\r                         \r");
                 pager_line_count = 0;
                 /* ESC or 'q' to quit paging */
                 if (key == 27 || key == 'q' || key == 'Q') {
@@ -109,40 +105,6 @@ static int compare_entries(const void *a, const void *b) {
     return strcasecmp(ea->name, eb->name);
 }
 
-static int match_wildcard(const char *pattern, const char *str) {
-    while (*pattern && *str) {
-        if (*pattern == '*') {
-            pattern++;
-            if (*pattern == '\0') return 1;
-            
-            if (*pattern == '.') {
-                const char *dot = strchr(str, '.');
-                if (!dot) return 0;
-                str = dot;
-                continue;
-            }
-            
-            while (*str) {
-                if (match_wildcard(pattern, str))
-                    return 1;
-                str++;
-            }
-            return 0;
-        }
-        else if (*pattern == '?' || *pattern == *str) {
-            pattern++;
-            str++;
-        }
-        else {
-            return 0;
-        }
-    }
-    
-    while (*pattern == '*') pattern++;
-    
-    return (*pattern == '\0' && *str == '\0');
-}
-
 typedef void (*CommandFunc)(int argc, char *argv[]);
 
 typedef struct {
@@ -172,6 +134,7 @@ static void cmd_reboot(int argc, char *argv[]);
 static void cmd_cp(int argc, char *argv[]);
 static void cmd_mv(int argc, char *argv[]);
 static void cmd_ren(int argc, char *argv[]);
+static void cmd_find(int argc, char *argv[]);
 static void cmd_ver(int argc, char *argv[]);
 
 static const Command commands[] = {
@@ -193,6 +156,7 @@ static const Command commands[] = {
     { "ren",    "ren <old> <new>",     "Rename file",                cmd_ren },
     { "rm",     "rm <file>",           "Alias of 'del'",             cmd_rm },
     { "del",    "del <file>",          "Delete file",                cmd_rm },
+    { "find",   "find <pattern>",      "Find files corresponding to pattern", cmd_find },
     { "rmdir",  "rmdir <dir>",         "Remove directory",           cmd_rmdir },
     { "ver",    "ver",                 "Display system version",     cmd_ver },
     { "time",   "time",                "Show current time and date", cmd_rtc },
@@ -506,6 +470,56 @@ static int copy_file(const char *src, const char *dst) {
     return total;
 }
 
+/* Helper: split a path into directory (with trailing '/') and pattern/filename */
+static void split_path_pattern(const char *path, char *dir_out, size_t dir_out_size, const char **pattern_out) {
+    char *last_slash = strrchr(path, '/');
+    if (last_slash) {
+        size_t dir_len = last_slash - path + 1;
+        if (dir_len >= dir_out_size) {
+            dir_out[0] = '\0';
+            *pattern_out = path;
+            return;
+        }
+        memcpy(dir_out, path, dir_len);
+        dir_out[dir_len] = '\0';
+        *pattern_out = last_slash + 1;
+    } else {
+        sys_getcwd(dir_out, dir_out_size);
+        if (dir_out[0] == '\0') strcpy(dir_out, "C:/");
+        *pattern_out = path;
+    }
+}
+
+/* Expand wildcard pattern into full paths (dir + filename). Returns number of matches or -1 on error */
+static int expand_pattern(const char *pattern, char matches[][FAT32_MAX_PATH], int max_matches) {
+    char dir[FAT32_MAX_PATH];
+    const char *pat;
+    split_path_pattern(pattern, dir, sizeof(dir), &pat);
+
+    sys_dirent_t entries[128];
+    int count = sys_readdir(dir, entries, 128);
+    if (count < 0) return -1;
+
+    int found = 0;
+    for (int i = 0; i < count && found < max_matches; i++) {
+        if (entries[i].is_directory) continue;
+        if (str_match_wildcard(pat, entries[i].name)) {
+            snprintf(matches[found], FAT32_MAX_PATH, "%s%s", dir, entries[i].name);
+            found++;
+        }
+    }
+    return found;
+}
+
+static void join_path(char *out, size_t out_size, const char *dir, const char *name) {
+    size_t dlen = strlen(dir);
+    if (dlen > 0 && dir[dlen - 1] == '/') {
+        snprintf(out, out_size, "%s%s", dir, name);
+    } else {
+        snprintf(out, out_size, "%s/%s", dir, name);
+    }
+}
+
 static void cmd_cp(int argc, char *argv[]) {
     if (argc < 3) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
@@ -517,41 +531,171 @@ static void cmd_cp(int argc, char *argv[]) {
     const char *src = argv[1];
     const char *dst = argv[2];
 
-    /* Check if source exists and is a file */
-    sys_dirent_t entry;
-    if (sys_stat(src, &entry) != 0) {
-        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Error: source file '%s' not found\n", src);
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-        return;
-    }
+    int src_has_wild = (strchr(src, '*') != NULL || strchr(src, '?') != NULL);
 
-    if (entry.is_directory) {
-        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Error: cannot copy directory '%s'\n", src);
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-        return;
-    }
-
-    int result = copy_file(src, dst);
-
-    if (result < 0) {
-        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        switch (result) {
-            case -1:
-                printf("Error: cannot open source file '%s'\n", src);
-                break;
-            case -2:
-                printf("Error: cannot create destination file '%s'\n", dst);
-                break;
-            case -3:
-                printf("Error: write failed during copy\n");
-                break;
+    /* Single source (no wildcard) -- support copying into directories */
+    if (!src_has_wild) {
+        sys_dirent_t entry;
+        if (sys_stat(src, &entry) != 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error: source file '%s' not found\n", src);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
         }
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-    } else {
-        printf("Copied %d bytes\n", result);
+
+        if (entry.is_directory) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error: cannot copy directory '%s'\n", src);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
+        }
+
+        /* If destination is an existing directory or ends with '/', copy into that directory */
+        sys_dirent_t dst_entry;
+        int dst_is_dir = 0;
+        size_t dst_len = strlen(dst);
+        if ((dst_len > 0 && dst[dst_len - 1] == '/') || (sys_stat(dst, &dst_entry) == 0 && dst_entry.is_directory)) {
+            dst_is_dir = 1;
+        }
+
+        if (dst_is_dir) {
+            char dst_dir[FAT32_MAX_PATH];
+            if (dst[dst_len - 1] == '/') strcpy(dst_dir, dst);
+            else snprintf(dst_dir, sizeof(dst_dir), "%s/", dst);
+
+            const char *base = strrchr(src, '/');
+            if (!base) base = src; else base++;
+
+            char dst_path[FAT32_MAX_PATH];
+            join_path(dst_path, sizeof(dst_path), dst_dir, base);
+
+            int result = copy_file(src, dst_path);
+            if (result < 0) {
+                sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+                switch (result) {
+                    case -1:
+                        printf("Error: cannot open source file '%s'\n", src);
+                        break;
+                    case -2:
+                        printf("Error: cannot create destination file '%s'\n", dst_path);
+                        break;
+                    case -3:
+                        printf("Error: write failed during copy\n");
+                        break;
+                }
+                sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            } else {
+                printf("Copied %d bytes\n", result);
+            }
+
+            return;
+        }
+
+        /* Regular single-file copy (dst is a file path) */
+        int result = copy_file(src, dst);
+        if (result < 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            switch (result) {
+                case -1:
+                    printf("Error: cannot open source file '%s'\n", src);
+                    break;
+                case -2:
+                    printf("Error: cannot create destination file '%s'\n", dst);
+                    break;
+                case -3:
+                    printf("Error: write failed during copy\n");
+                    break;
+            }
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        } else {
+            printf("Copied %d bytes\n", result);
+        }
+
+        return;
     }
+
+    /* Wildcard source - expand and copy multiple files */
+    char matches[128][FAT32_MAX_PATH];
+    int found = expand_pattern(src, matches, 128);
+    if (found < 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: cannot read source directory or pattern invalid\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    if (found == 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("No files match pattern '%s'\n", src);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Verify destination is (or will be treated as) a directory for multiple files */
+    sys_dirent_t dst_entry;
+    int dst_is_dir = 0;
+    size_t dst_len = strlen(dst);
+    if ((dst_len > 0 && dst[dst_len - 1] == '/') || (sys_stat(dst, &dst_entry) == 0 && dst_entry.is_directory)) {
+        dst_is_dir = 1;
+    }
+
+    if (!dst_is_dir && found > 1) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: destination must be a directory when copying multiple files\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Safety: refuse to copy into the same directory (avoids accidental destructive operations) */
+    char src_dir[FAT32_MAX_PATH]; const char *pat;
+    split_path_pattern(src, src_dir, sizeof(src_dir), &pat);
+
+    char dst_dir_norm[FAT32_MAX_PATH];
+    if (dst_is_dir) {
+        if (dst[dst_len - 1] == '/') strcpy(dst_dir_norm, dst);
+        else snprintf(dst_dir_norm, sizeof(dst_dir_norm), "%s/", dst);
+
+        char a[FAT32_MAX_PATH]; char b[FAT32_MAX_PATH];
+        str_toupper(a); str_toupper(b);
+        strncpy(a, dst_dir_norm, sizeof(a)-1); a[sizeof(a)-1] = '\0';
+        strncpy(b, src_dir, sizeof(b)-1); b[sizeof(b)-1] = '\0';
+        str_toupper(a); str_toupper(b);
+
+        if (!strcmp(a, b)) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error: cannot copy into the same directory '%s'\n", dst_dir_norm);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
+        }
+    }
+
+    int total_bytes = 0;
+    int success_count = 0;
+
+    for (int i = 0; i < found; i++) {
+        const char *fullsrc = matches[i];
+        const char *base = strrchr(fullsrc, '/');
+        if (!base) base = fullsrc; else base++;
+
+        char dst_path[FAT32_MAX_PATH];
+        if (dst_is_dir) {
+            join_path(dst_path, sizeof(dst_path), dst, base);
+        } else {
+            /* Single file destination: use provided destination path */
+            snprintf(dst_path, sizeof(dst_path), "%s", dst);
+        }
+
+        int res = copy_file(fullsrc, dst_path);
+        if (res < 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error copying '%s' to '%s'\n", fullsrc, dst_path);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        } else {
+            total_bytes += res;
+            success_count++;
+        }
+    }
+    printf("Copied %d files (%d bytes)\n", success_count, total_bytes);
 }
 
 static void cmd_mv(int argc, char *argv[]) {
@@ -565,53 +709,154 @@ static void cmd_mv(int argc, char *argv[]) {
     const char *src = argv[1];
     const char *dst = argv[2];
 
-    /* Check if source exists and is a file */
-    sys_dirent_t entry;
-    if (sys_stat(src, &entry) != 0) {
-        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Error: source file '%s' not found\n", src);
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-        return;
-    }
+    int src_has_wild = (strchr(src, '*') != NULL || strchr(src, '?') != NULL);
 
-    if (entry.is_directory) {
-        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Error: cannot move directory '%s'\n", src);
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-        return;
-    }
-
-    /* Copy file to destination */
-    int result = copy_file(src, dst);
-
-    if (result < 0) {
-        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        switch (result) {
-            case -1:
-                printf("Error: cannot open source file '%s'\n", src);
-                break;
-            case -2:
-                printf("Error: cannot create destination file '%s'\n", dst);
-                break;
-            case -3:
-                printf("Error: write failed during move\n");
-                break;
+    /* Single source (no wildcard) */
+    if (!src_has_wild) {
+        sys_dirent_t entry;
+        if (sys_stat(src, &entry) != 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error: source file '%s' not found\n", src);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
         }
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+
+        if (entry.is_directory) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error: cannot move directory '%s'\n", src);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
+        }
+
+        /* If destination is a directory, move into that directory */
+        sys_dirent_t dst_entry;
+        int dst_is_dir = 0;
+        size_t dst_len = strlen(dst);
+        if ((dst_len > 0 && dst[dst_len - 1] == '/') || (sys_stat(dst, &dst_entry) == 0 && dst_entry.is_directory)) {
+            dst_is_dir = 1;
+        }
+
+        char dst_path[FAT32_MAX_PATH];
+        if (dst_is_dir) {
+            const char *base = strrchr(src, '/');
+            if (!base) base = src; else base++;
+            join_path(dst_path, sizeof(dst_path), dst, base);
+        } else {
+            snprintf(dst_path, sizeof(dst_path), "%s", dst);
+        }
+
+        int result = copy_file(src, dst_path);
+        if (result < 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            switch (result) {
+                case -1:
+                    printf("Error: cannot open source file '%s'\n", src);
+                    break;
+                case -2:
+                    printf("Error: cannot create destination file '%s'\n", dst_path);
+                    break;
+                case -3:
+                    printf("Error: write failed during move\n");
+                    break;
+            }
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
+        }
+
+        if (sys_unlink(src) != 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Warning: copied but failed to delete source '%s'\n", src);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
+        }
+
+        printf("Moved %d bytes\n", result);
         return;
     }
 
-    /* Delete source file */
-    if (sys_unlink(src) != 0) {
+    /* Wildcard source - expand and move multiple files */
+    char matches[128][FAT32_MAX_PATH];
+    int found = expand_pattern(src, matches, 128);
+    if (found < 0) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Warning: copied but failed to delete source '%s'\n", src);
+        printf("Error: cannot read source directory or pattern invalid\n");
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         return;
     }
 
-    sys_setcolor(COLOR_SUCCESS_BG, COLOR_SUCCESS_FG);
-    printf("Moved %d bytes\n", result);
-    sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+    if (found == 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("No files match pattern '%s'\n", src);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Destination must be a directory for multiple files */
+    sys_dirent_t dst_entry;
+    int dst_is_dir = 0;
+    size_t dst_len = strlen(dst);
+    if ((dst_len > 0 && dst[dst_len - 1] == '/') || (sys_stat(dst, &dst_entry) == 0 && dst_entry.is_directory)) {
+        dst_is_dir = 1;
+    }
+
+    if (!dst_is_dir) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: destination must be a directory when moving multiple files\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    /* Safety: refuse to move into the same directory */
+    char src_dir[FAT32_MAX_PATH]; const char *pat;
+    split_path_pattern(src, src_dir, sizeof(src_dir), &pat);
+
+    char dst_dir_norm[FAT32_MAX_PATH];
+    if (dst[dst_len - 1] == '/') strcpy(dst_dir_norm, dst);
+    else snprintf(dst_dir_norm, sizeof(dst_dir_norm), "%s/", dst);
+
+    char a[FAT32_MAX_PATH]; char b[FAT32_MAX_PATH];
+    strncpy(a, dst_dir_norm, sizeof(a)-1); a[sizeof(a)-1] = '\0';
+    strncpy(b, src_dir, sizeof(b)-1); b[sizeof(b)-1] = '\0';
+    str_toupper(a); str_toupper(b);
+
+    if (!strcmp(a, b)) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Error: cannot move into the same directory '%s'\n", dst_dir_norm);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    int total_bytes = 0;
+    int success_count = 0;
+
+    for (int i = 0; i < found; i++) {
+        const char *fullsrc = matches[i];
+        const char *base = strrchr(fullsrc, '/');
+        if (!base) base = fullsrc; else base++;
+
+        char dst_path[FAT32_MAX_PATH];
+        join_path(dst_path, sizeof(dst_path), dst, base);
+
+        int res = copy_file(fullsrc, dst_path);
+        if (res < 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error moving '%s' to '%s'\n", fullsrc, dst_path);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            continue;
+        }
+
+        if (sys_unlink(fullsrc) != 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Warning: moved but failed to delete source '%s'\n", fullsrc);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            continue;
+        }
+
+        total_bytes += res;
+        success_count++;
+    }
+
+    printf("Moved %d files, %d bytes\n", success_count, total_bytes);
 }
 
 static void cmd_ren(int argc, char *argv[]) {
@@ -730,7 +975,7 @@ static void cmd_cat(int argc, char *argv[]) {
     for (int i = 0; i < count; i++) {
         if (entries[i].is_directory) continue;
 
-        if (match_wildcard(pattern, entries[i].name)) {
+        if (str_match_wildcard(pattern, entries[i].name)) {
             found++;
 
             if (count > 1) {
@@ -964,51 +1209,70 @@ static void cmd_rm(int argc, char *argv[]) {
 
     const char *pattern = argv[1];
     int has_wildcard = (strchr(pattern, '*') != NULL || strchr(pattern, '?') != NULL);
-    
+
     if (!has_wildcard) {
+        /* Make sure the target exists and is not a directory */
+        sys_dirent_t e;
+        if (sys_stat(pattern, &e) != 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error: file '%s' not found\n", pattern);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
+        }
+
+        if (e.is_directory) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Error: cannot delete directory '%s', use rmdir\n", pattern);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
+        }
+
         if (sys_unlink(pattern) != 0) {
             sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
             printf("Error: cannot delete file '%s'\n", pattern);
             sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        } else {
+            printf("Deleted '%s'\n", pattern);
         }
         return;
     }
-    
-    char path_buf[FAT32_MAX_PATH];
-    sys_getcwd(path_buf, sizeof(path_buf));
-    size_t len = strlen(path_buf);
-    if (len > 3 && path_buf[len - 1] == '/')
-        path_buf[len - 1] = '\0';
-    
-    sys_dirent_t entries[64];
-    int count = sys_readdir(path_buf, entries, 64);
-    
-    if (count < 0) {
+
+    /* Wildcard path - expand pattern (supports directory in pattern) */
+    char matches[128][FAT32_MAX_PATH];
+    int found = expand_pattern(pattern, matches, 128);
+    if (found < 0) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Error: cannot read directory\n");
+        printf("Error: cannot read directory for pattern '%s'\n", pattern);
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         return;
     }
-    
+
+    if (found == 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("No files match pattern '%s'\n", pattern);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
     int deleted = 0;
     int failed = 0;
-    
-    for (int i = 0; i < count; i++) {
-        if (entries[i].is_directory) continue;
-        
-        if (match_wildcard(pattern, entries[i].name)) {
-            if (sys_unlink(entries[i].name) == 0) {
-                deleted++;
-                printf("Deleted: %s\n", entries[i].name);
-            } else {
-                failed++;
-                sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-                printf("Failed: %s\n", entries[i].name);
-                sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-            }
+
+    for (int i = 0; i < found; i++) {
+        sys_dirent_t e;
+        if (sys_stat(matches[i], &e) != 0) continue;
+        if (e.is_directory) continue;
+
+        if (sys_unlink(matches[i]) == 0) {
+            deleted++;
+            printf("Deleted: %s\n", matches[i]);
+        } else {
+            failed++;
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Failed: %s\n", matches[i]);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         }
     }
-    
+
     if (deleted == 0 && failed == 0) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
         printf("No files match pattern '%s'\n", pattern);
@@ -1020,6 +1284,64 @@ static void cmd_rm(int argc, char *argv[]) {
         }
         printf("\n");
     }
+}
+
+/* Recursive search helper for 'find' */
+static void find_recursive(const char *dir, const char *pattern, int depth) {
+    if (depth > 32) return; /* prevent runaway recursion */
+
+    sys_dirent_t entries[128];
+    int count = sys_readdir(dir, entries, 128);
+    if (count < 0) return;
+
+    for (int i = 0; i < count; i++) {
+        const char *name = entries[i].name;
+        /* Skip '.' and '..' if present */
+        if (!strcmp(name, ".") || !strcmp(name, "..")) continue;
+
+        char full[FAT32_MAX_PATH];
+        join_path(full, sizeof(full), dir, name);
+
+        if (entries[i].is_directory) {
+            /* Ensure trailing slash for directories when recursing */
+            char subdir[FAT32_MAX_PATH];
+            size_t fl = strlen(full);
+            if (fl > 0 && full[fl - 1] == '/') {
+                snprintf(subdir, sizeof(subdir), "%s", full);
+            } else {
+                snprintf(subdir, sizeof(subdir), "%s/", full);
+            }
+            find_recursive(subdir, pattern, depth + 1);
+        } else {
+            if (str_match_wildcard(pattern, name)) {
+                char out[FAT32_MAX_PATH];
+                snprintf(out, sizeof(out), "%s", full);
+                str_toupper(out);
+                printf("%s found in %s\n", pattern, out);
+            }
+        }
+    }
+}
+
+static void cmd_find(int argc, char *argv[]) {
+    if (argc < 2) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Usage: find <pattern>\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    char start_dir[FAT32_MAX_PATH] = {0};
+    sys_getcwd(start_dir, sizeof(start_dir));
+    if (start_dir[0] == '\0') strcpy(start_dir, "C:/");
+
+    /* Ensure directory has trailing slash */
+    size_t len = strlen(start_dir);
+    if (len > 0 && start_dir[len - 1] != '/') {
+        if (len + 2 < sizeof(start_dir)) strcat(start_dir, "/");
+    }
+
+    find_recursive(start_dir, argv[1], 0);
 }
 
 static void cmd_rmdir(int argc, char *argv[]) {
