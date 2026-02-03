@@ -768,16 +768,32 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     int height = info.height > 0 ? info.height : -info.height;
     int bottom_up = info.height > 0;
 
+
+    /* Reject implausibly large bitmaps that would exhaust memory or CPU */
+    const int MAX_DIM = 4096; /* arbitrary large limit */
+    if (width > MAX_DIM || height > MAX_DIM) {
+        fat32_close(f);
+        return NULL;
+    }
+
     /* Allocate buffer for the bitmap (4-bit = 2 pixels per byte) */
-    int buffer_size = ((width + 1) / 2) * height;
-    uint8_t *bitmap = kmalloc(buffer_size);
+    /* Protect against overflow when calculating buffer size */
+    int row_bytes = (width + 1) / 2;
+    size_t buffer_size = (size_t)row_bytes * (size_t)height;
+    const size_t MAX_BUFFER = 1024 * 1024; /* 1MB cap */
+    if (buffer_size == 0 || buffer_size > MAX_BUFFER) {
+        fat32_close(f);
+        return NULL;
+    }
+
+    uint8_t *bitmap = kmalloc((int)buffer_size);
     if (!bitmap) {
         fat32_close(f);
         return NULL;
     }
 
     /* Calculate row size (4-byte aligned) */
-    int row_size = ((width + 1) / 2 + 3) & ~3;
+    int row_size = (row_bytes + 3) & ~3;
 
     /* Seek to pixel data */
     fat32_seek(f, header.offset);
@@ -799,10 +815,10 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         }
 
         int dest_y = bottom_up ? (height - 1 - y) : y;
-        int dest_offset = dest_y * ((width + 1) / 2);
+        int dest_offset = dest_y * row_bytes;
 
         /* Copy row data */
-        for (int x = 0; x < (width + 1) / 2; x++) {
+        for (int x = 0; x < row_bytes; x++) {
             bitmap[dest_offset + x] = row_buf[x];
         }
     }

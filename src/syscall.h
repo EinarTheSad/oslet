@@ -189,6 +189,7 @@ typedef struct {
     uint8_t dropdown_open;
     uint8_t item_count;
     int8_t hovered_item;
+    uint8_t load_failed; /* set when image loading failed to avoid retry storm */
 } gui_control_t;
 
 typedef struct {

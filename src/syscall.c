@@ -1990,30 +1990,29 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 case 8: /* PROP_BG */
                     ctrl->bg = (uint8_t)value;
                     break;
-                case 9: /* PROP_IMAGE - for picturebox stores path in text, for icon loads bitmap directly */
+                case 9: /* PROP_IMAGE */
                     if (value) {
+                        const char *path = (const char*)value;
+
+                        if (ctrl->cached_bitmap_orig) {
+                            bitmap_free(ctrl->cached_bitmap_orig);
+                            ctrl->cached_bitmap_orig = NULL;
+                        }
+                        if (ctrl->cached_bitmap_scaled) {
+                            bitmap_free(ctrl->cached_bitmap_scaled);
+                            ctrl->cached_bitmap_scaled = NULL;
+                        }
+
+                        /* Reset load failure state on new image */
+                        ctrl->load_failed = 0;
+
                         if (ctrl->type == CTRL_ICON) {
-                            /* For icons, load bitmap directly without overwriting text (label) */
-                            if (ctrl->cached_bitmap_orig) {
-                                bitmap_free(ctrl->cached_bitmap_orig);
-                                ctrl->cached_bitmap_orig = NULL;
-                            }
-                            if (ctrl->cached_bitmap_scaled) {
-                                bitmap_free(ctrl->cached_bitmap_scaled);
-                                ctrl->cached_bitmap_scaled = NULL;
-                            }
-                            ctrl->cached_bitmap_orig = bitmap_load_from_file((const char*)value);
+                            ctrl->cached_bitmap_orig = bitmap_load_from_file(path);
                         } else {
-                            /* For picturebox, store path in text and clear cache */
-                            strcpy_s(ctrl->text, (const char*)value, 256);
-                            if (ctrl->cached_bitmap_orig) {
-                                bitmap_free(ctrl->cached_bitmap_orig);
-                                ctrl->cached_bitmap_orig = NULL;
-                            }
-                            if (ctrl->cached_bitmap_scaled) {
-                                bitmap_free(ctrl->cached_bitmap_scaled);
-                                ctrl->cached_bitmap_scaled = NULL;
-                            }
+                            /* For picturebox, just store path and clear previous cache. Actual image loading
+                               should happen lazily during draw to avoid unexpected blocking or memory issues. */
+                            strcpy_s(ctrl->text, path, 256);
+                            /* cached_bitmap_orig/scaled are already freed above */
                         }
                     }
                     break;
