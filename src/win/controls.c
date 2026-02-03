@@ -122,17 +122,30 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
 
 void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
     window_theme_t *theme = theme_get_current();
-    gfx_fillrect(abs_x, abs_y, control->w, control->h, theme->frame_dark);
-    gfx_rect(abs_x, abs_y, control->w, control->h, theme->button_color);
+    gfx_rect(abs_x, abs_y, control->w, control->h, theme->titlebar_inactive);
 
     if (control->text[0]) {
-        /* Load original bitmap to cache if not already loaded */
-        if (!control->cached_bitmap_orig) {
+        /* Load original bitmap to cache if not already loaded and not previously failed */
+        if (!control->cached_bitmap_orig && !control->load_failed) {
             control->cached_bitmap_orig = bitmap_load_from_file(control->text);
             /* When loading a new image, drop any previous scaled cache */
             if (control->cached_bitmap_scaled) {
                 bitmap_free(control->cached_bitmap_scaled);
                 control->cached_bitmap_scaled = NULL;
+            }
+
+            /* Validate loaded bitmap to avoid processing malformed images */
+            if (control->cached_bitmap_orig) {
+                bitmap_t *orig = control->cached_bitmap_orig;
+                if (orig->width <= 0 || orig->height <= 0 || orig->width > 4096 || orig->height > 4096) {
+                    /* Unreasonable dimensions - reject */
+                    bitmap_free(control->cached_bitmap_orig);
+                    control->cached_bitmap_orig = NULL;
+                    control->load_failed = 1;
+                }
+            } else {
+                /* Loading failed - mark to avoid retrying every draw */
+                control->load_failed = 1;
             }
         }
 
@@ -182,6 +195,10 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
                 bitmap_draw_opaque(orig, dx, dy);
             }
         }
+    }
+    
+    if (control->border) {
+        gfx_rect(abs_x, abs_y, control->w, control->h, COLOR_BLACK);
     }
 }
 
