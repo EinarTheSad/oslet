@@ -23,6 +23,15 @@
 
 #define MAX_OPEN_FILES 32
 
+typedef struct {
+    void *data;
+    int width;
+    int height;
+} cached_bmp_t;
+
+#define FD_CRITICAL_BEGIN __asm__ volatile("cli")
+#define FD_CRITICAL_END __asm__ volatile("sti")
+
 /* Global window manager */
 static window_manager_t global_wm;
 static int wm_initialized = 0;
@@ -36,62 +45,62 @@ typedef struct {
 static file_descriptor_t fd_table[MAX_OPEN_FILES];
 
 static void fd_init(void) {
-    __asm__ volatile ("cli");
+    FD_CRITICAL_BEGIN;
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         fd_table[i].file = NULL;
         fd_table[i].in_use = 0;
         fd_table[i].owner_tid = 0;
     }
-    __asm__ volatile ("sti");
+    FD_CRITICAL_END;
 }
 
 static int fd_alloc(fat32_file_t *file) {
     task_t *current = task_get_current();
     uint32_t tid = current ? current->tid : 0;
 
-    __asm__ volatile ("cli");
+    FD_CRITICAL_BEGIN;
     for (int i = 3; i < MAX_OPEN_FILES; i++) {
         if (!fd_table[i].in_use) {
             fd_table[i].file = file;
             fd_table[i].in_use = 1;
             fd_table[i].owner_tid = tid;
-            __asm__ volatile ("sti");
+            FD_CRITICAL_END;
             return i;
         }
     }
-    __asm__ volatile ("sti");
+    FD_CRITICAL_END;
     return -1;
 }
 
 static fat32_file_t* fd_get(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return NULL;
-    __asm__ volatile ("cli");
-    if (!fd_table[fd].in_use) { __asm__ volatile ("sti"); return NULL; }
+    FD_CRITICAL_BEGIN;
+    if (!fd_table[fd].in_use) { FD_CRITICAL_END; return NULL; }
 
     /* Check ownership - only the owning task can access this fd */
     task_t *current = task_get_current();
-    if (current && fd_table[fd].owner_tid != current->tid) { __asm__ volatile ("sti"); return NULL; }
+    if (current && fd_table[fd].owner_tid != current->tid) { FD_CRITICAL_END; return NULL; }
 
     fat32_file_t *file = fd_table[fd].file;
-    __asm__ volatile ("sti");
+    FD_CRITICAL_END;
     return file;
 }
 
 static void fd_free(int fd) {
     if (fd < 0 || fd >= MAX_OPEN_FILES) return;
 
-    __asm__ volatile ("cli");
+    FD_CRITICAL_BEGIN;
     /* Check ownership before freeing */
     task_t *current = task_get_current();
     if (current && fd_table[fd].owner_tid != 0 && fd_table[fd].owner_tid != current->tid) {
-        __asm__ volatile ("sti");
+        FD_CRITICAL_END;
         return;  /* Access denied - can't close another task's fd */
     }
 
     fd_table[fd].in_use = 0;
     fd_table[fd].file = NULL;
     fd_table[fd].owner_tid = 0;
-    __asm__ volatile ("sti");
+    FD_CRITICAL_END;
 }
 
 /* Cleanup all file descriptors owned by a task (called on task exit) */
@@ -593,7 +602,6 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
 
         case 0x0D: { /* Cache BMP to memory */
             if (!ebx || !ecx) return (uint32_t)-1;
-            typedef struct { void *data; int width; int height; } cached_bmp_t;
             cached_bmp_t *out = (cached_bmp_t*)ecx;
             int w, h;
             uint8_t *data = gfx_load_bmp_to_buffer((const char*)ebx, &w, &h);
@@ -606,7 +614,6 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
 
         case 0x0E: { /* Draw cached BMP */
             if (!ebx) return (uint32_t)-1;
-            typedef struct { void *data; int width; int height; } cached_bmp_t;
             cached_bmp_t *bmp = (cached_bmp_t*)ebx;
             if (!bmp->data) return (uint32_t)-1;
             int x = (int)(ecx >> 16);
@@ -617,7 +624,6 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
 
         case 0x0F: { /* Free cached BMP */
             if (!ebx) return (uint32_t)-1;
-            typedef struct { void *data; int width; int height; } cached_bmp_t;
             cached_bmp_t *bmp = (cached_bmp_t*)ebx;
             if (bmp->data) {
                 kfree(bmp->data);
@@ -695,7 +701,6 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             draw_region_t *r = (draw_region_t*)ebx;
             if (!r->bmp) return (uint32_t)-1;
 
-            typedef struct { void *data; int width; int height; } cached_bmp_t;
             cached_bmp_t *bmp = (cached_bmp_t*)r->bmp;
             if (!bmp->data) return (uint32_t)-1;
 
