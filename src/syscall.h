@@ -7,6 +7,9 @@
 
 typedef rtc_time_t sys_time_t;
 
+#define PACK_XY(x, y) (((uint32_t)(x) << 16) | ((y) & 0xFFFF))
+#define PACK_WH(w, h) (((uint32_t)(w) << 16) | ((h) & 0xFFFF))
+
 /* AH = 01h - Console I/O */
 #define SYS_CONSOLE_OUT     0x0100
 #define SYS_CONSOLE_IN      0x0101
@@ -519,31 +522,25 @@ static inline void sys_gfx_putpixel(int x, int y, uint8_t color) {
 }
 
 static inline void sys_gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
-    uint32_t start = ((uint32_t)x0 << 16) | (y0 & 0xFFFF);
-    uint32_t end = ((uint32_t)x1 << 16) | (y1 & 0xFFFF);
     register int dummy_eax __asm__("eax") = SYS_GFX_LINE;
-    register uint32_t dummy_ebx __asm__("ebx") = start;
-    register uint32_t dummy_ecx __asm__("ecx") = end;
+    register uint32_t dummy_ebx __asm__("ebx") = PACK_XY(x0, y0);
+    register uint32_t dummy_ecx __asm__("ecx") = PACK_XY(x1, y1);
     register uint8_t dummy_edx __asm__("edx") = color;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline void sys_gfx_rect(int x, int y, int w, int h, uint8_t color) {
-    uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
-    uint32_t size = ((uint32_t)w << 16) | (h & 0xFFFF);
     register int dummy_eax __asm__("eax") = SYS_GFX_RECT;
-    register uint32_t dummy_ebx __asm__("ebx") = pos;
-    register uint32_t dummy_ecx __asm__("ecx") = size;
+    register uint32_t dummy_ebx __asm__("ebx") = PACK_XY(x, y);
+    register uint32_t dummy_ecx __asm__("ecx") = PACK_WH(w, h);
     register uint8_t dummy_edx __asm__("edx") = color;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
 
 static inline void sys_gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
-    uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
-    uint32_t size = ((uint32_t)w << 16) | (h & 0xFFFF);
     register int dummy_eax __asm__("eax") = SYS_GFX_FILLRECT;
-    register uint32_t dummy_ebx __asm__("ebx") = pos;
-    register uint32_t dummy_ecx __asm__("ecx") = size;
+    register uint32_t dummy_ebx __asm__("ebx") = PACK_XY(x, y);
+    register uint32_t dummy_ecx __asm__("ecx") = PACK_WH(w, h);
     register uint8_t dummy_edx __asm__("edx") = color;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
@@ -560,12 +557,10 @@ static inline void sys_gfx_circle(int cx, int cy, int r, uint8_t color) {
 static inline void sys_gfx_fillrect_gradient(int x, int y, int w, int h,
                                              uint8_t c_start, uint8_t c_end,
                                              int orientation) {
-    uint32_t coords = ((uint32_t)w << 16) | (h & 0xFFFF);
     uint32_t colors = ((uint32_t)c_start << 16) | ((uint32_t)c_end << 8) | orientation;
-    uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
     register int dummy_eax __asm__("eax") = SYS_GFX_FILLRECT_GRADIENT;
-    register uint32_t dummy_ebx __asm__("ebx") = pos;
-    register uint32_t dummy_ecx __asm__("ecx") = coords;
+    register uint32_t dummy_ebx __asm__("ebx") = PACK_XY(x, y);
+    register uint32_t dummy_ecx __asm__("ecx") = PACK_WH(w, h);
     register uint32_t dummy_edx __asm__("edx") = colors;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
 }
@@ -584,8 +579,7 @@ static inline int sys_gfx_load_bmp(const char *path, int x, int y) {
 
 static inline int sys_gfx_load_bmp_ex(const char *path, int x, int y, int transparent) {
     int ret;
-    uint32_t pos = ((uint32_t)x << 16) | ((uint32_t)y & 0xFFFF);
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP_EX), "b"(path), "c"(pos), "d"(transparent));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP_EX), "b"(path), "c"(PACK_XY(x, y)), "d"(transparent));
     return ret;
 }
 
@@ -596,8 +590,7 @@ static inline int sys_gfx_cache_bmp(const char *path, gfx_cached_bmp_t *out) {
 }
 
 static inline void sys_gfx_draw_cached(gfx_cached_bmp_t *bmp, int x, int y, int transparent) {
-    uint32_t pos = ((uint32_t)x << 16) | ((uint32_t)y & 0xFFFF);
-    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_DRAW_CACHED), "b"(bmp), "c"(pos), "d"(transparent));
+    __asm__ volatile("int $0x80" :: "a"(SYS_GFX_DRAW_CACHED), "b"(bmp), "c"(PACK_XY(x, y)), "d"(transparent));
 }
 
 /* Draw a sub-rectangle of a cached bitmap
@@ -633,9 +626,7 @@ static inline int sys_gfx_draw_cached_partial(gfx_cached_bmp_t *bmp, int dest_x,
 /* Load BMP and draw scaled to region (no transparency). Returns 0 on success, -1 on error. */
 static inline int sys_gfx_load_bmp_scaled(const char *path, int dest_x, int dest_y, int dest_w, int dest_h) {
     int ret;
-    uint32_t pos = ((uint32_t)dest_x << 16) | (dest_y & 0xFFFF);
-    uint32_t size = ((uint32_t)dest_w << 16) | (dest_h & 0xFFFF);
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP_SCALED), "b"(path), "c"(pos), "d"(size));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP_SCALED), "b"(path), "c"(PACK_XY(dest_x, dest_y)), "d"(PACK_WH(dest_w, dest_h)));
     return ret;
 }
 
@@ -681,9 +672,7 @@ static inline void sys_busywait(uint32_t ms) {
 
 static inline void* sys_win_create_form(const char *title, int x, int y, int w, int h) {
     void *ret;
-    uint32_t pos = ((uint32_t)x << 16) | (y & 0xFFFF);
-    uint32_t size = ((uint32_t)w << 16) | (h & 0xFFFF);
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_CREATE_FORM), "b"(title), "c"(pos), "d"(size));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_CREATE_FORM), "b"(title), "c"(PACK_XY(x, y)), "d"(PACK_WH(w, h)));
     return ret;
 }
 
