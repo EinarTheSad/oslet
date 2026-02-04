@@ -37,7 +37,7 @@ static int gather_bmps(const char *dir, sys_dirent_t *entries, int max_entries) 
     int out = 0;
     for (int i = 0; i < n && out < max_entries; i++) {
         if (!entries[i].is_directory) {
-            if (str_ends_with_icase(entries[i].name, ".bmp") || str_ends_with_icase(entries[i].name, ".ico")) {
+            if (str_ends_with_icase(entries[i].name, ".bmp")) {
                 entries[out++] = entries[i];
             }
         }
@@ -53,7 +53,7 @@ static void toggle_fullscreen(void *form, int *fullscreen_ptr, const char *cur_p
         sys_mouse_invalidate();
 
         /* Create a full-screen form positioned so its titlebar is off-screen to hide decorations. */
-        void *fs = sys_win_create_form("Image Viewer (full screen)", 0, -WM_TITLEBAR_HEIGHT-2, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT + WM_TITLEBAR_HEIGHT+4);
+        void *fs = sys_win_create_form("Image Viewer (full screen)", 0, -WM_TITLEBAR_HEIGHT-2, WM_SCREEN_WIDTH+2, WM_SCREEN_HEIGHT + WM_TITLEBAR_HEIGHT+4);
         if (fs) {
             /* Add a picturebox control that fills the client area (client area height = WM_SCREEN_HEIGHT) */
             gui_control_t pic = {0};
@@ -127,27 +127,32 @@ static void navigate_dir(void *form, int delta, int fullscreen, void *fs_form) {
     for (int i = 0; i < total; i++) {
         if (strcasecmp(entries[i].name, filename) == 0) { idx = i; break; }
     }
+    
     if (idx == -1) {
-        idx = (delta > 0) ? 0 : (total - 1);
+        idx = (delta > 0) ? -1 : total;
+    }
+    
+    if (delta > 0) {
+        idx = (idx + 1) % total;
     } else {
-        if (delta > 0) idx = (idx + 1) % total;
-        else idx = (idx - 1 + total) % total;
+        idx = (idx - 1 + total) % total;
     }
 
     char newpath[256];
     int n = snprintf(newpath, sizeof(newpath), "%s/%s", dir, entries[idx].name);
     if (n > 0 && n < (int)sizeof(newpath)) {
-        /* Update main form if present */
-        if (form) ctrl_set_image(form, ID_PICTURE, newpath);
-
+        /* If fullscreen overlay is active, update only the fullscreen form to
+           avoid double updates/freeing on both forms which may cause instability. */
         if (fullscreen && fs_form) {
-            /* If fullscreen, update the fullscreen form's picturebox */
             ctrl_set_image(fs_form, ID_PICTURE, newpath);
             sys_win_draw(fs_form);
             sys_mouse_invalidate();
         } else {
-            /* In windowed mode, redraw form */
-            if (form) sys_win_draw(form);
+            /* Windowed mode: update main form */
+            if (form) {
+                ctrl_set_image(form, ID_PICTURE, newpath);
+                sys_win_draw(form);
+            }
             sys_mouse_invalidate();
         }
     }
