@@ -2009,10 +2009,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (ctrl->type == CTRL_ICON) {
                             ctrl->cached_bitmap_orig = bitmap_load_from_file(path);
                         } else {
-                            /* For picturebox, just store path and clear previous cache. Actual image loading
-                               should happen lazily during draw to avoid unexpected blocking or memory issues. */
-                            strcpy_s(ctrl->text, path, 256);
-                            /* cached_bitmap_orig/scaled are already freed above */
+                            ctrl->text[0] = '\0';
+                            strcpy_s(ctrl->text, path, sizeof(ctrl->text));
                         }
                     }
                     break;
