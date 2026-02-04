@@ -813,18 +813,30 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         fat32_close(f);
         return NULL;
     }
+    /* Zero the output buffer so preserved nibbles are clean when writing pixels */
+    memset_s(bitmap, 0, buffer_size);
 
-    /* Read or skip palette depending on bit depth */
-    uint8_t palette[256][3];
+    /* Read palette for indexed formats, capped to 16 colors for our 4-bit display */
+    uint8_t (*palette)[3] = NULL;
     int palette_entries = 0;
 
     if (info.bpp <= 8) {
         palette_entries = info.colors_used ? (int)info.colors_used : (1 << info.bpp);
         if (palette_entries > 256) palette_entries = 256;
         
-        for (int i = 0; i < palette_entries; i++) {
+        int load_entries = palette_entries < 16 ? palette_entries : 16;
+        palette = kmalloc(16 * 3);
+        if (!palette) {
+            kfree(bitmap);
+            fat32_close(f);
+            return NULL;
+        }
+        memset_s(palette, 0, 16 * 3);
+        
+        for (int i = 0; i < load_entries; i++) {
             uint8_t bgr[4];
             if (fat32_read(f, bgr, 4) != 4) {
+                kfree(palette);
                 kfree(bitmap);
                 fat32_close(f);
                 return NULL;
@@ -833,6 +845,14 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             palette[i][1] = bgr[1];
             palette[i][2] = bgr[0];
         }
+        
+        /* Skip remaining palette entries if palette is larger than 16 */
+        for (int i = load_entries; i < palette_entries; i++) {
+            uint8_t bgr[4];
+            fat32_read(f, bgr, 4);
+        }
+        
+        palette_entries = load_entries;
     }
 
     /* Seek to pixel data */
@@ -850,6 +870,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
 
     uint8_t *row_buf = kmalloc(src_row_size);
     if (!row_buf) {
+        if (palette) kfree(palette);
         kfree(bitmap);
         fat32_close(f);
         return NULL;
@@ -859,13 +880,16 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     int16_t *err_r_curr = NULL, *err_g_curr = NULL, *err_b_curr = NULL;
     int16_t *err_r_next = NULL, *err_g_next = NULL, *err_b_next = NULL;
     
-    if (info.bpp >= 8) {
-        err_r_curr = kmalloc(width * sizeof(int16_t));
-        err_g_curr = kmalloc(width * sizeof(int16_t));
-        err_b_curr = kmalloc(width * sizeof(int16_t));
-        err_r_next = kmalloc(width * sizeof(int16_t));
-        err_g_next = kmalloc(width * sizeof(int16_t));
-        err_b_next = kmalloc(width * sizeof(int16_t));
+    if (info.bpp >= 8 && width > 0 && width <= MAX_DIM) {
+        size_t err_buf_size = (size_t)width * sizeof(int16_t);
+        if (err_buf_size > 0 && err_buf_size < MAX_BUFFER) {
+            err_r_curr = kmalloc((int)err_buf_size);
+            err_g_curr = kmalloc((int)err_buf_size);
+            err_b_curr = kmalloc((int)err_buf_size);
+            err_r_next = kmalloc((int)err_buf_size);
+            err_g_next = kmalloc((int)err_buf_size);
+            err_b_next = kmalloc((int)err_buf_size);
+        }
         
         if (!err_r_curr || !err_g_curr || !err_b_curr || !err_r_next || !err_g_next || !err_b_next) {
             if (err_r_curr) kfree(err_r_curr);
@@ -875,6 +899,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             if (err_g_next) kfree(err_g_next);
             if (err_b_next) kfree(err_b_next);
             kfree(row_buf);
+            if (palette) kfree(palette);
             kfree(bitmap);
             fat32_close(f);
             return NULL;
@@ -896,6 +921,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             if (err_g_next) kfree(err_g_next);
             if (err_b_next) kfree(err_b_next);
             kfree(row_buf);
+            if (palette) kfree(palette);
             kfree(bitmap);
             fat32_close(f);
             return NULL;
@@ -1028,6 +1054,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     if (err_g_next) kfree(err_g_next);
     if (err_b_next) kfree(err_b_next);
 
+    if (palette) kfree(palette);
     kfree(row_buf);
     fat32_close(f);
 
