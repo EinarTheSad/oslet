@@ -737,6 +737,25 @@ void gfx_floodfill_gradient(int x, int y,
     mark_dirty(min_x, min_y, eff_w, eff_h);
 }
 
+static uint8_t find_closest_color(uint8_t r, uint8_t g, uint8_t b) {
+    int best_idx = 0;
+    int best_dist = 0x7FFFFFFF;
+    
+    for (int i = 0; i < 16; i++) {
+        int dr = (int)r - (int)gfx_palette[i][0];
+        int dg = (int)g - (int)gfx_palette[i][1];
+        int db = (int)b - (int)gfx_palette[i][2];
+        int dist = dr*dr + dg*dg + db*db;
+        
+        if (dist < best_dist) {
+            best_dist = dist;
+            best_idx = i;
+        }
+    }
+    
+    return (uint8_t)best_idx;
+}
+
 uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height) {
     fat32_file_t *f = fat32_open(path, "r");
     if (!f) return NULL;
@@ -749,7 +768,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         return NULL;
     }
 
-    if (header.type != 0x4D42) { /* "BM" */
+    if (header.type != 0x4D42) {
         fat32_close(f);
         return NULL;
     }
@@ -759,7 +778,12 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         return NULL;
     }
 
-    if (info.bpp != 4 || info.compression != 0) {
+    if (info.compression != 0) {
+        fat32_close(f);
+        return NULL;
+    }
+
+    if (info.bpp != 4 && info.bpp != 8 && info.bpp != 24) {
         fat32_close(f);
         return NULL;
     }
@@ -768,19 +792,17 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     int height = info.height > 0 ? info.height : -info.height;
     int bottom_up = info.height > 0;
 
-
     /* Reject implausibly large bitmaps that would exhaust memory or CPU */
-    const int MAX_DIM = 4096; /* arbitrary large limit */
+    const int MAX_DIM = 4096;
     if (width > MAX_DIM || height > MAX_DIM) {
         fat32_close(f);
         return NULL;
     }
 
-    /* Allocate buffer for the bitmap (4-bit = 2 pixels per byte) */
-    /* Protect against overflow when calculating buffer size */
-    int row_bytes = (width + 1) / 2;
-    size_t buffer_size = (size_t)row_bytes * (size_t)height;
-    const size_t MAX_BUFFER = 1024 * 1024; /* 1MB cap */
+    /* Allocate buffer for output (always 4-bit = 2 pixels per byte) */
+    int out_row_bytes = (width + 1) / 2;
+    size_t buffer_size = (size_t)out_row_bytes * (size_t)height;
+    const size_t MAX_BUFFER = 1024 * 1024;
     if (buffer_size == 0 || buffer_size > MAX_BUFFER) {
         fat32_close(f);
         return NULL;
@@ -792,22 +814,87 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         return NULL;
     }
 
-    /* Calculate row size (4-byte aligned) */
-    int row_size = (row_bytes + 3) & ~3;
+    /* Read or skip palette depending on bit depth */
+    uint8_t palette[256][3];
+    int palette_entries = 0;
+
+    if (info.bpp <= 8) {
+        palette_entries = info.colors_used ? (int)info.colors_used : (1 << info.bpp);
+        if (palette_entries > 256) palette_entries = 256;
+        
+        for (int i = 0; i < palette_entries; i++) {
+            uint8_t bgr[4];
+            if (fat32_read(f, bgr, 4) != 4) {
+                kfree(bitmap);
+                fat32_close(f);
+                return NULL;
+            }
+            palette[i][0] = bgr[2];
+            palette[i][1] = bgr[1];
+            palette[i][2] = bgr[0];
+        }
+    }
 
     /* Seek to pixel data */
     fat32_seek(f, header.offset);
 
-    uint8_t *row_buf = kmalloc(row_size);
+    /* Calculate source row size (DWORD-aligned) */
+    int src_row_size;
+    if (info.bpp == 24) {
+        src_row_size = ((width * 3) + 3) & ~3;
+    } else if (info.bpp == 8) {
+        src_row_size = (width + 3) & ~3;
+    } else {
+        src_row_size = (((width + 1) / 2) + 3) & ~3;
+    }
+
+    uint8_t *row_buf = kmalloc(src_row_size);
     if (!row_buf) {
         kfree(bitmap);
         fat32_close(f);
         return NULL;
     }
 
-    /* Read bitmap data */
+    /* Allocate error buffers for dithering (Floyd-Steinberg) */
+    int16_t *err_r_curr = NULL, *err_g_curr = NULL, *err_b_curr = NULL;
+    int16_t *err_r_next = NULL, *err_g_next = NULL, *err_b_next = NULL;
+    
+    if (info.bpp >= 8) {
+        err_r_curr = kmalloc(width * sizeof(int16_t));
+        err_g_curr = kmalloc(width * sizeof(int16_t));
+        err_b_curr = kmalloc(width * sizeof(int16_t));
+        err_r_next = kmalloc(width * sizeof(int16_t));
+        err_g_next = kmalloc(width * sizeof(int16_t));
+        err_b_next = kmalloc(width * sizeof(int16_t));
+        
+        if (!err_r_curr || !err_g_curr || !err_b_curr || !err_r_next || !err_g_next || !err_b_next) {
+            if (err_r_curr) kfree(err_r_curr);
+            if (err_g_curr) kfree(err_g_curr);
+            if (err_b_curr) kfree(err_b_curr);
+            if (err_r_next) kfree(err_r_next);
+            if (err_g_next) kfree(err_g_next);
+            if (err_b_next) kfree(err_b_next);
+            kfree(row_buf);
+            kfree(bitmap);
+            fat32_close(f);
+            return NULL;
+        }
+        
+        for (int x = 0; x < width; x++) {
+            err_r_curr[x] = err_g_curr[x] = err_b_curr[x] = 0;
+            err_r_next[x] = err_g_next[x] = err_b_next[x] = 0;
+        }
+    }
+
+    /* Read and convert bitmap data */
     for (int y = 0; y < height; y++) {
-        if (fat32_read(f, row_buf, row_size) != row_size) {
+        if (fat32_read(f, row_buf, src_row_size) != src_row_size) {
+            if (err_r_curr) kfree(err_r_curr);
+            if (err_g_curr) kfree(err_g_curr);
+            if (err_b_curr) kfree(err_b_curr);
+            if (err_r_next) kfree(err_r_next);
+            if (err_g_next) kfree(err_g_next);
+            if (err_b_next) kfree(err_b_next);
             kfree(row_buf);
             kfree(bitmap);
             fat32_close(f);
@@ -815,13 +902,131 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         }
 
         int dest_y = bottom_up ? (height - 1 - y) : y;
-        int dest_offset = dest_y * row_bytes;
+        int dest_offset = dest_y * out_row_bytes;
 
-        /* Copy row data */
-        for (int x = 0; x < row_bytes; x++) {
-            bitmap[dest_offset + x] = row_buf[x];
+        if (info.bpp == 24) {
+            for (int x = 0; x < width; x++) {
+                int16_t r = (int16_t)row_buf[x * 3 + 2] + err_r_curr[x];
+                int16_t g = (int16_t)row_buf[x * 3 + 1] + err_g_curr[x];
+                int16_t b = (int16_t)row_buf[x * 3 + 0] + err_b_curr[x];
+                
+                if (r < 0) r = 0; else if (r > 255) r = 255;
+                if (g < 0) g = 0; else if (g > 255) g = 255;
+                if (b < 0) b = 0; else if (b > 255) b = 255;
+                
+                uint8_t color = find_closest_color((uint8_t)r, (uint8_t)g, (uint8_t)b);
+                
+                int16_t err_r = r - (int16_t)gfx_palette[color][0];
+                int16_t err_g = g - (int16_t)gfx_palette[color][1];
+                int16_t err_b = b - (int16_t)gfx_palette[color][2];
+                
+                if (x + 1 < width) {
+                    err_r_curr[x + 1] += (err_r * 7) / 16;
+                    err_g_curr[x + 1] += (err_g * 7) / 16;
+                    err_b_curr[x + 1] += (err_b * 7) / 16;
+                }
+                if (x > 0) {
+                    err_r_next[x - 1] += (err_r * 3) / 16;
+                    err_g_next[x - 1] += (err_g * 3) / 16;
+                    err_b_next[x - 1] += (err_b * 3) / 16;
+                }
+                err_r_next[x] += (err_r * 5) / 16;
+                err_g_next[x] += (err_g * 5) / 16;
+                err_b_next[x] += (err_b * 5) / 16;
+                if (x + 1 < width) {
+                    err_r_next[x + 1] += err_r / 16;
+                    err_g_next[x + 1] += err_g / 16;
+                    err_b_next[x + 1] += err_b / 16;
+                }
+                
+                int byte_idx = x / 2;
+                if (x & 1) {
+                    bitmap[dest_offset + byte_idx] = (bitmap[dest_offset + byte_idx] & 0xF0) | color;
+                } else {
+                    bitmap[dest_offset + byte_idx] = (color << 4) | (bitmap[dest_offset + byte_idx] & 0x0F);
+                }
+            }
+            
+            int16_t *tmp_r = err_r_curr; err_r_curr = err_r_next; err_r_next = tmp_r;
+            int16_t *tmp_g = err_g_curr; err_g_curr = err_g_next; err_g_next = tmp_g;
+            int16_t *tmp_b = err_b_curr; err_b_curr = err_b_next; err_b_next = tmp_b;
+            for (int x = 0; x < width; x++) {
+                err_r_next[x] = err_g_next[x] = err_b_next[x] = 0;
+            }
+        } else if (info.bpp == 8) {
+            for (int x = 0; x < width; x++) {
+                uint8_t idx = row_buf[x];
+                if (idx >= palette_entries) idx = 0;
+                
+                int16_t r = (int16_t)palette[idx][0] + err_r_curr[x];
+                int16_t g = (int16_t)palette[idx][1] + err_g_curr[x];
+                int16_t b = (int16_t)palette[idx][2] + err_b_curr[x];
+                
+                if (r < 0) r = 0; else if (r > 255) r = 255;
+                if (g < 0) g = 0; else if (g > 255) g = 255;
+                if (b < 0) b = 0; else if (b > 255) b = 255;
+                
+                uint8_t color = find_closest_color((uint8_t)r, (uint8_t)g, (uint8_t)b);
+                
+                int16_t err_r = r - (int16_t)gfx_palette[color][0];
+                int16_t err_g = g - (int16_t)gfx_palette[color][1];
+                int16_t err_b = b - (int16_t)gfx_palette[color][2];
+                
+                if (x + 1 < width) {
+                    err_r_curr[x + 1] += (err_r * 7) / 16;
+                    err_g_curr[x + 1] += (err_g * 7) / 16;
+                    err_b_curr[x + 1] += (err_b * 7) / 16;
+                }
+                if (x > 0) {
+                    err_r_next[x - 1] += (err_r * 3) / 16;
+                    err_g_next[x - 1] += (err_g * 3) / 16;
+                    err_b_next[x - 1] += (err_b * 3) / 16;
+                }
+                err_r_next[x] += (err_r * 5) / 16;
+                err_g_next[x] += (err_g * 5) / 16;
+                err_b_next[x] += (err_b * 5) / 16;
+                if (x + 1 < width) {
+                    err_r_next[x + 1] += err_r / 16;
+                    err_g_next[x + 1] += err_g / 16;
+                    err_b_next[x + 1] += err_b / 16;
+                }
+                
+                int byte_idx = x / 2;
+                if (x & 1) {
+                    bitmap[dest_offset + byte_idx] = (bitmap[dest_offset + byte_idx] & 0xF0) | color;
+                } else {
+                    bitmap[dest_offset + byte_idx] = (color << 4) | (bitmap[dest_offset + byte_idx] & 0x0F);
+                }
+            }
+            
+            int16_t *tmp_r = err_r_curr; err_r_curr = err_r_next; err_r_next = tmp_r;
+            int16_t *tmp_g = err_g_curr; err_g_curr = err_g_next; err_g_next = tmp_g;
+            int16_t *tmp_b = err_b_curr; err_b_curr = err_b_next; err_b_next = tmp_b;
+            for (int x = 0; x < width; x++) {
+                err_r_next[x] = err_g_next[x] = err_b_next[x] = 0;
+            }
+        } else {
+            for (int x = 0; x < out_row_bytes; x++) {
+                uint8_t byte_val = row_buf[x];
+                uint8_t hi = (byte_val >> 4) & 0x0F;
+                uint8_t lo = byte_val & 0x0F;
+                
+                if (palette_entries > 0) {
+                    if (hi < palette_entries) hi = find_closest_color(palette[hi][0], palette[hi][1], palette[hi][2]);
+                    if (lo < palette_entries) lo = find_closest_color(palette[lo][0], palette[lo][1], palette[lo][2]);
+                }
+                
+                bitmap[dest_offset + x] = (hi << 4) | lo;
+            }
         }
     }
+    
+    if (err_r_curr) kfree(err_r_curr);
+    if (err_g_curr) kfree(err_g_curr);
+    if (err_b_curr) kfree(err_b_curr);
+    if (err_r_next) kfree(err_r_next);
+    if (err_g_next) kfree(err_g_next);
+    if (err_b_next) kfree(err_b_next);
 
     kfree(row_buf);
     fat32_close(f);
