@@ -122,7 +122,7 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
 
 void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
     window_theme_t *theme = theme_get_current();
-    gfx_rect(abs_x, abs_y, control->w, control->h, theme->titlebar_inactive);
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, theme->titlebar_inactive);
 
     if (control->text[0]) {
         /* Load original bitmap to cache if not already loaded and not previously failed */
