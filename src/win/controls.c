@@ -155,7 +155,15 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
             int bw = orig->width;
             int bh = orig->height;
 
-            if (bw > control->w || bh > control->h) {
+            /* Exact match: if bitmap size equals control size, draw without scaling */
+            if (bw == control->w && bh == control->h) {
+                /* Draw original at control origin with no scaling and clear any scaled cache */
+                if (control->cached_bitmap_scaled) {
+                    bitmap_free(control->cached_bitmap_scaled);
+                    control->cached_bitmap_scaled = NULL;
+                }
+                bitmap_draw_opaque(orig, abs_x, abs_y);
+            } else if (bw > control->w || bh > control->h) {
                 /* Need to scale down to fit inside control while preserving aspect ratio */
                 int new_w, new_h;
                 if ((int64_t)bw * control->h > (int64_t)bh * control->w) {
