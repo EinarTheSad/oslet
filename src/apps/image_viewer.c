@@ -141,16 +141,19 @@ static void navigate_dir(void *form, int delta, int fullscreen, void *fs_form) {
     char newpath[256];
     int n = snprintf(newpath, sizeof(newpath), "%s/%s", dir, entries[idx].name);
     if (n > 0 && n < (int)sizeof(newpath)) {
-        /* If fullscreen overlay is active, update only the fullscreen form to
-           avoid double updates/freeing on both forms which may cause instability. */
+        /* Always update the main form to keep the path in sync */
+        if (form) {
+            ctrl_set_image(form, ID_PICTURE, newpath);
+        }
+        
+        /* If fullscreen overlay is active, also update and draw it */
         if (fullscreen && fs_form) {
             ctrl_set_image(fs_form, ID_PICTURE, newpath);
             sys_win_draw(fs_form);
             sys_mouse_invalidate();
         } else {
-            /* Windowed mode: update main form */
+            /* Windowed mode: draw the main form */
             if (form) {
-                ctrl_set_image(form, ID_PICTURE, newpath);
                 sys_win_draw(form);
             }
             sys_mouse_invalidate();
