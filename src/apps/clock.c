@@ -191,7 +191,6 @@ void _start(void) {
 
     sys_win_draw(form);
     redraw_clock();
-    sys_win_redraw_all();
 
     /* Main event loop */
     int running = 1;
@@ -211,10 +210,8 @@ void _start(void) {
             if (!f->win.is_minimized) {
                 /* Window moved/restored - force redraw */
                 last_second = -1;
-                sys_win_draw(form);
                 redraw_clock();
             }
-            sys_win_redraw_all();
         }
 
         /* Update clock if second changed */

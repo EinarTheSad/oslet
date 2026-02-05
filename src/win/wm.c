@@ -2,6 +2,7 @@
 #include "window.h"
 #include "icon.h"
 #include "menu.h"
+#include "../drivers/mouse.h"
 
 extern void mouse_invalidate_buffer(void);
 
@@ -66,8 +67,8 @@ void wm_unregister_window(window_manager_t *wm, gui_form_t *form) {
     }
 }
 
-void wm_bring_to_front(window_manager_t *wm, gui_form_t *form) {
-    if (!form || wm->count <= 1) return;
+int wm_bring_to_front(window_manager_t *wm, gui_form_t *form) {
+    if (!form || wm->count <= 1) return 0;
 
     // Find window
     int found_index = -1;
@@ -79,7 +80,7 @@ void wm_bring_to_front(window_manager_t *wm, gui_form_t *form) {
     }
 
     if (found_index == -1 || found_index == wm->count - 1) {
-        return;  // Not found or already at front
+        return 0;  // Not found or already at front
     }
 
     // Move window to end (front in Z-order)
@@ -89,6 +90,7 @@ void wm_bring_to_front(window_manager_t *wm, gui_form_t *form) {
     }
     wm->windows[wm->count - 1] = temp;
     wm->focused_index = wm->count - 1;
+    return 1;  // Z-order changed
 }
 
 gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
@@ -131,7 +133,39 @@ gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
     return NULL;  // No window at this position
 }
 
+/* Helper: draw controls (sets focus and draws each control) */
+static void wm_draw_controls(gui_form_t *form) {
+    if (!form || form->win.is_minimized || !form->controls) return;
+    for (int j = 0; j < form->ctrl_count; j++) {
+        form->controls[j].is_focused =
+            (form->controls[j].id == form->focused_control_id) ? 1 : 0;
+        win_draw_control(&form->win, &form->controls[j]);
+    }
+}
+
+/* Helper: draw open dropdown lists for a single form */
+static void wm_draw_dropdowns(gui_form_t *form) {
+    if (!form || form->win.is_minimized || !form->controls) return;
+    for (int j = 0; j < form->ctrl_count; j++) {
+        if (form->controls[j].type == CTRL_DROPDOWN && form->controls[j].dropdown_open) {
+            win_draw_dropdown_list(&form->win, &form->controls[j]);
+        }
+    }
+}
+
+/* Helper: find control by id */
+static gui_control_t *wm_get_control_by_id(gui_form_t *form, int16_t id) {
+    if (!form || !form->controls) return NULL;
+    for (int j = 0; j < form->ctrl_count; j++) {
+        if (form->controls[j].id == id) return &form->controls[j];
+    }
+    return NULL;
+}
+
 void wm_draw_all(window_manager_t *wm) {
+    /* Restore mouse cursor before drawing to avoid artifacts */
+    mouse_restore();
+
     // Draw windows from back to front
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *form = wm->windows[i];
@@ -141,14 +175,7 @@ void wm_draw_all(window_manager_t *wm) {
         win_draw_focused(&form->win, is_focused);
 
         // Draw controls if not minimized
-        if (!form->win.is_minimized && form->controls) {
-            for (int j = 0; j < form->ctrl_count; j++) {
-                /* Set focus state before drawing (used by textbox for cursor) */
-                form->controls[j].is_focused =
-                    (form->controls[j].id == form->focused_control_id) ? 1 : 0;
-                win_draw_control(&form->win, &form->controls[j]);
-            }
-        }
+        wm_draw_controls(form);
 
         // Draw window menu if visible (must be on top of controls)
         if (!form->win.is_minimized && form->window_menu.visible) {
@@ -162,12 +189,79 @@ void wm_draw_all(window_manager_t *wm) {
         if (!form || !form->win.is_visible || form->win.is_minimized) continue;
         if (!form->controls) continue;
 
-        for (int j = 0; j < form->ctrl_count; j++) {
-            if (form->controls[j].type == CTRL_DROPDOWN && form->controls[j].dropdown_open) {
-                win_draw_dropdown_list(&form->win, &form->controls[j]);
-            }
+        wm_draw_dropdowns(form);
+    }
+    mouse_invalidate_buffer();
+}
+
+void wm_draw_single(window_manager_t *wm, gui_form_t *form) {
+    if (!form || !form->win.is_visible) return;
+
+    /* Restore mouse cursor before drawing to avoid artifacts */
+    mouse_restore();
+
+    int is_focused = 0;
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] == form) {
+            is_focused = (i == wm->focused_index);
+            break;
         }
     }
+
+    /* Draw the window */
+    win_draw_focused(&form->win, is_focused);
+
+    /* Draw controls if not minimized */
+    wm_draw_controls(form);
+
+    /* Draw window menu if visible */
+    if (!form->win.is_minimized && form->window_menu.visible) {
+        menu_draw(&form->window_menu);
+    }
+
+    /* Draw open dropdown lists on top */
+    wm_draw_dropdowns(form);
+
+    mouse_invalidate_buffer();
+}
+
+void wm_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16_t ctrl_id) {
+    (void)wm;  /* Unused but kept for API consistency */
+    if (!form || !form->win.is_visible || form->win.is_minimized) return;
+    if (!form->controls) return;
+
+    /* Restore mouse cursor before drawing to avoid artifacts */
+    mouse_restore();
+
+    /* Find and redraw the specific control */
+    gui_control_t *ctrl = wm_get_control_by_id(form, ctrl_id);
+    if (ctrl) {
+        /* Set focus state before drawing */
+        ctrl->is_focused = (ctrl->id == form->focused_control_id) ? 1 : 0;
+        win_draw_control(&form->win, ctrl);
+        /* If it's a dropdown with an open list, redraw that too */
+        if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+            win_draw_dropdown_list(&form->win, ctrl);
+        }
+    }
+
+    mouse_invalidate_buffer();
+}
+
+void wm_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, int16_t ctrl_id) {
+    (void)wm;  /* Unused but kept for API consistency */
+    if (!form || !form->win.is_visible || form->win.is_minimized) return;
+    if (!form->controls) return;
+
+    /* Restore mouse cursor before drawing to avoid artifacts */
+    mouse_restore();
+
+    /* Find and redraw only the dropdown list */
+    gui_control_t *ctrl = wm_get_control_by_id(form, ctrl_id);
+    if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+        win_draw_dropdown_list(&form->win, ctrl);
+    }
+
     mouse_invalidate_buffer();
 }
 
