@@ -1410,6 +1410,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             int event_count = 0;
             int needs_redraw = 0;  /* Track if visual state changed */
+            int z_order_changed = 0;  /* Track if window Z-order changed */
+            int16_t changed_controls[32];  /* Track which specific controls changed */
+            int changed_count = 0;
 
             /* Handle window menu if visible */
             if (form->window_menu.visible) {
@@ -1492,7 +1495,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     /* Check if click is within window bounds - bring to front if so */
                     if (mx >= form->win.x && mx < form->win.x + form->win.w &&
                         my >= form->win.y && my < form->win.y + form->win.h) {
-                        wm_bring_to_front(&global_wm, form);
+                        z_order_changed = wm_bring_to_front(&global_wm, form);
                     }
 
                     /* Check minimize button */
@@ -1548,6 +1551,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             if (ctrl->type == CTRL_BUTTON) {
                                 ctrl->pressed = 0;
                                 needs_redraw = 1;  /* Button visual changed */
+                                if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                             }
 
                             /* Calculate absolute control position */
@@ -1580,6 +1584,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 if (ctrl->type == CTRL_CHECKBOX) {
                                     ctrl->checked = !ctrl->checked;
                                     needs_redraw = 1;
+                                    if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                                     /* Don't set clicked_id for checkbox - just redraw */
                                 }
 
@@ -1591,6 +1596,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                         if (other->type == CTRL_RADIOBUTTON &&
                                             other->group_id == ctrl->group_id) {
                                             other->checked = 0;
+                                            if (changed_count < 32) changed_controls[changed_count++] = other->id;
                                         }
                                     }
                                     /* Check this radio button */
@@ -1608,6 +1614,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                         gui_control_t *other = &form->controls[j];
                                         if (other->type == CTRL_ICON && other->id != ctrl->id) {
                                             other->checked = 0;
+                                            if (changed_count < 32) changed_controls[changed_count++] = other->id;
                                         }
                                     }
 
@@ -1625,6 +1632,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                         form->last_icon_click_time = now;
                                         form->last_icon_click_id = ctrl->id;
                                     }
+                                    if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                                     needs_redraw = 1;
                                 }
 
@@ -1634,6 +1642,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     form->clicked_id = ctrl->id;
                                     event_count = 1;
                                     needs_redraw = 1;
+                                    if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                                 }
 
                                 /* Valid click detected for buttons and other controls */
@@ -1653,6 +1662,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (form->controls[i].type == CTRL_BUTTON && form->controls[i].pressed) {
                             form->controls[i].pressed = 0;
                             needs_redraw = 1;  /* Button visual changed */
+                            if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
                     }
                 }
@@ -1682,6 +1692,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         int threshold = WM_ICON_SLOT_WIDTH / 4;
                         if (dx * dx + dy * dy > threshold * threshold) {
                             icon_start_drag(icon, mx, my);
+                            mouse_restore();
                             wm_draw_all(&global_wm);
                             needs_redraw = 0;
                         }
@@ -1689,6 +1700,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 } else {
                     /* Continue dragging */
                     icon_update_drag(icon, mx, my);
+                    mouse_restore();
                     wm_draw_all(&global_wm);
                     needs_redraw = 0;
                 }
@@ -1704,6 +1716,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     form->drag_start_x = mx;
                     form->drag_start_y = my;
                     /* During drag: just redraw all windows (fast), no background */
+                    mouse_restore();
                     wm_draw_all(&global_wm);
                     needs_redraw = 0;  /* Already drawn */
                 }
@@ -1729,6 +1742,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         ctrl->sel_end = new_pos;
                         ctrl->cursor_pos = new_pos;
                         needs_redraw = 1;
+                        if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                     }
                 }
             }
@@ -1749,6 +1763,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Update dropdown hover state (on any mouse move) */
             if (pump_update_dropdown_hover(form, mx, my)) {
                 needs_redraw = 1;
+                /* Find the dropdown control that's open and mark it changed */
+                for (int i = 0; i < form->ctrl_count; i++) {
+                    if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown_open) {
+                        if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
+                        break;
+                    }
+                }
             }
 
             /* Handle keyboard input for focused textbox. Only the globally focused window
@@ -1757,6 +1778,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 global_wm.focused_index >= 0 && global_wm.windows[global_wm.focused_index] == form) {
                 if (pump_handle_keyboard(form)) {
                     needs_redraw = 1;
+                    if (changed_count < 32) changed_controls[changed_count++] = form->focused_control_id;
                 }
             }
 
@@ -1764,8 +1786,26 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (event_count > 0) {
                 /* If button was pressed, we need to redraw to show unpressed state */
                 if (needs_redraw) {
+                    mouse_restore();
                     mouse_invalidate_buffer();
-                    wm_draw_all(&global_wm);
+                    if (changed_count > 0) {
+                        /* Redraw only the specific controls that changed */
+                        for (int i = 0; i < changed_count; i++) {
+                            /* Check if this is a dropdown with hover change - only redraw list */
+                            gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
+                            if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                                wm_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
+                            } else {
+                                wm_draw_control_by_id(&global_wm, form, changed_controls[i]);
+                            }
+                        }
+                    } else if (z_order_changed) {
+                        /* Z-order changed: redraw only this window (it's now on top) */
+                        wm_draw_single(&global_wm, form);
+                    } else {
+                        /* Fallback to single window redraw if no specific controls tracked */
+                        wm_draw_single(&global_wm, form);
+                    }
                 }
                 return form->clicked_id;
             }
@@ -1774,6 +1814,24 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (needs_redraw) {
                 mouse_restore();
                 mouse_invalidate_buffer();
+                if (changed_count > 0) {
+                    /* Redraw only the specific controls that changed */
+                    for (int i = 0; i < changed_count; i++) {
+                        /* Check if this is a dropdown with hover change - only redraw list */
+                        gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
+                        if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                            wm_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
+                        } else {
+                            wm_draw_control_by_id(&global_wm, form, changed_controls[i]);
+                        }
+                    }
+                } else if (z_order_changed) {
+                    /* Z-order changed: redraw only this window (it's now on top) */
+                    wm_draw_single(&global_wm, form);
+                } else {
+                    /* Fallback to single window redraw if no specific controls tracked */
+                    wm_draw_single(&global_wm, form);
+                }
                 return (uint32_t)-1;
             }
 

@@ -901,8 +901,7 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
         }
         
         if (event == -1 || event == -2) {
-            sys_win_draw(form);
-            sys_win_redraw_all();
+            /* Event pump already redrew affected controls/window, no need for full redraw */
         }
         
         if (event > 0 && handler && handler(form, event, userdata) != 0) {

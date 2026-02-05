@@ -26,13 +26,16 @@ typedef struct {
 void wm_init(window_manager_t *wm);
 int wm_register_window(window_manager_t *wm, gui_form_t *form);
 void wm_unregister_window(window_manager_t *wm, gui_form_t *form);
-void wm_bring_to_front(window_manager_t *wm, gui_form_t *form);
+int wm_bring_to_front(window_manager_t *wm, gui_form_t *form);
 
 // Find window at given screen coordinates
 // Returns pointer to window or NULL if none found
 gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y);
 
 void wm_draw_all(window_manager_t *wm);
+void wm_draw_single(window_manager_t *wm, gui_form_t *form);
+void wm_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16_t ctrl_id);
+void wm_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, int16_t ctrl_id);
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y);
 void wm_release_icon_slot(window_manager_t *wm, int x, int y);
 void wm_set_icon_click(window_manager_t *wm, uint32_t time, gui_form_t *form);
