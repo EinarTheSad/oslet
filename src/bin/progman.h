@@ -26,4 +26,5 @@ int progman_is_running(const char *name);
 int progman_get_registered_count(void);
 const progmod_t* progman_get_registered(int index);
 int progman_get_running_count(void);
+int progman_kill_tasks(void);
 prog_instance_t* progman_get_instance(int index);

@@ -225,3 +225,33 @@ prog_instance_t* progman_get_instance(int index) {
         return 0;
     return &instances[index];
 }
+
+int progman_kill_tasks(void) {
+    /* Terminate any running ELF tasks (except the shell and the process calling the function) */
+    sys_taskinfo_t tasks[32];
+    int tcount = sys_get_tasks(tasks, 32);
+    uint32_t mypid = sys_getpid();
+    for (int i = 0; i < tcount; i++) {
+        if (tasks[i].tid == mypid) continue;
+        if (strcasecmp(tasks[i].name, "SHELL.ELF") == 0) continue;
+        if (str_ends_with_icase(tasks[i].name, ".ELF")) {
+            sys_kill(tasks[i].tid);
+        }
+    }
+
+    /* End all running applets */
+    uint16_t to_close[PROGMAN_INSTANCES_MAX];
+    int tc = 0;
+    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
+        prog_instance_t *pi = progman_get_instance(i);
+        if (pi && pi->state == PROG_STATE_RUNNING) {
+            to_close[tc++] = pi->instance_id;
+        }
+    }
+
+    for (int i = 0; i < tc; i++) {
+        progman_close(to_close[i]);
+    }
+
+    return 0;
+}
