@@ -4,7 +4,9 @@
 #include "window.h"
 #include "icon.h"
 #include "../drivers/graphics.h"
+#include "../drivers/mouse.h"
 #include "../fonts/bmf.h"
+#include "../mem/heap.h"
 
 extern bmf_font_t font_b, font_n, font_i, font_bi;
 
@@ -583,7 +585,23 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
     int list_h = item_count * item_h;
     int list_y = abs_y + control->h;
 
-    /* Allow list to extend beyond window - no clipping */
+    /* Ensure background for the list is saved so it can be correctly restored when closed.
+       This is required because dropdown lists may extend outside their parent window. */
+    if (!control->dropdown_saved_bg) {
+        control->dropdown_saved_w = control->w;
+        control->dropdown_saved_h = list_h;
+        control->dropdown_saved_x = abs_x;
+        control->dropdown_saved_y = list_y;
+        int row_bytes = (control->dropdown_saved_w + 1) / 2;
+        control->dropdown_saved_bg = kmalloc(row_bytes * control->dropdown_saved_h);
+        if (control->dropdown_saved_bg) {
+            gfx_read_screen_region_packed(control->dropdown_saved_bg,
+                                          control->dropdown_saved_w,
+                                          control->dropdown_saved_h,
+                                          control->dropdown_saved_x,
+                                          control->dropdown_saved_y);
+        }
+    }
 
     /* List background */
     gfx_fillrect(abs_x, list_y, control->w, list_h, COLOR_WHITE);
@@ -613,6 +631,30 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
             }
         }
     }
+}
+
+/* Restore and free saved dropdown background (integrated here so all control logic
+   resides in one implementation file). */
+void ctrl_hide_dropdown_list(window_t *win, gui_control_t *control) {
+    (void)win; /* unused: kept for API consistency */
+    if (!control) return;
+
+    if (control->dropdown_saved_bg) {
+        gfx_write_screen_region_packed(control->dropdown_saved_bg,
+                                       control->dropdown_saved_w,
+                                       control->dropdown_saved_h,
+                                       control->dropdown_saved_x,
+                                       control->dropdown_saved_y);
+        kfree(control->dropdown_saved_bg);
+        control->dropdown_saved_bg = NULL;
+        control->dropdown_saved_w = 0;
+        control->dropdown_saved_h = 0;
+        control->dropdown_saved_x = 0;
+        control->dropdown_saved_y = 0;
+    }
+
+    control->dropdown_open = 0;
+    mouse_invalidate_buffer();
 }
 
 

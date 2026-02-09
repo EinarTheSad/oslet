@@ -934,7 +934,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 if (clicked_item >= 0 && clicked_item < ctrl->item_count) {
                     ctrl->cursor_pos = clicked_item;
                 }
-                ctrl->dropdown_open = 0;
+                ctrl_hide_dropdown_list(&form->win, ctrl);
                 form->press_control_id = ctrl->id;
                 /* Signal desktop to do full redraw (clears artifacts outside window) */
                 global_wm.needs_full_redraw = 1;
@@ -943,7 +943,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
             /* Check if click is on dropdown control itself */
             else if (mx >= abs_x && mx < abs_x + ctrl->w &&
                      my >= abs_y && my < abs_y + ctrl->h) {
-                ctrl->dropdown_open = 0;
+                ctrl_hide_dropdown_list(&form->win, ctrl);
                 form->press_control_id = ctrl->id;
                 /* Signal desktop to do full redraw (clears artifacts outside window) */
                 global_wm.needs_full_redraw = 1;
@@ -951,7 +951,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
             }
             /* Click outside open dropdown - close it */
             else {
-                ctrl->dropdown_open = 0;
+                ctrl_hide_dropdown_list(&form->win, ctrl);
                 /* Signal desktop to do full redraw (clears artifacts outside window) */
                 global_wm.needs_full_redraw = 1;
                 /* Don't return - continue to check other controls */
@@ -1886,6 +1886,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->dropdown_open = 0;
                 dest->item_count = ctrl->item_count;
                 dest->hovered_item = -1;
+                /* Ensure saved dropdown bg is cleared for the new control */
+                dest->dropdown_saved_bg = NULL;
+                dest->dropdown_saved_w = 0;
+                dest->dropdown_saved_h = 0;
+                dest->dropdown_saved_x = 0;
+                dest->dropdown_saved_y = 0;
 
                 strcpy_s(dest->text, ctrl->text, 256);
 
@@ -1940,7 +1946,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Unregister from window manager */
             wm_unregister_window(&global_wm, form);
 
-            /* Free cached bitmaps in controls */
+            /* Free cached bitmaps in controls and restore any open dropdown backgrounds */
             if (form->controls) {
                 for (int i = 0; i < form->ctrl_count; i++) {
                     if (form->controls[i].cached_bitmap_orig) {
@@ -1950,6 +1956,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     if (form->controls[i].cached_bitmap_scaled) {
                         bitmap_free(form->controls[i].cached_bitmap_scaled);
                         form->controls[i].cached_bitmap_scaled = NULL;
+                    }
+                    /* If a dropdown was left open, restore its saved region */
+                    if (form->controls[i].dropdown_saved_bg) {
+                        ctrl_hide_dropdown_list(&form->win, &form->controls[i]);
                     }
                 }
                 kfree(form->controls);

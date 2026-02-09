@@ -189,6 +189,12 @@ typedef struct {
     uint8_t dropdown_open;
     uint8_t item_count;
     int8_t hovered_item;
+    /* Dropdown saved background for area that may extend outside window */
+    uint8_t *dropdown_saved_bg;
+    uint16_t dropdown_saved_w;
+    uint16_t dropdown_saved_h;
+    int16_t dropdown_saved_x;
+    int16_t dropdown_saved_y;
     uint8_t load_failed; /* set when image loading failed to avoid retry storm */
 } gui_control_t;
 
