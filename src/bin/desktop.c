@@ -10,6 +10,7 @@
 #include "progman.h"
 #define TASKBAR_Y (WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT)
 #define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
+#define MAX_TASKBAR_BUTTONS 16
 #define KEY_ALT_TAB 0xC0
 #define KEY_ALT_RELEASE 0xC1
 
@@ -22,11 +23,17 @@ typedef struct {
     int x, y, w, h;
     int pressed;
     char label[6];
+    char icon_path[128];
+    char action[64]; /* progman module name to launch */
 } taskbar_button_t;
+
+static taskbar_button_t taskbar_buttons[MAX_TASKBAR_BUTTONS];
+static int taskbar_button_count = 0; 
 
 extern const progmod_t startman_module;
 extern const progmod_t textmode_module;
 extern const progmod_t cpl_theme_module;
+extern const progmod_t shutdown_module;
 
 desktop_settings_t settings;  /* Global - cpanel needs access */
 usr_bmf_font_t font_b;
@@ -38,7 +45,37 @@ static gfx_cached_bmp_t cached_wallpaper = {0};
 static int wallpaper_x = 0;
 static int wallpaper_y = 0;
 
-static taskbar_button_t start_button;
+static int taskbar_add_button(const char *icon_path, const char *action) {
+    if (taskbar_button_count >= MAX_TASKBAR_BUTTONS) return -1;
+    int idx = taskbar_button_count++;
+    taskbar_buttons[idx].w = 21;
+    taskbar_buttons[idx].h = 21;
+    taskbar_buttons[idx].pressed = 0;
+    taskbar_buttons[idx].label[0] = '\0';
+    if (icon_path) {
+        strncpy(taskbar_buttons[idx].icon_path, icon_path, sizeof(taskbar_buttons[idx].icon_path)-1);
+        taskbar_buttons[idx].icon_path[sizeof(taskbar_buttons[idx].icon_path)-1] = '\0';
+    } else {
+        taskbar_buttons[idx].icon_path[0] = '\0';
+    }
+    if (action) {
+        strncpy(taskbar_buttons[idx].action, action, sizeof(taskbar_buttons[idx].action)-1);
+        taskbar_buttons[idx].action[sizeof(taskbar_buttons[idx].action)-1] = '\0';
+    } else {
+        taskbar_buttons[idx].action[0] = '\0';
+    }
+
+    /* Layout buttons horizontally after the start button */
+    if (taskbar_button_count > 1) {
+        int x = taskbar_buttons[0].x + taskbar_buttons[0].w + 3;
+        for (int i = 1; i < taskbar_button_count; i++) {
+            taskbar_buttons[i].x = x;
+            taskbar_buttons[i].y = TASKBAR_Y + 3;
+            x += taskbar_buttons[i].w + 3;
+        }
+    }
+    return idx;
+} 
 static int last_clock_hour = -1;
 static int last_clock_minute = -1;
 
@@ -104,12 +141,12 @@ static void prog_register_all(void) {
     progman_register(&startman_module);
     progman_register(&textmode_module);
     progman_register(&cpl_theme_module);
+    progman_register(&shutdown_module);
 }
 
-void start_button_draw(int x, int y, int w, int h, const char *label, int pressed) {
+static void taskbar_button_draw(int x, int y, int w, int h, uint8_t btn_color, const char *label, const char *icon, int pressed) {
     sys_theme_t *theme = sys_win_get_theme();
     uint8_t shad_a, shad_b;
-    uint8_t btn_color = theme->start_button_color;
 
     sys_gfx_rect(x, y, w, h, COLOR_BLACK);
     sys_gfx_fillrect(x+2, y+2, w-3, h-3, btn_color);
@@ -126,22 +163,41 @@ void start_button_draw(int x, int y, int w, int h, const char *label, int presse
     sys_gfx_line(x+1, y+1, x+w-3, y+1, shad_b);
     sys_gfx_line(x+1, y+1, x+1, y+h-3, shad_b);
 
-    sys_gfx_load_bmp("C:/ICONS/LET.ICO", x+3, y+2);
-
-    if (font_b.data && label) {
+    /* If this is a labeled button (Start), draw icon on the left and text to the right
+       otherwise center the 16x16 icon for icon-only buttons */
+    if (label && label[0] != '\0' && icon && icon[0] != '\0') {
+        sys_gfx_load_bmp(icon, x+3, y+2);
+        if (font_b.data) {
+            int text_x = x + 22;
+            int text_y = y + 7;
+            usr_bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
+        }
+    } else if (icon && icon[0] != '\0') {
+        /* Draw 16x16 icon centered */
+        int ix = x + (w - 16) / 2 + 1;
+        int iy = y + (h - 16) / 2 + 1;
+        sys_gfx_load_bmp(icon, ix, iy);
+    } else if (font_b.data && label) {
         int text_x = x + 22;
         int text_y = y + 7;
         usr_bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
     }
-}
+} 
 
 static void start_init(void) {
-    start_button.x = 3;
-    start_button.y = TASKBAR_Y + 3;
-    start_button.w = 57;
-    start_button.h = 21;
-    start_button.pressed = 0;
-}
+    /* Initialize start button as index 0 */
+    taskbar_button_count = 1;
+    taskbar_buttons[0].x = 3;
+    taskbar_buttons[0].y = TASKBAR_Y + 3;
+    taskbar_buttons[0].w = 57;
+    taskbar_buttons[0].h = 21;
+    taskbar_buttons[0].pressed = 0;
+    strncpy(taskbar_buttons[0].label, "Start", sizeof(taskbar_buttons[0].label)-1);
+    taskbar_buttons[0].label[sizeof(taskbar_buttons[0].label)-1] = '\0';
+    taskbar_buttons[0].action[0] = '\0';
+    strncpy(taskbar_buttons[0].icon_path, "C:/ICONS/LET.ICO", sizeof(taskbar_buttons[0].icon_path)-1);
+    taskbar_buttons[0].icon_path[sizeof(taskbar_buttons[0].icon_path)-1] = '\0';
+} 
 
 static void clock_draw(void) {
     sys_theme_t *theme = sys_win_get_theme();
@@ -169,38 +225,46 @@ static void taskbar_draw(void) {
     sys_gfx_fillrect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT, theme->taskbar_color);
     sys_gfx_line(0, TASKBAR_Y, WM_SCREEN_WIDTH, TASKBAR_Y, COLOR_WHITE);
 
-    start_button_draw(start_button.x, start_button.y,
-                      start_button.w, start_button.h,
-                      "Start", start_button.pressed);
-}
+    for (int i = 0; i < taskbar_button_count; i++) {
+        taskbar_button_t *b = &taskbar_buttons[i];
+        const char *label = b->label[0] ? b->label : NULL;
+        const char *icon = b->icon_path[0] ? b->icon_path : NULL;
+        uint8_t color = (i == 0) ? theme->start_button_color : theme->button_color;
+        taskbar_button_draw(b->x, b->y, b->w, b->h, color, label, icon, b->pressed);
+    }
+} 
 
-static int start_click(int mx, int my, unsigned char mb, int *state_changed) {
+static int taskbar_click(int mx, int my, unsigned char mb, int *state_changed) {
     static unsigned char last_mb = 0;
-    int old_pressed = start_button.pressed;
-    int clicked = 0;
+    int clicked_idx = -1;
+    int change = 0;
 
-    if (mx >= start_button.x && mx < start_button.x + start_button.w &&
-        my >= start_button.y && my < start_button.y + start_button.h) {
+    for (int i = 0; i < taskbar_button_count; i++) {
+        taskbar_button_t *b = &taskbar_buttons[i];
+        int old_pressed = b->pressed;
 
-        if (mb & 1) {
-            start_button.pressed = 1;
-        } else if ((last_mb & 1) && !(mb & 1)) {
-            start_button.pressed = 0;
-            clicked = 1;
+        if (mx >= b->x && mx < b->x + b->w &&
+            my >= b->y && my < b->y + b->h) {
+
+            if (mb & 1) {
+                b->pressed = 1;
+            } else if ((last_mb & 1) && !(mb & 1)) {
+                b->pressed = 0;
+                clicked_idx = i;
+            }
+        } else {
+            if (!(mb & 1)) {
+                b->pressed = 0;
+            }
         }
-    } else {
-        if (!(mb & 1)) {
-            start_button.pressed = 0;
-        }
+
+        if (old_pressed != b->pressed) change = 1;
     }
 
-    if (old_pressed != start_button.pressed) {
-        *state_changed = 1;
-    }
-
+    if (change) *state_changed = 1;
     last_mb = mb;
-    return clicked;
-}
+    return clicked_idx;
+} 
 
 static void desktop_redraw(void) {
     sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, TASKBAR_Y, settings.color);
@@ -322,6 +386,7 @@ void _start(void) {
     prog_register_all();
 
     start_init();
+    taskbar_add_button("C:/ICONS/OFF.ICO", "Shutdown");
     taskbar_draw();
     clock_draw();
 
@@ -343,31 +408,57 @@ void _start(void) {
             desktop_redraw();
         }
 
-        /* Handle Start button */
+        /* Handle taskbar buttons */
         int button_state_changed = 0;
-        if (start_click(mx, my, mb, &button_state_changed)) {
-            if (!progman_is_running("Start Manager")) {
-                progman_launch("Start Manager");
-            } else {
-                /* Try to restore/focus an existing Start Manager window (prefer main instance if present) */
-                int found = 0;
-                int count = progman_get_running_count();
-                for (int i = 0; i < count; i++) {
-                    prog_instance_t *other = progman_get_instance(i);
-                    if (!other || !other->module) continue;
-                    if (strcmp(other->module->name, "Start Manager") != 0) continue;
+        int clicked_idx = taskbar_click(mx, my, mb, &button_state_changed);
+        if (clicked_idx >= 0) {
+            taskbar_button_t *btn = &taskbar_buttons[clicked_idx];
+            if (clicked_idx == 0) {
+                if (!progman_is_running("Start Manager")) {
+                    progman_launch("Start Manager");
+                } else {
+                    /* Try to restore/focus an existing Start Manager window (prefer main instance if present) */
+                    int found = 0;
+                    int count = progman_get_running_count();
+                    for (int i = 0; i < count; i++) {
+                        prog_instance_t *other = progman_get_instance(i);
+                        if (!other || !other->module) continue;
+                        if (strcmp(other->module->name, "Start Manager") != 0) continue;
 
-                    /* Prefer an instance that has an existing window */
-                    if (other->window_count > 0 && other->windows[0]) {
-                        sys_win_restore_form(other->windows[0]);
-                        found = 1;
-                        break;
+                        /* Prefer an instance that has an existing window */
+                        if (other->window_count > 0 && other->windows[0]) {
+                            sys_win_restore_form(other->windows[0]);
+                            found = 1;
+                            break;
+                        }
+                    }
+
+                    if (!found) {
+                        /* No suitable instance window found; start a new one */
+                        progman_launch("Start Manager");
                     }
                 }
+            } else if (btn->action[0]) {
+                /* Launch or restore the module named in btn->action */
+                if (!progman_is_running(btn->action)) {
+                    progman_launch(btn->action);
+                } else {
+                    int found = 0;
+                    int count = progman_get_running_count();
+                    for (int i = 0; i < count; i++) {
+                        prog_instance_t *other = progman_get_instance(i);
+                        if (!other || !other->module) continue;
+                        if (strcmp(other->module->name, btn->action) != 0) continue;
 
-                if (!found) {
-                    /* No suitable instance window found; start a new one */
-                    progman_launch("Start Manager");
+                        if (other->window_count > 0 && other->windows[0]) {
+                            sys_win_restore_form(other->windows[0]);
+                            found = 1;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        progman_launch(btn->action);
+                    }
                 }
             }
             taskbar_needs_redraw = 1;
