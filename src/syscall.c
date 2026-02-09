@@ -18,6 +18,7 @@
 #include "win/wm.h"
 #include "win/controls.h"
 #include "win/menu.h"
+#include "win/compositor.h"
 #include "irq/io.h"
 #include "win/theme.h"
 
@@ -784,7 +785,7 @@ static void pump_set_icons_dirty_rect(window_manager_t *wm) {
     if (found) {
         if (min_x < 0) min_x = 0;
         if (min_y < 0) min_y = 0;
-        wm_set_dirty_rect(wm, min_x, min_y, max_x - min_x, max_y - min_y);
+        compositor_set_dirty_rect(wm, min_x, min_y, max_x - min_x, max_y - min_y);
     }
 }
 
@@ -1425,6 +1426,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
                         const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;
                         win_minimize(&form->win, icon_x, icon_y, icon_path);
+                        /* Ensure desktop updates immediately after minimizing */
+                        global_wm.needs_full_redraw = 1;
+                        compositor_draw_all(&global_wm);
                         return -2;  /* Window minimized (major state change) */
                     } else if (action == MENU_ACTION_CLOSE) {
                         /* Signal close request - return special value */
@@ -1693,7 +1697,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (dx * dx + dy * dy > threshold * threshold) {
                             icon_start_drag(icon, mx, my);
                             mouse_restore();
-                            wm_draw_all(&global_wm);
+                            compositor_draw_all(&global_wm);
                             needs_redraw = 0;
                         }
                     }
@@ -1701,7 +1705,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     /* Continue dragging */
                     icon_update_drag(icon, mx, my);
                     mouse_restore();
-                    wm_draw_all(&global_wm);
+                    compositor_draw_all(&global_wm);
                     needs_redraw = 0;
                 }
             }
@@ -1717,7 +1721,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     form->drag_start_y = my;
                     /* During drag: just redraw all windows (fast), no background */
                     mouse_restore();
-                    wm_draw_all(&global_wm);
+                    compositor_draw_all(&global_wm);
                     needs_redraw = 0;  /* Already drawn */
                 }
             }
@@ -1794,17 +1798,17 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             /* Check if this is a dropdown with hover change - only redraw list */
                             gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
                             if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
-                                wm_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
+                                compositor_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
                             } else {
-                                wm_draw_control_by_id(&global_wm, form, changed_controls[i]);
+                                compositor_draw_control_by_id(&global_wm, form, changed_controls[i]);
                             }
                         }
                     } else if (z_order_changed) {
                         /* Z-order changed: redraw only this window (it's now on top) */
-                        wm_draw_single(&global_wm, form);
+                        compositor_draw_single(&global_wm, form);
                     } else {
                         /* Fallback to single window redraw if no specific controls tracked */
-                        wm_draw_single(&global_wm, form);
+                        compositor_draw_single(&global_wm, form);
                     }
                 }
                 return form->clicked_id;
@@ -1820,17 +1824,17 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         /* Check if this is a dropdown with hover change - only redraw list */
                         gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
                         if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
-                            wm_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
+                            compositor_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
                         } else {
-                            wm_draw_control_by_id(&global_wm, form, changed_controls[i]);
+                            compositor_draw_control_by_id(&global_wm, form, changed_controls[i]);
                         }
                     }
                 } else if (z_order_changed) {
                     /* Z-order changed: redraw only this window (it's now on top) */
-                    wm_draw_single(&global_wm, form);
+                    compositor_draw_single(&global_wm, form);
                 } else {
                     /* Fallback to single window redraw if no specific controls tracked */
-                    wm_draw_single(&global_wm, form);
+                    compositor_draw_single(&global_wm, form);
                 }
                 return (uint32_t)-1;
             }
@@ -1981,7 +1985,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
         }
 
         case 0x0C: { /* SYS_WIN_REDRAW_ALL */
-            wm_draw_all(&global_wm);
+            compositor_draw_all(&global_wm);
             return 0;
         }
 
@@ -2122,7 +2126,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
         }
 
         case 0x10: { /* SYS_WIN_INVALIDATE_ICONS */
-            wm_invalidate_icon_backgrounds(&global_wm);
+            compositor_invalidate_icon_backgrounds(&global_wm);
             return 0;
         }
 
