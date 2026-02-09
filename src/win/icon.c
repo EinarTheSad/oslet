@@ -156,22 +156,47 @@ void icon_draw(icon_t *icon) {
     int bg_height = total_height + ICON_BG_MARGIN * 2;
     int bg_start_x = icon->x - ICON_BG_MARGIN;
     int bg_start_y = icon->y - ICON_BG_MARGIN;
+    int row_bytes = (bg_width + 1) / 2;
 
     /* Save background before first drawing */
     if (!icon->saved_bg) {
-        icon->saved_bg = kmalloc(bg_width * bg_height);
+        icon->saved_bg = kmalloc(row_bytes * bg_height);
         if (icon->saved_bg) {
-            for (int y = 0; y < bg_height; y++) {
-                for (int x = 0; x < bg_width; x++) {
-                    icon->saved_bg[y * bg_width + x] = gfx_getpixel(bg_start_x + x, bg_start_y + y);
+            /* Fast path when fully on-screen and aligned */
+            if (bg_start_x >= 0 && bg_start_y >= 0 && bg_start_x + bg_width <= WM_SCREEN_WIDTH && bg_start_y + bg_height <= WM_SCREEN_HEIGHT && (bg_start_x & 1) == 0) {
+                gfx_read_screen_region_packed(icon->saved_bg, bg_width, bg_height, bg_start_x, bg_start_y);
+            } else {
+                for (int y = 0; y < bg_height; y++) {
+                    uint8_t *dst_row = icon->saved_bg + y * row_bytes;
+                    for (int b = 0; b < row_bytes; b++) dst_row[b] = 0;
+                    for (int x = 0; x < bg_width; x++) {
+                        if (bg_start_y + y >= 0 && bg_start_y + y < WM_SCREEN_HEIGHT && bg_start_x + x >= 0 && bg_start_x + x < WM_SCREEN_WIDTH) {
+                            uint8_t pix = gfx_getpixel(bg_start_x + x, bg_start_y + y);
+                            int byte_idx = x / 2;
+                            if (x & 1) dst_row[byte_idx] = (dst_row[byte_idx] & 0xF0) | (pix & 0x0F);
+                            else dst_row[byte_idx] = (dst_row[byte_idx] & 0x0F) | (pix << 4);
+                        }
+                    }
                 }
             }
         }
     } else {
         /* Restore original background before redrawing */
-        for (int y = 0; y < bg_height; y++) {
-            for (int x = 0; x < bg_width; x++) {
-                gfx_putpixel(bg_start_x + x, bg_start_y + y, icon->saved_bg[y * bg_width + x]);
+        if (bg_start_x >= 0 && bg_start_y >= 0 && bg_start_x + bg_width <= WM_SCREEN_WIDTH && bg_start_y + bg_height <= WM_SCREEN_HEIGHT && (bg_start_x & 1) == 0) {
+            gfx_write_screen_region_packed(icon->saved_bg, bg_width, bg_height, bg_start_x, bg_start_y);
+        } else {
+            for (int y = 0; y < bg_height; y++) {
+                uint8_t *src_row = icon->saved_bg + y * row_bytes;
+                for (int x = 0; x < bg_width; x++) {
+                    int sx = bg_start_x + x;
+                    int sy = bg_start_y + y;
+                    if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
+                        int byte_idx = x / 2;
+                        uint8_t packed = src_row[byte_idx];
+                        uint8_t pix = (x & 1) ? (packed & 0x0F) : (packed >> 4);
+                        gfx_putpixel(sx, sy, pix);
+                    }
+                }
             }
         }
     }
@@ -242,10 +267,23 @@ void icon_hide(icon_t *icon) {
         int bg_height = total_height + ICON_BG_MARGIN * 2;
         int bg_start_x = icon->x - ICON_BG_MARGIN;
         int bg_start_y = icon->y - ICON_BG_MARGIN;
+        int row_bytes = (bg_width + 1) / 2;
 
-        for (int y = 0; y < bg_height; y++) {
-            for (int x = 0; x < bg_width; x++) {
-                gfx_putpixel(bg_start_x + x, bg_start_y + y, icon->saved_bg[y * bg_width + x]);
+        if (bg_start_x >= 0 && bg_start_y >= 0 && bg_start_x + bg_width <= WM_SCREEN_WIDTH && bg_start_y + bg_height <= WM_SCREEN_HEIGHT && (bg_start_x & 1) == 0) {
+            gfx_write_screen_region_packed(icon->saved_bg, bg_width, bg_height, bg_start_x, bg_start_y);
+        } else {
+            for (int y = 0; y < bg_height; y++) {
+                uint8_t *src_row = icon->saved_bg + y * row_bytes;
+                for (int x = 0; x < bg_width; x++) {
+                    int sx = bg_start_x + x;
+                    int sy = bg_start_y + y;
+                    if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
+                        int byte_idx = x / 2;
+                        uint8_t packed = src_row[byte_idx];
+                        uint8_t pix = (x & 1) ? (packed & 0x0F) : (packed >> 4);
+                        gfx_putpixel(sx, sy, pix);
+                    }
+                }
             }
         }
 

@@ -12,6 +12,7 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control);
+void ctrl_hide_dropdown_list(window_t *win, gui_control_t *control);
 void ctrl_draw(window_t *win, gui_control_t *control);
 
 int text_split_lines(const char *text, char lines[][256], int max_lines);

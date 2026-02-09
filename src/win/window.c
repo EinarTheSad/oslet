@@ -541,22 +541,41 @@ void win_save_background(window_t *win) {
     int margin = WM_BG_MARGIN;
     int w = win->w + 2 * margin;
     int h = win->h + 2 * margin;
-    int buf_size = w * h;
+    int row_bytes = (w + 1) / 2; /* packed 2 pixels per byte */
+    int buf_size = row_bytes * h;
 
     if (!win->saved_bg) {
         win->saved_bg = kmalloc(buf_size);
         if (!win->saved_bg) return;
     }
 
+    /* Fast path: fully on-screen and byte-aligned (win->x - margin even) */
+    int sx = win->x - margin;
+    int sy = win->y - margin;
+    if (sx >= 0 && sy >= 0 && sx + w <= WM_SCREEN_WIDTH && sy + h <= WM_SCREEN_HEIGHT && (sx & 1) == 0) {
+        gfx_read_screen_region_packed(win->saved_bg, w, h, sx, sy);
+        return;
+    }
+
+    /* Fallback: safe per-pixel read and pack into saved buffer */
     for (int py = 0; py < h; py++) {
-        int sy = win->y + py - margin;
-        if (sy < 0 || sy >= WM_SCREEN_HEIGHT) continue;
+        int sy_row = win->y + py - margin;
+        uint8_t *dst_row = win->saved_bg + py * row_bytes;
+        /* init to 0 */
+        for (int b = 0; b < row_bytes; b++) dst_row[b] = 0;
 
         for (int px = 0; px < w; px++) {
-            int sx = win->x + px - margin;
-            if (sx < 0 || sx >= WM_SCREEN_WIDTH) continue;
-
-            win->saved_bg[py * w + px] = gfx_getpixel(sx, sy);
+            int sx_col = win->x + px - margin;
+            uint8_t pix = 0;
+            if (sx_col >= 0 && sx_col < WM_SCREEN_WIDTH && sy_row >= 0 && sy_row < WM_SCREEN_HEIGHT) {
+                pix = gfx_getpixel(sx_col, sy_row);
+            }
+            int byte_idx = px / 2;
+            if (px & 1) {
+                dst_row[byte_idx] = (dst_row[byte_idx] & 0xF0) | (pix & 0x0F);
+            } else {
+                dst_row[byte_idx] = (dst_row[byte_idx] & 0x0F) | (pix << 4);
+            }
         }
     }
 }
@@ -567,16 +586,28 @@ void win_restore_background(window_t *win) {
     int margin = WM_BG_MARGIN;
     int w = win->w + 2 * margin;
     int h = win->h + 2 * margin;
+    int row_bytes = (w + 1) / 2;
 
+    int sx = win->x - margin;
+    int sy = win->y - margin;
+    /* Fast path: fully on-screen and byte-aligned */
+    if (sx >= 0 && sy >= 0 && sx + w <= WM_SCREEN_WIDTH && sy + h <= WM_SCREEN_HEIGHT && (sx & 1) == 0) {
+        gfx_write_screen_region_packed(win->saved_bg, w, h, sx, sy);
+        return;
+    }
+
+    /* Fallback: per-pixel unpack and write */
     for (int py = 0; py < h; py++) {
-        int sy = win->y + py - margin;
-        if (sy < 0 || sy >= WM_SCREEN_HEIGHT) continue;
+        int sy_row = win->y + py - margin;
+        uint8_t *src_row = win->saved_bg + py * row_bytes;
 
         for (int px = 0; px < w; px++) {
-            int sx = win->x + px - margin;
-            if (sx < 0 || sx >= WM_SCREEN_WIDTH) continue;
-
-            gfx_putpixel(sx, sy, win->saved_bg[py * w + px]);
+            int sx_col = win->x + px - margin;
+            if (sx_col < 0 || sx_col >= WM_SCREEN_WIDTH || sy_row < 0 || sy_row >= WM_SCREEN_HEIGHT) continue;
+            int byte_idx = px / 2;
+            uint8_t packed = src_row[byte_idx];
+            uint8_t pix = (px & 1) ? (packed & 0x0F) : (packed >> 4);
+            gfx_putpixel(sx_col, sy_row, pix);
         }
     }
 }
