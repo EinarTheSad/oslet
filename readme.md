@@ -1,54 +1,27 @@
-# Project build instructions
+# osLET – a 32-bit educational operating system
 
-Ensure the following dependencies are installed:
+<img width="640" height="480" alt="osLET desktop" src="https://github.com/user-attachments/assets/3b8cb53b-7f56-439d-be80-4ce3384ef6f6" />
+
+------------------------------------------------------------------------
+
+## Project build instructions
+
+Ensure the following dependencies are installed (built in Ubuntu 24.04 LTS, may vary depending on your distro):
 
 ``` bash
-sudo apt install gcc make build-essential fdisk grub-pc qemu-system
+sudo apt install build-essential gcc-multilib binutils grub-pc grub-common dosfstools util-linux qemu-system-x86
 ```
 
 The following sequence will compile the OS and run it in QEMU:
 
 ``` bash
-make
-make disk
-make shell
-make binstall
-make run
+make disk shell desktop binstall run
 ```
 
-You can compile each binary separately by specifying its name. Remember to then run ```make binstall``` to copy it to the virtual hard drive.
+You can compile each binary separately. Remember to then run ```make binstall``` to copy it to the virtual hard drive. For more specific information, please consult the Makefile.
 
-For more specific information, please consult the Makefile.
-
-------------------------------------------------------------------------
-
-## Screenshots
-
-### Command prompt
-
-<img width="720" height="400" alt="Command prompt" src="https://github.com/user-attachments/assets/b1043630-eb6c-4014-bd7c-ecb07de0988e" />
-
-### ELF executable binaries
-
-<img width="720" height="400" alt="neofetch" src="https://github.com/user-attachments/assets/91fedd22-ba1e-466d-a471-7d67906d3c1a" />
-
-### File manager
-
-<img width="720" height="400" alt="File manager" src="https://github.com/user-attachments/assets/14e17034-b19b-4780-863f-73aca585b15f" />
-
-### Text editor
-
-<img width="720" height="400" alt="Text editor" src="https://github.com/user-attachments/assets/9cf3921f-ec42-43d5-869d-f97cc4a1501e" />
-
-### VGA graphics
-
-<img width="640" height="480" alt="VGA demo" src="https://github.com/user-attachments/assets/db726fe7-633d-4976-a9bc-7732406eaaa5" />
-
-<img width="640" height="480" alt="Bitmap" src="https://github.com/user-attachments/assets/57ffbe21-6603-4ad4-b2b9-6b4e2b14adf8" />
-
-### Desktop
-
-<img width="640" height="480" alt="Desktop" src="https://github.com/user-attachments/assets/1c494309-787b-4fed-9497-b3a0eb7a6d79" />
-
+Please note that while the system runs in **QEMU** and **PcEM**, it experiences VGA driver problems in VirtualBox. VMware, Bochs, and actual hardware are yet to be tested.
 
 ------------------------------------------------------------------------
+
+<img width="720" height="400" alt="Command line" src="https://github.com/user-attachments/assets/774ecf4a-e429-4028-9359-e1fa29bf5889" />
