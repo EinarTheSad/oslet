@@ -208,6 +208,30 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             return 0;
         }
 
+        case 0x08: { /* SYS_PROC_KILL */
+            if (!ebx) return (uint32_t)-1;
+            uint32_t tid = (uint32_t)ebx;
+            task_t *t = task_find_by_tid(tid);
+            if (!t) return (uint32_t)-1;
+            /* Do not allow killing the kernel task (tid 0) */
+            if (t->tid == 0) return (uint32_t)-1;
+            /* Do not allow killing the caller via kill (caller should use sys_exit) */
+            task_t *current = task_get_current();
+            if (current && current->tid == tid) return (uint32_t)-1;
+
+            /* If parent is blocked waiting for this child, wake it up */
+            if (t->parent_tid) {
+                task_t *parent = task_find_by_tid(t->parent_tid);
+                if (parent && parent->state == TASK_BLOCKED && parent->child_tid == t->tid) {
+                    parent->state = TASK_READY;
+                    parent->child_tid = 0;
+                }
+            }
+
+            t->state = TASK_TERMINATED;
+            return 0;
+        }
+
         default:
             return -1;
     }

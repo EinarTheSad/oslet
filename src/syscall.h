@@ -353,6 +353,13 @@ static inline int sys_spawn_async(const char *path) {
     return ret;
 }
 
+#define SYS_PROC_KILL      0x0208
+static inline int sys_kill(int tid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_KILL), "b"(tid));
+    return ret;
+}
+
 static inline void* sys_malloc(size_t size) {
     void* ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_MEM_ALLOC), "b"(size));
