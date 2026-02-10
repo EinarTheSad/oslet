@@ -536,7 +536,9 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
 
     /* Button 3D border */
     gfx_rect(btn_x, abs_y, btn_w, control->h, COLOR_BLACK);
-    if (control->pressed) {
+    /* Consider dropdown open as pressed for visual feedback */
+    int btn_pressed = control->pressed || control->dropdown_open;
+    if (btn_pressed) {
         gfx_hline(btn_x + 1, abs_y + 1, btn_w - 2, theme->frame_dark);
         gfx_vline(btn_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
         gfx_hline(btn_x + 1, abs_y + control->h - 2, btn_w - 2, COLOR_WHITE);
@@ -548,13 +550,23 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
         gfx_vline(btn_x + btn_w - 2, abs_y + 1, control->h - 2, theme->frame_dark);
     }
 
-    /* Draw arrow in button */
+    /* Draw arrow in button (flip when dropdown is open) */
     int arrow_x = btn_x + btn_w / 2;
     int arrow_y = abs_y + control->h / 2;
-    for (int i = 0; i < 4; i++) {
-        gfx_hline(arrow_x - 3 + i, arrow_y + i, 7 - i * 2, COLOR_BLACK);
+    if (control->dropdown_open) {
+        /* Pointing up */
+        for (int i = 0; i < 4; i++) {
+            gfx_hline(arrow_x - 3 + i, arrow_y - i, 7 - i * 2, COLOR_BLACK);
+        }
+        /* Small base to make arrow visually consistent */
+        gfx_fillrect(arrow_x - 1, arrow_y + 1, 3, 3, COLOR_BLACK);
+    } else {
+        /* Pointing down */
+        for (int i = 0; i < 4; i++) {
+            gfx_hline(arrow_x - 3 + i, arrow_y + i, 7 - i * 2, COLOR_BLACK);
+        }
+        gfx_fillrect(arrow_x - 1, arrow_y - 3, 3, 3, COLOR_BLACK);
     }
-    gfx_fillrect(arrow_x - 1, arrow_y - 3, 3, 3, COLOR_BLACK);
 
     /* Draw selected item text */
     if (font->data) {
