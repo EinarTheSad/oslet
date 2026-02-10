@@ -7,3 +7,4 @@ build/
 src/apps/*.elf
 src/bin/*.elf
 mnt/
+tools/oslet_form_designer.html
