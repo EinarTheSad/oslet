@@ -36,6 +36,7 @@ typedef struct {
     int app_count;
     app_entry_t apps[MAX_APPS];
     char grp_path[64];
+    char grp_title[64];
     int is_main_window;
 } startman_state_t;
 
@@ -83,6 +84,21 @@ static int is_grp_file(const char *name) {
             (ext[3] == 'P' || ext[3] == 'p'));
 }
 
+/* Trim leading/trailing spaces/tabs in-place */
+static void trim_inplace(char *s) {
+    char *p = s;
+    /* Trim leading whitespace */
+    while (*p == ' ' || *p == '\t') p++;
+    if (p != s) {
+        char *dst = s;
+        while (*p) *dst++ = *p++;
+        *dst = '\0';
+    }
+    /* Trim trailing whitespace */
+    int len = strlen(s);
+    while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t')) s[--len] = '\0';
+}
+
 static void sort_apps(app_entry_t *apps, int count) {
     for (int i = 0; i < count - 1; i++) {
         for (int j = 0; j < count - i - 1; j++) {
@@ -112,12 +128,15 @@ static void extract_filename(char *dst, const char *path, int max_len) {
 }
 
 /* GRP format: one entry per line
- *   C:/PATH/FILE.ELF              - ELF with default icon
- *   C:/PATH/FILE.ELF|C:/ICON.ICO  - ELF with custom icon
- *   C:/PATH/FILE.GRP              - GRP with default icon
- *   C:/PATH/FILE.GRP|C:/ICON.ICO  - GRP with custom icon
- *   !ModuleName                   - Internal module with default icon
- *   !ModuleName|C:/ICON.ICO       - Internal module with custom icon
+ *   C:/PATH/FILE.ELF                       - ELF with default icon
+ *   C:/PATH/FILE.ELF|C:/ICON.ICO           - ELF with custom icon
+ *   C:/PATH/FILE.ELF||Display Name         - ELF with default icon and custom display name
+ *   C:/PATH/FILE.ELF|C:/ICON.ICO|Display Name - ELF with custom icon and custom display name
+ *   C:/PATH/FILE.GRP                       - GRP with default icon
+ *   C:/PATH/FILE.GRP|C:/ICON.ICO           - GRP with custom icon
+ *   !ModuleName                            - Internal module with default icon
+ *   !ModuleName|C:/ICON.ICO                - Internal module with custom icon
+ *   !ModuleName||Display Name              - Internal module with custom display name
  * Lines starting with ; or # are comments
  * Empty lines are ignored
  */
@@ -174,30 +193,66 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
         if (i == 0)
             continue;
 
-        /* Parse entry: split by | for optional icon path */
+        /* Parse entry: split by | for optional icon path and optional display name
+         * Format:
+         *   path                           - no icon, default name
+         *   path|icon                      - custom icon, default name
+         *   path||name                     - default icon, custom name
+         *   path|icon|name                 - custom icon and custom name
+         */
         app_entry_t *app = &state->apps[app_count];
-        char *pipe = strchr(entry, '|');
-        char path_part[64];
+        char *pipe1 = strchr(entry, '|');
+        char *pipe2 = NULL;
+        char path_part[64] = {0};
         char icon_part[64] = {0};
+        char name_part[64] = {0};
 
-        if (pipe) {
-            int path_len = pipe - entry;
+        if (pipe1) {
+            pipe2 = strchr(pipe1 + 1, '|');
+            /* path part */
+            int path_len = pipe1 - entry;
             if (path_len >= (int)sizeof(path_part))
                 path_len = sizeof(path_part) - 1;
             strncpy(path_part, entry, path_len);
             path_part[path_len] = '\0';
-            strncpy(icon_part, pipe + 1, sizeof(icon_part) - 1);
+
+            if (pipe2) {
+                /* icon between pipe1 and pipe2 */
+                int icon_len = pipe2 - (pipe1 + 1);
+                if (icon_len >= (int)sizeof(icon_part))
+                    icon_len = sizeof(icon_part) - 1;
+                strncpy(icon_part, pipe1 + 1, icon_len);
+                icon_part[icon_len] = '\0';
+
+                /* name after pipe2 */
+                strncpy(name_part, pipe2 + 1, sizeof(name_part) - 1);
+                name_part[sizeof(name_part) - 1] = '\0';
+            } else {
+                /* only one pipe - icon (or empty) until end */
+                strncpy(icon_part, pipe1 + 1, sizeof(icon_part) - 1);
+                icon_part[sizeof(icon_part) - 1] = '\0';
+            }
         } else {
             strncpy(path_part, entry, sizeof(path_part) - 1);
             path_part[sizeof(path_part) - 1] = '\0';
         }
 
+        /* Trim whitespace from parts */
+        trim_inplace(path_part);
+        trim_inplace(icon_part);
+        trim_inplace(name_part);
+
         /* Determine entry type */
         if (path_part[0] == '!') {
             /* Internal module */
             app->type = ENTRY_MODULE;
-            strncpy(app->name, path_part + 1, sizeof(app->name) - 1);
-            app->name[sizeof(app->name) - 1] = '\0';
+            if (name_part[0]) {
+                strncpy(app->name, name_part, sizeof(app->name) - 1);
+                app->name[sizeof(app->name) - 1] = '\0';
+            } else {
+                strncpy(app->name, path_part + 1, sizeof(app->name) - 1);
+                app->name[sizeof(app->name) - 1] = '\0';
+            }
             strcpy(app->path, app->name);
             if (icon_part[0])
                 strcpy(app->icon_path, icon_part);
@@ -211,16 +266,21 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
             extract_filename(filename, path_part, sizeof(filename));
 
             /* Build display name (remove extension, apply title case) */
-            char raw_name[32];
-            int name_len = strlen(filename);
-            if (name_len > 4)
-                name_len -= 4;  /* Remove .ELF or .GRP */
-            if (name_len >= (int)sizeof(raw_name))
-                name_len = sizeof(raw_name) - 1;
-            for (int j = 0; j < name_len; j++)
-                raw_name[j] = filename[j];
-            raw_name[name_len] = '\0';
-            title_case(app->name, raw_name, sizeof(app->name));
+            if (name_part[0]) {
+                strncpy(app->name, name_part, sizeof(app->name) - 1);
+                app->name[sizeof(app->name) - 1] = '\0';
+            } else {
+                char raw_name[32];
+                int name_len = strlen(filename);
+                if (name_len > 4)
+                    name_len -= 4;  /* Remove .ELF or .GRP */
+                if (name_len >= (int)sizeof(raw_name))
+                    name_len = sizeof(raw_name) - 1;
+                for (int j = 0; j < name_len; j++)
+                    raw_name[j] = filename[j];
+                raw_name[name_len] = '\0';
+                title_case(app->name, raw_name, sizeof(app->name));
+            }
 
             /* Set type and default icon */
             if (is_grp_file(filename)) {
@@ -247,7 +307,8 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
 }
 
 static char g_pending_grp_icon[64] = {0};
-static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path);
+static char g_pending_grp_name[64] = {0};
+static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path, const char *display_name);
 
 static int startman_init(prog_instance_t *inst) {
     startman_state_t *state = sys_malloc(sizeof(startman_state_t));
@@ -263,10 +324,18 @@ static int startman_init(prog_instance_t *inst) {
         /* This is a subgroup window */
         strcpy(state->grp_path, g_pending_grp_path);
         g_pending_grp_path[0] = '\0';  /* Clear for next use */
+        if (g_pending_grp_name[0]) {
+            strncpy(state->grp_title, g_pending_grp_name, sizeof(state->grp_title) - 1);
+            state->grp_title[sizeof(state->grp_title) - 1] = '\0';
+            g_pending_grp_name[0] = '\0';
+        } else {
+            state->grp_title[0] = '\0';
+        }
         state->is_main_window = 0;
     } else {
         /* Main window - load from MAIN.GRP */
         strcpy(state->grp_path, MAIN_GRP_PATH);
+        state->grp_title[0] = '\0';
         state->is_main_window = 1;
     }
 
@@ -277,14 +346,20 @@ static int startman_init(prog_instance_t *inst) {
     if (state->is_main_window) {
         strcpy(title, "Start Manager");
     } else {
-        char grp_name[32];
-        extract_filename(grp_name, state->grp_path, sizeof(grp_name));
-        /* Remove .GRP extension */
-        int len = strlen(grp_name);
-        if (len > 4)
-            grp_name[len - 4] = '\0';
+        /* If a custom title was provided in the GRP, use it directly */
+        if (state->grp_title[0]) {
+            strncpy(title, state->grp_title, sizeof(title) - 1);
+            title[sizeof(title) - 1] = '\0';
+        } else {
+            char grp_name[32];
+            extract_filename(grp_name, state->grp_path, sizeof(grp_name));
+            /* Remove .GRP extension */
+            int len = strlen(grp_name);
+            if (len > 4)
+                grp_name[len - 4] = '\0';
 
-        title_case(title, grp_name, sizeof(title));
+            title_case(title, grp_name, sizeof(title));
+        }
     }
 
     /* Calculate window position and size */
@@ -422,8 +497,8 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
         if (app_index >= 0 && app_index < state->app_count) {
             app_entry_t *app = &state->apps[app_index];
             if (app->type == ENTRY_GRP) {
-                /* Open group in new window */
-                open_group_window(app->path, state->grp_path, app->icon_path);
+                /* Open group in new window, pass display name if provided */
+                open_group_window(app->path, state->grp_path, app->icon_path, app->name);
             } else if (app->type == ENTRY_MODULE) {
                 /* Launch internal module (propagate icon override) */
                 progman_launch_with_icon(app->path, app->icon_path);
@@ -455,9 +530,9 @@ static void startman_cleanup(prog_instance_t *inst) {
 }
 
 /* Open a new group window by launching a new startman instance */
-static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path) {
+static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path, const char *display_name) {
     (void)parent_grp;
-    /* Store GRP path and icon for the new instance to pick up */
+    /* Store GRP path, icon, and optional display name for the new instance to pick up */
     strncpy(g_pending_grp_path, grp_path, sizeof(g_pending_grp_path) - 1);
     g_pending_grp_path[sizeof(g_pending_grp_path) - 1] = '\0';
     if (icon_path && icon_path[0]) {
@@ -465,6 +540,12 @@ static void open_group_window(const char *grp_path, const char *parent_grp, cons
         g_pending_grp_icon[sizeof(g_pending_grp_icon) - 1] = '\0';
     } else {
         g_pending_grp_icon[0] = '\0';
+    }
+    if (display_name && display_name[0]) {
+        strncpy(g_pending_grp_name, display_name, sizeof(g_pending_grp_name) - 1);
+        g_pending_grp_name[sizeof(g_pending_grp_name) - 1] = '\0';
+    } else {
+        g_pending_grp_name[0] = '\0';
     }
     /* Launch new startman instance */
     progman_launch("Start Manager");
