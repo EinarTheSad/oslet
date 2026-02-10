@@ -178,5 +178,6 @@ $(BUILD)/apps/%.o: $(APPS)/%.c
 	$(CC) $(BINCFLAGS) -c $< -o $@
 
 clock: $(APPS)/clock.elf
-calc: $(APPS)/calculator.elf
-viewer: $(APPS)/image_viewer.elf
+calc: $(APPS)/calc.elf
+viewer: $(APPS)/imgview.elf
+letver: $(APPS)/letver.elf
