@@ -2180,12 +2180,9 @@ static void show_error(const char *msg) {
             // Event handlers for each form
             project.forms.forEach(form => {
                 code += `/* ${form.name} Event Handler */\n`;
-                code += `static void ${form.name}_handle_event(void *form_ptr, sys_event_t *event) {\n`;
-                code += `    gui_form_t *form = (gui_form_t*)form_ptr;\n\n`;
-                
-                code += `    if (event->type == EVENT_CLICK) {\n`;
-                code += `        int16_t id = event->data[0];\n\n`;
-                code += `        switch (id) {\n`;
+                code += `static int ${form.name}_handle_event(void *form, int event, void *userdata) {\n`;
+                code += `    (void)form; (void)userdata;\n\n`;
+                code += `    switch (event) {\n`;
 
                 // Generate case for each button
                 form.controls.filter(c => c.type === 'button').forEach(ctrl => {
@@ -2207,6 +2204,7 @@ static void show_error(const char *msg) {
                         code += `                sys_win_draw(form);\n`;
                     } else if (ctrl.action.type === 'exit') {
                         code += `                exit_requested = 1;\n`;
+                        code += `                return 1;\n`;
                     } else if (ctrl.action.type === 'custom' && ctrl.action.custom_code) {
                         const lines = ctrl.action.custom_code.split('\n');
                         lines.forEach(line => {
@@ -2221,8 +2219,8 @@ static void show_error(const char *msg) {
 
                 code += `            default:\n`;
                 code += `                break;\n`;
-                code += `        }\n`;
                 code += `    }\n`;
+                code += `    return 0;\n`;
                 code += `}\n\n`;
             });
 
@@ -2238,7 +2236,7 @@ static void show_error(const char *msg) {
 
             // Create forms
             project.forms.forEach(form => {
-                code += `    ${form.name} = sys_win_create_form(${form.x}, ${form.y}, ${form.w}, ${form.h}, "${form.title}");\n`;
+                code += `    ${form.name} = sys_win_create_form("${form.title}", ${form.x}, ${form.y}, ${form.w}, ${form.h});\n`;
                 if (form.controls.length > 0) {
                     code += `    for (int i = 0; i < sizeof(${form.name}_controls) / sizeof(gui_control_t); i++) {\n`;
                     code += `        sys_win_add_control(${form.name}, &${form.name}_controls[i]);\n`;
