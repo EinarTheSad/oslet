@@ -73,6 +73,7 @@ void win_destroy(window_t *win) {
         kfree(win->minimized_icon);
         win->minimized_icon = NULL;
     }
+    mouse_invalidate_buffer();
 }
 
 void win_draw_frame(int x, int y, int w, int h) {
