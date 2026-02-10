@@ -7,6 +7,14 @@
 
 static uint8_t* backbuffer = NULL;
 static int graphics_active = 0;
+static uint8_t* frontbuffer = NULL; /* cache of what's currently in VRAM (packed 4bpp) */
+
+/* Precomputed table: for each plane (0-3) and each packed byte value (0-255),
+   contains the two bits (high,low) for that plane as a 2-bit value. This lets
+   us build the output plane byte for 8 pixels by four table lookups and shifts.
+*/
+static uint8_t plane_pair_table[4][256];
+static int plane_table_init = 0;
 
 /* Scheduler protection */
 #define GFX_LOCK() __asm__ volatile("cli")
@@ -20,12 +28,11 @@ static inline void mark_dirty(int x, int y, int w, int h) {
     int x1 = x + w - 1;
     int y1 = y + h - 1;
 
-    GFX_LOCK();
+    /* Avoid disabling interrupts for every pixel; slight races are acceptable */
     if (x < dirty_x0) dirty_x0 = x;
     if (y < dirty_y0) dirty_y0 = y;
     if (x1 > dirty_x1) dirty_x1 = x1;
     if (y1 > dirty_y1) dirty_y1 = y1;
-    GFX_UNLOCK();
 }
 
 static inline void reset_dirty(void) {
@@ -106,14 +113,45 @@ void gfx_init(void) {
         }
     }
     memset_s(backbuffer, 0, GFX_BUFFER_SIZE);
+
+    /* Initialize lookup table once */
+    if (!plane_table_init) {
+        for (int p = 0; p < 4; p++) {
+            for (int b = 0; b < 256; b++) {
+                uint8_t high = (uint8_t)((b >> 4) & 0x0F);
+                uint8_t low  = (uint8_t)(b & 0x0F);
+                uint8_t pair = (uint8_t)(((high >> p) & 1) << 1) | (uint8_t)((low >> p) & 1);
+                plane_pair_table[p][b] = pair;
+            }
+        }
+        plane_table_init = 1;
+    }
+
+    /* Allocate frontbuffer cache */
+    if (!frontbuffer) {
+        frontbuffer = kmalloc(GFX_BUFFER_SIZE);
+        if (frontbuffer) memset_s(frontbuffer, 0, GFX_BUFFER_SIZE);
+    }
 }
 
 void gfx_enter_mode(void) {
     vga_save_state();
     vga_write_regs(mode_640x480x16);
     gfx_load_palette();
+    /* Clear VGA video memory so BIOS artifacts disappear immediately. Write
+       a zero byte across the visible scanlines with all planes enabled so
+       the framebuffer is fully cleared. */
+    outb(0x3C4, 0x02);
+    outb(0x3C5, 0x0F); /* enable all planes for writing */
+    {
+        int vram_bytes = (GFX_WIDTH / 8) * GFX_HEIGHT; /* 80*480 = 38400 */
+        volatile uint8_t *v = GFX_VRAM;
+        for (int i = 0; i < vram_bytes; i++) v[i] = 0;
+    }
     graphics_active = 1;
     if (!backbuffer) gfx_init();
+    /* Ensure frontbuffer cache matches cleared VRAM */
+    if (frontbuffer) memset_s(frontbuffer, 0, GFX_BUFFER_SIZE);
 }
 
 void gfx_exit_mode(void) {
@@ -166,41 +204,44 @@ void gfx_swap_buffers(void) {
         if (x1_aligned > GFX_WIDTH) x1_aligned = GFX_WIDTH;
     }
     
-    /* Batch plane writes - 4 outb() per scanline instead of 4 per byte */
-    for (uint8_t plane = 0; plane < 4; plane++) {
-        outb(0x3C4, 0x02);
-        outb(0x3C5, 1 << plane);
-        
-        for (int y = y0; y <= y1; y++) {
-            uint32_t bb_row = y * (GFX_WIDTH / 2);
-            uint32_t vram_row = y * 80;
-            
-            for (int x = x0_aligned; x < x1_aligned; x += 8) {
-                uint32_t bb_offset = bb_row + (x / 2);
-                
-                /* Unpack 8 pixels (4 bytes) */
-                uint8_t pixels[8];
-                pixels[0] = backbuffer[bb_offset] >> 4;
-                pixels[1] = backbuffer[bb_offset] & 0x0F;
-                pixels[2] = backbuffer[bb_offset + 1] >> 4;
-                pixels[3] = backbuffer[bb_offset + 1] & 0x0F;
-                pixels[4] = backbuffer[bb_offset + 2] >> 4;
-                pixels[5] = backbuffer[bb_offset + 2] & 0x0F;
-                pixels[6] = backbuffer[bb_offset + 3] >> 4;
-                pixels[7] = backbuffer[bb_offset + 3] & 0x0F;
-                
-                /* Pack into plane byte */
-                uint8_t plane_byte = 0;
-                if (pixels[0] & (1 << plane)) plane_byte |= 0x80;
-                if (pixels[1] & (1 << plane)) plane_byte |= 0x40;
-                if (pixels[2] & (1 << plane)) plane_byte |= 0x20;
-                if (pixels[3] & (1 << plane)) plane_byte |= 0x10;
-                if (pixels[4] & (1 << plane)) plane_byte |= 0x08;
-                if (pixels[5] & (1 << plane)) plane_byte |= 0x04;
-                if (pixels[6] & (1 << plane)) plane_byte |= 0x02;
-                if (pixels[7] & (1 << plane)) plane_byte |= 0x01;
-                
+    /* Write per-scanline and finish all planes for that scanline before moving to the next one. */
+    for (int y = y0; y <= y1; y++) {
+        uint32_t bb_row = y * (GFX_WIDTH / 2);
+        uint32_t vram_row = y * 80;
+
+        for (int x = x0_aligned; x < x1_aligned; x += 8) {
+            uint32_t bb_offset = bb_row + (x / 2);
+            uint8_t b0 = backbuffer[bb_offset];
+            uint8_t b1 = backbuffer[bb_offset + 1];
+            uint8_t b2 = backbuffer[bb_offset + 2];
+            uint8_t b3 = backbuffer[bb_offset + 3];
+
+            /* Skip writing if frontbuffer already matches (and not full redraw) */
+            if (!full_redraw && frontbuffer) {
+                if (frontbuffer[bb_offset] == b0 && frontbuffer[bb_offset + 1] == b1
+                    && frontbuffer[bb_offset + 2] == b2 && frontbuffer[bb_offset + 3] == b3) {
+                    continue;
+                }
+            }
+
+            for (uint8_t plane = 0; plane < 4; plane++) {
+                outb(0x3C4, 0x02);
+                outb(0x3C5, 1 << plane);
+
+                uint8_t plane_byte = (uint8_t)(plane_pair_table[plane][b0] << 6)
+                                   | (uint8_t)(plane_pair_table[plane][b1] << 4)
+                                   | (uint8_t)(plane_pair_table[plane][b2] << 2)
+                                   | (uint8_t)(plane_pair_table[plane][b3] << 0);
+
                 vram[vram_row + (x / 8)] = plane_byte;
+            }
+
+            /* Update frontbuffer cache */
+            if (frontbuffer) {
+                frontbuffer[bb_offset] = b0;
+                frontbuffer[bb_offset + 1] = b1;
+                frontbuffer[bb_offset + 2] = b2;
+                frontbuffer[bb_offset + 3] = b3;
             }
         }
     }
@@ -230,19 +271,12 @@ void gfx_putpixel(int x, int y, uint8_t color) {
 uint8_t gfx_getpixel(int x, int y) {
     if (!backbuffer) return 0;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return 0;
-    
-    GFX_LOCK();
     uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
-    uint8_t result;
-    
     if (x & 1) {
-        result = backbuffer[offset] & 0x0F;
+        return backbuffer[offset] & 0x0F;
     } else {
-        result = (backbuffer[offset] >> 4) & 0x0F;
+        return (backbuffer[offset] >> 4) & 0x0F;
     }
-    GFX_UNLOCK();
-    
-    return result;
 }
 
 static inline void putpixel_raw(int x, int y, uint8_t color) {
@@ -327,14 +361,28 @@ void gfx_hline(int x, int y, int w, uint8_t color) {
     if (x0 > x1) return;
 
     uint32_t row_offset = y * (GFX_WIDTH / 2);
-    
-    for (int px = x0; px <= x1; px++) {
+
+    /* Fast path: write two pixels at a time using full byte writes where possible */
+    uint8_t pattern = (color & 0x0F) | ((color & 0x0F) << 4);
+    int px = x0;
+    /* Handle leading odd pixel */
+    if (px & 1) {
         uint32_t offset = row_offset + (px / 2);
-        if (px & 1) {
-            backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-        } else {
-            backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
+        backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
+        px++;
+    }
+
+    /* Handle full bytes */
+    while (px + 1 <= x1) {
+        uint32_t offset = row_offset + (px / 2);
+        backbuffer[offset] = pattern;
+        px += 2;
+    }
+
+    /* Trailing single pixel */
+    if (px <= x1) {
+        uint32_t offset = row_offset + (px / 2);
+        backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
     }
     
     mark_dirty(x0, y, x1 - x0 + 1, 1);
@@ -391,16 +439,9 @@ void gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
     if (x1 >= GFX_WIDTH)  x1 = GFX_WIDTH - 1;
     if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
 
+    /* Use optimized horizontal line writer per row */
     for (int py = y0; py <= y1; py++) {
-        uint32_t row_offset = py * (GFX_WIDTH / 2);
-        for (int px = x0; px <= x1; px++) {
-            uint32_t offset = row_offset + (px / 2);
-            if (px & 1) {
-                backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            } else {
-                backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-            }
-        }
+        gfx_hline(x0, py, x1 - x0 + 1, color);
     }
     
     mark_dirty(x0, y0, x1 - x0 + 1, y1 - y0 + 1);

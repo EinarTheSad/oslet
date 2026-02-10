@@ -195,17 +195,19 @@ static inline void disable_cursor(void) {
 static void scroll_if_needed(void) {
     if (cy < VGA_HEIGHT)
         return;
-
+    /* Use block memory moves for scrolling to reduce CPU work */
+    int row_words = VGA_WIDTH; /* each cell is uint16_t */
     for (int y = 1; y < VGA_HEIGHT; ++y) {
-        for (int x = 0; x < VGA_WIDTH; ++x) {
-            VGA[(y - 1) * VGA_WIDTH + x] = VGA[y * VGA_WIDTH + x];
-        }
+        uint16_t *dst = (uint16_t*)&VGA[(y - 1) * VGA_WIDTH];
+        uint16_t *src = (uint16_t*)&VGA[y * VGA_WIDTH];
+        /* copy one row up */
+        memcpy_s(dst, src, row_words * sizeof(uint16_t));
     }
 
     uint16_t blank = (uint16_t)(' ') | ((uint16_t)vga_color << 8);
     int last = VGA_HEIGHT - 1;
-    for (int x = 0; x < VGA_WIDTH; ++x)
-        VGA[last * VGA_WIDTH + x] = blank;
+    uint16_t *last_row = (uint16_t*)&VGA[last * VGA_WIDTH];
+    for (int x = 0; x < VGA_WIDTH; ++x) last_row[x] = blank;
 
     cy = VGA_HEIGHT - 1;
     if (cx < 0) cx = 0;
@@ -249,9 +251,9 @@ static size_t vga_write(const char* s, size_t n, void* ctx) {
     (void)ctx;
     for (size_t i = 0; i < n; ++i) {
         vga_putc_internal(s[i]);
-        if (cy >= VGA_HEIGHT)
-            scroll_if_needed();
     }
+    /* Reduce calls to scrolling routine by handling it after the write burst */
+    while (cy >= VGA_HEIGHT) scroll_if_needed();
     move_hw_cursor();
     return n;
 }
