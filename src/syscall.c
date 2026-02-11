@@ -837,6 +837,8 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
             win_restore(&form->win);
                     /* Bring restored window to front and give it focus */
                     wm_bring_to_front(&global_wm, form);
+                    /* Ensure focused_index is explicitly set to this window (safety) */
+                    if (global_wm.count > 0) global_wm.focused_index = global_wm.count - 1;
                     /* Ensure desktop updates immediately after restoring */
                     global_wm.needs_full_redraw = 1;
                     compositor_draw_all(&global_wm);
@@ -1261,10 +1263,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             const char *btn = (const char*)ecx;
             const char *title = (const char*)edx;
 
-            /* Restore any existing cursor first to clean up the screen */
             extern int buffer_valid;
             if (buffer_valid) {
                 mouse_restore();
+                mouse_invalidate_buffer();
                 gfx_swap_buffers();
             }
 
@@ -1312,12 +1314,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     if (!dragging) {
                         int clicked = win_msgbox_handle_click(box, mx, my);
                         if (clicked) {
-                            /* Button clicked - restore cursor and window background */
-                            mouse_restore();
-                            win_restore_background(&box->base);
-                            gfx_swap_buffers();
-                            kfree(box);
-                            return clicked;
+                                     /* Button clicked - restore cursor and window background */
+                                     mouse_invalidate_buffer();
+                                     win_restore_background(&box->base);
+                                     gfx_swap_buffers();
+                                     kfree(box);
+                                     return clicked;
                         }
                     }
                     dragging = 0;
@@ -2228,6 +2230,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             }
 
             wm_bring_to_front(&global_wm, form);
+            /* Safety: ensure focused_index points to restored window */
+            if (global_wm.count > 0) global_wm.focused_index = global_wm.count - 1;
             global_wm.needs_full_redraw = 1;
             return 2; /* Indicate full redraw */
         }
