@@ -835,8 +835,11 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
                                      form->win.minimized_icon->y);
             }
             win_restore(&form->win);
-            /* Bring restored window to front and give it focus */
-            wm_bring_to_front(&global_wm, form);
+                    /* Bring restored window to front and give it focus */
+                    wm_bring_to_front(&global_wm, form);
+                    /* Ensure desktop updates immediately after restoring */
+                    global_wm.needs_full_redraw = 1;
+                    compositor_draw_all(&global_wm);
             return 2;  /* Window restored */
         } else {
             /* Single click - select this icon, prepare for potential drag */
