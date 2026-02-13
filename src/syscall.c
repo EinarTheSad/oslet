@@ -32,6 +32,7 @@ typedef struct {
 
 #define FD_CRITICAL_BEGIN __asm__ volatile("cli")
 #define FD_CRITICAL_END __asm__ volatile("sti")
+extern int buffer_valid;
 
 /* Global window manager */
 static window_manager_t global_wm;
@@ -764,7 +765,6 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
             return 0;
         }
         case 0x01: {
-            extern int buffer_valid;
             if (!edx && buffer_valid) {
                 mouse_restore();
             }
@@ -889,8 +889,22 @@ static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
     return 0;
 }
 
+static int is_any_icon_selected(window_manager_t *wm) {
+    for (int i = 0; i < wm->count; i++) {
+            if (wm->windows[i] &&
+                wm->windows[i]->win.is_minimized &&
+                wm->windows[i]->win.minimized_icon &&
+                wm->windows[i]->win.minimized_icon->selected) {
+                    return 1;
+            }
+        }
+    return 0;
+}
+
 static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
     if (win_is_titlebar(&form->win, mx, my)) {
+        if (is_any_icon_selected(&global_wm))
+            pump_deselect_all_icons(&global_wm);
         mouse_restore();
         mouse_invalidate_buffer();
         form->dragging = 1;
@@ -1263,7 +1277,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             const char *btn = (const char*)ecx;
             const char *title = (const char*)edx;
 
-            extern int buffer_valid;
             if (buffer_valid) {
                 mouse_restore();
                 mouse_invalidate_buffer();
@@ -1421,7 +1434,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             return (uint32_t)form;
         }
               
-        case 0x07: { /* SYS_WIN_PUMP_EVENTS */
+        case 0x07: { /* SYS_WIN_PUMP_EVENTS 
+                    extern */
             gui_form_t *form = (gui_form_t*)ebx;
 
             if (!form) return 0;
@@ -1754,7 +1768,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     win_move(&form->win, dx, dy);
                     form->drag_start_x = mx;
                     form->drag_start_y = my;
-                    /* During drag: just redraw all windows (fast), no background */
                     mouse_restore();
                     compositor_draw_all(&global_wm);
                     needs_redraw = 0;  /* Already drawn */
