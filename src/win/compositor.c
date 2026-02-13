@@ -134,7 +134,20 @@ void compositor_draw_all(window_manager_t *wm) {
         return;
     }
 
-    /* Full redraw path (or when needs_full_redraw was set) */
+    /* Full redraw path (or when needs_full_redraw was set)
+       1) Draw all minimized icons first so they appear underneath windows.
+       2) Then draw windows/front-to-back normally. */
+
+    /* Draw all minimized icons (underneath everything) */
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *form = wm->windows[i];
+        if (!form || !form->win.is_visible) continue;
+        if (form->win.is_minimized && form->win.minimized_icon) {
+            icon_draw(form->win.minimized_icon);
+        }
+    }
+
+    /* Now draw windows in z-order on top of icons */
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *form = wm->windows[i];
         if (!form || !form->win.is_visible) continue;
@@ -172,6 +185,16 @@ void compositor_draw_single(window_manager_t *wm, gui_form_t *form) {
             is_focused = (i == wm->focused_index);
             break;
         }
+    }
+
+    /* If the single form is minimized, draw its icon only (icons are
+       treated underneath normal windows). Otherwise draw the full form. */
+    if (form->win.is_minimized) {
+        if (form->win.minimized_icon) {
+            icon_draw(form->win.minimized_icon);
+        }
+        mouse_invalidate_buffer();
+        return;
     }
 
     /* Draw the window */

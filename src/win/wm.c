@@ -79,8 +79,13 @@ int wm_bring_to_front(window_manager_t *wm, gui_form_t *form) {
         }
     }
 
-    if (found_index == -1 || found_index == wm->count - 1) {
-        return 0;  // Not found or already at front
+    if (found_index == -1) {
+        return 0;  // Not found
+    }
+
+    if (found_index == wm->count - 1) {
+        wm->focused_index = wm->count - 1;
+        return 1;
     }
 
     // Move window to end (front in Z-order)
