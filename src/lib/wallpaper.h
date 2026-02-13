@@ -2,7 +2,7 @@
 #include "../syscall.h"
 
 /* Helper functions for userland wallpaper handling */
-int wallpaper_cache(const char *path, gfx_cached_bmp_t *out, int *out_x, int *out_y);
+int wallpaper_cache(const char *path, gfx_cached_bmp_t *out, int *out_x, int *out_y, int mode);
 void wallpaper_free(gfx_cached_bmp_t *out);
 void wallpaper_draw(gfx_cached_bmp_t *out, int x, int y);
 int wallpaper_draw_partial(gfx_cached_bmp_t *out, int dest_x, int dest_y,
