@@ -1410,7 +1410,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 return (uint32_t)NULL;
             }
 
+            /* Draw the newly-created window into the back buffer and
+               request a desktop redraw so the compositor includes the
+               new window immediately. Without this the window may be
+               overwritten until another action (e.g. moving Start
+               Manager) forces a redraw. */
             win_draw(&form->win);
+            global_wm.needs_full_redraw = 1;
 
             return (uint32_t)form;
         }
