@@ -17,6 +17,7 @@
 typedef struct {
     uint8_t color;
     char wallpaper[128];
+    uint8_t wallpaper_mode; /* 0=center, 1=stretch */
 } desktop_settings_t;
 
 typedef struct {
@@ -33,6 +34,7 @@ static int taskbar_button_count = 0;
 extern const progmod_t startman_module;
 extern const progmod_t textmode_module;
 extern const progmod_t cpl_theme_module;
+extern const progmod_t cpl_screen_module;
 extern const progmod_t shutdown_module;
 
 desktop_settings_t settings;  /* Global - cpanel needs access */
@@ -40,7 +42,7 @@ usr_bmf_font_t font_b;
 usr_bmf_font_t font_n;
 sys_time_t current = {0};
 
-/* Cached wallpaper for fast redraw */
+/* Cached wallpaper for fast redraw (center mode only) */
 static gfx_cached_bmp_t cached_wallpaper = {0};
 static int wallpaper_x = 0;
 static int wallpaper_y = 0;
@@ -84,6 +86,7 @@ static void load_settings(void) {
     /* Set defaults */
     settings.color = 7;
     settings.wallpaper[0] = '\0';
+    settings.wallpaper_mode = 0; /* center by default */
 
     int fd = sys_open(SETTINGS_PATH, "r");
     if (fd < 0) return;
@@ -106,6 +109,12 @@ static void load_settings(void) {
         settings.wallpaper[sizeof(settings.wallpaper) - 1] = '\0';
     }
 
+    val = ini_get(&ini, "DESKTOP", "MODE");
+    if (val) {
+        int mode = atoi(val);
+        settings.wallpaper_mode = (mode == 1) ? 1 : 0;
+    }
+
     sys_theme_t *theme = sys_win_get_theme();
     theme->bg_color = (uint8_t)ini_get_color(&ini, "THEME", "BG_COLOR", theme->bg_color);
     theme->titlebar_color = (uint8_t)ini_get_color(&ini, "THEME", "TITLEBAR_COLOR", theme->titlebar_color);
@@ -118,21 +127,20 @@ static void load_settings(void) {
     theme->start_button_color = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", theme->start_button_color);
 }
 
-/* Load wallpaper into memory cache (call once at startup) */
 static void cache_wallpaper(void) {
     if (settings.wallpaper[0] == '\0') return;
 
     int x = 0, y = 0;
-    if (wallpaper_cache(settings.wallpaper, &cached_wallpaper, &x, &y) != 0) {
+    if (wallpaper_cache(settings.wallpaper, &cached_wallpaper, &x, &y, settings.wallpaper_mode) != 0) {
         cached_wallpaper.data = 0;
         return;
     }
-
     wallpaper_x = x;
     wallpaper_y = y;
 }
 
 static void draw_wallpaper(void) {
+    if (settings.wallpaper[0] == '\0') return;
     if (!cached_wallpaper.data) return;
     wallpaper_draw(&cached_wallpaper, wallpaper_x, wallpaper_y);
 }
@@ -141,6 +149,7 @@ static void prog_register_all(void) {
     progman_register(&startman_module);
     progman_register(&textmode_module);
     progman_register(&cpl_theme_module);
+    progman_register(&cpl_screen_module);
     progman_register(&shutdown_module);
 }
 
@@ -276,18 +285,23 @@ static void desktop_redraw(void) {
 }
 
 /* Called by cpanel */
-void desktop_apply_settings(uint8_t color, const char *wallpaper) {
+void desktop_apply_settings(uint8_t color, const char *wallpaper, uint8_t wallpaper_mode) {
     int wallpaper_changed = strcmp(settings.wallpaper, wallpaper) != 0;
+    int mode_changed = (settings.wallpaper_mode != wallpaper_mode);
 
     settings.color = color;
+    settings.wallpaper_mode = wallpaper_mode;
     strncpy(settings.wallpaper, wallpaper, sizeof(settings.wallpaper) - 1);
 
-    if (wallpaper_changed) {
+    /* Recache if wallpaper path or mode changed */
+    if (wallpaper_changed || mode_changed) {
         if (cached_wallpaper.data) {
             sys_gfx_free_cached(&cached_wallpaper);
             cached_wallpaper.data = 0;
         }
         cache_wallpaper();
+        /* Force full redraw to prevent stale window backgrounds */
+        sys_win_force_full_redraw();
     }
 
     desktop_redraw();
@@ -302,15 +316,24 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
 
     sys_gfx_fillrect(x, y, w, h, settings.color);
 
-    /* Redraw wallpaper portion if we have one */
-    if (cached_wallpaper.data) {
-        int ix, iy, iw, ih;
-        if (rect_intersect(x, y, w, h,
-                           wallpaper_x, wallpaper_y, cached_wallpaper.width, cached_wallpaper.height,
-                           &ix, &iy, &iw, &ih)) {
-            int src_x = ix - wallpaper_x;
-            int src_y = iy - wallpaper_y;
-            wallpaper_draw_partial(&cached_wallpaper, ix, iy, src_x, src_y, iw, ih);
+    /* Redraw wallpaper portion */
+    if (settings.wallpaper[0] != '\0' && cached_wallpaper.data) {
+        if (settings.wallpaper_mode == 1) {
+            /* Stretch mode: redraw entire cached wallpaper (640x480) */
+            draw_wallpaper();
+            /* Redraw taskbar since wallpaper covers entire screen */
+            taskbar_draw();
+            clock_draw();
+        } else {
+            /* Center mode: draw partial wallpaper if it intersects the dirty rect */
+            int ix, iy, iw, ih;
+            if (rect_intersect(x, y, w, h,
+                               wallpaper_x, wallpaper_y, cached_wallpaper.width, cached_wallpaper.height,
+                               &ix, &iy, &iw, &ih)) {
+                int src_x = ix - wallpaper_x;
+                int src_y = iy - wallpaper_y;
+                wallpaper_draw_partial(&cached_wallpaper, ix, iy, src_x, src_y, iw, ih);
+            }
         }
     }
     sys_win_invalidate_icons();
