@@ -1,4 +1,5 @@
 #include "window.h"
+#include "wm.h"
 #include "wm_config.h"
 #include "theme.h"
 #include "bitmap.h"
@@ -39,11 +40,7 @@ void win_draw(window_t *win) {
 
 void win_draw_focused(window_t *win, int is_focused) {
     if (!win->is_visible) return;
-
-    if (win->is_minimized && win->minimized_icon) {
-        icon_draw(win->minimized_icon);
-        return;
-    }
+    if (win->is_minimized) return;
 
     /* Save background BEFORE first draw */
     if (!win->saved_bg) {
@@ -627,13 +624,9 @@ int win_is_minimize_button(window_t *win, int mx, int my) {
 void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path) {
     if (win->is_minimized) return;
 
-    /* Invalidate cursor buffer since window is disappearing */
     mouse_invalidate_buffer();
-
-    /* Restore the area occupied by the window */
     win_restore_background(win);
 
-    /* Free saved background like in win_destroy so minimizing redraws like closing */
     if (win->saved_bg) {
         kfree(win->saved_bg);
         win->saved_bg = NULL;
