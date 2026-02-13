@@ -143,6 +143,7 @@ binstall:
 	fi; \
 	sudo cp $(BIN)/system.ini mnt/OSLET/; \
 	sudo cp $(APPS)/*.grp mnt/OSLET/START/; \
+	sudo cp $(BIN)/*.bmp mnt/OSLET/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt
