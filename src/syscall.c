@@ -948,8 +948,20 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my) {
 
         int abs_x = form->win.x + ctrl->x;
         int abs_y = form->win.y + ctrl->y + 20;
-        int list_y = abs_y + ctrl->h;
         int item_h = 16;
+        int list_h = ctrl->item_count * item_h;
+        int list_y = abs_y + ctrl->h;
+        
+        /* Auto-flip: if list extends past screen bottom, render above control */
+        if (list_y + list_h > GFX_HEIGHT) {
+            list_y = abs_y - list_h;
+            if (list_y < 0) {
+                list_y = 0;
+                list_h = abs_y;
+                if (list_h < item_h) list_h = item_h;
+            }
+        }
+        
         int old_hover = ctrl->hovered_item;
 
         /* Check if mouse is in dropdown list area */
@@ -986,8 +998,18 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
 
             int abs_x = form->win.x + ctrl->x;
             int abs_y = form->win.y + ctrl->y + 20;
-            int list_y = abs_y + ctrl->h;
             int list_h = ctrl->item_count * 16;
+            int list_y = abs_y + ctrl->h;
+            
+            /* Auto-flip: if list extends past screen bottom, render above control */
+            if (list_y + list_h > GFX_HEIGHT) {
+                list_y = abs_y - list_h;
+                if (list_y < 0) {
+                    list_y = 0;
+                    list_h = abs_y;
+                    if (list_h < 16) list_h = 16;
+                }
+            }
 
             /* Check if click is in dropdown list area */
             if (mx >= abs_x && mx < abs_x + ctrl->w &&

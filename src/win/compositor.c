@@ -95,8 +95,19 @@ void compositor_draw_all(window_manager_t *wm) {
                             if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
                                 int abs_x = form->win.x + ctrl->x;
                                 int abs_y = form->win.y + ctrl->y + 20;
-                                int list_y = abs_y + ctrl->h;
                                 int list_h = ctrl->item_count * 16;
+                                int list_y = abs_y + ctrl->h;
+                                
+                                /* Auto-flip: if list extends past screen bottom, render above control */
+                                if (list_y + list_h > WM_SCREEN_HEIGHT) {
+                                    list_y = abs_y - list_h;
+                                    if (list_y < 0) {
+                                        list_y = 0;
+                                        list_h = abs_y;
+                                        if (list_h < 16) list_h = 16;
+                                    }
+                                }
+                                
                                 if (rects_intersect(dx, dy, dw, dh, abs_x, list_y, ctrl->w, list_h)) {
                                     win_draw_dropdown_list(&form->win, ctrl);
                                 }
@@ -118,8 +129,19 @@ void compositor_draw_all(window_manager_t *wm) {
                 if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
                     int abs_x = form->win.x + ctrl->x;
                     int abs_y = form->win.y + ctrl->y + 20;
-                    int list_y = abs_y + ctrl->h;
                     int list_h = ctrl->item_count * 16;
+                    int list_y = abs_y + ctrl->h;
+                    
+                    /* Auto-flip: if list extends past screen bottom, render above control */
+                    if (list_y + list_h > WM_SCREEN_HEIGHT) {
+                        list_y = abs_y - list_h;
+                        if (list_y < 0) {
+                            list_y = 0;
+                            list_h = abs_y;
+                            if (list_h < 16) list_h = 16;
+                        }
+                    }
+                    
                     if (rects_intersect(dx, dy, dw, dh, abs_x, list_y, ctrl->w, list_h)) {
                         win_draw_dropdown_list(&form->win, ctrl);
                     }
