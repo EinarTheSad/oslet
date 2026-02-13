@@ -118,10 +118,29 @@ gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
                 for (int j = 0; j < form->ctrl_count; j++) {
                     if (form->controls[j].type == CTRL_DROPDOWN && 
                         form->controls[j].dropdown_open) {
-                        int dropdown_bottom = form->controls[j].y + 20 + form->controls[j].h + 
-                                            (form->controls[j].item_count * 16);
-                        if (dropdown_bottom > click_h) {
-                            click_h = dropdown_bottom;
+                        int ctrl_abs_y = form->controls[j].y + 20;
+                        int list_h = form->controls[j].item_count * 16;
+                        int list_y = ctrl_abs_y + form->controls[j].h;
+                        
+                        /* Auto-flip: if list extends past screen bottom, it's above */
+                        int dropdown_bottom;
+                        if (list_y + list_h > WM_SCREEN_HEIGHT) {
+                            /* List is above control */
+                            int flipped_y = ctrl_abs_y - list_h;
+                            if (flipped_y < 0) flipped_y = 0;
+                            /* Extend upward - we need to check from flipped position */
+                            if (flipped_y < 0) {
+                                /* List starts at 0, extends to ctrl_abs_y */
+                                dropdown_bottom = click_h;  /* Keep existing height, check separately */
+                            } else {
+                                dropdown_bottom = click_h;  /* Bottom unchanged, top extends */
+                            }
+                        } else {
+                            /* List is below control normally */
+                            dropdown_bottom = form->controls[j].y + 20 + form->controls[j].h + list_h;
+                            if (dropdown_bottom > click_h) {
+                                click_h = dropdown_bottom;
+                            }
                         }
                     }
                 }

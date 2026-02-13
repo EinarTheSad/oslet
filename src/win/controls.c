@@ -597,6 +597,18 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
     int list_h = item_count * item_h;
     int list_y = abs_y + control->h;
 
+    /* Auto-flip: if list extends past screen bottom, render above control */
+    if (list_y + list_h > GFX_HEIGHT) {
+        list_y = abs_y - list_h;
+        /* Ensure list doesn't go above screen top */
+        if (list_y < 0) {
+            list_y = 0;
+            /* Limit list height to available screen space */
+            list_h = abs_y;
+            if (list_h < item_h) list_h = item_h;  /* Show at least 1 item */
+        }
+    }
+
     /* Ensure background for the list is saved so it can be correctly restored when closed.
        This is required because dropdown lists may extend outside their parent window. */
     if (!control->dropdown_saved_bg) {
