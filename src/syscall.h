@@ -89,6 +89,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_GFX_FREE_CACHED 0x090F
 #define SYS_GFX_DRAW_CACHED_PARTIAL 0x0910 /* Draw a sub-rect of a cached BMP */
 #define SYS_GFX_LOAD_BMP_SCALED 0x0911 /* Load BMP and draw scaled-to-region (no transparency) */
+#define SYS_GFX_CACHE_BMP_SCALED 0x0912 /* Load BMP, scale to target dimensions, and cache it */
 
 /* AH = 0Ah - Mouse */
 #define SYS_MOUSE_GET_STATE  0x0A00
@@ -641,6 +642,13 @@ static inline int sys_gfx_draw_cached_partial(gfx_cached_bmp_t *bmp, int dest_x,
 static inline int sys_gfx_load_bmp_scaled(const char *path, int dest_x, int dest_y, int dest_w, int dest_h) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_LOAD_BMP_SCALED), "b"(path), "c"(PACK_XY(dest_x, dest_y)), "d"(PACK_WH(dest_w, dest_h)));
+    return ret;
+}
+
+/* Load BMP, scale to target dimensions, and cache it. Returns 0 on success, -1 on error. */
+static inline int sys_gfx_cache_bmp_scaled(const char *path, int target_w, int target_h, gfx_cached_bmp_t *out) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_CACHE_BMP_SCALED), "b"(path), "c"(PACK_WH(target_w, target_h)), "d"(out) : "memory");
     return ret;
 }
 

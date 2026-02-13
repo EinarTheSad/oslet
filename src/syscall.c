@@ -671,40 +671,60 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             uint8_t *bmp = gfx_load_bmp_to_buffer((const char*)ebx, &src_w, &src_h);
             if (!bmp) return (uint32_t)-1;
 
-            /* If bitmap is larger than target, scale down preserving aspect ratio. If smaller, center it (no scaling). */
-            if (src_w > dest_w || src_h > dest_h) {
+            /* Always scale to exact target dimensions */
+            if (src_w != dest_w || src_h != dest_h) {
                 bitmap_t src;
                 src.data = bmp;
                 src.width = src_w;
                 src.height = src_h;
                 src.bits_per_pixel = 4;
 
-                /* Compute target size preserving aspect ratio */
-                int new_w, new_h;
-                if ((int64_t)src_w * dest_h > (int64_t)src_h * dest_w) {
-                    new_w = dest_w;
-                    new_h = (src_h * dest_w) / src_w;
-                    if (new_h <= 0) new_h = 1;
-                } else {
-                    new_h = dest_h;
-                    new_w = (src_w * dest_h) / src_h;
-                    if (new_w <= 0) new_w = 1;
-                }
-
-                bitmap_t *scaled = bitmap_scale_nearest(&src, new_w, new_h);
+                bitmap_t *scaled = bitmap_scale_nearest(&src, dest_w, dest_h);
                 kfree(bmp); /* free original raw buffer */
 
                 if (!scaled) return (uint32_t)-1;
-                int dx = dest_x + (dest_w - scaled->width) / 2;
-                int dy = dest_y + (dest_h - scaled->height) / 2;
-                gfx_draw_cached_bmp_ex(scaled->data, scaled->width, scaled->height, dx, dy, 0);
+                gfx_draw_cached_bmp_ex(scaled->data, scaled->width, scaled->height, dest_x, dest_y, 0);
                 bitmap_free(scaled);
             } else {
-                /* No scaling - center the image within destination rect */
-                int dx = dest_x + (dest_w - src_w) / 2;
-                int dy = dest_y + (dest_h - src_h) / 2;
-                gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dx, dy, 0);
+                /* Already exact size - draw directly */
+                gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
                 kfree(bmp);
+            }
+            return 0;
+        }
+
+        case 0x12: { /* SYS_GFX_CACHE_BMP_SCALED - Load, scale, and cache BMP */
+            if (!ebx || !edx) return (uint32_t)-1;
+            int target_w = (int)(ecx >> 16);
+            int target_h = (int)(ecx & 0xFFFF);
+            cached_bmp_t *out = (cached_bmp_t*)edx;
+
+            int src_w, src_h;
+            uint8_t *bmp = gfx_load_bmp_to_buffer((const char*)ebx, &src_w, &src_h);
+            if (!bmp) return (uint32_t)-1;
+
+            /* Scale if dimensions don't match */
+            if (src_w != target_w || src_h != target_h) {
+                bitmap_t src;
+                src.data = bmp;
+                src.width = src_w;
+                src.height = src_h;
+                src.bits_per_pixel = 4;
+
+                bitmap_t *scaled = bitmap_scale_nearest(&src, target_w, target_h);
+                kfree(bmp); /* free original */
+
+                if (!scaled) return (uint32_t)-1;
+                out->data = scaled->data;
+                out->width = scaled->width;
+                out->height = scaled->height;
+                /* Free bitmap structure but not data (now owned by cache) */
+                kfree(scaled);
+            } else {
+                /* Already correct size */
+                out->data = bmp;
+                out->width = src_w;
+                out->height = src_h;
             }
             return 0;
         }
