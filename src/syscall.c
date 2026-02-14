@@ -1962,6 +1962,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->border_color = ctrl->border_color;
                 dest->cached_bitmap_orig = NULL;
                 dest->cached_bitmap_scaled = NULL;
+                dest->image_mode = ctrl->image_mode;
                 dest->pressed = 0;
                 dest->checked = ctrl->checked;
                 dest->group_id = ctrl->group_id;
@@ -2176,6 +2177,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         }
                     }
                     break;
+                case 10: /* PROP_ENABLED - repurposed for picturebox image_mode */
+                    ctrl->image_mode = (uint8_t)value;
+                    break;
                 default:
                     return 0;
             }
@@ -2220,6 +2224,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     return ctrl->bg;
                 case 9: /* PROP_IMAGE */
                     return (uint32_t)ctrl->text;
+                case 10: /* PROP_ENABLED - repurposed for picturebox image_mode */
+                    return ctrl->image_mode;
                 default:
                     return 0;
             }
