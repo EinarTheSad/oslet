@@ -128,8 +128,6 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_DRAW_BUFFER 0x0B19  /* Draw a raw pixel buffer into a form with clipping to avoid overwriting other windows */
 
 /* Control property IDs for sys_ctrl_set/get */
-
-/* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
 #define PROP_CHECKED    1   /* int - checkbox/radio state */
 #define PROP_X          2   /* int - x position */
@@ -140,7 +138,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define PROP_FG         7   /* int - foreground color */
 #define PROP_BG         8   /* int - background color */
 #define PROP_IMAGE      9   /* char* - image path (picturebox) */
-#define PROP_ENABLED   10   /* int - enabled state */
+#define PROP_ENABLED   10   /* int - enabled state (unused / repurposed for picturebox image-mode) */
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -176,6 +174,7 @@ typedef struct {
     uint8_t border_color;
     bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
     bitmap_t *cached_bitmap_scaled;  /* Scaled bitmap cached for current control size */
+    uint8_t image_mode;              /* 0=center (default), 1=stretch */
     uint8_t pressed;
     uint8_t checked;
     uint16_t group_id;
@@ -883,6 +882,15 @@ static inline void ctrl_set_bg(void *form, int16_t id, int color) {
 
 static inline void ctrl_set_visible(void *form, int16_t id, int visible) {
     sys_ctrl_set_prop(form, id, PROP_VISIBLE, visible);
+}
+
+static inline void ctrl_set_enabled(void *form, int16_t id, int enabled) {
+    /* Repurposed: used by PictureBox to store image-mode (0=center,1=stretch).
+       Also serves as a general 'enabled' flag placeholder (currently unused elsewhere). */
+    sys_ctrl_set_prop(form, id, PROP_ENABLED, enabled);
+}
+static inline int ctrl_get_enabled(void *form, int16_t id) {
+    return (int)sys_ctrl_get_prop(form, id, PROP_ENABLED);
 }
 
 static inline void sys_win_invalidate_icons(void) {
