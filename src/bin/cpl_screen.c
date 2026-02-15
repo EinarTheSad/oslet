@@ -70,7 +70,7 @@ static void load_settings(cpl_screen_state_t *state) {
     state->desktop_color = theme->desktop_color;
     state->wallpaper[0] = '\0';
     strcpy(state->folder, "C:/IMAGES");
-    state->wallpaper_mode = 0; /* center by default */
+    state->wallpaper_mode = 0;
 
     int fd = sys_open(SETTINGS_PATH, "r");
     if (fd < 0) goto store_orig;
@@ -89,8 +89,22 @@ static void load_settings(cpl_screen_state_t *state) {
 
     const char *val = ini_get(&ini, "DESKTOP", "WALLPAPER");
     if (val && val[0]) {
+        /* store wallpaper path */
         strncpy(state->wallpaper, val, sizeof(state->wallpaper) - 1);
         state->wallpaper[sizeof(state->wallpaper) - 1] = '\0';
+
+        /* If the saved wallpaper contains a path, use its directory as the
+         * initial folder so the dropdown will include the active wallpaper. */
+        const char *last_slash = NULL;
+        for (const char *p = state->wallpaper; *p; p++) {
+            if (*p == '/' || *p == '\\') last_slash = p;
+        }
+        if (last_slash) {
+            size_t dirlen = (size_t)(last_slash - state->wallpaper);
+            if (dirlen >= sizeof(state->folder)) dirlen = sizeof(state->folder) - 1;
+            memcpy(state->folder, state->wallpaper, dirlen);
+            state->folder[dirlen] = '\0';
+        }
     }
 
     val = ini_get(&ini, "DESKTOP", "MODE");
@@ -106,18 +120,68 @@ store_orig:
 }
 
 static void save_settings(cpl_screen_state_t *state) {
-    char buffer[512];
-    int len = snprintf(buffer, sizeof(buffer),
+    char buffer[1024];
+    int len = 0;
+    
+    /* Read existing INI to preserve [THEME] section */
+    uint8_t theme_winbg = 7;
+    uint8_t theme_titlebar = 1;
+    uint8_t theme_titlebtn = 7;
+    uint8_t theme_text_color = 0;
+    uint8_t theme_taskbar = 7;
+    uint8_t theme_startbtn = 2;
+    
+    int fd = sys_open(SETTINGS_PATH, "r");
+    if (fd >= 0) {
+        char read_buf[1024];
+        int bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
+        sys_close(fd);
+        if (bytes > 0) {
+            read_buf[bytes] = '\0';
+            ini_parser_t ini;
+            ini_init(&ini, read_buf);
+            theme_winbg = (uint8_t)ini_get_color(&ini, "THEME", "BG_COLOR", theme_winbg);
+            theme_titlebar = (uint8_t)ini_get_color(&ini, "THEME", "TITLEBAR_COLOR", theme_titlebar);
+            theme_titlebtn = (uint8_t)ini_get_color(&ini, "THEME", "BUTTON_COLOR", theme_titlebtn);
+            theme_taskbar = (uint8_t)ini_get_color(&ini, "THEME", "TASKBAR_COLOR", theme_taskbar);
+            theme_startbtn = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", theme_startbtn);
+            const char *val = ini_get(&ini, "THEME", "ICON_TEXT_COLOR");
+            if (val) {
+                int c = atoi(val);
+                if (c == 0 || c == 15) theme_text_color = (uint8_t)c;
+            }
+        }
+    }
+    
+    /* Write both [THEME] and [DESKTOP] sections */
+    len = snprintf(buffer, sizeof(buffer),
+        "[THEME]\r\n"
+        "BG_COLOR=%d\r\n"
+        "TITLEBAR_COLOR=%d\r\n"
+        "TITLEBAR_INACTIVE=8\r\n"
+        "FRAME_DARK=8\r\n"
+        "FRAME_LIGHT=7\r\n"
+        "ICON_TEXT_COLOR=%d\r\n"
+        "BUTTON_COLOR=%d\r\n"
+        "TASKBAR_COLOR=%d\r\n"
+        "START_BUTTON_COLOR=%d\r\n"
+        "\r\n"
         "[DESKTOP]\r\n"
         "COLOR=%d\r\n"
         "WALLPAPER=%s\r\n"
         "MODE=%d\r\n",
+        theme_winbg,
+        theme_titlebar,
+        theme_text_color,
+        theme_titlebtn,
+        theme_taskbar,
+        theme_startbtn,
         state->desktop_color,
         state->wallpaper,
         state->wallpaper_mode
     );
 
-    int fd = sys_open(SETTINGS_PATH, "w");
+    fd = sys_open(SETTINGS_PATH, "w");
     if (fd >= 0) {
         sys_write_file(fd, buffer, len);
         sys_close(fd);
@@ -215,209 +279,49 @@ static int cpl_screen_init(prog_instance_t *inst) {
     }
     sys_win_set_icon(state->form, "C:/ICONS/SCREEN.ICO");
 
-    /* Monitor picture */
-    gui_control_t pic_monitor = {0};
-    pic_monitor.type = CTRL_PICTUREBOX;
-    pic_monitor.x = 42;
-    pic_monitor.y = 12;
-    pic_monitor.w = 162;
-    pic_monitor.h = 144;
-    pic_monitor.fg = 5;
-    pic_monitor.bg = -1;
-    pic_monitor.id = CTRL_PIC_MONITOR;
-    strcpy(pic_monitor.text, "C:/OSLET/MONITOR.BMP");
-    sys_win_add_control(state->form, &pic_monitor);
+    static gui_control_t controls[] = {
+        { .type = CTRL_PICTUREBOX, .x = 42,  .y = 12,  .w = 162, .h = 144, .fg = 5,  .bg = -1, .id = CTRL_PIC_MONITOR, .text = "C:/OSLET/MONITOR.BMP" },
+        { .type = CTRL_PICTUREBOX, .x = 57,  .y = 26,  .w = 133, .h = 99, .fg = 0,  .bg = 0,  .id = CTRL_PIC_PREVIEW,  .text = "" },
+        { .type = CTRL_FRAME,      .x = 6,   .y = 166, .w = 234, .h = 92,  .fg = 0,  .bg = 7,  .id = CTRL_FRAME_WALLPAPER, .text = "Wallpaper" },
+        { .type = CTRL_LABEL,      .x = 12,  .y = 187,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_FOLDER,      .text = "Folder:" },
+        { .type = CTRL_TEXTBOX,    .x = 58,  .y = 186, .w = 138, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_TXT_FOLDER,     .max_length = 127, .text = "" },
+        { .type = CTRL_BUTTON,     .x = 198, .y = 186, .w = 35,  .h = 18,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_FOLDER_OK, .text = "OK" },
+        { .type = CTRL_LABEL,      .x = 12,  .y = 209,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_CHOOSE,     .text = "Choose an image:" },
+        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 229, .w = 120, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_IMAGES,    .cursor_pos = 0, .item_count = 0, .text = "" },
+        { .type = CTRL_RADIOBUTTON,.x = 161, .y = 216, .w = 12,  .h = 12,  .fg = 0,  .bg = 7,  .id = CTRL_RADIO_STRETCH,  .checked = 0, .text = "Stretch" },
+        { .type = CTRL_RADIOBUTTON,.x = 161, .y = 234, .w = 12,  .h = 12,  .fg = 0,  .bg = 7,  .id = CTRL_RADIO_CENTER,   .checked = 0, .text = "Center" },
+        { .type = CTRL_FRAME,      .x = 6,   .y = 258, .w = 234, .h = 48,  .fg = 0,  .bg = 7,  .id = CTRL_FRAME_COLOR,     .text = "Colour" },
+        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 278, .w = 120, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_COLOR,     .cursor_pos = 0, .item_count = 16, .text = "" },
+        { .type = CTRL_BUTTON,     .x = 36,  .y = 312, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_APPLY,      .text = "Apply" },
+        { .type = CTRL_BUTTON,     .x = 96,  .y = 312, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_OK,         .text = "OK" },
+        { .type = CTRL_BUTTON,     .x = 156, .y = 312, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_CANCEL,     .text = "Cancel" },
+    };
 
-    /* Preview picture (inside monitor) */
-    gui_control_t pic_preview = {0};
-    pic_preview.type = CTRL_PICTUREBOX;
-    pic_preview.x = 57;
-    pic_preview.y = 26;
-    pic_preview.w = 133;
-    pic_preview.h = 100;
-    pic_preview.fg = 0;
-    pic_preview.bg = state->desktop_color;
-    pic_preview.id = CTRL_PIC_PREVIEW;
-    pic_preview.text[0] = '\0';
-    sys_win_add_control(state->form, &pic_preview);
+    for (int i = 0; i < (int)(sizeof(controls) / sizeof(controls[0])); i++) {
+        sys_win_add_control(state->form, &controls[i]);
+    }
 
-    /* PROP_ENABLED works as a switch between stretched and non-stretched in PictureBoxes */
+    /* dynamic initialization that depends on runtime state */
+    gui_control_t *pp = sys_win_get_control(state->form, CTRL_PIC_PREVIEW);
+    if (pp) pp->bg = state->desktop_color;
+
+    /* prefill folder textbox and preview image */
+    ctrl_set_text(state->form, CTRL_TXT_FOLDER, state->folder);
+    if (state->wallpaper[0]) ctrl_set_image(state->form, CTRL_PIC_PREVIEW, state->wallpaper);
+
+    /* populate colour dropdown and set selection */
+    ctrl_set_text(state->form, CTRL_DROP_COLOR, color_options);
+    gui_control_t *dc = sys_win_get_control(state->form, CTRL_DROP_COLOR);
+    if (dc) { dc->cursor_pos = state->desktop_color; dc->item_count = 16; }
+
+    /* radio buttons reflect the current wallpaper mode */
+    ctrl_set_checked(state->form, CTRL_RADIO_STRETCH, (state->wallpaper_mode == 1));
+    ctrl_set_checked(state->form, CTRL_RADIO_CENTER,  (state->wallpaper_mode == 0));
+
+    /* picturebox image-mode: stretch vs center */
     sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, state->wallpaper_mode);
 
-    /* Wallpaper frame */
-    gui_control_t frame_wp = {0};
-    frame_wp.type = CTRL_FRAME;
-    frame_wp.x = 6;
-    frame_wp.y = 168;
-    frame_wp.w = 234;
-    frame_wp.h = 90;
-    frame_wp.fg = 0;
-    frame_wp.bg = 7;
-    frame_wp.id = CTRL_FRAME_WALLPAPER;
-    strcpy(frame_wp.text, "Wallpaper");
-    sys_win_add_control(state->form, &frame_wp);
-
-    /* Folder label */
-    gui_control_t lbl_folder = {0};
-    lbl_folder.type = CTRL_LABEL;
-    lbl_folder.x = 12;
-    lbl_folder.y = 186;
-    lbl_folder.w = 0;
-    lbl_folder.h = 0;
-    lbl_folder.fg = 0;
-    lbl_folder.bg = 15;
-    lbl_folder.id = CTRL_LBL_FOLDER;
-    strcpy(lbl_folder.text, "Folder:");
-    sys_win_add_control(state->form, &lbl_folder);
-
-    /* Folder textbox */
-    gui_control_t txt_folder = {0};
-    txt_folder.type = CTRL_TEXTBOX;
-    txt_folder.x = 66;
-    txt_folder.y = 186;
-    txt_folder.w = 130;
-    txt_folder.h = 20;
-    txt_folder.fg = 0;
-    txt_folder.bg = 15;
-    txt_folder.id = CTRL_TXT_FOLDER;
-    txt_folder.max_length = 127;
-    strncpy(txt_folder.text, state->folder, sizeof(txt_folder.text) - 1);
-    sys_win_add_control(state->form, &txt_folder);
-
-    /* Folder OK button */
-    gui_control_t btn_folder_ok = {0};
-    btn_folder_ok.type = CTRL_BUTTON;
-    btn_folder_ok.x = 198;
-    btn_folder_ok.y = 186;
-    btn_folder_ok.w = 35;
-    btn_folder_ok.h = 20;
-    btn_folder_ok.fg = 0;
-    btn_folder_ok.bg = 7;
-    btn_folder_ok.id = CTRL_BTN_FOLDER_OK;
-    strcpy(btn_folder_ok.text, "OK");
-    sys_win_add_control(state->form, &btn_folder_ok);
-
-    /* Choose label */
-    gui_control_t lbl_choose = {0};
-    lbl_choose.type = CTRL_LABEL;
-    lbl_choose.x = 12;
-    lbl_choose.y = 210;
-    lbl_choose.w = 0;
-    lbl_choose.h = 0;
-    lbl_choose.fg = 0;
-    lbl_choose.bg = 15;
-    lbl_choose.id = CTRL_LBL_CHOOSE;
-    strcpy(lbl_choose.text, "Choose an image:");
-    sys_win_add_control(state->form, &lbl_choose);
-
-    /* Images dropdown */
-    gui_control_t drop_images = {0};
-    drop_images.type = CTRL_DROPDOWN;
-    drop_images.x = 12;
-    drop_images.y = 228;
-    drop_images.w = 120;
-    drop_images.h = 20;
-    drop_images.fg = 0;
-    drop_images.bg = 15;
-    drop_images.id = CTRL_DROP_IMAGES;
-    drop_images.cursor_pos = 0;
-    drop_images.item_count = 0;
-    sys_win_add_control(state->form, &drop_images);
     update_dropdown_list(state);
-
-    /* Radio buttons */
-    gui_control_t radio_stretch = {0};
-    radio_stretch.type = CTRL_RADIOBUTTON;
-    radio_stretch.x = 162;
-    radio_stretch.y = 216;
-    radio_stretch.w = 12;
-    radio_stretch.h = 12;
-    radio_stretch.fg = 0;
-    radio_stretch.bg = 7;
-    radio_stretch.id = CTRL_RADIO_STRETCH;
-    radio_stretch.checked = (state->wallpaper_mode == 1) ? 1 : 0;
-    strcpy(radio_stretch.text, "Stretch");
-    sys_win_add_control(state->form, &radio_stretch);
-
-    gui_control_t radio_center = {0};
-    radio_center.type = CTRL_RADIOBUTTON;
-    radio_center.x = 162;
-    radio_center.y = 234;
-    radio_center.w = 12;
-    radio_center.h = 12;
-    radio_center.fg = 0;
-    radio_center.bg = 7;
-    radio_center.id = CTRL_RADIO_CENTER;
-    radio_center.checked = (state->wallpaper_mode == 0) ? 1 : 0;
-    strcpy(radio_center.text, "Center");
-    sys_win_add_control(state->form, &radio_center);
-
-    /* Color frame */
-    gui_control_t frame_color = {0};
-    frame_color.type = CTRL_FRAME;
-    frame_color.x = 6;
-    frame_color.y = 258;
-    frame_color.w = 234;
-    frame_color.h = 48;
-    frame_color.fg = 0;
-    frame_color.bg = 7;
-    frame_color.id = CTRL_FRAME_COLOR;
-    strcpy(frame_color.text, "Colour");
-    sys_win_add_control(state->form, &frame_color);
-
-    /* Color dropdown */
-    gui_control_t drop_color = {0};
-    drop_color.type = CTRL_DROPDOWN;
-    drop_color.x = 12;
-    drop_color.y = 276;
-    drop_color.w = 120;
-    drop_color.h = 20;
-    drop_color.fg = 0;
-    drop_color.bg = 15;
-    drop_color.id = CTRL_DROP_COLOR;
-    drop_color.cursor_pos = state->desktop_color;
-    drop_color.item_count = 16;
-    strncpy(drop_color.text, color_options, sizeof(drop_color.text) - 1);
-    sys_win_add_control(state->form, &drop_color);
-
-    /* Buttons */
-    gui_control_t btn_apply = {0};
-    btn_apply.type = CTRL_BUTTON;
-    btn_apply.x = 36;
-    btn_apply.y = 312;
-    btn_apply.w = 55;
-    btn_apply.h = 22;
-    btn_apply.fg = 0;
-    btn_apply.bg = 7;
-    btn_apply.id = CTRL_BTN_APPLY;
-    strcpy(btn_apply.text, "Apply");
-    sys_win_add_control(state->form, &btn_apply);
-
-    gui_control_t btn_ok = {0};
-    btn_ok.type = CTRL_BUTTON;
-    btn_ok.x = 96;
-    btn_ok.y = 312;
-    btn_ok.w = 55;
-    btn_ok.h = 22;
-    btn_ok.fg = 0;
-    btn_ok.bg = 7;
-    btn_ok.id = CTRL_BTN_OK;
-    strcpy(btn_ok.text, "OK");
-    sys_win_add_control(state->form, &btn_ok);
-
-    gui_control_t btn_cancel = {0};
-    btn_cancel.type = CTRL_BUTTON;
-    btn_cancel.x = 156;
-    btn_cancel.y = 312;
-    btn_cancel.w = 55;
-    btn_cancel.h = 22;
-    btn_cancel.fg = 0;
-    btn_cancel.bg = 7;
-    btn_cancel.id = CTRL_BTN_CANCEL;
-    strcpy(btn_cancel.text, "Cancel");
-    sys_win_add_control(state->form, &btn_cancel);
-
-    update_preview(state);
     sys_win_draw(state->form);
     prog_register_window(inst, state->form);
     return 0;
