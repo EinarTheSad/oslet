@@ -66,7 +66,7 @@ static void boot_sequence(void) {
     printf(" ] Mouse\n");
 
     sb16_init();
-    printf("[ ");
+    printf("[");
     if (sb16_detected()) {
         vga_set_color(0, 10);
         printf(" OK ");
@@ -75,7 +75,7 @@ static void boot_sequence(void) {
         printf("NONE");
     }
     vga_set_color(0, 7);
-    printf(" ] SoundBlaster 16\n");
+    printf("] SoundBlaster 16\n");
 
     timer_init(100);
     printf("[ ");

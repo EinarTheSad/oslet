@@ -11,6 +11,7 @@
 #include "drivers/keyboard.h"
 #include "drivers/mouse.h"
 #include "drivers/sb16.h"
+#include "drivers/sound.h"
 #include "fonts/bmf.h"
 #include "rtc.h"
 #include "win/window.h"
@@ -2392,6 +2393,9 @@ static uint32_t handle_sound(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t e
         case 0x03:
             sb16_stop();
             return 0;
+
+        case 0x04:
+            return (uint32_t)sound_play_wav((const char *)ebx);
 
         default:
             return (uint32_t)-1;

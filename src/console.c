@@ -48,6 +48,16 @@ void memset_s(void *dst, int val, size_t n) {
     while (n--) *d++ = (uint8_t)val;
 }
 
+int memcmp_s(const void *s1, const void *s2, size_t n) {
+    const uint8_t *p1 = (const uint8_t *)s1;
+    const uint8_t *p2 = (const uint8_t *)s2;
+    while (n--) {
+        if (*p1 != *p2) return *p1 - *p2;
+        p1++; p2++;
+    }
+    return 0;
+}
+
 int strcmp_s(const char *a, const char *b) {
     while (*a && *a == *b) { a++; b++; }
     return *(unsigned char*)a - *(unsigned char*)b;
