@@ -286,17 +286,27 @@ void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y) {
     int center_x = abs_x + radius;
     int center_y = abs_y + radius;
 
-    // Fill background circle
-    gfx_fillrect(abs_x, abs_y, 12, 12, COLOR_WHITE);
+    // Fill circular background with white
+    for (int dy = -radius; dy <= radius; dy++) {
+        for (int dx = -radius; dx <= radius; dx++) {
+            if (dx * dx + dy * dy <= radius * radius) {
+                gfx_putpixel(center_x + dx, center_y + dy, COLOR_WHITE);
+            }
+        }
+    }
 
-    // Draw outer circle
+    // Draw outer circle with 3D effect
     gfx_circle(center_x, center_y, radius - 1, theme->frame_dark);
 
-    // Draw selected dot if checked
+    // Draw selected dot if checked (filled circle)
     if (control->checked) {
-        gfx_circle(center_x, center_y, 2, control->fg);
-        gfx_circle(center_x, center_y, 1, control->fg);
-        gfx_putpixel(center_x, center_y, control->fg);
+        for (int dy = -3; dy <= 3; dy++) {
+            for (int dx = -3; dx <= 3; dx++) {
+                if (dx * dx + dy * dy <= 9) {
+                    gfx_putpixel(center_x + dx, center_y + dy, control->fg);
+                }
+            }
+        }
     }
 
     // Draw label text
