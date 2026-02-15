@@ -68,7 +68,7 @@ static const uint8_t mode_80x25_text[] = {
     0xFF,
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x14, 0x07,
     0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F,
-    0x0C, 0x00, 0x0F, 0x08, 0x00
+    0x0C, 0x00, 0x0F, 0x00, 0x00
 };
 
 const uint8_t gfx_palette[16][3] = { // osLET custom
@@ -135,7 +135,6 @@ void gfx_init(void) {
 }
 
 void gfx_enter_mode(void) {
-    vga_save_state();
     vga_write_regs(mode_640x480x16);
     gfx_load_palette();
     /* Clear VGA video memory so BIOS artifacts disappear immediately. Write
@@ -158,7 +157,6 @@ void gfx_exit_mode(void) {
     graphics_active = 0;
     vga_write_regs(mode_80x25_text);
     vga_reset_textmode();
-    vga_restore_state();
 }
 
 int gfx_is_active(void) {
