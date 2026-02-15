@@ -8,9 +8,6 @@
 
 #define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
 
-/* From desktop.c */
-extern void desktop_apply_settings(uint8_t color, const char *wallpaper);
-
 /* Control IDs */
 #define CTRL_FRAME_THEME     1
 #define CTRL_FRAME_DESKTOP   2
@@ -20,27 +17,23 @@ extern void desktop_apply_settings(uint8_t color, const char *wallpaper);
 #define CTRL_LBL_TITLEBTN    12
 #define CTRL_LBL_TASKBAR     13
 #define CTRL_LBL_DESK_COLOR  14
-#define CTRL_LBL_WALLPAPER   15
 
-#define CTRL_LBL_STARTBTN    16
-#define CTRL_LBL_ICON_TEXT   17
+#define CTRL_LBL_STARTBTN    15
+#define CTRL_LBL_ICON_TEXT   16
 
 #define CTRL_DROP_WINBG      20
 #define CTRL_DROP_TITLEBAR   21
 #define CTRL_DROP_TITLEBTN   22
 #define CTRL_DROP_TASKBAR    23
 #define CTRL_DROP_STARTBTN   24
-#define CTRL_DROP_DESKTOP    25
-#define CTRL_DROP_ICON_TEXT  26
-
-#define CTRL_TXT_WALLPAPER   30
+#define CTRL_DROP_ICON_TEXT  25
 
 #define CTRL_BTN_APPLY   50
 #define CTRL_BTN_OK      51
 #define CTRL_BTN_CANCEL  52
 
 #define WIN_WIDTH  274
-#define WIN_HEIGHT 296
+#define WIN_HEIGHT 247
 #define WIN_X      183
 #define WIN_Y      92
 
@@ -60,8 +53,6 @@ typedef struct {
     uint8_t theme_text_color; /* 0 or 15 */
     uint8_t theme_taskbar;
     uint8_t theme_startbtn;
-    uint8_t desktop_color;
-    char wallpaper[128];
     /* Originals for cancel */
     uint8_t orig_theme_winbg;
     uint8_t orig_theme_titlebar;
@@ -69,8 +60,6 @@ typedef struct {
     uint8_t orig_theme_text_color;
     uint8_t orig_theme_taskbar;
     uint8_t orig_theme_startbtn;
-    uint8_t orig_desktop_color;
-    char orig_wallpaper[128];
 } cpl_theme_state_t;
 
 static int cpl_theme_init(prog_instance_t *inst);
@@ -95,8 +84,6 @@ static void load_settings(cpl_theme_state_t *state) {
     state->theme_taskbar = theme->taskbar_color;
     state->theme_startbtn = theme->start_button_color;
     state->theme_text_color = theme->icon_text_color;
-    state->desktop_color = theme->desktop_color;
-    state->wallpaper[0] = '\0';
 
     int fd = sys_open(SETTINGS_PATH, "r");
     if (fd < 0) goto store_orig;
@@ -111,21 +98,13 @@ static void load_settings(cpl_theme_state_t *state) {
     ini_parser_t ini;
     ini_init(&ini, buffer);
 
-    state->desktop_color = (uint8_t)ini_get_color(&ini, "DESKTOP", "COLOR", state->desktop_color);
-
-    const char *val = ini_get(&ini, "DESKTOP", "WALLPAPER");
-    if (val && val[0]) {
-        strncpy(state->wallpaper, val, sizeof(state->wallpaper) - 1);
-        state->wallpaper[sizeof(state->wallpaper) - 1] = '\0';
-    }
-
     state->theme_winbg = (uint8_t)ini_get_color(&ini, "THEME", "BG_COLOR", state->theme_winbg);
     state->theme_titlebar = (uint8_t)ini_get_color(&ini, "THEME", "TITLEBAR_COLOR", state->theme_titlebar);
     state->theme_titlebtn = (uint8_t)ini_get_color(&ini, "THEME", "BUTTON_COLOR", state->theme_titlebtn);
     state->theme_taskbar = (uint8_t)ini_get_color(&ini, "THEME", "TASKBAR_COLOR", state->theme_taskbar);
     state->theme_startbtn = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", state->theme_startbtn);
     
-    val = ini_get(&ini, "THEME", "ICON_TEXT_COLOR");
+    const char *val = ini_get(&ini, "THEME", "ICON_TEXT_COLOR");
     if (val) {
         int c = atoi(val);
         if (c == 0 || c == 15) state->theme_text_color = (uint8_t)c;
@@ -138,17 +117,39 @@ store_orig:
     state->orig_theme_text_color = state->theme_text_color;
     state->orig_theme_taskbar = state->theme_taskbar;
     state->orig_theme_startbtn = state->theme_startbtn;
-    state->orig_desktop_color = state->desktop_color;
-    strncpy(state->orig_wallpaper, state->wallpaper, sizeof(state->orig_wallpaper));
 }
 
 static void save_settings(cpl_theme_state_t *state) {
-    char buffer[512];
-    int len = snprintf(buffer, sizeof(buffer),
-        "[DESKTOP]\r\n"
-        "COLOR=%d\r\n"
-        "WALLPAPER=%s\r\n"
-        "\r\n"
+    char buffer[1024];
+    int len = 0;
+    
+    /* Read existing INI to preserve [DESKTOP] section */
+    uint8_t desktop_color = 0;
+    char wallpaper[128] = "";
+    int wallpaper_mode = 0;
+    
+    int fd = sys_open(SETTINGS_PATH, "r");
+    if (fd >= 0) {
+        char read_buf[1024];
+        int bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
+        sys_close(fd);
+        if (bytes > 0) {
+            read_buf[bytes] = '\0';
+            ini_parser_t ini;
+            ini_init(&ini, read_buf);
+            desktop_color = (uint8_t)ini_get_color(&ini, "DESKTOP", "COLOR", 0);
+            const char *val = ini_get(&ini, "DESKTOP", "WALLPAPER");
+            if (val && val[0]) {
+                strncpy(wallpaper, val, sizeof(wallpaper) - 1);
+                wallpaper[sizeof(wallpaper) - 1] = '\0';
+            }
+            val = ini_get(&ini, "DESKTOP", "MODE");
+            if (val) wallpaper_mode = atoi(val);
+        }
+    }
+    
+    /* Write both [THEME] and [DESKTOP] sections */
+    len = snprintf(buffer, sizeof(buffer),
         "[THEME]\r\n"
         "BG_COLOR=%d\r\n"
         "TITLEBAR_COLOR=%d\r\n"
@@ -158,18 +159,24 @@ static void save_settings(cpl_theme_state_t *state) {
         "ICON_TEXT_COLOR=%d\r\n"
         "BUTTON_COLOR=%d\r\n"
         "TASKBAR_COLOR=%d\r\n"
-        "START_BUTTON_COLOR=%d\r\n",
-        state->desktop_color,
-        state->wallpaper,
+        "START_BUTTON_COLOR=%d\r\n"
+        "\r\n"
+        "[DESKTOP]\r\n"
+        "COLOR=%d\r\n"
+        "WALLPAPER=%s\r\n"
+        "MODE=%d\r\n",
         state->theme_winbg,
         state->theme_titlebar,
         state->theme_text_color,
         state->theme_titlebtn,
         state->theme_taskbar,
-        state->theme_startbtn
+        state->theme_startbtn,
+        desktop_color,
+        wallpaper,
+        wallpaper_mode
     );
 
-    int fd = sys_open(SETTINGS_PATH, "w");
+    fd = sys_open(SETTINGS_PATH, "w");
     if (fd >= 0) {
         sys_write_file(fd, buffer, len);
         sys_close(fd);
@@ -186,35 +193,6 @@ static void apply_theme(cpl_theme_state_t *state) {
     theme->start_button_color = state->theme_startbtn;
 }
 
-/* Helper to add a label + dropdown pair */
-static void add_dropdown_row(void *form, int y, const char *label, int lbl_id, int drop_id, uint8_t selected) {
-    gui_control_t lbl = {0};
-    lbl.type = CTRL_LABEL;
-    lbl.x = 12;
-    lbl.y = y;
-    lbl.w = 80;
-    lbl.h = 16;
-    lbl.fg = 0;
-    lbl.bg = -1;
-    lbl.id = lbl_id;
-    strncpy(lbl.text, label, sizeof(lbl.text) - 1);
-    sys_win_add_control(form, &lbl);
-
-    gui_control_t drop = {0};
-    drop.type = CTRL_DROPDOWN;
-    drop.x = 95;
-    drop.y = y;
-    drop.w = 165;
-    drop.h = 18;
-    drop.fg = 0;
-    drop.bg = 15;
-    drop.id = drop_id;
-    drop.cursor_pos = selected;
-    drop.item_count = 16;
-    strncpy(drop.text, color_options, sizeof(drop.text) - 1);
-    sys_win_add_control(form, &drop);
-}
-
 static int cpl_theme_init(prog_instance_t *inst) {
     cpl_theme_state_t *state = sys_malloc(sizeof(cpl_theme_state_t));
     if (!state) return -1;
@@ -229,130 +207,61 @@ static int cpl_theme_init(prog_instance_t *inst) {
     }
     sys_win_set_icon(state->form, "C:/ICONS/THEME.ICO");
 
-    /* Window Theme Frame */
-    gui_control_t frame_theme = {0};
-    frame_theme.type = CTRL_FRAME;
-    frame_theme.x = 6;
-    frame_theme.y = 5;
-    frame_theme.w = 262;
-    frame_theme.h = 137;
-    frame_theme.fg = 0;
-    frame_theme.bg = -1;
-    frame_theme.id = CTRL_FRAME_THEME;
-    strcpy(frame_theme.text, "System theme");
-    sys_win_add_control(state->form, &frame_theme);
+    static gui_control_t controls[] = {
+        { .type = CTRL_FRAME,      .x = 6,   .y = 5,   .w = 262, .h = 137, .fg = 0,  .bg = -1, .id = CTRL_FRAME_THEME,    .text = "System theme" },
 
-    /* Theme dropdowns */
-    add_dropdown_row(state->form, 25, "Windows:", CTRL_LBL_WINBG, CTRL_DROP_WINBG, state->theme_winbg);
-    add_dropdown_row(state->form, 47, "Title bar:", CTRL_LBL_TITLEBAR, CTRL_DROP_TITLEBAR, state->theme_titlebar);
-    add_dropdown_row(state->form, 69, "Buttons:", CTRL_LBL_TITLEBTN, CTRL_DROP_TITLEBTN, state->theme_titlebtn);
-    add_dropdown_row(state->form, 91, "Taskbar:", CTRL_LBL_TASKBAR, CTRL_DROP_TASKBAR, state->theme_taskbar);
-    add_dropdown_row(state->form, 113, "Start button:", CTRL_LBL_STARTBTN, CTRL_DROP_STARTBTN, state->theme_startbtn);
+        /* Windows */
+        { .type = CTRL_LABEL,      .x = 12,  .y = 25,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_WINBG,     .text = "Windows:" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 25,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_WINBG,    .cursor_pos = 0, .item_count = 16, .text = "" },
 
-    /* Desktop Frame */
-    gui_control_t frame_desk = {0};
-    frame_desk.type = CTRL_FRAME;
-    frame_desk.x = 6;
-    frame_desk.y = 147;
-    frame_desk.w = 262;
-    frame_desk.h = 93;
-    frame_desk.fg = 0;
-    frame_desk.bg = -1;
-    frame_desk.id = CTRL_FRAME_DESKTOP;
-    strcpy(frame_desk.text, "Desktop");
-    sys_win_add_control(state->form, &frame_desk);
+        /* Title bar */
+        { .type = CTRL_LABEL,      .x = 12,  .y = 47,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_TITLEBAR,  .text = "Title bar:" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 47,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TITLEBAR, .cursor_pos = 0, .item_count = 16, .text = "" },
 
-    /* Desktop color dropdown */
-    add_dropdown_row(state->form, 167, "Color:", CTRL_LBL_DESK_COLOR, CTRL_DROP_DESKTOP, state->desktop_color);
-    /* Icon text color dropdown (Black/White) */
-    uint8_t icon_text_selected = (state->theme_text_color == 15) ? 1 : 0;
-    gui_control_t lbl_icon = {0};
-    lbl_icon.type = CTRL_LABEL;
-    lbl_icon.x = 12;
-    lbl_icon.y = 189;
-    lbl_icon.w = 80;
-    lbl_icon.h = 16;
-    lbl_icon.fg = 0;
-    lbl_icon.bg = -1;
-    lbl_icon.id = CTRL_LBL_ICON_TEXT;
-    strncpy(lbl_icon.text, "Icon text:", sizeof(lbl_icon.text) - 1);
-    sys_win_add_control(state->form, &lbl_icon);
+        /* Buttons */
+        { .type = CTRL_LABEL,      .x = 12,  .y = 69,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_TITLEBTN,  .text = "Buttons:" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 69,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TITLEBTN, .cursor_pos = 0, .item_count = 16, .text = "" },
 
-    gui_control_t drop_icon = {0};
-    drop_icon.type = CTRL_DROPDOWN;
-    drop_icon.x = 95;
-    drop_icon.y = 189;
-    drop_icon.w = 165;
-    drop_icon.h = 18;
-    drop_icon.fg = 0;
-    drop_icon.bg = 15;
-    drop_icon.id = CTRL_DROP_ICON_TEXT;
-    drop_icon.cursor_pos = icon_text_selected;
-    drop_icon.item_count = 2;
-    strncpy(drop_icon.text, icon_text_options, sizeof(drop_icon.text) - 1);
-    sys_win_add_control(state->form, &drop_icon);
-    /* Wallpaper label and textbox */
-    gui_control_t lbl_wp = {0};
-    lbl_wp.type = CTRL_LABEL;
-    lbl_wp.x = 12;
-    lbl_wp.y = 211;
-    lbl_wp.w = 60;
-    lbl_wp.h = 14;
-    lbl_wp.fg = 0;
-    lbl_wp.bg = -1;
-    lbl_wp.id = CTRL_LBL_WALLPAPER;
-    strcpy(lbl_wp.text, "Wallpaper:");
-    sys_win_add_control(state->form, &lbl_wp);
+        /* Taskbar */
+        { .type = CTRL_LABEL,      .x = 12,  .y = 91,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_TASKBAR,   .text = "Taskbar:" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 91,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TASKBAR,  .cursor_pos = 0, .item_count = 16, .text = "" },
 
-    gui_control_t txt_wp = {0};
-    txt_wp.type = CTRL_TEXTBOX;
-    txt_wp.x = 95;
-    txt_wp.y = 211;
-    txt_wp.w = 165;
-    txt_wp.h = 18;
-    txt_wp.fg = 0;
-    txt_wp.bg = 15;
-    txt_wp.id = CTRL_TXT_WALLPAPER;
-    txt_wp.max_length = 127;
-    strncpy(txt_wp.text, state->wallpaper, sizeof(txt_wp.text) - 1);
-    sys_win_add_control(state->form, &txt_wp);
+        /* Start button */
+        { .type = CTRL_LABEL,      .x = 12,  .y = 113,                    .fg = 0,  .bg = -1, .id = CTRL_LBL_STARTBTN,  .text = "Start button:" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 113, .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_STARTBTN, .cursor_pos = 0, .item_count = 16, .text = "" },
 
-    /* Buttons */
-    gui_control_t btn_apply = {0};
-    btn_apply.type = CTRL_BUTTON;
-    btn_apply.x = 30;
-    btn_apply.y = 246;
-    btn_apply.w = 65;
-    btn_apply.h = 22;
-    btn_apply.fg = 0;
-    btn_apply.bg = -1;
-    btn_apply.id = CTRL_BTN_APPLY;
-    strcpy(btn_apply.text, "Apply");
-    sys_win_add_control(state->form, &btn_apply);
+        /* Desktop icons frame + icon-text dropdown */
+        { .type = CTRL_FRAME,      .x = 6,   .y = 147, .w = 262, .h = 45,  .fg = 0,  .bg = -1, .id = CTRL_FRAME_DESKTOP,  .text = "Desktop icons" },
+        { .type = CTRL_LABEL,      .x = 12,  .y = 167,                    .fg = 0,  .bg = -1, .id = CTRL_LBL_ICON_TEXT, .text = "Icon text:" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 167, .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_ICON_TEXT, .cursor_pos = 0, .item_count = 2,  .text = "" },
 
-    gui_control_t btn_ok = {0};
-    btn_ok.type = CTRL_BUTTON;
-    btn_ok.x = 105;
-    btn_ok.y = 246;
-    btn_ok.w = 65;
-    btn_ok.h = 22;
-    btn_ok.fg = 0;
-    btn_ok.bg = -1;
-    btn_ok.id = CTRL_BTN_OK;
-    strcpy(btn_ok.text, "OK");
-    sys_win_add_control(state->form, &btn_ok);
+        /* Buttons */
+        { .type = CTRL_BUTTON,     .x = 30,  .y = 198, .w = 65,  .h = 22,  .fg = 0,  .bg = -1, .id = CTRL_BTN_APPLY,      .text = "Apply" },
+        { .type = CTRL_BUTTON,     .x = 105, .y = 198, .w = 65,  .h = 22,  .fg = 0,  .bg = -1, .id = CTRL_BTN_OK,         .text = "OK" },
+        { .type = CTRL_BUTTON,     .x = 180, .y = 198, .w = 65,  .h = 22,  .fg = 0,  .bg = -1, .id = CTRL_BTN_CANCEL,     .text = "Cancel" },
+    };
 
-    gui_control_t btn_cancel = {0};
-    btn_cancel.type = CTRL_BUTTON;
-    btn_cancel.x = 180;
-    btn_cancel.y = 246;
-    btn_cancel.w = 65;
-    btn_cancel.h = 22;
-    btn_cancel.fg = 0;
-    btn_cancel.bg = -1;
-    btn_cancel.id = CTRL_BTN_CANCEL;
-    strcpy(btn_cancel.text, "Cancel");
-    sys_win_add_control(state->form, &btn_cancel);
+    for (int i = 0; i < (int)(sizeof(controls) / sizeof(controls[0])); i++) {
+        sys_win_add_control(state->form, &controls[i]);
+    }
+
+    /* runtime / state-dependent initialization */
+    /* populate colour dropdowns and set selections */
+    ctrl_set_text(state->form, CTRL_DROP_WINBG, color_options);
+    ctrl_set_text(state->form, CTRL_DROP_TITLEBAR, color_options);
+    ctrl_set_text(state->form, CTRL_DROP_TITLEBTN, color_options);
+    ctrl_set_text(state->form, CTRL_DROP_TASKBAR, color_options);
+    ctrl_set_text(state->form, CTRL_DROP_STARTBTN, color_options);
+
+    gui_control_t *g = sys_win_get_control(state->form, CTRL_DROP_WINBG); if (g) { g->cursor_pos = state->theme_winbg; g->item_count = 16; }
+    g = sys_win_get_control(state->form, CTRL_DROP_TITLEBAR); if (g) { g->cursor_pos = state->theme_titlebar; g->item_count = 16; }
+    g = sys_win_get_control(state->form, CTRL_DROP_TITLEBTN); if (g) { g->cursor_pos = state->theme_titlebtn; g->item_count = 16; }
+    g = sys_win_get_control(state->form, CTRL_DROP_TASKBAR); if (g) { g->cursor_pos = state->theme_taskbar; g->item_count = 16; }
+    g = sys_win_get_control(state->form, CTRL_DROP_STARTBTN); if (g) { g->cursor_pos = state->theme_startbtn; g->item_count = 16; }
+
+    /* icon text dropdown */
+    ctrl_set_text(state->form, CTRL_DROP_ICON_TEXT, icon_text_options);
+    g = sys_win_get_control(state->form, CTRL_DROP_ICON_TEXT); if (g) { g->cursor_pos = (state->theme_text_color == 15) ? 1 : 0; g->item_count = 2; }
 
     sys_win_draw(state->form);
     prog_register_window(inst, state->form);
@@ -379,8 +288,7 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
     /* Dropdown selection changed - just redraw (values read on apply) */
     if (event == CTRL_DROP_WINBG || event == CTRL_DROP_TITLEBAR ||
         event == CTRL_DROP_TITLEBTN || event == CTRL_DROP_TASKBAR ||
-        event == CTRL_DROP_STARTBTN || event == CTRL_DROP_DESKTOP ||
-        event == CTRL_DROP_ICON_TEXT) {
+        event == CTRL_DROP_STARTBTN || event == CTRL_DROP_ICON_TEXT) {
         sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
     }
@@ -394,25 +302,21 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_taskbar = get_dropdown_value(state->form, CTRL_DROP_TASKBAR);
         state->theme_startbtn = get_dropdown_value(state->form, CTRL_DROP_STARTBTN);
         state->theme_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
-        state->desktop_color = get_dropdown_value(state->form, CTRL_DROP_DESKTOP);
-
-        const char *wp = ctrl_get_text(state->form, CTRL_TXT_WALLPAPER);
-        if (wp) {
-            strncpy(state->wallpaper, wp, sizeof(state->wallpaper) - 1);
-            state->wallpaper[sizeof(state->wallpaper) - 1] = '\0';
-        }
 
         apply_theme(state);
         save_settings(state);
-        desktop_apply_settings(state->desktop_color, state->wallpaper);
 
         state->orig_theme_winbg = state->theme_winbg;
         state->orig_theme_titlebar = state->theme_titlebar;
         state->orig_theme_titlebtn = state->theme_titlebtn;
+        state->orig_theme_text_color = state->theme_text_color;
         state->orig_theme_taskbar = state->theme_taskbar;
         state->orig_theme_startbtn = state->theme_startbtn;
-        state->orig_desktop_color = state->desktop_color;
-        strncpy(state->orig_wallpaper, state->wallpaper, sizeof(state->orig_wallpaper));
+
+        /* Ensure the desktop, taskbar and all windows are immediately redrawn */
+        sys_win_draw(state->form);
+        sys_win_force_full_redraw();
+        sys_win_redraw_all();
 
         return PROG_EVENT_HANDLED;
     }
@@ -426,17 +330,14 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_taskbar = get_dropdown_value(state->form, CTRL_DROP_TASKBAR);
         state->theme_startbtn = get_dropdown_value(state->form, CTRL_DROP_STARTBTN);
         state->theme_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
-        state->desktop_color = get_dropdown_value(state->form, CTRL_DROP_DESKTOP);
-
-        const char *wp = ctrl_get_text(state->form, CTRL_TXT_WALLPAPER);
-        if (wp) {
-            strncpy(state->wallpaper, wp, sizeof(state->wallpaper) - 1);
-            state->wallpaper[sizeof(state->wallpaper) - 1] = '\0';
-        }
 
         apply_theme(state);
         save_settings(state);
-        desktop_apply_settings(state->desktop_color, state->wallpaper);
+
+        /* Force full redraw so taskbar/desktop reflect the new theme immediately */
+        sys_win_force_full_redraw();
+        sys_win_redraw_all();
+
         return PROG_EVENT_CLOSE;
     }
 
@@ -449,6 +350,9 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_startbtn = state->orig_theme_startbtn;
         state->theme_text_color = state->orig_theme_text_color;
         apply_theme(state);
+        /* Revert visible UI immediately */
+        sys_win_force_full_redraw();
+        sys_win_redraw_all();
         return PROG_EVENT_CLOSE;
     }
 
