@@ -109,6 +109,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_SOUND_PLAY_TONE  0x0E01
 #define SYS_SOUND_SET_VOLUME 0x0E02
 #define SYS_SOUND_STOP       0x0E03
+#define SYS_SOUND_PLAY_WAV   0x0E04
 
 /* Waveform types */
 #define WAVE_SQUARE    0
@@ -952,6 +953,12 @@ static inline void sys_sound_set_volume(uint8_t left, uint8_t right) {
 
 static inline void sys_sound_stop(void) {
     __asm__ volatile("int $0x80" :: "a"(SYS_SOUND_STOP));
+}
+
+static inline int sys_sound_play_wav(const char *path) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_SOUND_PLAY_WAV), "b"(path));
+    return ret;
 }
 
 /* Event loop helper for standard applications */
