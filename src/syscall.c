@@ -1983,6 +1983,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->dropdown_saved_h = 0;
                 dest->dropdown_saved_x = 0;
                 dest->dropdown_saved_y = 0;
+                /* Initialize load_failed to prevent garbage data from blocking bitmap loads */
+                dest->load_failed = 0;
 
                 strcpy_s(dest->text, ctrl->text, 256);
 
