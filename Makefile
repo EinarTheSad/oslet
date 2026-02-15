@@ -108,7 +108,7 @@ run: $(BUILD)/$(TARGET)
 		$(MAKE) disk; \
 	fi
 	@$(MAKE) install
-	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -vga std -rtc base=localtime
+	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -vga std -rtc base=localtime -audiodev pa,id=audio0 -device sb16,audiodev=audio0
 
 clean:
 	@echo "Cleaning..."
@@ -170,6 +170,7 @@ desktop: $(BIN)/desktop.elf
 fetchlet: $(BIN)/fetchlet.elf
 shell: $(BIN)/shell.elf
 edit: $(BIN)/edit.elf
+beep: $(BIN)/beep.elf
 
 $(APPS)/%.elf: $(BUILD)/apps/%.o $(LIB_OBJS)
 	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^

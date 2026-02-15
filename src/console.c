@@ -5,7 +5,7 @@
 #define LONG_MIN (-2147483647L - 1)
 #define LONG_MAX 2147483647L
 
-const char *kernel_version = "0.7.8";
+const char *kernel_version = "0.8";
 const char *shell_version = "";
 char shell_name[64] = "SHELL.ELF";
 

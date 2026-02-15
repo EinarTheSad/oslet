@@ -23,8 +23,8 @@ void pic_remap(void) {
     outb(PIC1_DATA, a1);
     outb(PIC2_DATA, a2);
 
-    /* Unmask IRQ0 (timer), IRQ1 (keyboard), IRQ2 (cascade) */
-    uint8_t new_a1 = a1 & ~((1 << 0) | (1 << 1) | (1 << 2));
+    /* Unmask IRQ0 (timer), IRQ1 (keyboard), IRQ2 (cascade), IRQ5 (sound) */
+    uint8_t new_a1 = a1 & ~((1 << 0) | (1 << 1) | (1 << 2) | (1 << 5));
     outb(PIC1_DATA, new_a1);
     
     /* Unmask IRQ12 (mouse) on slave PIC */

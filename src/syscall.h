@@ -104,6 +104,18 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_GET_KEY_NONBLOCK 0x0D00
 #define SYS_GET_ALT_KEY      0x0D01  /* Peek+consume only Alt+Tab / AltRelease */
 
+/* AH = 0Eh - Sound */
+#define SYS_SOUND_DETECTED   0x0E00
+#define SYS_SOUND_PLAY_TONE  0x0E01
+#define SYS_SOUND_SET_VOLUME 0x0E02
+#define SYS_SOUND_STOP       0x0E03
+
+/* Waveform types */
+#define WAVE_SQUARE    0
+#define WAVE_TRIANGLE  1
+#define WAVE_SINE      2
+#define WAVE_SAWTOOTH  3
+
 /* AH = 0Bh - Windows */
 #define SYS_WIN_MSGBOX          0x0B00
 #define SYS_WIN_CREATE_FORM     0x0B05
@@ -922,6 +934,24 @@ static inline sys_theme_t* sys_win_get_theme(void) {
     sys_theme_t *ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_GET_THEME));
     return ret;
+}
+
+static inline int sys_sound_detected(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_SOUND_DETECTED));
+    return ret;
+}
+
+static inline void sys_sound_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_SOUND_PLAY_TONE), "b"(frequency), "c"(duration_ms), "d"(waveform));
+}
+
+static inline void sys_sound_set_volume(uint8_t left, uint8_t right) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_SOUND_SET_VOLUME), "b"(left), "c"(right));
+}
+
+static inline void sys_sound_stop(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_SOUND_STOP));
 }
 
 /* Event loop helper for standard applications */
