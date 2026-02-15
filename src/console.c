@@ -1,12 +1,13 @@
 #include "console.h"
+#include "drivers/fat32.h"
 #include <stdbool.h>
 
 #define LONG_MIN (-2147483647L - 1)
 #define LONG_MAX 2147483647L
 
-const char *kernel_version = "0.7.5";
+const char *kernel_version = "0.7.8";
 const char *shell_version = "";
-const char *shell_name = "DESKTOP.ELF"; /* This can be any program! */
+char shell_name[64] = "SHELL.ELF";
 
 static const console_t* CURRENT;
 
@@ -389,4 +390,87 @@ int snprintf(char* dst, size_t cap, const char* fmt, ...) {
     int n = vsnprintf(dst, cap, fmt, ap);
     va_end(ap);
     return n;
+}
+
+void load_system_config(void) {
+    fat32_file_t *f = fat32_open("C:/OSLET/SYSTEM.INI", "r");
+    if (!f) {
+        return;
+    }
+
+    char buffer[2048];
+    int bytes = fat32_read(f, buffer, sizeof(buffer) - 1);
+    fat32_close(f);
+    
+    if (bytes <= 0) {
+        return;
+    }
+    buffer[bytes] = '\0';
+
+    char *line = buffer;
+    int in_boot_section = 0;
+
+    while (*line) {
+        while (*line == ' ' || *line == '\t') line++;
+        
+        if (*line == '\0' || *line == '\n' || *line == '\r') {
+            while (*line == '\n' || *line == '\r') line++;
+            continue;
+        }
+
+        if (*line == ';' || *line == '#') {
+            while (*line && *line != '\n') line++;
+            continue;
+        }
+
+        if (*line == '[') {
+            char section[32];
+            int i = 0;
+            line++;
+            while (*line && *line != ']' && i < 31) {
+                section[i++] = *line++;
+            }
+            section[i] = '\0';
+            
+            in_boot_section = (strcasecmp_s(section, "BOOT") == 0);
+            
+            while (*line && *line != '\n') line++;
+            continue;
+        }
+
+        if (in_boot_section) {
+            char key[32], value[256];
+            int i = 0;
+            
+            while (*line && *line != '=' && *line != '\n' && i < 31) {
+                key[i++] = *line++;
+            }
+            key[i] = '\0';
+            
+            while (i > 0 && (key[i-1] == ' ' || key[i-1] == '\t')) {
+                key[--i] = '\0';
+            }
+
+            if (*line == '=') {
+                line++;
+                while (*line == ' ' || *line == '\t') line++;
+                
+                i = 0;
+                while (*line && *line != '\n' && *line != '\r' && i < 255) {
+                    value[i++] = *line++;
+                }
+                value[i] = '\0';
+
+                while (i > 0 && (value[i-1] == ' ' || value[i-1] == '\t')) {
+                    value[--i] = '\0';
+                }
+
+                if (strcasecmp_s(key, "SHELL") == 0 && value[0] != '\0') {
+                    strcpy_s(shell_name, value, sizeof(shell_name));
+                }
+            }
+        }
+
+        while (*line && *line != '\n') line++;
+    }
 }

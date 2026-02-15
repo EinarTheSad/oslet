@@ -186,6 +186,13 @@ static void boot_sequence(void) {
     vga_set_color(0, 7);
     printf(" ] Theme\n");
 
+    load_system_config();
+    printf("[ ");
+    vga_set_color(0, 10);
+    printf("OK");
+    vga_set_color(0, 7);
+    printf(" ] System config\n");
+
     printf("\n");
     __asm__ volatile ("sti");
 }
