@@ -3,6 +3,7 @@
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
 #include "drivers/mouse.h"
+#include "drivers/sb16.h"
 #include "mem/early_alloc.h"
 #include "irq/io.h"
 #include "mem/pmm.h"
@@ -63,6 +64,18 @@ static void boot_sequence(void) {
     printf("OK");
     vga_set_color(0, 7);
     printf(" ] Mouse\n");
+
+    sb16_init();
+    printf("[ ");
+    if (sb16_detected()) {
+        vga_set_color(0, 10);
+        printf(" OK ");
+    } else {
+        vga_set_color(0, 8);
+        printf("NONE");
+    }
+    vga_set_color(0, 7);
+    printf(" ] SoundBlaster 16\n");
 
     timer_init(100);
     printf("[ ");
