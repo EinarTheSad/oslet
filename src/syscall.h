@@ -126,6 +126,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_FORCE_FULL_REDRAW 0x0B17
 #define SYS_WIN_IS_FOCUSED 0x0B18
 #define SYS_WIN_DRAW_BUFFER 0x0B19  /* Draw a raw pixel buffer into a form with clipping to avoid overwriting other windows */
+#define SYS_WIN_MARK_DIRTY 0x0B1A   /* Mark window region as dirty and trigger compositor redraw with z-order */
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -153,6 +154,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define CTRL_FRAME 7
 #define CTRL_ICON 8
 #define CTRL_DROPDOWN 9
+#define CTRL_CLOCK 10
 
 #define FONT_NORMAL 0
 #define FONT_BOLD 1
@@ -798,6 +800,12 @@ static inline void sys_win_set_icon(void *form, const char *icon_path) {
 static inline void sys_win_redraw_all(void) {
     register int dummy_eax __asm__("eax") = SYS_WIN_REDRAW_ALL;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
+}
+
+static inline void sys_win_mark_dirty(void *form) {
+    register int dummy_eax __asm__("eax") = SYS_WIN_MARK_DIRTY;
+    register void *dummy_ebx __asm__("ebx") = form;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
 }
 
 static inline int sys_get_key_nonblock(void) {
