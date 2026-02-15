@@ -7,8 +7,136 @@
 #include "../drivers/mouse.h"
 #include "../fonts/bmf.h"
 #include "../mem/heap.h"
+#include "../rtc.h"
 
 extern bmf_font_t font_b, font_n, font_i, font_bi;
+
+/* Sin/cos lookup table (values * 1000) for 0-59 (6 degree steps) */
+static const int sin_table[60] = {
+       0,  105,  208,  309,  407,  500,  588,  669,  743,  809,
+     866,  914,  951,  978,  995, 1000,  995,  978,  951,  914,
+     866,  809,  743,  669,  588,  500,  407,  309,  208,  105,
+       0, -105, -208, -309, -407, -500, -588, -669, -743, -809,
+    -866, -914, -951, -978, -995,-1000, -995, -978, -951, -914,
+    -866, -809, -743, -669, -588, -500, -407, -309, -208, -105
+};
+
+static inline int clock_sin(int index) {
+    while (index < 0) index += 60;
+    return sin_table[index % 60];
+}
+
+static inline int clock_cos(int index) {
+    return clock_sin(index + 15);
+}
+
+static inline int iabs(int v) { return v < 0 ? -v : v; }
+
+/* Midpoint circle algorithm */
+static void draw_clock_circle(int cx, int cy, int r, uint8_t color) {
+    if (r < 0) return;
+    int x = r;
+    int y = 0;
+    int err = 0;
+    while (x >= y) {
+        gfx_putpixel(cx + x, cy + y, color);
+        gfx_putpixel(cx - x, cy + y, color);
+        gfx_putpixel(cx + x, cy - y, color);
+        gfx_putpixel(cx - x, cy - y, color);
+        gfx_putpixel(cx + y, cy + x, color);
+        gfx_putpixel(cx - y, cy + x, color);
+        gfx_putpixel(cx + y, cy - x, color);
+        gfx_putpixel(cx - y, cy - x, color);
+        if (err <= 0) {
+            y += 1; err += 2*y + 1;
+        }
+        if (err > 0) {
+            x -= 1; err -= 2*x + 1;
+        }
+    }
+}
+
+/* Bresenham line */
+static void draw_clock_line(int x0, int y0, int x1, int y1, uint8_t color) {
+    int dx = iabs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+    int dy = -iabs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    while (1) {
+        gfx_putpixel(x0, y0, color);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+static void draw_clock_hand(int cx, int cy, int length, int angle_idx, uint8_t color) {
+    int sin_val = clock_sin(angle_idx);
+    int cos_val = clock_cos(angle_idx);
+    int ex = cx + (length * sin_val) / 1000;
+    int ey = cy - (length * cos_val) / 1000;
+    draw_clock_line(cx, cy, ex, ey, color);
+}
+
+static void draw_clock_face(int cx, int cy, int r, window_theme_t *theme) {
+    /* Draw clock outline */
+    draw_clock_circle(cx, cy, r, theme->text_color);
+    if (r > 2) draw_clock_circle(cx, cy, r - 2, theme->frame_dark);
+
+    /* Draw hour markers */
+    for (int i = 0; i < 12; i++) {
+        int angle_idx = i * 5;
+        int sin_val = clock_sin(angle_idx);
+        int cos_val = clock_cos(angle_idx);
+        int inner_r = r - 10;
+        int outer_r = r - 5;
+        int ix = cx + (inner_r * sin_val) / 1000;
+        int iy = cy - (inner_r * cos_val) / 1000;
+        int ox = cx + (outer_r * sin_val) / 1000;
+        int oy = cy - (outer_r * cos_val) / 1000;
+        draw_clock_line(ix, iy, ox, oy, theme->text_color);
+    }
+}
+
+void ctrl_draw_clock(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    uint8_t bg_color = (control->bg == -1) ? theme->bg_color : control->bg;
+    
+    /* Fill background */
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, bg_color);
+    
+    /* Calculate center and radius based on control size */
+    int cx = abs_x + control->w / 2;
+    int cy = abs_y + control->h / 2;
+    int r = (control->w < control->h ? control->w : control->h) / 2 - 5;
+    if (r < 10) r = 10;
+    
+    /* Draw clock face */
+    draw_clock_face(cx, cy, r, theme);
+    
+    /* Get current time */
+    rtc_time_t time;
+    rtc_read_time(&time);
+    
+    /* Calculate hand positions */
+    int hour_pos = ((time.hour % 12) * 5) + (time.minute / 12);
+    int min_pos = time.minute;
+    int sec_pos = time.second;
+    
+    /* Draw hands (hour, minute, second) */
+    draw_clock_hand(cx, cy, r * 5 / 10, hour_pos, theme->text_color);
+    draw_clock_hand(cx, cy, r * 7 / 10, min_pos, theme->text_color);
+    draw_clock_hand(cx, cy, r * 8 / 10, sec_pos, COLOR_LIGHT_RED);
+    
+    /* Draw center dot */
+    int dotx = cx - 2;
+    int doty = cy - 2;
+    for (int dy = 0; dy < 4; dy++) {
+        for (int dx = 0; dx < 4; dx++) {
+            gfx_putpixel(dotx + dx, doty + dy, COLOR_BLUE);
+        }
+    }
+}
 
 void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
     window_theme_t *theme = theme_get_current();
@@ -123,7 +251,6 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
 }
 
 void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
-    window_theme_t *theme = theme_get_current();
     /* Respect bg=-1 as transparent */
     if (control->bg != -1) {
         gfx_fillrect(abs_x, abs_y, control->w, control->h, control->bg);
@@ -805,6 +932,9 @@ void ctrl_draw(window_t *win, gui_control_t *control) {
     }
     else if (control->type == 9) { /* CTRL_DROPDOWN */
         ctrl_draw_dropdown(control, abs_x, abs_y);
+    }
+    else if (control->type == 10) { /* CTRL_CLOCK */
+        ctrl_draw_clock(control, abs_x, abs_y);
     }
 }
 

@@ -1470,7 +1470,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                new window immediately. Without this the window may be
                overwritten until another action (e.g. moving Start
                Manager) forces a redraw. */
-            win_draw(&form->win);
+            compositor_draw_single(&global_wm, form);
             global_wm.needs_full_redraw = 1;
 
             return (uint32_t)form;
@@ -2003,25 +2003,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
         case 0x09: { /* SYS_WIN_DRAW */
             gui_form_t *form = (gui_form_t*)ebx;
             if (!form) return 0;
-            win_draw(&form->win);
-
-            /* Don't draw controls if window is minimized */
-            if (form->win.is_minimized) return 0;
-
-            /* Draw all controls */
-            for (int i = 0; i < form->ctrl_count; i++) {
-                /* Set focus state before drawing (used by textbox for cursor) */
-                form->controls[i].is_focused =
-                    (form->controls[i].id == form->focused_control_id) ? 1 : 0;
-                win_draw_control(&form->win, &form->controls[i]);
-            }
-
-            /* Draw open dropdown lists on top */
-            for (int i = 0; i < form->ctrl_count; i++) {
-                if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown_open) {
-                    win_draw_dropdown_list(&form->win, &form->controls[i]);
-                }
-            }
+            /* Use compositor to draw with correct focus state */
+            compositor_draw_single(&global_wm, form);
             return 0;
         }
 
@@ -2366,6 +2349,23 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     gfx_putpixel(screen_x, screen_y, (uint8_t)px);
                 }
             }
+
+            return 0;
+        }
+
+        case 0x1A: { /* SYS_WIN_MARK_DIRTY - mark window region as dirty and trigger compositor redraw with z-order */
+            gui_form_t *form = (gui_form_t*)ebx;
+            if (!form || !form->win.is_visible || form->win.is_minimized) return 0;
+
+            /* Calculate window bounds including margins */
+            int wx = form->win.x - WM_BG_MARGIN;
+            int wy = form->win.y - WM_BG_MARGIN;
+            int ww = form->win.w + (WM_BG_MARGIN * 2);
+            int wh = form->win.h + (WM_BG_MARGIN * 2);
+
+            /* Set dirty rect and trigger compositor redraw */
+            compositor_set_dirty_rect(&global_wm, wx, wy, ww, wh);
+            compositor_draw_all(&global_wm);
 
             return 0;
         }
