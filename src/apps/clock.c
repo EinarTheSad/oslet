@@ -5,7 +5,7 @@
 
 __attribute__((section(".entry"), used))
 void _start(void) {
-    void *form = sys_win_create_form("Clock", 530, 0, WIN_W, WIN_H);
+    void *form = sys_win_create_form("Clock", 520, 0, WIN_W, WIN_H);
     if (!form) {
         sys_exit();
         return;
