@@ -67,20 +67,24 @@ static int dsp_reset(void) {
 }
 
 static int dsp_write(uint8_t value) {
-    for (int timeout = 10000; timeout > 0; timeout--) {
+    for (int timeout = 1000; timeout > 0; timeout--) {
         if (!(inb(SB_DSP_WRITE) & 0x80)) {
             outb(SB_DSP_WRITE, value);
             return 0;
         }
+        if (timeout & 0x0F) continue;
+        for (volatile int i = 0; i < 5; i++);
     }
     return -1;
 }
 
 static int dsp_read(void) {
-    for (int timeout = 10000; timeout > 0; timeout--) {
+    for (int timeout = 1000; timeout > 0; timeout--) {
         if (inb(SB_DSP_READ_STATUS) & 0x80) {
             return inb(SB_DSP_READ);
         }
+        if (timeout & 0x0F) continue;
+        for (volatile int i = 0; i < 5; i++);
     }
     return -1;
 }
@@ -164,61 +168,85 @@ void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) 
     
     /* Fill buffer with waveform or silence */
     if (frequency == 0) {
-        /* Silence */
-        for (uint32_t i = 0; i < total_samples; i++) {
+        /* Silence - use memset equivalent for speed */
+        uint32_t *buf32 = (uint32_t*)dma_buffer;
+        uint32_t fill = 0x80808080;
+        uint32_t count32 = total_samples >> 2;
+        for (uint32_t i = 0; i < count32; i++) {
+            buf32[i] = fill;
+        }
+        for (uint32_t i = count32 << 2; i < total_samples; i++) {
             dma_buffer[i] = 128;
         }
     } else {
         uint32_t samples_per_period = sample_rate / frequency;
         if (samples_per_period < 4) samples_per_period = 4;
         
+        /* Phase accumulator approach - avoids expensive modulo per sample */
+        uint32_t phase = 0;
+        uint32_t phase_inc = (samples_per_period > 0) ? ((1 << 16) / samples_per_period) : (1 << 16);
+        uint32_t half_period = samples_per_period >> 1;
+        
         for (uint32_t i = 0; i < total_samples; i++) {
-            uint32_t phase = i % samples_per_period;
             int value = 128;
+            uint32_t pos = phase >> 16;
             
             switch (waveform) {
                 case WAVE_SQUARE:
-                    value = (phase < samples_per_period / 2) ? 158 : 98;
+                    value = (pos < half_period) ? 158 : 98;
                     break;
                     
                 case WAVE_TRIANGLE: {
                     int amplitude;
-                    if (phase < samples_per_period / 2) {
-                        amplitude = (phase * 60) / (samples_per_period / 2);
+                    if (pos < half_period) {
+                        amplitude = (pos * 60) / half_period;
                     } else {
-                        amplitude = 60 - ((phase - samples_per_period / 2) * 60) / (samples_per_period / 2);
+                        amplitude = 60 - ((pos - half_period) * 60) / half_period;
                     }
-                    value = 128 + amplitude - 30;
+                    value = 98 + amplitude;
                     break;
                 }
                     
                 case WAVE_SAWTOOTH: {
-                    int amplitude = (phase * 60) / samples_per_period;
-                    value = 128 + amplitude - 30;
+                    int amplitude = (pos * 60) / samples_per_period;
+                    value = 98 + amplitude;
                     break;
                 }
                     
                 case WAVE_SINE: {
-                    /* Use lookup table with linear interpolation */
-                    uint32_t table_index = (phase * 64) / samples_per_period;
-                    uint32_t next_index = (table_index + 1) % 64;
-                    uint32_t frac = ((phase * 64) % samples_per_period) * 256 / samples_per_period;
-                    
-                    /* Linear interpolation between table entries */
-                    int sine_val = sine_table[table_index] + 
-                                   ((sine_table[next_index] - sine_table[table_index]) * (int)frac) / 256;
-                    
-                    value = 128 + (sine_val * 30) / 64;
+                    /* Direct lookup with proper amplitude */
+                    uint32_t idx = (pos << 6) / samples_per_period;
+                    if (idx >= 64) idx = 63;
+                    int sine_val = sine_table[idx];
+                    /* Scale by 30/64 efficiently: (x*30)>>6 */
+                    value = 128 + ((sine_val * 30) >> 6);
                     break;
                 }
             }
             
             dma_buffer[i] = (uint8_t)value;
+            
+            /* Increment phase and wrap */
+            phase += phase_inc;
+            if ((phase >> 16) >= samples_per_period) {
+                phase = 0;
+            }
+        }
+        
+        /* Fill remaining buffer with silence to prevent buzz */
+        for (uint32_t i = total_samples; i < DMA_BUFFER_SIZE; i++) {
+            dma_buffer[i] = 128;
         }
     }
     
     dsp_write(DSP_CMD_SPEAKER_OFF);
     dma_stop_channel(DMA_CHANNEL);
+    
+    /* Clear completion flag before starting */
+    dma_complete = 0;
+    
+    /* 25ms pre-buffering delay for smoother playback */
+    timer_wait(3);
     
     /* Single-cycle DMA mode */
     dma_setup_channel(DMA_CHANNEL, dma_phys, total_samples, 0x48);
@@ -236,13 +264,35 @@ void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) 
     dsp_write(block_size & 0xFF);
     dsp_write((block_size >> 8) & 0xFF);
     
-    /* Wait for playback using timer */
-    uint32_t wait_ticks = (duration_ms + 9) / 10;
-    if (wait_ticks < 1) wait_ticks = 1;
-    timer_wait(wait_ticks);
+    /* Wait for DMA completion via IRQ */
+    uint32_t timeout = (duration_ms + 100) / 10;
+    for (uint32_t i = 0; i < timeout && !dma_complete; i++) {
+        timer_wait(1);
+    }
+    
+    /* Aggressive cleanup sequence to eliminate buzz and prevent blocking */
+    dsp_write(DSP_CMD_PAUSE_DMA);
+    for (volatile int i = 0; i < 50; i++);
+    
+    inb(SB_DSP_INT_ACK);
+    dma_stop_channel(DMA_CHANNEL);
     
     dsp_write(DSP_CMD_SPEAKER_OFF);
-    dma_stop_channel(DMA_CHANNEL);
+    for (volatile int i = 0; i < 50; i++);
+    
+    /* Soft reset DSP to clear any lingering state */
+    outb(SB_DSP_RESET, 1);
+    for (volatile int i = 0; i < 50; i++);
+    outb(SB_DSP_RESET, 0);
+    for (volatile int i = 0; i < 100; i++);
+    
+    /* Wait for DSP ready */
+    for (int timeout_rst = 100; timeout_rst > 0; timeout_rst--) {
+        if (inb(SB_DSP_READ_STATUS) & 0x80) {
+            inb(SB_DSP_READ);
+            break;
+        }
+    }
 }
 
 void sb16_stop(void) {
@@ -252,4 +302,12 @@ void sb16_stop(void) {
     dsp_write(DSP_CMD_EXIT_AUTO_8BIT);
     dma_stop_channel(DMA_CHANNEL);
     dsp_write(DSP_CMD_SPEAKER_OFF);
+}
+
+void sb16_clear_irq_flag(void) {
+    dma_complete = 0;
+}
+
+int sb16_check_irq_flag(void) {
+    return dma_complete;
 }

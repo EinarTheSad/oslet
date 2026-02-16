@@ -21,6 +21,7 @@
 
 #define DMA_CHANNEL 1
 #define DMA_BUFFER_SIZE 4096
+#define TEMP_BUFFER_SIZE 8192
 
 typedef struct {
     char riff[4];
@@ -45,36 +46,45 @@ typedef struct {
 } wav_data_header_t;
 
 static uint8_t dma_buffer[DMA_BUFFER_SIZE] __attribute__((aligned(4096)));
+static uint8_t temp_buffer[TEMP_BUFFER_SIZE];
 
 static uint32_t get_dma_phys(void) {
     return (uint32_t)(uintptr_t)dma_buffer;
 }
 
 static int dsp_write(uint8_t value) {
-    for (int timeout = 10000; timeout > 0; timeout--) {
+    for (int timeout = 1000; timeout > 0; timeout--) {
         if (!(inb(SB_DSP_WRITE) & 0x80)) {
             outb(SB_DSP_WRITE, value);
             return 0;
         }
+        if (timeout & 0x0F) continue;
+        for (volatile int i = 0; i < 5; i++);
     }
     return -1;
 }
 
 static void wait_dma_complete(uint32_t sample_rate, uint32_t samples) {
     uint32_t duration_ms = (samples * 1000) / sample_rate;
-    uint32_t wait_ticks = duration_ms / 10;
+    uint32_t wait_ticks = (duration_ms + 5) / 10;
     if (wait_ticks < 1) wait_ticks = 1;
     
     extern void timer_wait(uint32_t ticks);
+    
+    /* Primary wait using timer */
     timer_wait(wait_ticks);
     
-    for (int poll = 0; poll < 1000; poll++) {
-        if (inb(SB_DSP_READ_STATUS) & 0x80) {
+    /* Then check IRQ flag briefly */
+    for (int poll = 0; poll < 100; poll++) {
+        if (sb16_check_irq_flag()) {
             inb(SB_DSP_INT_ACK);
             return;
         }
-        for (volatile int j = 0; j < 100; j++);
+        for (volatile int j = 0; j < 10; j++);
     }
+    
+    /* Acknowledge anyway */
+    inb(SB_DSP_INT_ACK);
 }
 
 int sound_play_wav(const char *path) {
@@ -154,6 +164,9 @@ int sound_play_wav(const char *path) {
     dsp_write(sample_rate & 0xFF);
 
     uint32_t samples_played = 0;
+    int is_stereo = (fmt.num_channels == 2);
+    int is_16bit = (bytes_per_sample == 2);
+    
     while (samples_played < total_samples) {
         uint32_t samples_to_play = total_samples - samples_played;
         if (samples_to_play > DMA_BUFFER_SIZE) {
@@ -161,54 +174,52 @@ int sound_play_wav(const char *path) {
         }
 
         uint32_t bytes_to_read = samples_to_play * bytes_per_sample * fmt.num_channels;
-        uint8_t *temp_buffer = (uint8_t *)kmalloc(bytes_to_read);
-        if (!temp_buffer) {
-            fat32_close(file);
-            dsp_write(DSP_CMD_SPEAKER_OFF);
-            return -1;
+        if (bytes_to_read > TEMP_BUFFER_SIZE) {
+            bytes_to_read = TEMP_BUFFER_SIZE;
+            samples_to_play = bytes_to_read / (bytes_per_sample * fmt.num_channels);
         }
 
         int bytes_read = fat32_read(file, temp_buffer, bytes_to_read);
         if (bytes_read <= 0) {
-            kfree(temp_buffer);
             break;
         }
 
         uint32_t actual_samples = bytes_read / (bytes_per_sample * fmt.num_channels);
 
+        /* Sample conversion with proper bounds checking */
         for (uint32_t i = 0; i < actual_samples; i++) {
+            int sample_value = 128;
             uint32_t src_offset = i * bytes_per_sample * fmt.num_channels;
-            int sample_value;
-
-            if (bytes_per_sample == 1) {
-                sample_value = temp_buffer[src_offset];
-            } else if (bytes_per_sample == 2) {
-                int16_t s16 = *(int16_t*)&temp_buffer[src_offset];
-                sample_value = (s16 >> 8) + 128;
-            } else {
-                sample_value = 128;
-            }
-
-            if (fmt.num_channels == 2) {
-                int sample2;
-                if (bytes_per_sample == 1) {
-                    sample2 = temp_buffer[src_offset + bytes_per_sample];
-                } else if (bytes_per_sample == 2) {
-                    int16_t s16 = *(int16_t*)&temp_buffer[src_offset + 2];
-                    sample2 = (s16 >> 8) + 128;
-                } else {
-                    sample2 = 128;
+            
+            if (is_16bit) {
+                /* 16-bit sample - need 2 bytes */
+                if (src_offset + 2 <= (uint32_t)bytes_read) {
+                    int16_t s16 = *(int16_t*)&temp_buffer[src_offset];
+                    sample_value = (s16 >> 8) + 128;
                 }
-                sample_value = (sample_value + sample2) / 2;
+                
+                if (is_stereo && src_offset + 4 <= (uint32_t)bytes_read) {
+                    /* Average with second channel - need 4 bytes total */
+                    int16_t s16_2 = *(int16_t*)&temp_buffer[src_offset + 2];
+                    int sample2 = (s16_2 >> 8) + 128;
+                    sample_value = (sample_value + sample2) >> 1;
+                }
+            } else {
+                /* 8-bit sample */
+                if (src_offset < (uint32_t)bytes_read) {
+                    sample_value = temp_buffer[src_offset];
+                }
+                
+                if (is_stereo && src_offset + 2 <= (uint32_t)bytes_read) {
+                    /* Average with second channel - need 2 bytes total */
+                    sample_value = ((int)sample_value + temp_buffer[src_offset + 1]) >> 1;
+                }
             }
-
-            if (sample_value < 0) sample_value = 0;
-            if (sample_value > 255) sample_value = 255;
+            
             dma_buffer[i] = (uint8_t)sample_value;
         }
 
-        kfree(temp_buffer);
-
+        sb16_clear_irq_flag();
         dma_setup_channel(DMA_CHANNEL, dma_phys, actual_samples, 0x48);
 
         dsp_write(DSP_CMD_SPEAKER_ON);
@@ -224,8 +235,10 @@ int sound_play_wav(const char *path) {
         samples_played += actual_samples;
     }
 
+    /* Simple cleanup */
     dsp_write(DSP_CMD_SPEAKER_OFF);
     dma_stop_channel(DMA_CHANNEL);
+    inb(SB_DSP_INT_ACK);
 
     fat32_close(file);
     return 0;
