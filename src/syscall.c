@@ -1985,6 +1985,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (new_val != ctrl->cursor_pos) {
                             ctrl->cursor_pos = new_val;
                             form->clicked_id = ctrl->id;
+                            event_count = 1; /* Generate event during drag */
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                         }
@@ -1998,6 +1999,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (new_val != ctrl->cursor_pos) {
                             ctrl->cursor_pos = new_val;
                             form->clicked_id = ctrl->id;
+                            event_count = 1; /* Generate event during drag */
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                         }
@@ -2539,6 +2541,9 @@ static uint32_t handle_sound(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t e
         case 0x02:
             sb16_set_volume((uint8_t)ebx, (uint8_t)ecx);
             return 0;
+
+        case 0x05:
+            return (uint32_t)sb16_get_volume();
 
         case 0x03:
             sb16_stop();
