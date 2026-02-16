@@ -281,7 +281,7 @@ static int cpl_screen_init(prog_instance_t *inst) {
 
     static gui_control_t controls[] = {
         { .type = CTRL_PICTUREBOX, .x = 42,  .y = 12,  .w = 162, .h = 144, .fg = 5,  .bg = -1, .id = CTRL_PIC_MONITOR, .text = "C:/OSLET/MONITOR.BMP" },
-        { .type = CTRL_PICTUREBOX, .x = 57,  .y = 26,  .w = 133, .h = 99, .fg = 0,  .bg = 0,  .id = CTRL_PIC_PREVIEW,  .text = "" },
+        { .type = CTRL_PICTUREBOX, .x = 57,  .y = 26,  .w = 133, .h = 100, .fg = 0,  .bg = 0,  .id = CTRL_PIC_PREVIEW,  .text = "" },
         { .type = CTRL_FRAME,      .x = 6,   .y = 166, .w = 234, .h = 92,  .fg = 0,  .bg = 7,  .id = CTRL_FRAME_WALLPAPER, .text = "Wallpaper" },
         { .type = CTRL_LABEL,      .x = 12,  .y = 187,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_FOLDER,      .text = "Folder:" },
         { .type = CTRL_TEXTBOX,    .x = 58,  .y = 186, .w = 138, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_TXT_FOLDER,     .max_length = 127, .text = "" },
