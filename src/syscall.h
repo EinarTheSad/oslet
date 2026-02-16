@@ -168,6 +168,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define CTRL_ICON 8
 #define CTRL_DROPDOWN 9
 #define CTRL_CLOCK 10
+#define CTRL_SCROLLBAR 11
 
 #define FONT_NORMAL 0
 #define FONT_BOLD 1

@@ -605,6 +605,7 @@
         <button class="tool-btn" onclick="selectTool('textbox')">TextBox</button>
         <button class="tool-btn" onclick="selectTool('frame')">Frame</button>
         <button class="tool-btn" onclick="selectTool('dropdown')">Dropdown</button>
+        <button class="tool-btn" onclick="selectTool('scrollbar')">ScrollBar</button>
         <button class="tool-btn" onclick="selectTool('select')" style="margin-top: 20px;">Select (Esc)</button>
     </div>
 
@@ -1413,6 +1414,194 @@
                     draggedControl = control;
                 });
                 el.appendChild(resizeHandle);
+            } else if (control.type === 'scrollbar') {
+                el.style.width = control.w + 'px';
+                el.style.height = control.h + 'px';
+                el.style.boxSizing = 'border-box';
+                el.style.backgroundColor = '#a0a0a0';
+
+                const vertical = !control.checked;
+                const arrow_size = vertical ? control.w : control.h;
+                const track_len = vertical ? (control.h - 2 * arrow_size) : (control.w - 2 * arrow_size);
+
+                // Calculate thumb size and position
+                const thumb_size = 20;
+                const max_val = control.max_length > 0 ? control.max_length : 100;
+                const value = control.cursor_pos || 0;
+                let thumb_pos = 0;
+                if (max_val > 0 && track_len > thumb_size) {
+                    thumb_pos = ((track_len - thumb_size) * value) / max_val;
+                }
+
+                if (vertical) {
+                    // Up arrow button
+                    const upBtn = document.createElement('div');
+                    upBtn.style.position = 'absolute';
+                    upBtn.style.left = '0';
+                    upBtn.style.top = '0';
+                    upBtn.style.width = control.w + 'px';
+                    upBtn.style.height = arrow_size + 'px';
+                    upBtn.style.backgroundColor = '#a0a0a0';
+                    upBtn.style.border = '1px solid black';
+                    upBtn.style.boxSizing = 'border-box';
+                    upBtn.style.borderTopColor = 'white';
+                    upBtn.style.borderLeftColor = 'white';
+                    upBtn.style.borderRightColor = '#555555';
+                    upBtn.style.borderBottomColor = '#555555';
+                    // Up arrow (pointing up) - SVG matching controls.c
+                    const upArrowSvg = `<svg width="${control.w}" height="${arrow_size}" style="position:absolute;left:0;top:0;pointer-events:none;">
+                        <line x1="${control.w/2 - 3}" y1="${arrow_size/2}" x2="${control.w/2 + 3}" y2="${arrow_size/2}" stroke="black" stroke-width="1"/>
+                        <line x1="${control.w/2 - 2}" y1="${arrow_size/2 - 1}" x2="${control.w/2 + 2}" y2="${arrow_size/2 - 1}" stroke="black" stroke-width="1"/>
+                        <line x1="${control.w/2 - 1}" y1="${arrow_size/2 - 2}" x2="${control.w/2 + 1}" y2="${arrow_size/2 - 2}" stroke="black" stroke-width="1"/>
+                        <line x1="${control.w/2}" y1="${arrow_size/2 - 3}" x2="${control.w/2}" y2="${arrow_size/2 - 3}" stroke="black" stroke-width="1"/>
+                        <rect x="${control.w/2 - 1}" y="${arrow_size/2 + 1}" width="3" height="3" fill="black"/>
+                    </svg>`;
+                    upBtn.innerHTML = upArrowSvg;
+                    el.appendChild(upBtn);
+
+                    // Track with dither pattern
+                    const track = document.createElement('div');
+                    track.style.position = 'absolute';
+                    track.style.left = '0';
+                    track.style.top = arrow_size + 'px';
+                    track.style.width = control.w + 'px';
+                    track.style.height = track_len + 'px';
+                    track.style.backgroundImage = 'repeating-conic-gradient(white 0% 25%, #a0a0a0 0% 50%)';
+                    track.style.backgroundSize = '2px 2px';
+                    el.appendChild(track);
+
+                    // Thumb
+                    const thumb = document.createElement('div');
+                    thumb.style.position = 'absolute';
+                    thumb.style.left = '0';
+                    thumb.style.top = (arrow_size + thumb_pos) + 'px';
+                    thumb.style.width = control.w + 'px';
+                    thumb.style.height = thumb_size + 'px';
+                    thumb.style.backgroundColor = '#a0a0a0';
+                    thumb.style.border = '1px solid black';
+                    thumb.style.boxSizing = 'border-box';
+                    thumb.style.borderTopColor = 'white';
+                    thumb.style.borderLeftColor = 'white';
+                    thumb.style.borderRightColor = '#555555';
+                    thumb.style.borderBottomColor = '#555555';
+                    el.appendChild(thumb);
+
+                    // Down arrow button
+                    const downBtn = document.createElement('div');
+                    downBtn.style.position = 'absolute';
+                    downBtn.style.left = '0';
+                    downBtn.style.bottom = '0';
+                    downBtn.style.width = control.w + 'px';
+                    downBtn.style.height = arrow_size + 'px';
+                    downBtn.style.backgroundColor = '#a0a0a0';
+                    downBtn.style.border = '1px solid black';
+                    downBtn.style.boxSizing = 'border-box';
+                    downBtn.style.borderTopColor = 'white';
+                    downBtn.style.borderLeftColor = 'white';
+                    downBtn.style.borderRightColor = '#555555';
+                    downBtn.style.borderBottomColor = '#555555';
+                    // Down arrow (pointing down) - SVG matching controls.c
+                    const downArrowSvg = `<svg width="${control.w}" height="${arrow_size}" style="position:absolute;left:0;top:0;pointer-events:none;">
+                        <line x1="${control.w/2 - 3}" y1="${arrow_size/2}" x2="${control.w/2 + 3}" y2="${arrow_size/2}" stroke="black" stroke-width="1"/>
+                        <line x1="${control.w/2 - 2}" y1="${arrow_size/2 + 1}" x2="${control.w/2 + 2}" y2="${arrow_size/2 + 1}" stroke="black" stroke-width="1"/>
+                        <line x1="${control.w/2 - 1}" y1="${arrow_size/2 + 2}" x2="${control.w/2 + 1}" y2="${arrow_size/2 + 2}" stroke="black" stroke-width="1"/>
+                        <line x1="${control.w/2}" y1="${arrow_size/2 + 3}" x2="${control.w/2}" y2="${arrow_size/2 + 3}" stroke="black" stroke-width="1"/>
+                        <rect x="${control.w/2 - 1}" y="${arrow_size/2 - 3}" width="3" height="3" fill="black"/>
+                    </svg>`;
+                    downBtn.innerHTML = downArrowSvg;
+                    el.appendChild(downBtn);
+                } else {
+                    // Horizontal scrollbar
+                    // Left arrow button
+                    const leftBtn = document.createElement('div');
+                    leftBtn.style.position = 'absolute';
+                    leftBtn.style.left = '0';
+                    leftBtn.style.top = '0';
+                    leftBtn.style.width = arrow_size + 'px';
+                    leftBtn.style.height = control.h + 'px';
+                    leftBtn.style.backgroundColor = '#a0a0a0';
+                    leftBtn.style.border = '1px solid black';
+                    leftBtn.style.boxSizing = 'border-box';
+                    leftBtn.style.borderTopColor = 'white';
+                    leftBtn.style.borderLeftColor = 'white';
+                    leftBtn.style.borderRightColor = '#555555';
+                    leftBtn.style.borderBottomColor = '#555555';
+                    // Left arrow (pointing left) - SVG matching controls.c
+                    const leftArrowSvg = `<svg width="${arrow_size}" height="${control.h}" style="position:absolute;left:0;top:0;pointer-events:none;">
+                        <line x1="${arrow_size/2}" y1="${control.h/2 - 3}" x2="${arrow_size/2}" y2="${control.h/2 + 3}" stroke="black" stroke-width="1"/>
+                        <line x1="${arrow_size/2 - 1}" y1="${control.h/2 - 2}" x2="${arrow_size/2 - 1}" y2="${control.h/2 + 2}" stroke="black" stroke-width="1"/>
+                        <line x1="${arrow_size/2 - 2}" y1="${control.h/2 - 1}" x2="${arrow_size/2 - 2}" y2="${control.h/2 + 1}" stroke="black" stroke-width="1"/>
+                        <line x1="${arrow_size/2 - 3}" y1="${control.h/2}" x2="${arrow_size/2 - 3}" y2="${control.h/2}" stroke="black" stroke-width="1"/>
+                        <rect x="${arrow_size/2 + 1}" y="${control.h/2 - 1}" width="3" height="3" fill="black"/>
+                    </svg>`;
+                    leftBtn.innerHTML = leftArrowSvg;
+                    el.appendChild(leftBtn);
+
+                    // Track with dither pattern
+                    const track = document.createElement('div');
+                    track.style.position = 'absolute';
+                    track.style.left = arrow_size + 'px';
+                    track.style.top = '0';
+                    track.style.width = track_len + 'px';
+                    track.style.height = control.h + 'px';
+                    track.style.backgroundImage = 'repeating-conic-gradient(white 0% 25%, #a0a0a0 0% 50%)';
+                    track.style.backgroundSize = '2px 2px';
+                    el.appendChild(track);
+
+                    // Thumb
+                    const thumb = document.createElement('div');
+                    thumb.style.position = 'absolute';
+                    thumb.style.left = (arrow_size + thumb_pos) + 'px';
+                    thumb.style.top = '0';
+                    thumb.style.width = thumb_size + 'px';
+                    thumb.style.height = control.h + 'px';
+                    thumb.style.backgroundColor = '#a0a0a0';
+                    thumb.style.border = '1px solid black';
+                    thumb.style.boxSizing = 'border-box';
+                    thumb.style.borderTopColor = 'white';
+                    thumb.style.borderLeftColor = 'white';
+                    thumb.style.borderRightColor = '#555555';
+                    thumb.style.borderBottomColor = '#555555';
+                    el.appendChild(thumb);
+
+                    // Right arrow button
+                    const rightBtn = document.createElement('div');
+                    rightBtn.style.position = 'absolute';
+                    rightBtn.style.right = '0';
+                    rightBtn.style.top = '0';
+                    rightBtn.style.width = arrow_size + 'px';
+                    rightBtn.style.height = control.h + 'px';
+                    rightBtn.style.backgroundColor = '#a0a0a0';
+                    rightBtn.style.border = '1px solid black';
+                    rightBtn.style.boxSizing = 'border-box';
+                    rightBtn.style.borderTopColor = 'white';
+                    rightBtn.style.borderLeftColor = 'white';
+                    rightBtn.style.borderRightColor = '#555555';
+                    rightBtn.style.borderBottomColor = '#555555';
+                    // Right arrow (pointing right) - SVG matching controls.c
+                    const rightArrowSvg = `<svg width="${arrow_size}" height="${control.h}" style="position:absolute;left:0;top:0;pointer-events:none;">
+                        <line x1="${arrow_size/2}" y1="${control.h/2 - 3}" x2="${arrow_size/2}" y2="${control.h/2 + 3}" stroke="black" stroke-width="1"/>
+                        <line x1="${arrow_size/2 + 1}" y1="${control.h/2 - 2}" x2="${arrow_size/2 + 1}" y2="${control.h/2 + 2}" stroke="black" stroke-width="1"/>
+                        <line x1="${arrow_size/2 + 2}" y1="${control.h/2 - 1}" x2="${arrow_size/2 + 2}" y2="${control.h/2 + 1}" stroke="black" stroke-width="1"/>
+                        <line x1="${arrow_size/2 + 3}" y1="${control.h/2}" x2="${arrow_size/2 + 3}" y2="${control.h/2}" stroke="black" stroke-width="1"/>
+                        <rect x="${arrow_size/2 - 3}" y="${control.h/2 - 1}" width="3" height="3" fill="black"/>
+                    </svg>`;
+                    rightBtn.innerHTML = rightArrowSvg;
+                    el.appendChild(rightBtn);
+                }
+
+                const resizeHandle = document.createElement('div');
+                resizeHandle.className = 'control-resize-handle br';
+                resizeHandle.addEventListener('mousedown', (e) => {
+                    e.stopPropagation();
+                    resizingControl = true;
+                    resizeControlStart.x = e.clientX;
+                    resizeControlStart.y = e.clientY;
+                    resizeControlStart.w = control.w;
+                    resizeControlStart.h = control.h;
+                    draggedControl = control;
+                });
+                el.appendChild(resizeHandle);
             }
 
             el.addEventListener('mousedown', (e) => {
@@ -1765,7 +1954,7 @@
             let w = 0, h = 0, text = '', bg = 7;
             switch (currentTool) {
                 case 'button':
-                    w = 70; h = 23; text = 'Button';
+                    w = 65; h = 23; text = 'Button';
                     break;
                 case 'picturebox':
                     w = 100; h = 100; text = 'IMAGE.BMP';
@@ -1784,6 +1973,9 @@
                     break;
                 case 'dropdown':
                     w = 120; h = 20; text = 'Option 1|Option 2|Option 3';
+                    break;
+                case 'scrollbar':
+                    w = 20; h = 100; text = '';
                     break;
                 case 'label':
                     w = 0; h = 0; text = 'Label'; bg = 15;
@@ -1804,9 +1996,10 @@
                 font_size: 12,
                 border: 0,
                 border_color: 0,
-                checked: 0,  // For checkbox and radio
+                checked: 0,  // For checkbox, radio, and scrollbar orientation (0=vert, 1=horiz)
                 group_id: 0,  // For radio button grouping
-                max_length: currentTool === 'textbox' ? 255 : 0,  // For textbox
+                max_length: currentTool === 'textbox' ? 255 : (currentTool === 'scrollbar' ? 100 : 0),  // For textbox or scrollbar max_value
+                cursor_pos: 0,  // For scrollbar value
                 action: currentTool === 'button' ? { type: 'none', target: '' } : undefined
             };
 
@@ -1881,7 +2074,8 @@
                 'radiobutton': 'CTRL_RADIOBUTTON',
                 'textbox': 'CTRL_TEXTBOX',
                 'frame': 'CTRL_FRAME',
-                'dropdown': 'CTRL_DROPDOWN'
+                'dropdown': 'CTRL_DROPDOWN',
+                'scrollbar': 'CTRL_SCROLLBAR'
             };
             const typeLabel = typeMap[c.type] || 'UNKNOWN';
 
@@ -2049,6 +2243,27 @@
                 `;
             }
 
+            // Add scrollbar-specific properties
+            if (c.type === 'scrollbar') {
+                html += `
+                    <div class="prop-group">
+                        <div class="prop-label">Orientation</div>
+                        <select class="prop-input" onchange="updateScrollbarOrientation(parseInt(this.value))">
+                            <option value="0" ${c.checked === 0 ? 'selected' : ''}>Vertical</option>
+                            <option value="1" ${c.checked === 1 ? 'selected' : ''}>Horizontal</option>
+                        </select>
+                    </div>
+                    <div class="prop-group">
+                        <div class="prop-label">Value (cursor_pos)</div>
+                        <input class="prop-input" type="number" value="${c.cursor_pos || 0}" min="0" onchange="updateScrollbarValue(parseInt(this.value))">
+                    </div>
+                    <div class="prop-group">
+                        <div class="prop-label">Max Value (max_length)</div>
+                        <input class="prop-input" type="number" value="${c.max_length || 100}" min="1" onchange="updateScrollbarMaxValue(parseInt(this.value))">
+                    </div>
+                `;
+            }
+
             document.getElementById('prop-content').innerHTML = html;
         }
 
@@ -2206,6 +2421,59 @@
         function updateMaxLength(value) {
             if (!selectedControl) return;
             selectedControl.max_length = Math.max(1, Math.min(255, value));
+            updateProperties();
+        }
+
+        function updateScrollbarOrientation(value) {
+            if (!selectedControl) return;
+            const oldOrientation = selectedControl.checked;
+            selectedControl.checked = value; // 0=vertical, 1=horizontal
+            
+            // Swap width and height when changing orientation for better usability
+            if (oldOrientation !== value) {
+                const temp = selectedControl.w;
+                selectedControl.w = selectedControl.h;
+                selectedControl.h = temp;
+            }
+            
+            // Recreate the control element to update the visual representation
+            if (selectedControl.el) {
+                const win = getCurrentWindow();
+                selectedControl.el.remove();
+                createControlElement(selectedControl, win);
+                selectControl(selectedControl);
+            }
+            updateProperties();
+        }
+
+        function updateScrollbarValue(value) {
+            if (!selectedControl) return;
+            const maxVal = selectedControl.max_length || 100;
+            selectedControl.cursor_pos = Math.max(0, Math.min(maxVal, value));
+            // Recreate the control element to update the visual representation
+            if (selectedControl.el) {
+                const win = getCurrentWindow();
+                selectedControl.el.remove();
+                createControlElement(selectedControl, win);
+                selectControl(selectedControl);
+            }
+            updateProperties();
+        }
+
+        function updateScrollbarMaxValue(value) {
+            if (!selectedControl) return;
+            selectedControl.max_length = Math.max(1, value);
+            // Ensure cursor_pos doesn't exceed max_length
+            if (selectedControl.cursor_pos > selectedControl.max_length) {
+                selectedControl.cursor_pos = selectedControl.max_length;
+            }
+            // Recreate the control element to update the visual representation
+            if (selectedControl.el) {
+                const win = getCurrentWindow();
+                selectedControl.el.remove();
+                createControlElement(selectedControl, win);
+                selectControl(selectedControl);
+            }
             updateProperties();
         }
 
@@ -2610,7 +2878,8 @@
                             'radiobutton': 'CTRL_RADIOBUTTON',
                             'textbox': 'CTRL_TEXTBOX',
                             'frame': 'CTRL_FRAME',
-                            'dropdown': 'CTRL_DROPDOWN'
+                            'dropdown': 'CTRL_DROPDOWN',
+                            'scrollbar': 'CTRL_SCROLLBAR'
                         };
                         const typeStr = typeMap[c.type] || 'CTRL_BUTTON';
                         const comma = i < win.controls.length - 1 ? ',' : '';
@@ -3306,7 +3575,8 @@
                                 'CTRL_RADIOBUTTON': 'radiobutton',
                                 'CTRL_TEXTBOX': 'textbox',
                                 'CTRL_FRAME': 'frame',
-                                'CTRL_DROPDOWN': 'dropdown'
+                                'CTRL_DROPDOWN': 'dropdown',
+                                'CTRL_SCROLLBAR': 'scrollbar'
                             };
                             const type = typeMap[typeStr] || 'button';
 
@@ -3412,7 +3682,8 @@
                                             'CTRL_RADIOBUTTON': 'radiobutton',
                                             'CTRL_TEXTBOX': 'textbox',
                                             'CTRL_FRAME': 'frame',
-                                            'CTRL_DROPDOWN': 'dropdown'
+                                            'CTRL_DROPDOWN': 'dropdown',
+                                            'CTRL_SCROLLBAR': 'scrollbar'
                                         };
                                         control.type = typeMap[value] || 'button';
                                         break;

@@ -902,6 +902,166 @@ void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y) {
     }
 }
 
+void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    
+    /* Reusing fields: checked=orientation (0=vert, 1=horiz), cursor_pos=value, max_length=max_value */
+    int vertical = !control->checked;
+    int arrow_size = vertical ? control->w : control->h;
+    int track_len = vertical ? (control->h - 2 * arrow_size) : (control->w - 2 * arrow_size);
+    
+    /* Calculate thumb size and position */
+    int thumb_size = vertical ? 20 : 20;
+    if (thumb_size > track_len) thumb_size = track_len;
+    int max_val = control->max_length > 0 ? control->max_length : 100;
+    int thumb_pos = 0;
+    if (max_val > 0 && track_len > thumb_size) {
+        /* Thumb position ranges from 0 to (track_len - thumb_size) */
+        thumb_pos = ((track_len - thumb_size) * control->cursor_pos) / max_val;
+    }
+    
+    /* Draw arrow buttons */
+    if (vertical) {
+        /* Up arrow button */
+        int up_pressed = (control->hovered_item == 0 && control->pressed);
+        gfx_fillrect(abs_x, abs_y, control->w, arrow_size, theme->button_color);
+        gfx_rect(abs_x, abs_y, control->w, arrow_size, COLOR_BLACK);
+        if (up_pressed) {
+            gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, theme->frame_dark);
+            gfx_vline(abs_x + 1, abs_y + 1, arrow_size - 2, theme->frame_dark);
+        } else {
+            gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_WHITE);
+            gfx_vline(abs_x + 1, abs_y + 1, arrow_size - 2, COLOR_WHITE);
+            gfx_hline(abs_x + 1, abs_y + arrow_size - 2, control->w - 2, theme->frame_dark);
+            gfx_vline(abs_x + control->w - 2, abs_y + 1, arrow_size - 2, theme->frame_dark);
+        }
+        
+        /* Up arrow (pointing up) with base */
+        int arrow_cx = abs_x + control->w / 2;
+        int arrow_cy = abs_y + arrow_size / 2;
+        for (int i = 0; i < 4; i++) {
+            gfx_hline(arrow_cx - 3 + i, arrow_cy - i, 7 - i * 2, COLOR_BLACK);
+        }
+        gfx_fillrect(arrow_cx - 1, arrow_cy + 1, 3, 3, COLOR_BLACK);
+        
+        /* Down arrow button */
+        int down_y = abs_y + control->h - arrow_size;
+        int down_pressed = (control->hovered_item == 2 && control->pressed);
+        gfx_fillrect(abs_x, down_y, control->w, arrow_size, theme->button_color);
+        gfx_rect(abs_x, down_y, control->w, arrow_size, COLOR_BLACK);
+        if (down_pressed) {
+            gfx_hline(abs_x + 1, down_y + 1, control->w - 2, theme->frame_dark);
+            gfx_vline(abs_x + 1, down_y + 1, arrow_size - 2, theme->frame_dark);
+        } else {
+            gfx_hline(abs_x + 1, down_y + 1, control->w - 2, COLOR_WHITE);
+            gfx_vline(abs_x + 1, down_y + 1, arrow_size - 2, COLOR_WHITE);
+            gfx_hline(abs_x + 1, down_y + arrow_size - 2, control->w - 2, theme->frame_dark);
+            gfx_vline(abs_x + control->w - 2, down_y + 1, arrow_size - 2, theme->frame_dark);
+        }
+        
+        /* Down arrow (pointing down) with base */
+        arrow_cy = down_y + arrow_size / 2;
+        for (int i = 0; i < 4; i++) {
+            gfx_hline(arrow_cx - 3 + i, arrow_cy + i, 7 - i * 2, COLOR_BLACK);
+        }
+        gfx_fillrect(arrow_cx - 1, arrow_cy - 3, 3, 3, COLOR_BLACK);
+        
+        /* Track area - dithered pattern */
+        int track_y = abs_y + arrow_size;
+        for (int py = 0; py < track_len; py++) {
+            for (int px = 0; px < control->w; px++) {
+                uint8_t color = ((px + py) & 1) ? COLOR_WHITE : 7; /* 1x1 dither white/light grey */
+                gfx_putpixel(abs_x + px, track_y + py, color);
+            }
+        }
+        
+        /* Draw thumb (looks like empty button) */
+        int thumb_y = track_y + thumb_pos;
+        int thumb_pressed = (control->hovered_item == 1 && control->pressed);
+        gfx_fillrect(abs_x, thumb_y, control->w, thumb_size, theme->button_color);
+        gfx_rect(abs_x, thumb_y, control->w, thumb_size, COLOR_BLACK);
+        if (thumb_pressed) {
+            gfx_hline(abs_x + 1, thumb_y + 1, control->w - 2, theme->frame_dark);
+            gfx_vline(abs_x + 1, thumb_y + 1, thumb_size - 2, theme->frame_dark);
+        } else {
+            gfx_hline(abs_x + 1, thumb_y + 1, control->w - 2, COLOR_WHITE);
+            gfx_vline(abs_x + 1, thumb_y + 1, thumb_size - 2, COLOR_WHITE);
+            gfx_hline(abs_x + 1, thumb_y + thumb_size - 2, control->w - 2, theme->frame_dark);
+            gfx_vline(abs_x + control->w - 2, thumb_y + 1, thumb_size - 2, theme->frame_dark);
+        }
+        
+    } else {
+        /* Horizontal scrollbar */
+        /* Left arrow button */
+        int left_pressed = (control->hovered_item == 0 && control->pressed);
+        gfx_fillrect(abs_x, abs_y, arrow_size, control->h, theme->button_color);
+        gfx_rect(abs_x, abs_y, arrow_size, control->h, COLOR_BLACK);
+        if (left_pressed) {
+            gfx_hline(abs_x + 1, abs_y + 1, arrow_size - 2, theme->frame_dark);
+            gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
+        } else {
+            gfx_hline(abs_x + 1, abs_y + 1, arrow_size - 2, COLOR_WHITE);
+            gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_WHITE);
+            gfx_hline(abs_x + 1, abs_y + control->h - 2, arrow_size - 2, theme->frame_dark);
+            gfx_vline(abs_x + arrow_size - 2, abs_y + 1, control->h - 2, theme->frame_dark);
+        }
+        
+        /* Left arrow (pointing left) with base */
+        int arrow_cx = abs_x + arrow_size / 2;
+        int arrow_cy = abs_y + control->h / 2;
+        for (int i = 0; i < 4; i++) {
+            gfx_vline(arrow_cx - i, arrow_cy - 3 + i, 7 - i * 2, COLOR_BLACK);
+        }
+        gfx_fillrect(arrow_cx + 1, arrow_cy - 1, 3, 3, COLOR_BLACK);
+        
+        /* Right arrow button */
+        int right_x = abs_x + control->w - arrow_size;
+        int right_pressed = (control->hovered_item == 2 && control->pressed);
+        gfx_fillrect(right_x, abs_y, arrow_size, control->h, theme->button_color);
+        gfx_rect(right_x, abs_y, arrow_size, control->h, COLOR_BLACK);
+        if (right_pressed) {
+            gfx_hline(right_x + 1, abs_y + 1, arrow_size - 2, theme->frame_dark);
+            gfx_vline(right_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
+        } else {
+            gfx_hline(right_x + 1, abs_y + 1, arrow_size - 2, COLOR_WHITE);
+            gfx_vline(right_x + 1, abs_y + 1, control->h - 2, COLOR_WHITE);
+            gfx_hline(right_x + 1, abs_y + control->h - 2, arrow_size - 2, theme->frame_dark);
+            gfx_vline(right_x + arrow_size - 2, abs_y + 1, control->h - 2, theme->frame_dark);
+        }
+        
+        /* Right arrow (pointing right) with base */
+        arrow_cx = right_x + arrow_size / 2;
+        for (int i = 0; i < 4; i++) {
+            gfx_vline(arrow_cx + i, arrow_cy - 3 + i, 7 - i * 2, COLOR_BLACK);
+        }
+        gfx_fillrect(arrow_cx - 3, arrow_cy - 1, 3, 3, COLOR_BLACK);
+        
+        /* Track area - dithered pattern */
+        int track_x = abs_x + arrow_size;
+        for (int py = 0; py < control->h; py++) {
+            for (int px = 0; px < track_len; px++) {
+                uint8_t color = ((px + py) & 1) ? COLOR_WHITE : 7;
+                gfx_putpixel(track_x + px, abs_y + py, color);
+            }
+        }
+        
+        /* Draw thumb */
+        int thumb_x = track_x + thumb_pos;
+        int thumb_pressed = (control->hovered_item == 1 && control->pressed);
+        gfx_fillrect(thumb_x, abs_y, thumb_size, control->h, theme->button_color);
+        gfx_rect(thumb_x, abs_y, thumb_size, control->h, COLOR_BLACK);
+        if (thumb_pressed) {
+            gfx_hline(thumb_x + 1, abs_y + 1, thumb_size - 2, theme->frame_dark);
+            gfx_vline(thumb_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
+        } else {
+            gfx_hline(thumb_x + 1, abs_y + 1, thumb_size - 2, COLOR_WHITE);
+            gfx_vline(thumb_x + 1, abs_y + 1, control->h - 2, COLOR_WHITE);
+            gfx_hline(thumb_x + 1, abs_y + control->h - 2, thumb_size - 2, theme->frame_dark);
+            gfx_vline(thumb_x + thumb_size - 2, abs_y + 1, control->h - 2, theme->frame_dark);
+        }
+    }
+}
+
 void ctrl_draw(window_t *win, gui_control_t *control) {
     int abs_x = win->x + control->x;
     int abs_y = win->y + control->y + 20;
@@ -935,6 +1095,9 @@ void ctrl_draw(window_t *win, gui_control_t *control) {
     }
     else if (control->type == 10) { /* CTRL_CLOCK */
         ctrl_draw_clock(control, abs_x, abs_y);
+    }
+    else if (control->type == 11) { /* CTRL_SCROLLBAR */
+        ctrl_draw_scrollbar(control, abs_x, abs_y);
     }
 }
 

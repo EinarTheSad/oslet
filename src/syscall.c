@@ -1056,7 +1056,8 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 ctrl->type != CTRL_TEXTBOX &&
                 ctrl->type != CTRL_ICON &&
                 ctrl->type != CTRL_DROPDOWN &&
-                ctrl->type != CTRL_PICTUREBOX) {
+                ctrl->type != CTRL_PICTUREBOX &&
+                ctrl->type != CTRL_SCROLLBAR) {
                 continue;
             }
 
@@ -1133,6 +1134,96 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                         ctrl->item_count = count;
                         ctrl->dropdown_open = 1;
                         return 1;  /* needs_redraw */
+                    }
+                }
+                /* For scrollbar - detect which part was clicked (arrow, thumb, or track) */
+                else if (ctrl->type == CTRL_SCROLLBAR) {
+                    int vertical = !ctrl->checked;
+                    int arrow_size = vertical ? ctrl->w : ctrl->h;
+                    int track_len = vertical ? (ctrl->h - 2 * arrow_size) : (ctrl->w - 2 * arrow_size);
+                    int thumb_size = 20;
+                    if (thumb_size > track_len) thumb_size = track_len;
+                    int max_val = ctrl->max_length > 0 ? ctrl->max_length : 100;
+                    
+                    /* Calculate current thumb position */
+                    int thumb_pos = 0;
+                    if (max_val > 0 && track_len > thumb_size) {
+                        thumb_pos = ((track_len - thumb_size) * ctrl->cursor_pos) / max_val;
+                    }
+                    
+                    if (vertical) {
+                        int up_y = abs_y;
+                        int down_y = abs_y + ctrl->h - arrow_size;
+                        int track_y = abs_y + arrow_size;
+                        int thumb_y = track_y + thumb_pos;
+                        
+                        if (my >= up_y && my < up_y + arrow_size) {
+                            /* Up arrow clicked */
+                            ctrl->hovered_item = 0;
+                            ctrl->pressed = 1;
+                            if (ctrl->cursor_pos > 0) ctrl->cursor_pos--;
+                            return 1;
+                        } else if (my >= down_y && my < down_y + arrow_size) {
+                            /* Down arrow clicked */
+                            ctrl->hovered_item = 2;
+                            ctrl->pressed = 1;
+                            if (ctrl->cursor_pos < max_val) ctrl->cursor_pos++;
+                            return 1;
+                        } else if (my >= thumb_y && my < thumb_y + thumb_size) {
+                            /* Thumb clicked - start dragging, store offset */
+                            ctrl->hovered_item = 1;
+                            ctrl->pressed = 1;
+                            ctrl->scroll_offset = my - thumb_y; /* Store drag offset */
+                            return 1;
+                        } else if (my >= track_y && my < track_y + track_len) {
+                            /* Track clicked (not on thumb) - jump to position */
+                            int rel_y = my - track_y - thumb_size / 2; /* Center thumb on click */
+                            if (rel_y < 0) rel_y = 0;
+                            if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
+                            ctrl->cursor_pos = (rel_y * max_val) / (track_len - thumb_size);
+                            if (ctrl->cursor_pos > max_val) ctrl->cursor_pos = max_val;
+                            ctrl->hovered_item = 1;
+                            ctrl->pressed = 1;
+                            ctrl->scroll_offset = thumb_size / 2; /* Store drag offset at center */
+                            return 1;
+                        }
+                    } else {
+                        /* Horizontal scrollbar */
+                        int left_x = abs_x;
+                        int right_x = abs_x + ctrl->w - arrow_size;
+                        int track_x = abs_x + arrow_size;
+                        int thumb_x = track_x + thumb_pos;
+                        
+                        if (mx >= left_x && mx < left_x + arrow_size) {
+                            /* Left arrow clicked */
+                            ctrl->hovered_item = 0;
+                            ctrl->pressed = 1;
+                            if (ctrl->cursor_pos > 0) ctrl->cursor_pos--;
+                            return 1;
+                        } else if (mx >= right_x && mx < right_x + arrow_size) {
+                            /* Right arrow clicked */
+                            ctrl->hovered_item = 2;
+                            ctrl->pressed = 1;
+                            if (ctrl->cursor_pos < max_val) ctrl->cursor_pos++;
+return 1;
+                        } else if (mx >= thumb_x && mx < thumb_x + thumb_size) {
+                            /* Thumb clicked - start dragging */
+                            ctrl->hovered_item = 1;
+                            ctrl->pressed = 1;
+                            ctrl->scroll_offset = mx - thumb_x; /* Store drag offset */
+                            return 1;
+                        } else if (mx >= track_x && mx < track_x + track_len) {
+                            /* Track clicked (not on thumb) - jump to position */
+                            int rel_x = mx - track_x - thumb_size / 2;
+                            if (rel_x < 0) rel_x = 0;
+                            if (rel_x > track_len - thumb_size) rel_x = track_len - thumb_size;
+                            ctrl->cursor_pos = (rel_x * max_val) / (track_len - thumb_size);
+                            if (ctrl->cursor_pos > max_val) ctrl->cursor_pos = max_val;
+                            ctrl->hovered_item = 1;
+                            ctrl->pressed = 1;
+                            ctrl->scroll_offset = thumb_size / 2;
+                            return 1;
+                        }
                     }
                 }
                 break;
@@ -1742,6 +1833,15 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                                 }
 
+                                /* Handle scrollbar - clear pressed state and generate event */
+                                else if (ctrl->type == CTRL_SCROLLBAR) {
+                                    ctrl->pressed = 0;
+                                    form->clicked_id = ctrl->id;
+                                    event_count = 1;
+                                    needs_redraw = 1;
+                                    if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                                }
+
                                 /* Valid click detected for buttons and other controls */
                                 else {
                                     form->clicked_id = ctrl->id;
@@ -1759,6 +1859,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (form->controls[i].type == CTRL_BUTTON && form->controls[i].pressed) {
                             form->controls[i].pressed = 0;
                             needs_redraw = 1;  /* Button visual changed */
+                            if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
+                        }
+                        if (form->controls[i].type == CTRL_SCROLLBAR && form->controls[i].pressed) {
+                            form->controls[i].pressed = 0;
+                            needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
                     }
@@ -1856,6 +1961,50 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 }
             }
 
+            /* Handle scrollbar thumb dragging */
+            if ((mb & 1) && form->press_control_id >= 0 && form->controls) {
+                gui_control_t *ctrl = find_control_by_id(form, form->press_control_id);
+                if (ctrl && ctrl->type == CTRL_SCROLLBAR && ctrl->hovered_item == 1 && ctrl->pressed) {
+                    int vertical = !ctrl->checked;
+                    int arrow_size = vertical ? ctrl->w : ctrl->h;
+                    int track_len = vertical ? (ctrl->h - 2 * arrow_size) : (ctrl->w - 2 * arrow_size);
+                    int thumb_size = 20;
+                    if (thumb_size > track_len) thumb_size = track_len;
+                    int max_val = ctrl->max_length > 0 ? ctrl->max_length : 100;
+                    
+                    int abs_x = form->win.x + ctrl->x;
+                    int abs_y = form->win.y + ctrl->y + 20;
+                    
+                    if (vertical) {
+                        int track_y = abs_y + arrow_size;
+                        int rel_y = my - track_y - ctrl->scroll_offset; /* Account for drag offset */
+                        if (rel_y < 0) rel_y = 0;
+                        if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
+                        int new_val = (rel_y * max_val) / (track_len - thumb_size);
+                        if (new_val > max_val) new_val = max_val;
+                        if (new_val != ctrl->cursor_pos) {
+                            ctrl->cursor_pos = new_val;
+                            form->clicked_id = ctrl->id;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                        }
+                    } else {
+                        int track_x = abs_x + arrow_size;
+                        int rel_x = mx - track_x - ctrl->scroll_offset;
+                        if (rel_x < 0) rel_x = 0;
+                        if (rel_x > track_len - thumb_size) rel_x = track_len - thumb_size;
+                        int new_val = (rel_x * max_val) / (track_len - thumb_size);
+                        if (new_val > max_val) new_val = max_val;
+                        if (new_val != ctrl->cursor_pos) {
+                            ctrl->cursor_pos = new_val;
+                            form->clicked_id = ctrl->id;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                        }
+                    }
+                }
+            }
+
             /* Update dropdown hover state (on any mouse move) */
             if (pump_update_dropdown_hover(form, mx, my)) {
                 needs_redraw = 1;
@@ -1928,7 +2077,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     /* Fallback to single window redraw if no specific controls tracked */
                     compositor_draw_single(&global_wm, form);
                 }
-                return (uint32_t)-1;
+                /* Return clicked_id if it was set (e.g., scrollbar value changed), otherwise -1 */
+                return form->clicked_id >= 0 ? form->clicked_id : (uint32_t)-1;
             }
 
             return 0;
