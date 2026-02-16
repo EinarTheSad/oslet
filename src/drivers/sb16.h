@@ -6,3 +6,7 @@ int sb16_detected(void);
 void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform);
 void sb16_stop(void);
 void sb16_set_volume(uint8_t left, uint8_t right);
+
+/* IRQ completion helpers for sound.c */
+void sb16_clear_irq_flag(void);
+int sb16_check_irq_flag(void);
