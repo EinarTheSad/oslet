@@ -410,6 +410,13 @@ void _start(void) {
 
     start_init();
     taskbar_add_button("C:/ICONS/OFF.ICO", "Shutdown");
+    sys_gfx_swap();
+
+    if (sys_sound_detected()) {
+        sys_sound_set_volume(13,13);
+        sys_sound_play_wav("C:/SOUNDS/boot.wav");
+    }
+
     taskbar_draw();
     clock_draw();
 

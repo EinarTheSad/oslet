@@ -85,6 +85,8 @@ install: $(BUILD)/$(TARGET)
 	sudo cp images/*.BMP mnt/IMAGES/; \
 	sudo mkdir -p mnt/ICONS; \
 	sudo cp src/icons/*.ico mnt/ICONS/; \
+	sudo mkdir -p mnt/SOUNDS; \
+	sudo cp src/sounds/*.wav mnt/SOUNDS/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt; \
