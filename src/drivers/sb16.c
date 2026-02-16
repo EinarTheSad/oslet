@@ -42,6 +42,10 @@ static uint8_t dma_buffer[DMA_BUFFER_SIZE] __attribute__((aligned(4096)));
 static uint32_t dma_phys = 0;
 static volatile int dma_complete = 0;
 
+/* Remember last set mixer volumes (4-bit values 0..15). Default to 15 (max) */
+static uint8_t current_left_volume = 15;
+static uint8_t current_right_volume = 15;
+
 /* Sine wave lookup table (64 samples for one period) */
 static const int8_t sine_table[64] = {
     0, 6, 12, 18, 24, 30, 36, 41, 45, 49, 53, 56, 59, 61, 63, 64,
@@ -91,8 +95,15 @@ static int dsp_read(void) {
 
 static void mixer_write(uint8_t reg, uint8_t value) {
     outb(SB_MIXER_ADDR, reg);
-    for (volatile int i = 0; i < 10; i++);
+    for (volatile int i = 0; i < 50; i++);
     outb(SB_MIXER_DATA, value);
+    for (volatile int i = 0; i < 50; i++);
+}
+
+static uint8_t mixer_read(uint8_t reg) {
+    outb(SB_MIXER_ADDR, reg);
+    for (volatile int i = 0; i < 50; i++);
+    return inb(SB_MIXER_DATA);
 }
 
 static void sb16_irq_handler(void) {
@@ -106,6 +117,9 @@ void sb16_init(void) {
     if (dsp_reset() != 0) {
         return;
     }
+
+    /* Reset mixer to defaults */
+    mixer_write(0x00, 0x00);
     
     if (dsp_write(DSP_CMD_GET_VERSION) != 0) {
         return;
@@ -134,10 +148,16 @@ void sb16_init(void) {
     dma_init();
     irq_install_handler(5, sb16_irq_handler);
     
-    mixer_write(0x04, 0xEE);
-    mixer_write(0x22, 0xEE);
-    
     sb16_present = 1;
+
+    /* Set Voice (PCM) to MAX once. From now on we only vary Master volume.
+       This prevents the volume from dropping off too quickly (cascading attenuation). */
+    mixer_write(0x04, 0xFF);         /* Legacy SB Pro Voice volume (max) */
+    mixer_write(0x32, 0x1F << 3);    /* Native SB16 Voice volume L (max) */
+    mixer_write(0x33, 0x1F << 3);    /* Native SB16 Voice volume R (max) */
+    
+    /* Set initial Master volume to max (5-bit range 0..31) */
+    sb16_set_volume(31, 31);
 }
 
 int sb16_detected(void) {
@@ -147,9 +167,38 @@ int sb16_detected(void) {
 void sb16_set_volume(uint8_t left, uint8_t right) {
     if (!sb16_present) return;
     
-    uint8_t vol = ((left & 0x0F) << 4) | (right & 0x0F);
-    mixer_write(0x04, vol);
-    mixer_write(0x22, vol);
+    /* Store current settings (now 5-bit: 0..31) */
+    current_left_volume = left & 0x1F;
+    current_right_volume = right & 0x1F;
+
+    /* 1. SB Pro compatibility Master register (0x22).
+          It's 4-bit per channel, so scale down. */
+    uint8_t l4 = current_left_volume >> 1;
+    uint8_t r4 = current_right_volume >> 1;
+    uint8_t vol4 = (l4 << 4) | r4;
+    mixer_write(0x22, vol4);
+
+    /* 2. SB16 native master volume (5-bit per channel, top 5 bits of register)
+          0x30: Master Left, 0x31: Master Right */
+    mixer_write(0x30, current_left_volume << 3);
+    mixer_write(0x31, current_right_volume << 3);
+
+    /* We no longer touch Voice (0x32, 0x33, 0x04) here to avoid squared attenuation.
+       Voice is set to MAX in sb16_init. */
+
+    /* Ensure output gain is 0dB */
+    mixer_write(0x41, 0x00); /* Left gain */
+    mixer_write(0x42, 0x00); /* Right gain */
+}
+
+uint16_t sb16_get_volume(void) {
+    if (!sb16_present) return 0;
+    
+    /* Read native SB16 Master registers (5-bit) */
+    uint8_t l5 = mixer_read(0x30) >> 3;
+    uint8_t r5 = mixer_read(0x31) >> 3;
+    
+    return ((uint16_t)l5 << 8) | r5;
 }
 
 void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) {
