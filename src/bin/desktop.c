@@ -36,6 +36,7 @@ extern const progmod_t textmode_module;
 extern const progmod_t cpl_theme_module;
 extern const progmod_t cpl_screen_module;
 extern const progmod_t shutdown_module;
+extern const progmod_t volume_module;
 
 desktop_settings_t settings;  /* Global - cpanel needs access */
 usr_bmf_font_t font_b;
@@ -151,6 +152,7 @@ static void prog_register_all(void) {
     progman_register(&cpl_theme_module);
     progman_register(&cpl_screen_module);
     progman_register(&shutdown_module);
+    progman_register(&volume_module);
 }
 
 static void taskbar_button_draw(int x, int y, int w, int h, uint8_t btn_color, const char *label, const char *icon, int pressed) {
@@ -413,7 +415,7 @@ void _start(void) {
     sys_gfx_swap();
 
     if (sys_sound_detected()) {
-        sys_sound_set_volume(13,13);
+        sys_sound_set_volume(15,15);
         sys_sound_play_wav("C:/SOUNDS/boot.wav");
     }
 

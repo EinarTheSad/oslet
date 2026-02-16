@@ -120,41 +120,24 @@ store_orig:
 }
 
 static void save_settings(cpl_screen_state_t *state) {
-    char buffer[1024];
-    int len = 0;
-    
-    /* Read existing INI to preserve [THEME] section */
-    uint8_t theme_winbg = 7;
-    uint8_t theme_titlebar = 1;
-    uint8_t theme_titlebtn = 7;
-    uint8_t theme_text_color = 0;
-    uint8_t theme_taskbar = 7;
-    uint8_t theme_startbtn = 2;
-    
+    char read_buf[2048];
+    char tmp1[4096];
+    char tmp2[4096];
+    char theme_text[512];
+    char desktop_text[512];
+
+    /* Read existing INI to preserve other sections */
     int fd = sys_open(SETTINGS_PATH, "r");
+    int bytes = 0;
     if (fd >= 0) {
-        char read_buf[1024];
-        int bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
+        bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
         sys_close(fd);
-        if (bytes > 0) {
-            read_buf[bytes] = '\0';
-            ini_parser_t ini;
-            ini_init(&ini, read_buf);
-            theme_winbg = (uint8_t)ini_get_color(&ini, "THEME", "BG_COLOR", theme_winbg);
-            theme_titlebar = (uint8_t)ini_get_color(&ini, "THEME", "TITLEBAR_COLOR", theme_titlebar);
-            theme_titlebtn = (uint8_t)ini_get_color(&ini, "THEME", "BUTTON_COLOR", theme_titlebtn);
-            theme_taskbar = (uint8_t)ini_get_color(&ini, "THEME", "TASKBAR_COLOR", theme_taskbar);
-            theme_startbtn = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", theme_startbtn);
-            const char *val = ini_get(&ini, "THEME", "ICON_TEXT_COLOR");
-            if (val) {
-                int c = atoi(val);
-                if (c == 0 || c == 15) theme_text_color = (uint8_t)c;
-            }
-        }
     }
-    
-    /* Write both [THEME] and [DESKTOP] sections */
-    len = snprintf(buffer, sizeof(buffer),
+    if (bytes > 0) read_buf[bytes] = '\0';
+    else read_buf[0] = '\0';
+
+    /* Build individual section strings (CRLF terminated) */
+    snprintf(theme_text, sizeof(theme_text),
         "[THEME]\r\n"
         "BG_COLOR=%d\r\n"
         "TITLEBAR_COLOR=%d\r\n"
@@ -164,26 +147,34 @@ static void save_settings(cpl_screen_state_t *state) {
         "ICON_TEXT_COLOR=%d\r\n"
         "BUTTON_COLOR=%d\r\n"
         "TASKBAR_COLOR=%d\r\n"
-        "START_BUTTON_COLOR=%d\r\n"
-        "\r\n"
+        "START_BUTTON_COLOR=%d\r\n",
+        /* Retrieve the current theme values from the file (if present) so we don't clobber them */
+        (int)ini_get_color((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "THEME", "BG_COLOR", 7),
+        (int)ini_get_color((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "THEME", "TITLEBAR_COLOR", 1),
+        (int)ini_get_color((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "THEME", "ICON_TEXT_COLOR", 0),
+        (int)ini_get_color((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "THEME", "BUTTON_COLOR", 7),
+        (int)ini_get_color((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "THEME", "TASKBAR_COLOR", 7),
+        (int)ini_get_color((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "THEME", "START_BUTTON_COLOR", 2)
+    );
+
+    snprintf(desktop_text, sizeof(desktop_text),
         "[DESKTOP]\r\n"
         "COLOR=%d\r\n"
         "WALLPAPER=%s\r\n"
         "MODE=%d\r\n",
-        theme_winbg,
-        theme_titlebar,
-        theme_text_color,
-        theme_titlebtn,
-        theme_taskbar,
-        theme_startbtn,
         state->desktop_color,
         state->wallpaper,
         state->wallpaper_mode
     );
 
+    /* Replace or insert theme and desktop sections in the existing content */
+    if (ini_replace_section(read_buf, "THEME", theme_text, tmp1, sizeof(tmp1)) < 0) return;
+    if (ini_replace_section(tmp1, "DESKTOP", desktop_text, tmp2, sizeof(tmp2)) < 0) return;
+
+    /* Write final content */
     fd = sys_open(SETTINGS_PATH, "w");
     if (fd >= 0) {
-        sys_write_file(fd, buffer, len);
+        sys_write_file(fd, tmp2, strlen(tmp2));
         sys_close(fd);
     }
 }
@@ -254,14 +245,6 @@ static void update_dropdown_list(cpl_screen_state_t *state) {
     drop->text[pos] = '\0';
     drop->item_count = state->bmp_count + 1; /* +1 for (none) */
     drop->cursor_pos = selected_idx;
-}
-
-static void update_preview(cpl_screen_state_t *state) {
-    if (state->wallpaper[0]) {
-        ctrl_set_image(state->form, CTRL_PIC_PREVIEW, state->wallpaper);
-    } else {
-        ctrl_set_image(state->form, CTRL_PIC_PREVIEW, "");
-    }
 }
 
 static int cpl_screen_init(prog_instance_t *inst) {

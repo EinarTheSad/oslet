@@ -120,36 +120,24 @@ store_orig:
 }
 
 static void save_settings(cpl_theme_state_t *state) {
-    char buffer[1024];
-    int len = 0;
-    
-    /* Read existing INI to preserve [DESKTOP] section */
-    uint8_t desktop_color = 0;
-    char wallpaper[128] = "";
-    int wallpaper_mode = 0;
-    
+    char read_buf[2048];
+    char tmp1[4096];
+    char tmp2[4096];
+    char theme_text[512];
+    char desktop_text[512];
+
+    /* Read existing INI to preserve other sections */
     int fd = sys_open(SETTINGS_PATH, "r");
+    int bytes = 0;
     if (fd >= 0) {
-        char read_buf[1024];
-        int bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
+        bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
         sys_close(fd);
-        if (bytes > 0) {
-            read_buf[bytes] = '\0';
-            ini_parser_t ini;
-            ini_init(&ini, read_buf);
-            desktop_color = (uint8_t)ini_get_color(&ini, "DESKTOP", "COLOR", 0);
-            const char *val = ini_get(&ini, "DESKTOP", "WALLPAPER");
-            if (val && val[0]) {
-                strncpy(wallpaper, val, sizeof(wallpaper) - 1);
-                wallpaper[sizeof(wallpaper) - 1] = '\0';
-            }
-            val = ini_get(&ini, "DESKTOP", "MODE");
-            if (val) wallpaper_mode = atoi(val);
-        }
     }
-    
-    /* Write both [THEME] and [DESKTOP] sections */
-    len = snprintf(buffer, sizeof(buffer),
+    if (bytes > 0) read_buf[bytes] = '\0';
+    else read_buf[0] = '\0';
+
+    /* Build theme section text */
+    snprintf(theme_text, sizeof(theme_text),
         "[THEME]\r\n"
         "BG_COLOR=%d\r\n"
         "TITLEBAR_COLOR=%d\r\n"
@@ -159,26 +147,34 @@ static void save_settings(cpl_theme_state_t *state) {
         "ICON_TEXT_COLOR=%d\r\n"
         "BUTTON_COLOR=%d\r\n"
         "TASKBAR_COLOR=%d\r\n"
-        "START_BUTTON_COLOR=%d\r\n"
-        "\r\n"
-        "[DESKTOP]\r\n"
-        "COLOR=%d\r\n"
-        "WALLPAPER=%s\r\n"
-        "MODE=%d\r\n",
+        "START_BUTTON_COLOR=%d\r\n",
         state->theme_winbg,
         state->theme_titlebar,
         state->theme_text_color,
         state->theme_titlebtn,
         state->theme_taskbar,
-        state->theme_startbtn,
-        desktop_color,
-        wallpaper,
-        wallpaper_mode
+        state->theme_startbtn
     );
 
+    /* Preserve DESKTOP section values by reading from existing content */
+    snprintf(desktop_text, sizeof(desktop_text),
+        "[DESKTOP]\r\n"
+        "COLOR=%d\r\n"
+        "WALLPAPER=%s\r\n"
+        "MODE=%d\r\n",
+        (int)ini_get_color((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "COLOR", 0),
+        ini_get((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "WALLPAPER") ? ini_get((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "WALLPAPER") : "",
+        ini_get((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "MODE") ? atoi(ini_get((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "MODE")) : 0
+    );
+
+    /* Replace or insert theme and desktop sections */
+    if (ini_replace_section(read_buf, "THEME", theme_text, tmp1, sizeof(tmp1)) < 0) return;
+    if (ini_replace_section(tmp1, "DESKTOP", desktop_text, tmp2, sizeof(tmp2)) < 0) return;
+
+    /* Write final content */
     fd = sys_open(SETTINGS_PATH, "w");
     if (fd >= 0) {
-        sys_write_file(fd, buffer, len);
+        sys_write_file(fd, tmp2, strlen(tmp2));
         sys_close(fd);
     }
 }
@@ -303,22 +299,26 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_startbtn = get_dropdown_value(state->form, CTRL_DROP_STARTBTN);
         state->theme_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
 
-        apply_theme(state);
-        save_settings(state);
+          apply_theme(state);
+          save_settings(state);
 
-        state->orig_theme_winbg = state->theme_winbg;
-        state->orig_theme_titlebar = state->theme_titlebar;
-        state->orig_theme_titlebtn = state->theme_titlebtn;
-        state->orig_theme_text_color = state->theme_text_color;
-        state->orig_theme_taskbar = state->theme_taskbar;
-        state->orig_theme_startbtn = state->theme_startbtn;
+          state->orig_theme_winbg = state->theme_winbg;
+          state->orig_theme_titlebar = state->theme_titlebar;
+          state->orig_theme_titlebtn = state->theme_titlebtn;
+          state->orig_theme_text_color = state->theme_text_color;
+          state->orig_theme_taskbar = state->theme_taskbar;
+          state->orig_theme_startbtn = state->theme_startbtn;
 
-        /* Ensure the desktop, taskbar and all windows are immediately redrawn */
-        sys_win_draw(state->form);
-        sys_win_force_full_redraw();
-        sys_win_redraw_all();
+          /* Draw this form immediately, then request a full desktop redraw.
+              Avoid calling sys_win_redraw_all here because it would consume the
+              full-redraw flag before the desktop loop can perform its own
+              desktop/taskbar redraw. The desktop main loop will notice the
+              full redraw request and repaint wallpaper/taskbar/icons. */
+          sys_win_draw(state->form);
+          sys_win_invalidate_icons();
+          sys_win_force_full_redraw();
 
-        return PROG_EVENT_HANDLED;
+          return PROG_EVENT_HANDLED;
     }
 
     /* OK button */
@@ -331,14 +331,17 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_startbtn = get_dropdown_value(state->form, CTRL_DROP_STARTBTN);
         state->theme_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
 
-        apply_theme(state);
-        save_settings(state);
+          apply_theme(state);
+          save_settings(state);
 
-        /* Force full redraw so taskbar/desktop reflect the new theme immediately */
-        sys_win_force_full_redraw();
-        sys_win_redraw_all();
+          /* Draw this form and request desktop full redraw; let the desktop
+              main loop perform wallpaper/taskbar redrawing before final
+              window compositing. */
+          sys_win_draw(state->form);
+          sys_win_invalidate_icons();
+          sys_win_force_full_redraw();
 
-        return PROG_EVENT_CLOSE;
+          return PROG_EVENT_CLOSE;
     }
 
     /* Cancel button */
@@ -350,9 +353,10 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_startbtn = state->orig_theme_startbtn;
         state->theme_text_color = state->orig_theme_text_color;
         apply_theme(state);
-        /* Revert visible UI immediately */
+        /* Revert visible UI immediately: draw the form and request desktop redraw */
+        sys_win_draw(state->form);
+        sys_win_invalidate_icons();
         sys_win_force_full_redraw();
-        sys_win_redraw_all();
         return PROG_EVENT_CLOSE;
     }
 
