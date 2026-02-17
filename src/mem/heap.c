@@ -3,19 +3,18 @@
 #include "paging.h"
 #include "../console.h"
 #include "../drivers/vga.h"
+#include "../task.h"
 
 static volatile int heap_lock = 0;
 
 static inline void heap_acquire(void) {
-    __asm__ volatile("cli");
     while (__sync_lock_test_and_set(&heap_lock, 1)) {
-        __asm__ volatile("pause");
+        task_yield();
     }
 }
 
 static inline void heap_release(void) {
     __sync_lock_release(&heap_lock);
-    __asm__ volatile("sti");
 }
 
 block_t *heap_start = NULL;
