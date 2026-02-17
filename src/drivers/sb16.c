@@ -3,6 +3,7 @@
 #include "../irq/io.h"
 #include "../irq/irq.h"
 #include "../timer.h"
+#include "../task.h"
 
 /* Waveform types */
 #define WAVE_SQUARE    0
@@ -41,6 +42,17 @@ static uint8_t dsp_minor = 0;
 static uint8_t dma_buffer[DMA_BUFFER_SIZE] __attribute__((aligned(4096)));
 static uint32_t dma_phys = 0;
 static volatile int dma_complete = 0;
+static volatile int sb16_lock = 0;
+
+void sb16_acquire(void) {
+    while (__sync_lock_test_and_set(&sb16_lock, 1)) {
+        task_yield();
+    }
+}
+
+void sb16_release(void) {
+    __sync_lock_release(&sb16_lock);
+}
 
 /* Remember last set mixer volumes (4-bit values 0..15). Default to 15 (max) */
 static uint8_t current_left_volume = 15;
@@ -207,6 +219,8 @@ void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) 
     if (dma_phys >= 0x1000000) {
         return;
     }
+
+    sb16_acquire();
     
     uint32_t sample_rate = 44100;
     uint32_t total_samples = (sample_rate * duration_ms) / 1000;
@@ -342,6 +356,8 @@ void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) 
             break;
         }
     }
+
+    sb16_release();
 }
 
 void sb16_stop(void) {
