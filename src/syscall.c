@@ -2673,10 +2673,19 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             return 0;
         }
 
-        case 0x11: { /* SYS_WIN_CHECK_REDRAW - Check and clear full redraw flag */
-            int result = global_wm.needs_full_redraw;
-            global_wm.needs_full_redraw = 0;
-            return result;
+        case 0x11: { /* SYS_WIN_CHECK_REDRAW - Check for full or partial redraw */
+            /* Return codes: 0 = none, 1 = full redraw, 2 = partial redraw (dirty rect available) */
+            if (global_wm.needs_full_redraw) {
+                global_wm.needs_full_redraw = 0;
+                return 1; /* full redraw */
+            }
+
+            /* If compositor has a pending dirty rectangle, signal a partial redraw */
+            if (global_wm.dirty_w > 0 && global_wm.dirty_h > 0) {
+                return 2; /* partial redraw */
+            }
+
+            return 0;
         }
 
         case 0x12: { /* SYS_WIN_GET_DIRTY_RECT - Get dirty rectangle */
