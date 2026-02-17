@@ -3,6 +3,22 @@
 #define WIN_W 120
 #define WIN_H 140
 
+static int clock_handle_event(void *form, int event, void *userdata) {
+    int *last_second = userdata;
+    (void)event; /* no control events to handle in this app */
+
+    gui_form_t *f = form;
+    if (!f->win.is_minimized) {
+        sys_time_t time = {0};
+        sys_get_time(&time);
+        if (time.second != *last_second) {
+            *last_second = time.second;
+            sys_win_mark_dirty(form);
+        }
+    }
+    return 0;
+}
+
 __attribute__((section(".entry"), used))
 void _start(void) {
     void *form = sys_win_create_form("Clock", 520, 0, WIN_W, WIN_H);
@@ -24,36 +40,8 @@ void _start(void) {
 
     sys_win_mark_dirty(form);
 
-    /* Main event loop */
-    int running = 1;
     int last_second = -1;
-    while (running) {
-        int event = sys_win_pump_events(form);
-
-        /* Handle close request from window menu */
-        if (event == -3) {
-            running = 0;
-            continue;
-        }
-
-        /* Handle window state changes - redraw needed */
-        if (event == -1 || event == -2) {
-            sys_win_mark_dirty(form);
-        }
-
-        /* Check if second changed and trigger redraw */
-        gui_form_t *f = form;
-        if (!f->win.is_minimized) {
-            sys_time_t time = {0};
-            sys_get_time(&time);
-            if (time.second != last_second) {
-                last_second = time.second;
-                sys_win_mark_dirty(form);
-            }
-        }
-
-        sys_yield();
-    }
+    sys_win_run_event_loop(form, clock_handle_event, &last_second);
 
     sys_win_destroy_form(form);
     sys_exit();
