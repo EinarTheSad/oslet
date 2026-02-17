@@ -21,7 +21,7 @@
 #define DSP_CMD_PAUSE_DMA          0xD0
 
 #define DMA_CHANNEL 1
-#define DMA_BUFFER_SIZE 4096
+#define DMA_BUFFER_SIZE 8192
 #define TEMP_BUFFER_SIZE 8192
 
 typedef struct {
@@ -163,54 +163,72 @@ int sound_play_wav(const char *path) {
     uint32_t samples_played = 0;
     int is_stereo = (fmt.num_channels == 2);
     int is_16bit = (bytes_per_sample == 2);
-    
+
+    /* Minimum buffer to keep in memory (milliseconds) */
+    const uint32_t MIN_BUFFER_MS = 25;
+    uint32_t min_buffer_samples = (sample_rate * MIN_BUFFER_MS + 999) / 1000; /* ceiling */
+    if (min_buffer_samples < 1) min_buffer_samples = 1;
+    if (min_buffer_samples > DMA_BUFFER_SIZE) min_buffer_samples = DMA_BUFFER_SIZE;
+
     while (samples_played < total_samples) {
-        uint32_t samples_to_play = total_samples - samples_played;
-        if (samples_to_play > DMA_BUFFER_SIZE) {
-            samples_to_play = DMA_BUFFER_SIZE;
+        uint32_t remaining = total_samples - samples_played;
+        uint32_t desired_samples = remaining;
+
+        /* cap to DMA buffer */
+        if (desired_samples > DMA_BUFFER_SIZE) desired_samples = DMA_BUFFER_SIZE;
+        /* ensure we try to buffer at least MIN_BUFFER_MS when possible */
+        if (desired_samples < min_buffer_samples && remaining >= min_buffer_samples) {
+            desired_samples = min_buffer_samples;
         }
 
-        uint32_t bytes_to_read = samples_to_play * bytes_per_sample * fmt.num_channels;
-        if (bytes_to_read > TEMP_BUFFER_SIZE) {
-            bytes_to_read = TEMP_BUFFER_SIZE;
-            samples_to_play = bytes_to_read / (bytes_per_sample * fmt.num_channels);
-        }
+        /* Fill `dma_buffer` with `desired_samples` (may require multiple fat reads) */
+        uint32_t samples_filled = 0;
+        while (samples_filled < desired_samples) {
+            uint32_t samples_needed = desired_samples - samples_filled;
+            uint32_t bytes_needed = samples_needed * bytes_per_sample * fmt.num_channels;
+            if (bytes_needed > TEMP_BUFFER_SIZE) bytes_needed = TEMP_BUFFER_SIZE;
 
-        int bytes_read = fat32_read(file, temp_buffer, bytes_to_read);
-        if (bytes_read <= 0) {
-            break;
-        }
+            int bytes_read = fat32_read(file, temp_buffer, bytes_needed);
+            if (bytes_read <= 0) break; /* EOF / read error */
 
-        uint32_t actual_samples = bytes_read / (bytes_per_sample * fmt.num_channels);
+            uint32_t samples_now = bytes_read / (bytes_per_sample * fmt.num_channels);
+            if (samples_now == 0) break;
 
-        for (uint32_t i = 0; i < actual_samples; i++) {
-            int sample_value = 128;
-            uint32_t src_offset = i * bytes_per_sample * fmt.num_channels;
-            
-            if (is_16bit) {
-                if (src_offset + 2 <= (uint32_t)bytes_read) {
-                    int16_t s16 = *(int16_t*)&temp_buffer[src_offset];
-                    sample_value = (s16 >> 8) + 128;
+            /* convert `samples_now` from temp_buffer into dma_buffer at offset samples_filled */
+            for (uint32_t i = 0; i < samples_now; i++) {
+                int sample_value = 128;
+                uint32_t src_offset = i * bytes_per_sample * fmt.num_channels;
+
+                if (is_16bit) {
+                    if (src_offset + 2 <= (uint32_t)bytes_read) {
+                        int16_t s16 = *(int16_t*)&temp_buffer[src_offset];
+                        sample_value = (s16 >> 8) + 128;
+                    }
+                    if (is_stereo && src_offset + 4 <= (uint32_t)bytes_read) {
+                        int16_t s16_2 = *(int16_t*)&temp_buffer[src_offset + 2];
+                        int sample2 = (s16_2 >> 8) + 128;
+                        sample_value = (sample_value + sample2) >> 1;
+                    }
+                } else {
+                    if (src_offset < (uint32_t)bytes_read) {
+                        sample_value = temp_buffer[src_offset];
+                    }
+                    if (is_stereo && src_offset + 2 <= (uint32_t)bytes_read) {
+                        sample_value = ((int)sample_value + temp_buffer[src_offset + 1]) >> 1;
+                    }
                 }
-                
-                if (is_stereo && src_offset + 4 <= (uint32_t)bytes_read) {
-                    int16_t s16_2 = *(int16_t*)&temp_buffer[src_offset + 2];
-                    int sample2 = (s16_2 >> 8) + 128;
-                    sample_value = (sample_value + sample2) >> 1;
-                }
-            } else {
-                if (src_offset < (uint32_t)bytes_read) {
-                    sample_value = temp_buffer[src_offset];
-                }
-                
-                if (is_stereo && src_offset + 2 <= (uint32_t)bytes_read) {
-                    sample_value = ((int)sample_value + temp_buffer[src_offset + 1]) >> 1;
-                }
+
+                dma_buffer[samples_filled + i] = (uint8_t)sample_value;
             }
-            
-            dma_buffer[i] = (uint8_t)sample_value;
+
+            samples_filled += samples_now;
         }
 
+        if (samples_filled == 0) break; /* nothing left to play */
+
+        uint32_t actual_samples = samples_filled;
+
+        /* Start playback of the filled DMA buffer */
         sb16_acquire();
         sb16_clear_irq_flag();
         dma_setup_channel(DMA_CHANNEL, dma_phys, actual_samples, 0x48);
