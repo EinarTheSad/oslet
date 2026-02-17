@@ -3,6 +3,7 @@
 #include "../mem/heap.h"
 #include "../console.h"
 #include "../rtc.h"
+#include "../task.h"
 
 #define FAT32_EOC 0x0FFFFFF8  /* End of cluster chain starts at 0x0FFFFFF8 */
 #define FAT32_BAD 0x0FFFFFF7
@@ -75,6 +76,17 @@ typedef struct {
 static fat32_volume_t volumes[FAT32_MAX_VOLUMES];
 static fat32_file_t open_files[FAT32_MAX_OPEN_FILES];
 static char current_dir[FAT32_MAX_PATH] = "C:/";
+static volatile int fat32_lock = 0;
+
+static void fat32_acquire(void) {
+    while (__sync_lock_test_and_set(&fat32_lock, 1)) {
+        task_yield();
+    }
+}
+
+static void fat32_release(void) {
+    __sync_lock_release(&fat32_lock);
+}
 
 static uint8_t fat_dirty[FAT32_MAX_VOLUMES];
 static uint32_t last_alloc[FAT32_MAX_VOLUMES];
@@ -777,12 +789,13 @@ int fat32_unmount_drive(uint8_t drive_letter) {
 fat32_file_t* fat32_open(const char *path, const char *mode) {
     if (!path || !mode) return NULL;
 
-    (void)path; (void)mode;
+    fat32_acquire();
 
     uint8_t drive;
     char rest[FAT32_MAX_PATH];
     if (parse_path(path, &drive, rest, sizeof(rest)) != 0) {
         /* parse_path failed */
+        fat32_release();
         return NULL;
     }
     (void)drive; (void)rest;
@@ -790,6 +803,7 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
     fat32_volume_t *vol = get_volume(drive);
     if (!vol) {
         /* volume not found */
+        fat32_release();
         return NULL;
     }
 
@@ -801,6 +815,7 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
         }
     }
     if (!file) {
+        fat32_release();
         return NULL;
     }
     /* allocated open_files slot */
@@ -809,11 +824,13 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
     char filename[FAT32_MAX_PATH];
     if (navigate_path(vol, rest, &dir_cluster, filename) != 0) {
         /* navigate_path failed */
+        fat32_release();
         return NULL;
     }
     (void)dir_cluster; (void)filename;
 
     if (filename[0] == '\0') {
+        fat32_release();
         return NULL;
     }
 
@@ -821,6 +838,7 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
     int found = find_in_dir(vol, dir_cluster, filename, &entry, NULL, NULL);
 
     if (mode[0] == 'r' && found != 0) {
+        fat32_release();
         return NULL;
     }
 
@@ -828,10 +846,12 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
         if (found != 0) {
             uint32_t new_cluster = alloc_cluster(vol);
             if (new_cluster == 0) {
+                fat32_release();
                 return NULL;
             }
             if (add_dir_entry(vol, dir_cluster, filename, new_cluster, 0, FAT_ATTR_ARCHIVE) != 0) {
                 free_cluster_chain(vol, new_cluster);
+                fat32_release();
                 return NULL;
             }
             sync_fat(vol);
@@ -861,6 +881,7 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
     file->mode = mode[0];
     strcpy_s(file->path, path, sizeof(file->path));
 
+    fat32_release();
     return file;
 }
 
@@ -868,8 +889,13 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
     if (!file || !file->in_use || !buffer) return -1;
     if (file->position >= file->size) return 0;
     
+    fat32_acquire();
+    
     fat32_volume_t *vol = get_volume(file->drive);
-    if (!vol) return -1;
+    if (!vol) {
+        fat32_release();
+        return -1;
+    }
     
     size_t bytes_read = 0;
     size_t to_read = size;
@@ -878,11 +904,15 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
     
     size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
     uint8_t *cluster_buf = kmalloc(cluster_size);
-    if (!cluster_buf) return -1;
+    if (!cluster_buf) {
+        fat32_release();
+        return -1;
+    }
     
     while (to_read > 0 && file->current_cluster >= 2 && file->current_cluster < FAT32_EOC) {
         if (read_cluster(vol, file->current_cluster, cluster_buf) != 0) {
             kfree(cluster_buf);
+            fat32_release();
             return -1;
         }
         
@@ -902,6 +932,7 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
     }
     
     kfree(cluster_buf);
+    fat32_release();
     return (int)bytes_read;
 }
 
@@ -909,13 +940,21 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
     if (!file || !file->in_use || !buffer) return -1;
     if (file->mode != 'w' && file->mode != 'a') return -1;
     
+    fat32_acquire();
+    
     fat32_volume_t *vol = get_volume(file->drive);
-    if (!vol) return -1;
+    if (!vol) {
+        fat32_release();
+        return -1;
+    }
     
     size_t bytes_written = 0;
     size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
     uint8_t *cluster_buf = kmalloc(cluster_size);
-    if (!cluster_buf) return -1;
+    if (!cluster_buf) {
+        fat32_release();
+        return -1;
+    }
     
     while (size > 0) {
         if (file->current_cluster >= FAT32_EOC || file->current_cluster < 2) {
@@ -945,6 +984,7 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
         if (file->cluster_offset != 0 || size < cluster_size) {
             if (read_cluster(vol, file->current_cluster, cluster_buf) != 0) {
                 kfree(cluster_buf);
+                fat32_release();
                 return -1;
             }
         }
@@ -956,6 +996,7 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
         
         if (write_cluster(vol, file->current_cluster, cluster_buf) != 0) {
             kfree(cluster_buf);
+            fat32_release();
             return -1;
         }
         
@@ -974,14 +1015,20 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
         file->size = file->position;
     
     kfree(cluster_buf);
+    fat32_release();
     return (int)bytes_written;
 }
 
 int fat32_seek(fat32_file_t *file, uint32_t offset) {
     if (!file || !file->in_use) return -1;
     
+    fat32_acquire();
+    
     fat32_volume_t *vol = get_volume(file->drive);
-    if (!vol) return -1;
+    if (!vol) {
+        fat32_release();
+        return -1;
+    }
     
     file->position = offset;
     file->current_cluster = file->first_cluster;
@@ -994,6 +1041,7 @@ int fat32_seek(fat32_file_t *file, uint32_t offset) {
     }
     
     file->cluster_offset = offset;
+    fat32_release();
     return 0;
 }
 
@@ -1003,6 +1051,8 @@ uint32_t fat32_tell(fat32_file_t *file) {
 
 void fat32_close(fat32_file_t *file) {
     if (!file || !file->in_use) return;
+    
+    fat32_acquire();
     
     if (file->mode == 'w' || file->mode == 'a') {
         fat32_volume_t *vol = get_volume(file->drive);
@@ -1045,6 +1095,7 @@ void fat32_close(fat32_file_t *file) {
     }
     
     file->in_use = 0;
+    fat32_release();
 }
 
 int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries) {

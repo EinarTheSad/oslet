@@ -1,6 +1,7 @@
 #include "ata.h"
 #include "../irq/io.h"
 #include "../console.h"
+#include "../task.h"
 
 #define ATA_PRIMARY_IO      0x1F0
 #define ATA_PRIMARY_CONTROL 0x3F6
@@ -31,6 +32,19 @@ static inline void ata_400ns_delay(void);
  * though data was written. We detect that and disable flush at runtime
  * to avoid constant ERR loops. */
 static int ata_flush_supported = 1;
+
+static volatile int ata_driver_lock = 0;
+
+static void ata_acquire(void) {
+    while (__sync_lock_test_and_set(&ata_driver_lock, 1)) {
+        task_yield();
+    }
+}
+
+static void ata_release(void) {
+    __sync_lock_release(&ata_driver_lock);
+}
+
 static inline void ata_wait_bsy(void) {
     while (inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_BSY);
 }
@@ -89,6 +103,7 @@ void ata_init(void) {
 
 int ata_identify(void) {
     // Select master drive
+    ata_acquire();
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
     ata_400ns_delay();
 
@@ -98,6 +113,7 @@ int ata_identify(void) {
     // Wait for BSY to clear and DRDY to set before sending command
     if (ata_wait_bsy_timeout(5000) != 0) {
         // Timeout waiting for drive to be ready
+        ata_release();
         return -1;
     }
 
@@ -114,11 +130,13 @@ int ata_identify(void) {
     // Check if drive exists
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
     if (status == 0 || status == 0xFF) {
+        ata_release();
         return -1; // No drive
     }
 
     // Wait for BSY to clear
     if (ata_wait_bsy_timeout(30000) != 0) {
+        ata_release();
         return -1;
     }
 
@@ -127,11 +145,13 @@ int ata_identify(void) {
     uint8_t lbahi = inb(ATA_PRIMARY_IO + ATA_REG_LBA_HI);
 
     if (lbamid != 0 || lbahi != 0) {
+        ata_release();
         return -1; // Not an ATA device
     }
 
     // Wait for DRQ or ERR
     if (ata_wait_drq_timeout(30000) != 0) {
+        ata_release();
         return -1;
     }
 
@@ -141,6 +161,7 @@ int ata_identify(void) {
         identify[i] = inw(ATA_PRIMARY_IO + ATA_REG_DATA);
     }
 
+    ata_release();
     return 0;
 }
 
@@ -155,7 +176,10 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
         return -1;
     }
 
+    ata_acquire();
+
     if (ata_wait_bsy_timeout(5000) != 0) {
+        ata_release();
         return -1;
     }
 
@@ -168,6 +192,7 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
 
     // Wait for BSY to clear after drive selection
     if (ata_wait_bsy_timeout(5000) != 0) {
+        ata_release();
         return -1;
     }
 
@@ -181,11 +206,13 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
     
     for (int s = 0; s < sector_count; s++) {
         if (ata_wait_bsy_timeout(5000) != 0) {
+            ata_release();
             return -1;
         }
         
         int drq_result = ata_wait_drq_timeout(5000);
         if (drq_result != 0) {
+            ata_release();
             return -1;
         }
         
@@ -196,16 +223,20 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
         ata_400ns_delay();
     }
     
+    ata_release();
     return 0;
 }
 
 int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     if (!buffer || sector_count == 0) return -1;
 
+    ata_acquire();
+
     if (ata_wait_bsy_timeout(5000) != 0) {
         /* brief backoff and one retry */
         for (volatile int d = 0; d < 50000; d++);
         if (ata_wait_bsy_timeout(1000) != 0) {
+            ata_release();
             return -1;
         }
     }
@@ -225,6 +256,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     if (ata_wait_bsy_timeout(10000) != 0) {
         for (volatile int d = 0; d < 100000; d++);
         if (ata_wait_bsy_timeout(2000) != 0) {
+            ata_release();
             return -1;
         }
     }
@@ -239,11 +271,13 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     
     for (int s = 0; s < sector_count; s++) {
         if (ata_wait_bsy_timeout(5000) != 0) {
+            ata_release();
             return -1;
         }
         
         int drq_result = ata_wait_drq_timeout(5000);
         if (drq_result != 0) {
+            ata_release();
             return -1;
         }
         
@@ -256,6 +290,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
         /* Read status to detect errors and ensure controller accepted the sector */
         uint8_t status_after = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
         if (status_after & ATA_SR_ERR) {
+            ata_release();
             return -1;
         }
 
@@ -269,6 +304,7 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
 
         /* As an added safety, ensure BSY cleared before next sector/command */
         if (ata_wait_bsy_timeout(5000) != 0) {
+            ata_release();
             return -1;
         }
     }
@@ -299,16 +335,20 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
 
     /* Don't treat flush errors as fatal; assume sector writes succeeded if
      * ata_write_sectors returned success earlier. */
+    ata_release();
     return 0;
 }
 
 int ata_is_available(void) {
+    ata_acquire();
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+    ata_release();
     return (status != 0xFF && status != 0x00);
 }
 
 int ata_is_present(void) {
     // Select master drive
+    ata_acquire();
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
     ata_400ns_delay();
 
@@ -319,6 +359,7 @@ int ata_is_present(void) {
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
 
     if (status == 0xFF || status == 0x00) {
+        ata_release();
         return 0; // No drive present
     }
 
@@ -327,11 +368,14 @@ int ata_is_present(void) {
     uint8_t lbahi = inb(ATA_PRIMARY_IO + ATA_REG_LBA_HI);
 
     if (lbamid == 0x14 && lbahi == 0xEB) {
+        ata_release();
         return 0; // ATAPI (CD-ROM)
     }
     if (lbamid == 0x3C && lbahi == 0xC3) {
+        ata_release();
         return 0; // SATA
     }
 
+    ata_release();
     return 1;
 }
