@@ -81,6 +81,8 @@ static int taskbar_add_button(const char *icon_path, const char *action) {
 } 
 static int last_clock_hour = -1;
 static int last_clock_minute = -1;
+/* Sound icon state for the little speaker left of the clock */
+static int sound_icon_pressed = 0;
 
 /* Parse INI file and load desktop settings */
 static void load_settings(void) {
@@ -213,19 +215,44 @@ static void start_init(void) {
 static void clock_draw(void) {
     sys_theme_t *theme = sys_win_get_theme();
     sys_get_time(&current);
-    sys_gfx_rect(WM_SCREEN_WIDTH-60, TASKBAR_Y + 3, 57, 21, theme->frame_dark);
-    sys_gfx_line(WM_SCREEN_WIDTH-59, TASKBAR_Y + 23, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, COLOR_WHITE);
-    sys_gfx_line(WM_SCREEN_WIDTH-4, TASKBAR_Y + 4, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, COLOR_WHITE);
-    sys_gfx_fillrect(WM_SCREEN_WIDTH-59, TASKBAR_Y + 4, 55, 19, theme->taskbar_color);
+    sys_gfx_fillrect(WM_SCREEN_WIDTH-39, TASKBAR_Y + 9, 34, 11, theme->taskbar_color);
     usr_bmf_printf(WM_SCREEN_WIDTH-38, TASKBAR_Y + 10, &font_n, 12, theme->text_color, "%02u:%02u", current.hour, current.minute);
     last_clock_hour = current.hour;
     last_clock_minute = current.minute;
+}
+
+static int mark_windows_overlapping_rect(int x, int y, int w, int h) {
+    prog_instance_t *inst;
+    int marked = 0;
+
+    /* Iterate progman-managed program instances and mark any window that
+       intersects the given desktop rect as dirty so the compositor will redraw it. */
+    PROGMAN_FOREACH_RUNNING(inst) {
+        for (int j = 0; j < inst->window_count; j++) {
+            gui_form_t *form = (gui_form_t*)inst->windows[j];
+            if (!form || !form->win.is_visible || form->win.is_minimized) continue;
+            int ix, iy, iw, ih;
+            if (rect_intersect(x, y, w, h, form->win.x, form->win.y, form->win.w, form->win.h,
+                               &ix, &iy, &iw, &ih)) {
+                sys_win_mark_dirty(form);
+                marked++;
+            }
+        }
+    }
+
+    return marked;
 }
 
 static int clock_update(void) {
     sys_get_time(&current);
     if (current.hour != last_clock_hour || current.minute != last_clock_minute) {
         clock_draw();
+        /* Mark only windows overlapping the clock area so compositor repaints them on top.
+           If no progman-managed window intersects, fall back to a full compositor redraw
+           (covers apps that don't register windows with progman, e.g. src/apps/imgview). */
+        if (!mark_windows_overlapping_rect(WM_SCREEN_WIDTH-60, TASKBAR_Y + 3, 57, 21)) {
+            sys_win_redraw_all();
+        }
         return 1;
     }
     return 0;
@@ -236,6 +263,10 @@ static void taskbar_draw(void) {
     sys_gfx_fillrect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT, theme->taskbar_color);
     sys_gfx_line(0, TASKBAR_Y, WM_SCREEN_WIDTH, TASKBAR_Y, COLOR_WHITE);
 
+    sys_gfx_rect(WM_SCREEN_WIDTH-60, TASKBAR_Y + 3, 57, 21, theme->frame_dark);
+    sys_gfx_line(WM_SCREEN_WIDTH-59, TASKBAR_Y + 23, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, COLOR_WHITE);
+    sys_gfx_line(WM_SCREEN_WIDTH-4, TASKBAR_Y + 4, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, COLOR_WHITE);
+
     for (int i = 0; i < taskbar_button_count; i++) {
         taskbar_button_t *b = &taskbar_buttons[i];
         const char *label = b->label[0] ? b->label : NULL;
@@ -243,6 +274,15 @@ static void taskbar_draw(void) {
         uint8_t color = (i == 0) ? theme->start_button_color : theme->button_color;
         taskbar_button_draw(b->x, b->y, b->w, b->h, color, label, icon, b->pressed);
     }
+
+    /* Volume control applet icon */
+    int sx = WM_SCREEN_WIDTH - 61;
+    int sy = TASKBAR_Y + 2;
+    int sw = 21;
+    int sh = 21;
+    int ix = sx + (sw - 16) / 2 + 1;
+    int iy = sy + (sh - 16) / 2 + 1;
+    sys_gfx_load_bmp("C:/icons/snd.ico", ix, iy);
 } 
 
 static int taskbar_click(int mx, int my, unsigned char mb, int *state_changed) {
@@ -270,6 +310,52 @@ static int taskbar_click(int mx, int my, unsigned char mb, int *state_changed) {
         }
 
         if (old_pressed != b->pressed) change = 1;
+    }
+
+    /* Sound icon (right side, left of clock) - separate from taskbar_buttons[] */
+    {
+        int sx = WM_SCREEN_WIDTH - 61;
+        int sy = TASKBAR_Y + 2;
+        int sw = 21;
+        int sh = 21;
+        int old = sound_icon_pressed;
+        int sound_clicked = 0;
+
+        if (mx >= sx && mx < sx + sw && my >= sy && my < sy + sh) {
+            if (mb & 1) {
+                sound_icon_pressed = 1;
+            } else if ((last_mb & 1) && !(mb & 1)) {
+                sound_icon_pressed = 0;
+                sound_clicked = 1;
+            }
+        } else {
+            if (!(mb & 1)) sound_icon_pressed = 0;
+        }
+
+        if (old != sound_icon_pressed) change = 1;
+
+        if (sound_clicked) {
+            /* Launch or restore the Volume module (same behavior as other taskbar items) */
+            if (!progman_is_running("Volume")) {
+                progman_launch("Volume");
+            } else {
+                int found = 0;
+                int count = progman_get_running_count();
+                for (int i = 0; i < count; i++) {
+                    prog_instance_t *other = progman_get_instance(i);
+                    if (!other || !other->module) continue;
+                    if (strcmp(other->module->name, "Volume") != 0) continue;
+
+                    if (other->window_count > 0 && other->windows[0]) {
+                        sys_win_restore_form(other->windows[0]);
+                        found = 1;
+                        break;
+                    }
+                }
+
+                if (!found) progman_launch("Volume");
+            }
+        }
     }
 
     if (change) *state_changed = 1;
@@ -310,37 +396,73 @@ void desktop_apply_settings(uint8_t color, const char *wallpaper, uint8_t wallpa
 }
 
 static void desktop_redraw_rect(int x, int y, int w, int h) {
+    /* Keep original rect to detect taskbar overlap */
+    int orig_x = x, orig_y = y, orig_w = w, orig_h = h;
+    int taskbar_dirty = 0;
+
+    /* If the dirty rect intersects the taskbar area, mark taskbar as dirty */
+    if (orig_y < WM_SCREEN_HEIGHT && (orig_y + orig_h) > TASKBAR_Y) {
+        taskbar_dirty = 1;
+    }
+
     /* Clip to desktop area (above taskbar) */
     if (y + h > TASKBAR_Y) h = TASKBAR_Y - y;
     if (y < 0) { h += y; y = 0; }
     if (x < 0) { w += x; x = 0; }
-    if (w <= 0 || h <= 0) return;
 
-    sys_gfx_fillrect(x, y, w, h, settings.color);
+    /* Redraw desktop portion (if any) */
+    if (w > 0 && h > 0) {
+        sys_gfx_fillrect(x, y, w, h, settings.color);
 
-    /* Redraw wallpaper portion */
-    if (settings.wallpaper[0] != '\0' && cached_wallpaper.data) {
-        if (settings.wallpaper_mode == 1) {
-            /* Stretch mode: redraw entire cached wallpaper (640x480) */
-            draw_wallpaper();
-            /* Redraw taskbar since wallpaper covers entire screen */
-            taskbar_draw();
-            clock_draw();
-        } else {
-            /* Center mode: draw partial wallpaper if it intersects the dirty rect */
-            int ix, iy, iw, ih;
-            if (rect_intersect(x, y, w, h,
-                               wallpaper_x, wallpaper_y, cached_wallpaper.width, cached_wallpaper.height,
-                               &ix, &iy, &iw, &ih)) {
-                int src_x = ix - wallpaper_x;
-                int src_y = iy - wallpaper_y;
-                wallpaper_draw_partial(&cached_wallpaper, ix, iy, src_x, src_y, iw, ih);
+        /* Redraw wallpaper portion */
+        if (settings.wallpaper[0] != '\0' && cached_wallpaper.data) {
+            if (settings.wallpaper_mode == 1) {
+                /* Stretch mode: redraw entire cached wallpaper (640x480) */
+                draw_wallpaper();
+                /* Redraw taskbar since wallpaper covers entire screen */
+                taskbar_draw();
+                clock_draw();
+                taskbar_dirty = 0; /* already handled */
+            } else {
+                /* Center mode: draw partial wallpaper if it intersects the dirty rect */
+                int ix, iy, iw, ih;
+                if (rect_intersect(x, y, w, h,
+                                   wallpaper_x, wallpaper_y, cached_wallpaper.width, cached_wallpaper.height,
+                                   &ix, &iy, &iw, &ih)) {
+                    int src_x = ix - wallpaper_x;
+                    int src_y = iy - wallpaper_y;
+                    wallpaper_draw_partial(&cached_wallpaper, ix, iy, src_x, src_y, iw, ih);
+                }
             }
         }
     }
+
+    /* If the original dirty rect touched the taskbar, redraw it now so the
+       desktop/taskbar (including the clock) is painted before windows are
+       composited on top. */
+    if (taskbar_dirty) {
+        taskbar_draw();
+        clock_draw();
+    }
+
     sys_win_invalidate_icons();
-    sys_win_redraw_all();
+
+    /* Redraw windows overlapping the desktop dirty rect */
+    if (w > 0 && h > 0) {
+        if (!mark_windows_overlapping_rect(x, y, w, h)) {
+            /* Fallback: ensure non-progman windows are also redrawn */
+            sys_win_redraw_all();
+        }
+    }
+
+    /* Also ensure windows overlapping the taskbar area are redrawn */
+    if (taskbar_dirty) {
+        if (!mark_windows_overlapping_rect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT)) {
+            sys_win_redraw_all();
+        }
+    }
 }
+
 
 static void desktop_redraw_fast(void) {
     /* Get dirty rect around icons and redraw that area */
@@ -503,6 +625,12 @@ void _start(void) {
         if (taskbar_needs_redraw) {
             taskbar_draw();
             clock_draw();
+            /* Redraw only windows overlapping the taskbar/clock to avoid a full redraw.
+               Fall back to full redraw if none of the progman-managed windows intersect
+               (handles non-progman apps such as src/apps/imgview). */
+            if (!mark_windows_overlapping_rect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT)) {
+                sys_win_redraw_all();
+            }
             taskbar_needs_redraw = 0;
         }
 
