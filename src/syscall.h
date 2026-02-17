@@ -212,6 +212,7 @@ typedef struct {
     uint16_t dropdown_saved_h;
     int16_t dropdown_saved_x;
     int16_t dropdown_saved_y;
+    uint16_t dropdown_scroll; /* first visible item index when dropdown list is scrolled */
     uint8_t load_failed; /* set when image loading failed to avoid retry storm */
 } gui_control_t;
 

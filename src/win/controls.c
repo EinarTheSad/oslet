@@ -774,6 +774,16 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
         }
     }
 
+    /* Calculate visible item count and whether a scrollbar is needed */
+    int visible_count = list_h / item_h;
+    if (visible_count < 1) visible_count = 1;
+    int need_scrollbar = item_count > visible_count;
+    int sb_w = need_scrollbar ? 18 : 0; /* scrollbar width on right */
+
+    /* Clamp dropdown_scroll into valid range */
+    int max_scroll = item_count > visible_count ? (item_count - visible_count) : 0;
+    if (control->dropdown_scroll > (uint16_t)max_scroll) control->dropdown_scroll = max_scroll;
+
     /* Ensure background for the list is saved so it can be correctly restored when closed.
        This is required because dropdown lists may extend outside their parent window. */
     if (!control->dropdown_saved_bg) {
@@ -792,35 +802,76 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
         }
     }
 
-    /* List background */
+    /* List background (full width includes potential scrollbar) */
     gfx_fillrect(abs_x, list_y, control->w, list_h, COLOR_WHITE);
     gfx_rect(abs_x, list_y, control->w, list_h, theme->frame_dark);
 
-    /* Draw items */
-    for (int i = 0; i < item_count; i++) {
+    /* Draw visible items only (respect dropdown_scroll) */
+    for (int vi = 0; vi < visible_count; vi++) {
+        int i = control->dropdown_scroll + vi; /* absolute item index */
+        if (i >= item_count) break;
+
         char item_text[64];
         dropdown_get_item(control->text, i, item_text, sizeof(item_text));
 
-        int item_y = list_y + i * item_h;
+        int item_y = list_y + vi * item_h;
+        int content_w = control->w - sb_w;
 
         /* Highlight selected item in blue, hovered item in gray */
         if (i == control->cursor_pos) {
-            gfx_fillrect(abs_x + 1, item_y, control->w - 2, item_h, COLOR_BLUE);
-            if (font->data) {
-                bmf_printf(abs_x + 4, item_y + 3, font, size, COLOR_WHITE, "%s", item_text);
-            }
+            gfx_fillrect(abs_x + 1, item_y, content_w - 2, item_h, COLOR_BLUE);
+            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, COLOR_WHITE, "%s", item_text);
         } else if (i == control->hovered_item) {
-            gfx_fillrect(abs_x + 1, item_y, control->w - 2, item_h, 7);  /* Light gray hover color */
-            if (font->data) {
-                bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
-            }
+            gfx_fillrect(abs_x + 1, item_y, content_w - 2, item_h, 7);  /* Light gray hover color */
+            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
         } else {
-            if (font->data) {
-                bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
-            }
+            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
         }
     }
+
+    /* Draw scrollbar on the right when content is clipped */
+    if (need_scrollbar) {
+        gui_control_t sb = {0};
+        sb.type = CTRL_SCROLLBAR; /* temporary control for rendering */
+        sb.w = sb_w;
+        sb.h = list_h;
+        sb.checked = 0; /* vertical */
+        sb.cursor_pos = control->dropdown_scroll;
+        sb.max_length = max_scroll > 0 ? max_scroll : 1;
+
+        /* Derive hover/pressed state for the inline scrollbar from global mouse + control state */
+        int mx = mouse_get_x();
+        int my = mouse_get_y();
+        int arrow_size = sb_w;
+        int track_len = list_h - 2 * arrow_size;
+        int thumb_size = 20;
+        if (thumb_size > track_len) thumb_size = track_len;
+        int thumb_pos = 0;
+        if (sb.max_length > 0 && track_len > thumb_size) {
+            thumb_pos = ((track_len - thumb_size) * sb.cursor_pos) / sb.max_length;
+        }
+
+        /* Default: no hovered part */
+        sb.hovered_item = -1;
+        if (mx >= abs_x + control->w - sb_w && mx < abs_x + control->w && my >= list_y && my < list_y + list_h) {
+            int rel = my - list_y;
+            if (rel < arrow_size) sb.hovered_item = 0;            /* up arrow */
+            else if (rel >= list_h - arrow_size) sb.hovered_item = 2; /* down arrow */
+            else {
+                int thumb_y = arrow_size + thumb_pos;
+                if (rel >= thumb_y && rel < thumb_y + thumb_size) sb.hovered_item = 1; /* thumb */
+                else sb.hovered_item = -1; /* track */
+            }
+        }
+
+        /* Pressed state when dropdown control is pressed and pointer is over scrollbar */
+        if (control->pressed && control->hovered_item == -2) sb.pressed = 1;
+
+        /* Draw using existing scrollbar renderer */
+        ctrl_draw_scrollbar(&sb, abs_x + control->w - sb_w, list_y);
+    }
 }
+
 
 /* Restore and free saved dropdown background (integrated here so all control logic
    resides in one implementation file). */
