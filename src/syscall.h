@@ -984,10 +984,15 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
         }
         
         if (event == -1 || event == -2) {
-            /* Event pump already redrew affected controls/window, no need for full redraw */
+            /* Ensure the form is marked dirty after minimize/restore so
+               userland controls that depend on visibility get an immediate redraw. */
+            sys_win_mark_dirty(form);
         }
         
-        if (event > 0 && handler && handler(form, event, userdata) != 0) {
+        /* Call the handler for positive control events *and* for idle ticks
+           (event == 0). This lets applications receive periodic callbacks
+           without spinning their own event loop (useful for animations, clocks, etc.). */
+        if (event >= 0 && handler && handler(form, event, userdata) != 0) {
             running = 0;
         }
         

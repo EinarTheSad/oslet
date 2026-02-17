@@ -2741,6 +2741,40 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
         }
 
         case 0x17: { /* SYS_WIN_FORCE_FULL_REDRAW - request a desktop full redraw */
+            /* Clear any saved/serialized screen patches that were captured
+               earlier (saved_bg for windows, dropdown/menu saved backgrounds)
+               so they don't restore stale wallpaper portions after the desktop
+               background has changed. */
+            for (int i = 0; i < global_wm.count; i++) {
+                gui_form_t *f = global_wm.windows[i];
+                if (!f) continue;
+
+                /* Free per-window saved background (will be re-captured on next draw) */
+                if (f->win.saved_bg) {
+                    kfree(f->win.saved_bg);
+                    f->win.saved_bg = NULL;
+                }
+
+                /* Free any saved dropdown background for controls */
+                if (f->controls) {
+                    for (int j = 0; j < f->ctrl_count; j++) {
+                        if (f->controls[j].dropdown_saved_bg) {
+                            kfree(f->controls[j].dropdown_saved_bg);
+                            f->controls[j].dropdown_saved_bg = NULL;
+                        }
+                    }
+                }
+
+                /* Free any saved menu background */
+                if (f->window_menu.saved_bg) {
+                    kfree(f->window_menu.saved_bg);
+                    f->window_menu.saved_bg = NULL;
+                }
+            }
+
+            /* Also invalidate cached icon backgrounds */
+            compositor_invalidate_icon_backgrounds(&global_wm);
+
             global_wm.needs_full_redraw = 1;
             return 1;
         }
