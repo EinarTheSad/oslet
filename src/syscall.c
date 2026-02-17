@@ -948,6 +948,9 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my) {
         gui_control_t *ctrl = &form->controls[i];
         if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown_open) continue;
 
+        /* If user is dragging the dropdown scrollbar, don't overwrite that state */
+        if (ctrl->pressed && ctrl->hovered_item == -2) continue;
+
         int abs_x = form->win.x + ctrl->x;
         int abs_y = form->win.y + ctrl->y + 20;
         int item_h = 16;
@@ -963,17 +966,39 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my) {
                 if (list_h < item_h) list_h = item_h;
             }
         }
+
+        /* Calculate visible area and scrollbar requirements */
+        int visible_count = list_h / item_h;
+        if (visible_count < 1) visible_count = 1;
+        int max_scroll = ctrl->item_count > visible_count ? (ctrl->item_count - visible_count) : 0;
+        int need_scrollbar = ctrl->item_count > visible_count;
+        int sb_w = need_scrollbar ? 18 : 0;
+        int content_w = ctrl->w - sb_w;
         
+        /* Clamp dropdown_scroll */
+        if (ctrl->dropdown_scroll > (uint16_t)max_scroll) ctrl->dropdown_scroll = max_scroll;
+
         int old_hover = ctrl->hovered_item;
 
-        /* Check if mouse is in dropdown list area */
-        if (mx >= abs_x && mx < abs_x + ctrl->w &&
-            my >= list_y && my < list_y + (ctrl->item_count * item_h)) {
-            /* Calculate which item is hovered */
-            int hovered = (my - list_y) / item_h;
-            if (hovered != old_hover) {
-                ctrl->hovered_item = hovered;
-                needs_redraw = 1;
+        /* Use clipped list bounds when checking hover (support inline scrollbar) */
+        if (mx >= abs_x && mx < abs_x + ctrl->w && my >= list_y && my < list_y + list_h) {
+
+            /* If mouse is over the scrollbar area, mark with special hovered value (-2) */
+            if (need_scrollbar && mx >= abs_x + content_w && mx < abs_x + ctrl->w) {
+                if (old_hover != -2) {
+                    ctrl->hovered_item = -2; /* scrollbar region */
+                    needs_redraw = 1;
+                }
+            } else {
+                /* Mouse over item region: translate to absolute item index using dropdown_scroll */
+                int rel = (my - list_y) / item_h;
+                int hovered = ctrl->dropdown_scroll + rel;
+                if (hovered < 0) hovered = 0;
+                if (hovered >= ctrl->item_count) hovered = ctrl->item_count - 1;
+                if (hovered != old_hover) {
+                    ctrl->hovered_item = hovered;
+                    needs_redraw = 1;
+                }
             }
         } else {
             /* Mouse not over dropdown list */
@@ -1014,10 +1039,91 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
             }
 
             /* Check if click is in dropdown list area */
-            if (mx >= abs_x && mx < abs_x + ctrl->w &&
-                my >= list_y && my < list_y + list_h) {
-                /* Clicked on list item - select it */
-                int clicked_item = (my - list_y) / 16;
+            if (mx >= abs_x && mx < abs_x + ctrl->w && my >= list_y && my < list_y + list_h) {
+                int item_h = 16;
+                int visible_count = list_h / item_h;
+                if (visible_count < 1) visible_count = 1;
+                int max_scroll = ctrl->item_count > visible_count ? (ctrl->item_count - visible_count) : 0;
+                int need_scrollbar = ctrl->item_count > visible_count;
+                int sb_w = need_scrollbar ? 18 : 0;
+                int content_w = ctrl->w - sb_w;
+
+                /* Click landed inside inline scrollbar area? */
+                if (need_scrollbar && mx >= abs_x + content_w && mx < abs_x + ctrl->w) {
+                    int arrow_size = sb_w;
+                    int track_len = list_h - 2 * arrow_size;
+                    int thumb_size = 20;
+                    if (thumb_size > track_len) thumb_size = track_len;
+                    int thumb_pos = 0;
+                    if (max_scroll > 0 && track_len > thumb_size)
+                        thumb_pos = ((track_len - thumb_size) * ctrl->dropdown_scroll) / max_scroll;
+
+                    int rel_y = my - list_y; /* position within the list box */
+
+                    /* Up arrow clicked */
+                    if (rel_y < arrow_size) {
+                        if (ctrl->dropdown_scroll > 0) {
+                            ctrl->dropdown_scroll--;
+                        }
+                        /* show pressed state for inline scrollbar */
+                        ctrl->pressed = 1;
+                        ctrl->hovered_item = -2;
+                        form->press_control_id = ctrl->id;
+                        global_wm.needs_full_redraw = 1;
+                        return 1;
+                    }
+
+                    /* Down arrow clicked */
+                    if (rel_y >= list_h - arrow_size) {
+                        if (ctrl->dropdown_scroll < max_scroll) {
+                            ctrl->dropdown_scroll++;
+                            if (ctrl->dropdown_scroll > max_scroll) ctrl->dropdown_scroll = max_scroll;
+                        }
+                        /* show pressed state for inline scrollbar */
+                        ctrl->pressed = 1;
+                        ctrl->hovered_item = -2;
+                        form->press_control_id = ctrl->id;
+                        global_wm.needs_full_redraw = 1;
+                        return 1;
+                    }
+
+                    /* Thumb clicked -> begin dragging */
+                    int thumb_y = arrow_size + thumb_pos;
+                    if (rel_y >= thumb_y && rel_y < thumb_y + thumb_size) {
+                        /* Start thumb drag for inline scrollbar */
+                        ctrl->pressed = 1;
+                        ctrl->hovered_item = -2; /* indicate scrollbar interaction */
+                        ctrl->scroll_offset = rel_y - thumb_y; /* store drag offset */
+                        form->press_control_id = ctrl->id;
+                        return 1;
+                    }
+
+                    /* Click on track (page/jump) */
+                    if (rel_y >= arrow_size && rel_y < list_h - arrow_size) {
+                        int track_y = arrow_size;
+                        int rel_track = rel_y - track_y - thumb_size / 2;
+                        if (rel_track < 0) rel_track = 0;
+                        if (rel_track > track_len - thumb_size) rel_track = track_len - thumb_size;
+                        int new_scroll = 0;
+                        if (track_len - thumb_size > 0)
+                            new_scroll = (rel_track * max_scroll) / (track_len - thumb_size);
+                        if (new_scroll < 0) new_scroll = 0;
+                        if (new_scroll > max_scroll) new_scroll = max_scroll;
+                        if (new_scroll != ctrl->dropdown_scroll) {
+                            ctrl->dropdown_scroll = new_scroll;
+                            global_wm.needs_full_redraw = 1;
+                        }
+                        ctrl->pressed = 1;
+                        ctrl->hovered_item = -2;
+                        ctrl->scroll_offset = thumb_size / 2;
+                        form->press_control_id = ctrl->id;
+                        return 1;
+                    }
+                }
+
+                /* Click is in item region: map using dropdown_scroll */
+                int rel_item = (my - list_y) / item_h;
+                int clicked_item = ctrl->dropdown_scroll + rel_item;
                 if (clicked_item >= 0 && clicked_item < ctrl->item_count) {
                     ctrl->cursor_pos = clicked_item;
                 }
@@ -1036,12 +1142,13 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 global_wm.needs_full_redraw = 1;
                 return 1;  /* needs_redraw */
             }
-            /* Click outside open dropdown - close it */
+            /* Click outside open dropdown - close it and consume the click */
             else {
                 ctrl_hide_dropdown_list(&form->win, ctrl);
                 /* Signal desktop to do full redraw (clears artifacts outside window) */
                 global_wm.needs_full_redraw = 1;
-                /* Don't return - continue to check other controls */
+                /* Return immediately - don't propagate click to underlying controls */
+                return 1;
             }
         }
 
@@ -1132,6 +1239,30 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                             p++;
                         }
                         ctrl->item_count = count;
+
+                        /* Ensure dropdown_scroll keeps current selection visible when opened */
+                        int item_h = 16;
+                        int list_h = ctrl->item_count * item_h;
+                        int list_y = abs_y + ctrl->h;
+                        if (list_y + list_h > GFX_HEIGHT) {
+                            /* clipped; compute available height above control */
+                            list_h = abs_y;
+                            if (list_h < item_h) list_h = item_h;
+                        }
+                        int visible_count = list_h / item_h;
+                        if (visible_count < 1) visible_count = 1;
+                        int max_scroll = ctrl->item_count > visible_count ? (ctrl->item_count - visible_count) : 0;
+                        int sel = ctrl->cursor_pos;
+                        if (sel < 0) sel = 0;
+                        if (sel >= ctrl->item_count) sel = ctrl->item_count - 1;
+                        if (sel > visible_count - 1) {
+                            int s = sel - (visible_count - 1);
+                            if (s > max_scroll) s = max_scroll;
+                            ctrl->dropdown_scroll = s;
+                        } else {
+                            ctrl->dropdown_scroll = 0;
+                        }
+
                         ctrl->dropdown_open = 1;
                         return 1;  /* needs_redraw */
                     }
@@ -1645,8 +1776,40 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 /* Ignore presses for windows that are not the topmost at the mouse position. This
                    prevents clicks on controls/titlebars of windows that are overlapped by another
-                   (focused) window. */
-                if (topmost != form) {
+                   (focused) window. Exception: allow clicks on open dropdown lists even if they
+                   extend outside the window bounds. */
+                int click_on_dropdown = 0;
+                if (topmost != form && form->controls) {
+                    /* Check if click is on an open dropdown list */
+                    for (int i = 0; i < form->ctrl_count; i++) {
+                        gui_control_t *ctrl = &form->controls[i];
+                        if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                            int abs_x = form->win.x + ctrl->x;
+                            int abs_y = form->win.y + ctrl->y + 20;
+                            int list_h = ctrl->item_count * 16;
+                            int list_y = abs_y + ctrl->h;
+                            
+                            /* Account for auto-flip */
+                            if (list_y + list_h > GFX_HEIGHT) {
+                                list_y = abs_y - list_h;
+                                if (list_y < 0) {
+                                    list_y = 0;
+                                    list_h = abs_y;
+                                    if (list_h < 16) list_h = 16;
+                                }
+                            }
+                            
+                            /* Check if click is within dropdown list area */
+                            if (mx >= abs_x && mx < abs_x + ctrl->w &&
+                                my >= list_y && my < list_y + list_h) {
+                                click_on_dropdown = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (topmost != form && !click_on_dropdown) {
                     /* If click landed on another window, do not process this press for this form. */
                 } else if (form->win.is_minimized) {
                     /* Check for click on icon (single or double) */
@@ -1680,27 +1843,106 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     }
                 } else {
                     /* Click landed on topmost window - process normally */
-                    /* Check if click is within window bounds - bring to front if so */
-                    if (mx >= form->win.x && mx < form->win.x + form->win.w &&
-                        my >= form->win.y && my < form->win.y + form->win.h) {
+                    /* Check if click is within window bounds (including open dropdown lists) */
+                    int check_x = form->win.x;
+                    int check_y = form->win.y;
+                    int check_w = form->win.w;
+                    int check_h = form->win.h;
+                    
+                    /* Expand bounds to include any open dropdown list */
+                    if (form->controls) {
+                        for (int i = 0; i < form->ctrl_count; i++) {
+                            gui_control_t *ctrl = &form->controls[i];
+                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                                int abs_y = form->win.y + ctrl->y + 20;
+                                int list_h = ctrl->item_count * 16;
+                                int list_y = abs_y + ctrl->h;
+                                
+                                /* Account for auto-flip */
+                                if (list_y + list_h > GFX_HEIGHT) {
+                                    list_y = abs_y - list_h;
+                                    if (list_y < 0) {
+                                        list_y = 0;
+                                        list_h = abs_y;
+                                        if (list_h < 16) list_h = 16;
+                                    }
+                                }
+                                
+                                /* Expand bounds to include dropdown list */
+                                if (list_y < check_y) {
+                                    check_h += (check_y - list_y);
+                                    check_y = list_y;
+                                }
+                                int list_bottom = list_y + list_h;
+                                int window_bottom = form->win.y + form->win.h;
+                                if (list_bottom > window_bottom) {
+                                    int extra_h = list_bottom - window_bottom;
+                                    if (check_h < form->win.h + extra_h) {
+                                        check_h = form->win.h + extra_h;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (mx >= check_x && mx < check_x + check_w &&
+                        my >= check_y && my < check_y + check_h) {
                         z_order_changed = wm_bring_to_front(&global_wm, form);
                     }
 
-                    /* Check minimize button */
-                    int min_result = pump_handle_minimize(form, mx, my);
-                    if (min_result == 2) {
-                        /* Menu shown */
-                        needs_redraw = 1;
-                    } else if (min_result == 1) {
-                        return -1;  /* Window minimized directly */
+                    /* Check if click is on an open dropdown list FIRST (highest priority, 
+                       as dropdowns can extend above the window and overlap the titlebar) */
+                    int dropdown_handled = 0;
+                    if (form->controls) {
+                        for (int i = 0; i < form->ctrl_count; i++) {
+                            gui_control_t *ctrl = &form->controls[i];
+                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                                int abs_x = form->win.x + ctrl->x;
+                                int abs_y = form->win.y + ctrl->y + 20;
+                                int list_h = ctrl->item_count * 16;
+                                int list_y = abs_y + ctrl->h;
+                                
+                                /* Account for auto-flip */
+                                if (list_y + list_h > GFX_HEIGHT) {
+                                    list_y = abs_y - list_h;
+                                    if (list_y < 0) {
+                                        list_y = 0;
+                                        list_h = abs_y;
+                                        if (list_h < 16) list_h = 16;
+                                    }
+                                }
+                                
+                                /* Check if click is within dropdown list area */
+                                if (mx >= abs_x && mx < abs_x + ctrl->w &&
+                                    my >= list_y && my < list_y + list_h) {
+                                    /* Let pump_handle_control_press handle the dropdown click */
+                                    dropdown_handled = 1;
+                                    if (pump_handle_control_press(form, mx, my)) {
+                                        needs_redraw = 1;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
                     }
-                    /* Check if titlebar was clicked */
-                    else if (pump_handle_titlebar_click(form, mx, my)) {
-                        /* Dragging started, continue */
-                    } else {
-                        /* Find which control (if any) was pressed */
-                        if (pump_handle_control_press(form, mx, my)) {
+                    
+                    if (!dropdown_handled) {
+                        /* Check minimize button */
+                        int min_result = pump_handle_minimize(form, mx, my);
+                        if (min_result == 2) {
+                            /* Menu shown */
                             needs_redraw = 1;
+                        } else if (min_result == 1) {
+                            return -1;  /* Window minimized directly */
+                        }
+                        /* Check if titlebar was clicked */
+                        else if (pump_handle_titlebar_click(form, mx, my)) {
+                            /* Dragging started, continue */
+                        } else {
+                            /* Find which control (if any) was pressed */
+                            if (pump_handle_control_press(form, mx, my)) {
+                                needs_redraw = 1;
+                            }
                         }
                     }
                 }
@@ -1827,6 +2069,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 /* Handle dropdown - selection generates event */
                                 else if (ctrl->type == CTRL_DROPDOWN) {
                                     /* Dropdown click was already handled in press, just generate event */
+                                    /* Clear any temporary pressed state used for inline scrollbar dragging */
+                                    ctrl->pressed = 0;
+                                    if (ctrl->hovered_item == -2) ctrl->hovered_item = -1;
                                     form->clicked_id = ctrl->id;
                                     event_count = 1;
                                     needs_redraw = 1;
@@ -1863,6 +2108,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         }
                         if (form->controls[i].type == CTRL_SCROLLBAR && form->controls[i].pressed) {
                             form->controls[i].pressed = 0;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
+                        }
+                        /* Clear dropdown inline scrollbar pressed state */
+                        if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].pressed) {
+                            form->controls[i].pressed = 0;
+                            if (form->controls[i].hovered_item == -2) form->controls[i].hovered_item = -1;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
@@ -1961,9 +2213,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 }
             }
 
-            /* Handle scrollbar thumb dragging */
+            /* Handle scrollbar thumb dragging (including dropdown inline scrollbar) */
             if ((mb & 1) && form->press_control_id >= 0 && form->controls) {
                 gui_control_t *ctrl = find_control_by_id(form, form->press_control_id);
+
+                /* Regular scrollbar control dragging */
                 if (ctrl && ctrl->type == CTRL_SCROLLBAR && ctrl->hovered_item == 1 && ctrl->pressed) {
                     int vertical = !ctrl->checked;
                     int arrow_size = vertical ? ctrl->w : ctrl->h;
@@ -1998,6 +2252,50 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (new_val > max_val) new_val = max_val;
                         if (new_val != ctrl->cursor_pos) {
                             ctrl->cursor_pos = new_val;
+                            form->clicked_id = ctrl->id;
+                            event_count = 1; /* Generate event during drag */
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                        }
+                    }
+                }
+
+                /* Dropdown inline scrollbar dragging (ctrl->hovered_item == -2 used as special flag) */
+                if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open && ctrl->pressed && ctrl->hovered_item == -2) {
+                    int item_h = 16;
+                    int abs_y = form->win.y + ctrl->y + 20;
+                    int list_h = ctrl->item_count * item_h;
+                    int list_y = abs_y + ctrl->h;
+
+                    /* Auto-flip and clipping like draw routine */
+                    if (list_y + list_h > GFX_HEIGHT) {
+                        list_y = abs_y - list_h;
+                        if (list_y < 0) {
+                            list_y = 0;
+                            list_h = abs_y;
+                            if (list_h < item_h) list_h = item_h;
+                        }
+                    }
+
+                    int visible_count = list_h / item_h;
+                    if (visible_count < 1) visible_count = 1;
+                    int max_val = ctrl->item_count > visible_count ? (ctrl->item_count - visible_count) : 0;
+                    if (max_val > 0) {
+                        int sb_w = 18;
+                        int arrow_size = sb_w;
+                        int track_len = list_h - 2 * arrow_size;
+                        int thumb_size = 20;
+                        if (thumb_size > track_len) thumb_size = track_len;
+                        int track_y = list_y + arrow_size;
+
+                        int rel_y = my - track_y - ctrl->scroll_offset; /* scroll_offset used as drag offset */
+                        if (rel_y < 0) rel_y = 0;
+                        if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
+                        int new_val = 0;
+                        if (track_len - thumb_size > 0) new_val = (rel_y * max_val) / (track_len - thumb_size);
+                        if (new_val > max_val) new_val = max_val;
+                        if (new_val != ctrl->dropdown_scroll) {
+                            ctrl->dropdown_scroll = new_val;
                             form->clicked_id = ctrl->id;
                             event_count = 1; /* Generate event during drag */
                             needs_redraw = 1;
