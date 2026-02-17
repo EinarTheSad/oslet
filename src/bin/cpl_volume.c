@@ -82,7 +82,7 @@ static int volume_init(prog_instance_t *inst) {
         free(state);
         return -1;
     }
-
+    sys_win_set_icon(state->form,"C:/ICONS/SOUND.ICO");
     prog_register_window(inst, state->form);
 
     gui_control_t controls[] = {
