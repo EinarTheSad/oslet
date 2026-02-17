@@ -251,7 +251,7 @@ static int clock_update(void) {
            If no progman-managed window intersects, fall back to a full compositor redraw
            (covers apps that don't register windows with progman, e.g. src/apps/imgview). */
         if (!mark_windows_overlapping_rect(WM_SCREEN_WIDTH-60, TASKBAR_Y + 3, 57, 21)) {
-            sys_win_redraw_all();
+            sys_win_mark_dirty_rect(WM_SCREEN_WIDTH-60, TASKBAR_Y + 3, 57, 21);
         }
         return 1;
     }
@@ -277,7 +277,7 @@ static void taskbar_draw(void) {
 
     /* Volume control applet icon */
     int sx = WM_SCREEN_WIDTH - 61;
-    int sy = TASKBAR_Y + 2;
+    int sy = TASKBAR_Y + 3;
     int sw = 21;
     int sh = 21;
     int ix = sx + (sw - 16) / 2 + 1;
@@ -315,7 +315,7 @@ static int taskbar_click(int mx, int my, unsigned char mb, int *state_changed) {
     /* Sound icon (right side, left of clock) - separate from taskbar_buttons[] */
     {
         int sx = WM_SCREEN_WIDTH - 61;
-        int sy = TASKBAR_Y + 2;
+        int sy = TASKBAR_Y + 3;
         int sw = 21;
         int sh = 21;
         int old = sound_icon_pressed;
@@ -397,7 +397,7 @@ void desktop_apply_settings(uint8_t color, const char *wallpaper, uint8_t wallpa
 
 static void desktop_redraw_rect(int x, int y, int w, int h) {
     /* Keep original rect to detect taskbar overlap */
-    int orig_x = x, orig_y = y, orig_w = w, orig_h = h;
+    int orig_y = y, orig_h = h;
     int taskbar_dirty = 0;
 
     /* If the dirty rect intersects the taskbar area, mark taskbar as dirty */
@@ -450,15 +450,15 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
     /* Redraw windows overlapping the desktop dirty rect */
     if (w > 0 && h > 0) {
         if (!mark_windows_overlapping_rect(x, y, w, h)) {
-            /* Fallback: ensure non-progman windows are also redrawn */
-            sys_win_redraw_all();
+            /* Fallback: ask kernel to redraw any windows overlapping this rect */
+            sys_win_mark_dirty_rect(x, y, w, h);
         }
     }
 
     /* Also ensure windows overlapping the taskbar area are redrawn */
     if (taskbar_dirty) {
         if (!mark_windows_overlapping_rect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT)) {
-            sys_win_redraw_all();
+            sys_win_mark_dirty_rect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT);
         }
     }
 }
@@ -626,10 +626,10 @@ void _start(void) {
             taskbar_draw();
             clock_draw();
             /* Redraw only windows overlapping the taskbar/clock to avoid a full redraw.
-               Fall back to full redraw if none of the progman-managed windows intersect
-               (handles non-progman apps such as src/apps/imgview). */
+               If no progman window intersects, ask the kernel compositor to mark the
+               taskbar rect dirty so non-progman windows (e.g. imgview) are repainted. */
             if (!mark_windows_overlapping_rect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT)) {
-                sys_win_redraw_all();
+                sys_win_mark_dirty_rect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT);
             }
             taskbar_needs_redraw = 0;
         }

@@ -2378,7 +2378,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     compositor_draw_single(&global_wm, form);
                 }
                 /* Return clicked_id if it was set (e.g., scrollbar value changed), otherwise -1 */
-                return form->clicked_id >= 0 ? form->clicked_id : (uint32_t)-1;
+                return (form->clicked_id >= 0) ? (uint32_t)form->clicked_id : (uint32_t)-1;
             }
 
             return 0;
@@ -2862,6 +2862,22 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             compositor_set_dirty_rect(&global_wm, wx, wy, ww, wh);
             compositor_draw_all(&global_wm);
 
+            return 0;
+        }
+
+        case 0x1B: { /* SYS_WIN_MARK_DIRTY_RECT - mark arbitrary screen rect as dirty and redraw overlapping windows */
+            struct { int x; int y; int w; int h; } *p = (void*)ebx;
+            if (!p) return 0;
+            /* Sanitize/clamp rect to screen */
+            int rx = p->x < 0 ? 0 : p->x;
+            int ry = p->y < 0 ? 0 : p->y;
+            int rw = p->w;
+            int rh = p->h;
+            if (rw <= 0 || rh <= 0) return 0;
+            if (rx + rw > WM_SCREEN_WIDTH) rw = WM_SCREEN_WIDTH - rx;
+            if (ry + rh > WM_SCREEN_HEIGHT) rh = WM_SCREEN_HEIGHT - ry;
+            compositor_set_dirty_rect(&global_wm, rx, ry, rw, rh);
+            compositor_draw_all(&global_wm);
             return 0;
         }
 
