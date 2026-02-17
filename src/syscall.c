@@ -2844,7 +2844,7 @@ static uint32_t handle_sound(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t e
             return (uint32_t)sb16_get_volume();
 
         case 0x03:
-            sb16_stop();
+            sound_stop();
             return 0;
 
         case 0x04:
