@@ -141,6 +141,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_IS_FOCUSED 0x0B18
 #define SYS_WIN_DRAW_BUFFER 0x0B19  /* Draw a raw pixel buffer into a form with clipping to avoid overwriting other windows */
 #define SYS_WIN_MARK_DIRTY 0x0B1A   /* Mark window region as dirty and trigger compositor redraw with z-order */
+#define SYS_WIN_MARK_DIRTY_RECT 0x0B1B /* Mark a given screen rect dirty so compositor redraws overlapping windows */
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -821,6 +822,16 @@ static inline void sys_win_redraw_all(void) {
 static inline void sys_win_mark_dirty(void *form) {
     register int dummy_eax __asm__("eax") = SYS_WIN_MARK_DIRTY;
     register void *dummy_ebx __asm__("ebx") = form;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
+}
+
+/* Mark an arbitrary screen rectangle dirty and trigger compositor redraw for
+   windows that intersect it. Parameters: x, y, w, h. */
+static inline void sys_win_mark_dirty_rect(int x, int y, int w, int h) {
+    register int dummy_eax __asm__("eax") = SYS_WIN_MARK_DIRTY_RECT;
+    struct { int x; int y; int w; int h; } params;
+    params.x = x; params.y = y; params.w = w; params.h = h;
+    register void *dummy_ebx __asm__("ebx") = &params;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
 }
 
