@@ -80,13 +80,13 @@ install: $(BUILD)/$(TARGET)
 	sudo mount $${LOOP}p1 mnt; \
 	sudo cp $(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
 	sudo mkdir -p mnt/FONTS; \
-	sudo cp src/fonts/*.bmf mnt/FONTS/; \
-	sudo mkdir -p mnt/IMAGES; \
-	sudo cp images/*.BMP mnt/IMAGES/; \
-	sudo mkdir -p mnt/ICONS; \
-	sudo cp src/icons/*.ico mnt/ICONS/; \
-	sudo mkdir -p mnt/SOUNDS; \
-	sudo cp src/sounds/*.wav mnt/SOUNDS/; \
+		sudo cp src/fonts/*.[bB][mM][fF] mnt/FONTS/; \
+		sudo mkdir -p mnt/IMAGES; \
+		sudo cp images/*.[bB][mM][pP] mnt/IMAGES/; \
+		sudo mkdir -p mnt/ICONS; \
+		sudo cp src/icons/*.[iI][cC][oO] mnt/ICONS/; \
+		sudo mkdir -p mnt/SOUNDS; \
+		sudo cp src/sounds/*.[wW][aA][vV] mnt/SOUNDS/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt; \
@@ -136,16 +136,16 @@ binstall:
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
-	if ls $(BIN)/*.elf 1>/dev/null 2>&1; then \
-		sudo cp $(BIN)/*.elf mnt/; \
-	fi; \
-	sudo mkdir -p mnt/OSLET/START; \
-	if ls $(APPS)/*.elf 1>/dev/null 2>&1; then \
-		sudo cp $(APPS)/*.elf mnt/OSLET/START/; \
-	fi; \
-	sudo cp $(BIN)/system.ini mnt/OSLET/; \
-	sudo cp $(APPS)/*.grp mnt/OSLET/START/; \
-	sudo cp $(BIN)/*.bmp mnt/OSLET/; \
+		if ls $(BIN)/*.[eE][lL][fF] 1>/dev/null 2>&1; then \
+			sudo cp $(BIN)/*.[eE][lL][fF] mnt/; \
+		fi; \
+		sudo mkdir -p mnt/OSLET/START; \
+		if ls $(APPS)/*.[eE][lL][fF] 1>/dev/null 2>&1; then \
+			sudo cp $(APPS)/*.[eE][lL][fF] mnt/OSLET/START/; \
+		fi; \
+		sudo cp $(BIN)/system.ini mnt/OSLET/; \
+		sudo cp $(APPS)/*.[gG][rR][pP] mnt/OSLET/START/; \
+		sudo cp $(BIN)/*.[bB][mM][pP] mnt/OSLET/; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt
