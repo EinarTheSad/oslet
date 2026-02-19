@@ -69,6 +69,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_INFO_HEAP       0x0803
 #define SYS_INFO_SHELL      0x0804
 #define SYS_INFO_SET_SHELL  0x0805
+#define SYS_INFO_CPU        0x0806  /* Returns vendor, model and MHz */
 
 /* AH = 09h - Graphics */
 #define SYS_GFX_ENTER       0x0900
@@ -284,6 +285,13 @@ typedef struct {
     uint8_t priority;
 } sys_taskinfo_t;
 
+/* CPU information: vendor string (12 chars + NUL), model string, and measured MHz */
+typedef struct {
+    char vendor[13];
+    char model[64];
+    uint32_t mhz; /* MHz */
+} sys_cpuinfo_t;
+
 typedef struct {
     int x0, y0, x1, y1;
 } gfx_line_params_t;
@@ -478,6 +486,12 @@ static inline int sys_recv_msg(message_t *msg) {
 static inline int sys_get_meminfo(sys_meminfo_t *info) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_MEM), "b"(info));
+    return ret;
+}
+
+static inline int sys_get_cpuinfo(sys_cpuinfo_t *info) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_CPU), "b"(info));
     return ret;
 }
 
