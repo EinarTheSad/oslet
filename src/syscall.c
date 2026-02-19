@@ -734,7 +734,7 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
                                                 if ((st[i+0] == 'C' || st[i+0]=='c') && (st[i+1]=='e'||st[i+1]=='E') && (st[i+2]=='l'||st[i+2]=='L')) {
                                                     /* copy a cleaned model string */
                                                     int ci = 0; int si = i;
-                                                    while (st[si] && ci < (int)sizeof(out->model)-1 && st[si] != '\\r' && st[si] != '\\n') out->model[ci++] = st[si++];
+                                                    while (st[si] && ci < (int)sizeof(out->model)-1 && st[si] != '\r' && st[si] != '\n') out->model[ci++] = st[si++];
                                                     out->model[ci] = '\0';
                                                     /* try parse frequency from same string */
                                                     for (int k = 0; st[k]; k++) {
