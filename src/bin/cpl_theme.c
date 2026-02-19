@@ -122,9 +122,7 @@ store_orig:
 static void save_settings(cpl_theme_state_t *state) {
     char read_buf[2048];
     char tmp1[4096];
-    char tmp2[4096];
     char theme_text[512];
-    char desktop_text[512];
 
     /* Read existing INI to preserve other sections */
     int fd = sys_open(SETTINGS_PATH, "r");
@@ -156,25 +154,12 @@ static void save_settings(cpl_theme_state_t *state) {
         state->theme_startbtn
     );
 
-    /* Preserve DESKTOP section values by reading from existing content */
-    snprintf(desktop_text, sizeof(desktop_text),
-        "[DESKTOP]\r\n"
-        "COLOR=%d\r\n"
-        "WALLPAPER=%s\r\n"
-        "MODE=%d\r\n",
-        (int)ini_get_color((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "COLOR", 0),
-        ini_get((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "WALLPAPER") ? ini_get((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "WALLPAPER") : "",
-        ini_get((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "MODE") ? atoi(ini_get((ini_parser_t[]){ { .data = read_buf, .ptr = read_buf } }, "DESKTOP", "MODE")) : 0
-    );
-
-    /* Replace or insert theme and desktop sections */
+    /* Replace or insert only the THEME section */
     if (ini_replace_section(read_buf, "THEME", theme_text, tmp1, sizeof(tmp1)) < 0) return;
-    if (ini_replace_section(tmp1, "DESKTOP", desktop_text, tmp2, sizeof(tmp2)) < 0) return;
 
-    /* Write final content */
     fd = sys_open(SETTINGS_PATH, "w");
     if (fd >= 0) {
-        sys_write_file(fd, tmp2, strlen(tmp2));
+        sys_write_file(fd, tmp1, strlen(tmp1));
         sys_close(fd);
     }
 }
