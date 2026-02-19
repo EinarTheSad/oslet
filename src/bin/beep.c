@@ -16,8 +16,8 @@ void _start(void) {
     for (int i = 0; i < 8; i++) {
         sys_write(notes[i]);
         sys_write(" ");
-        sys_sound_play_tone(frequencies[i], 250, WAVE_SINE);
-        sys_sound_play_tone(0, 25, WAVE_SINE);  /* Silence between notes */
+        sys_sound_play_tone(frequencies[i], 500, WAVE_SINE);
+        sys_sound_play_tone(0, 50, WAVE_SINE);  /* Silence between notes */
     }
 
     sys_write("\nDone!\n");

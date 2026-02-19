@@ -245,15 +245,16 @@ void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) 
         uint32_t samples_per_period = sample_rate / frequency;
         if (samples_per_period < 4) samples_per_period = 4;
         
-        /* Phase accumulator approach - avoids expensive modulo per sample */
-        uint32_t phase = 0;
-        uint32_t phase_inc = (samples_per_period > 0) ? ((1 << 16) / samples_per_period) : (1 << 16);
+        /* Simple sample index approach: maintain a position within the period and
+           increment/wrap it each sample. The previous fixed-point phase logic
+           computed phase_inc incorrectly which produced garbled output. */
+        uint32_t sample_pos = 0;
         uint32_t half_period = samples_per_period >> 1;
-        
+
         for (uint32_t i = 0; i < total_samples; i++) {
             int value = 128;
-            uint32_t pos = phase >> 16;
-            
+            uint32_t pos = sample_pos;
+
             switch (waveform) {
                 case WAVE_SQUARE:
                     value = (pos < half_period) ? 158 : 98;
@@ -288,12 +289,10 @@ void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) 
             }
             
             dma_buffer[i] = (uint8_t)value;
-            
-            /* Increment phase and wrap */
-            phase += phase_inc;
-            if ((phase >> 16) >= samples_per_period) {
-                phase = 0;
-            }
+
+            /* Increment position and wrap to the start of the period */
+            sample_pos++;
+            if (sample_pos >= samples_per_period) sample_pos = 0;
         }
         
         /* Fill remaining buffer with silence to prevent buzz */
