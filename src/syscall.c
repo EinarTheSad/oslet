@@ -520,7 +520,390 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
         case 0x05:
             shell_version = (const char*)ebx;
             return 0;
-        
+
+        case 0x06: { /* SYS_INFO_CPU */
+            if (!ebx) return -1;
+            sys_cpuinfo_t *out = (sys_cpuinfo_t*)ebx;
+
+            /* Clear output */
+            for (int i = 0; i < (int)sizeof(out->vendor); i++) out->vendor[i] = '\0';
+            for (int i = 0; i < (int)sizeof(out->model); i++) out->model[i] = '\0';
+            out->mhz = 0;
+
+            /* --- Vendor string (CPUID leaf 0) --- */
+            uint32_t a, b, c, d;
+            __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0));
+            /* vendor in EBX, EDX, ECX (12 bytes) */
+            ((uint32_t*)out->vendor)[0] = b;
+            ((uint32_t*)out->vendor)[1] = d;
+            ((uint32_t*)out->vendor)[2] = c;
+            out->vendor[12] = '\0';
+
+            /* --- Brand string (if supported) --- */
+            __asm__ volatile("cpuid" : "=a"(a) : "a"(0x80000000) : "ebx","ecx","edx");
+            if (a >= 0x80000004) {
+                uint32_t regs[12];
+                __asm__ volatile("cpuid" : "=a"(regs[0]), "=b"(regs[1]), "=c"(regs[2]), "=d"(regs[3]) : "a"(0x80000002));
+                __asm__ volatile("cpuid" : "=a"(regs[4]), "=b"(regs[5]), "=c"(regs[6]), "=d"(regs[7]) : "a"(0x80000003));
+                __asm__ volatile("cpuid" : "=a"(regs[8]), "=b"(regs[9]), "=c"(regs[10]), "=d"(regs[11]) : "a"(0x80000004));
+
+                /* copy 48 bytes into a temporary brand string */
+                char brand[49];
+                for (int ii = 0; ii < 12; ii++) {
+                    uint32_t v = regs[ii];
+                    brand[ii*4 + 0] = (char)(v & 0xFF);
+                    brand[ii*4 + 1] = (char)((v >> 8) & 0xFF);
+                    brand[ii*4 + 2] = (char)((v >> 16) & 0xFF);
+                    brand[ii*4 + 3] = (char)((v >> 24) & 0xFF);
+                }
+                brand[48] = '\0';
+
+                /* Try to extract an explicit frequency from the brand string (e.g. "300MHz" or "1.2GHz").
+                   If present we'll trust that value (most reliable); otherwise fall back to TSC sampling. */
+                int freq_idx = -1;
+                uint32_t brand_mhz = 0;
+                for (int p = 0; brand[p]; p++) {
+                    if (brand[p] >= '0' && brand[p] <= '9') {
+                        /* parse integer part */
+                        uint32_t intval = 0;
+                        int q = p;
+                        while (brand[q] >= '0' && brand[q] <= '9') { intval = intval * 10 + (brand[q] - '0'); q++; }
+
+                        /* optional fractional part */
+                        uint32_t frac = 0; int frac_d = 0;
+                        if (brand[q] == '.') {
+                            q++;
+                            while (brand[q] >= '0' && brand[q] <= '9' && frac_d < 3) { frac = frac * 10 + (brand[q] - '0'); frac_d++; q++; }
+                        }
+
+                        /* skip spaces */
+                        while (brand[q] == ' ' || brand[q] == '\t') q++;
+
+                        /* unit - look for 'M' (MHz) or 'G' (GHz) */
+                        if (brand[q] == 'M' || brand[q] == 'm') {
+                            brand_mhz = intval; /* ignore fraction for MHz */
+                            freq_idx = p;
+                            break;
+                        } else if (brand[q] == 'G' || brand[q] == 'g') {
+                            /* GHz -> convert to MHz, include up to 3 fractional digits */
+                            uint32_t add = intval * 1000u;
+                            if (frac_d > 0) {
+                                /* scale fractional digits to MHz (e.g. .2GHz -> 200MHz) */
+                                uint32_t scale = 1000u;
+                                for (int s = 0; s < frac_d; s++) scale /= 10u;
+                                add += frac * scale;
+                            }
+                            brand_mhz = add;
+                            freq_idx = p;
+                            break;
+                        }
+                        /* if not MHz/GHz, continue searching */
+                    }
+                }
+
+                /* Build a sanitized model string: drop vendor prefix, remove (R)/(TM)/CPU and trim. */
+                char vendor_norm[16];
+                int vnlen = 0;
+                /* derive a short vendor token */
+                {
+                    int is_genuineintel = 1;
+                    const char *genuine = "GenuineIntel";
+                    for (int _i = 0; genuine[_i]; _i++) { if (genuine[_i] != out->vendor[_i]) { is_genuineintel = 0; break; } }
+                    if (is_genuineintel) {
+                        const char *v = "Intel"; int k = 0; for (; v[k] && k < (int)sizeof(vendor_norm)-1; k++) vendor_norm[k] = v[k]; vendor_norm[k] = '\0';
+                    } else {
+                        int is_amd = 1; const char *amd = "AuthenticAMD";
+                        for (int _i = 0; amd[_i]; _i++) { if (amd[_i] != out->vendor[_i]) { is_amd = 0; break; } }
+                        if (is_amd) {
+                            const char *v = "AMD"; int k = 0; for (; v[k] && k < (int)sizeof(vendor_norm)-1; k++) vendor_norm[k] = v[k]; vendor_norm[k] = '\0';
+                        } else {
+                            int j = 0; while (j < 15 && out->vendor[j]) { vendor_norm[j] = out->vendor[j]; j++; }
+                            vendor_norm[j] = '\0';
+                        }
+                    }
+                    while (vendor_norm[vnlen]) vnlen++;
+                }
+
+                char tmp[64]; int ti = 0;
+                int idx = 0;
+                /* skip vendor prefix if present (allow "Intel(R)" too) */
+                int skip = 1;
+                if (vnlen > 0) {
+                    skip = 1;
+                    for (int _k = 0; _k < vnlen; _k++) { if (brand[_k] != vendor_norm[_k]) { skip = 0; break; } }
+                    if (skip) {
+                        idx = vnlen;
+                        /* skip optional (R) or (TM) immediately after vendor name */
+                        while (brand[idx] == ' ' || brand[idx] == '(' || brand[idx] == '\t') {
+                            if (brand[idx] == '(') {
+                                while (brand[idx] && brand[idx] != ')') idx++;
+                                if (brand[idx] == ')') idx++;
+                                continue;
+                            }
+                            idx++;
+                        }
+                    } else {
+                        idx = 0;
+                    }
+                }
+
+                /* copy until frequency position or until 'CPU' token or string end */
+                int stop_at = -1;
+                if (freq_idx >= 0) stop_at = freq_idx;
+                for (int p = idx; brand[p]; p++) {
+                    /* detect 'CPU' token - stop and don't include it */
+                    if ((brand[p] == 'C' || brand[p] == 'c') && (brand[p+1] == 'P' || brand[p+1] == 'p') && (brand[p+2] == 'U' || brand[p+2] == 'u')) {
+                        stop_at = (stop_at < 0) ? p : (stop_at < p ? stop_at : p);
+                        break;
+                    }
+                }
+                if (stop_at < 0) stop_at = 48; /* whole brand */
+
+                for (int p = idx; p < stop_at && ti < (int)sizeof(tmp)-1; p++) {
+                    /* skip (R)/(TM) fragments inside */
+                    if (brand[p] == '(') {
+                        while (p < stop_at && brand[p] && brand[p] != ')') p++;
+                        continue;
+                    }
+                    /* collapse multiple spaces */
+                    if (brand[p] == ' ' || brand[p] == '\t') {
+                        if (ti == 0 || tmp[ti-1] == ' ') continue;
+                        tmp[ti++] = ' ';
+                        continue;
+                    }
+                    tmp[ti++] = brand[p];
+                }
+                while (ti > 0 && tmp[ti-1] == ' ') ti--;
+                tmp[ti] = '\0';
+
+                if (ti > 0) {
+                    int ci = 0; for (; ci < (int)sizeof(out->model)-1 && tmp[ci]; ci++) out->model[ci] = tmp[ci]; out->model[ci] = '\0';
+                } else {
+                    /* fallback to a short vendor/model if nothing parsed */
+                    int ci = 0; for (; ci < (int)sizeof(out->model)-1 && out->vendor[ci]; ci++) out->model[ci] = out->vendor[ci]; out->model[ci] = '\0';
+                }
+
+                /* If brand string contained an explicit MHz/GHz token, use that (most reliable).
+                   Otherwise we'll measure using TSC (averaged over several ticks). */
+                if (brand_mhz > 0) {
+                    out->mhz = brand_mhz;
+                    return 0;
+                }
+            } else {
+                /* No extended brand string — try SMBIOS/DMI Type-4 (BIOS-reported CPU name) first,
+                   then fall back to CPUID leaf-1 family/model mapping. */
+
+                /* Search BIOS memory for SMBIOS Entry Point "_SM_" (0xF0000 - 0x100000, step 16) */
+                const char *smb_ent = NULL;
+                for (uintptr_t addr = 0xF0000; addr < 0x100000; addr += 16) {
+                    const char *p = (const char*)(uintptr_t)addr;
+                    if (p[0] == '_' && p[1] == 'S' && p[2] == 'M' && p[3] == '_') { smb_ent = p; break; }
+                }
+
+                int smbios_used = 0;
+                if (smb_ent) {
+                    /* basic validation: entry point length at offset 0x05, table length at 0x16 */
+                    uint8_t entry_len = (uint8_t)smb_ent[0x05];
+                    if (entry_len >= 0x1F) {
+                        uint16_t table_len = *(uint16_t*)(smb_ent + 0x16);
+                        uint32_t table_addr = *(uint32_t*)(smb_ent + 0x18);
+                        if (table_addr && table_len) {
+                            const uint8_t *tbl = (const uint8_t*)(uintptr_t)table_addr;
+                            size_t rem = table_len;
+                            const uint8_t *cur = tbl;
+
+                            while (rem >= 4) {
+                                uint8_t type = cur[0];
+                                uint8_t lenf = cur[1];
+                                if (lenf < 4 || lenf > rem) break;
+
+                                if (type == 4) { /* Processor Information */
+                                    const uint8_t *strs = cur + lenf;
+                                    const uint8_t *siter = strs;
+                                    int found_model = 0;
+
+                                    while ((uintptr_t)(siter - tbl) < table_len && *siter) {
+                                        /* read string at siter */
+                                        const char *st = (const char*)siter;
+                                        /* check for keywords or an explicit MHz/GHz token */
+                                        /* case-insensitive substring search for 'Celeron'/'Pentium' */
+                                        for (int i = 0; st[i]; i++) {
+                                            /* check Celeron */
+                                            if ((st[i] == 'C' || st[i] == 'c') && (st[i+1] == 'e' || st[i+1] == 'E')) {
+                                                /* crude check for "Celeron" substring */
+                                                if ((st[i+0] == 'C' || st[i+0]=='c') && (st[i+1]=='e'||st[i+1]=='E') && (st[i+2]=='l'||st[i+2]=='L')) {
+                                                    /* copy a cleaned model string */
+                                                    int ci = 0; int si = i;
+                                                    while (st[si] && ci < (int)sizeof(out->model)-1 && st[si] != '\\r' && st[si] != '\\n') out->model[ci++] = st[si++];
+                                                    out->model[ci] = '\0';
+                                                    /* try parse frequency from same string */
+                                                    for (int k = 0; st[k]; k++) {
+                                                        if (st[k] >= '0' && st[k] <= '9') {
+                                                            /* parse number */
+                                                            uint32_t intval = 0; int q = k; while (st[q] >= '0' && st[q] <= '9') { intval = intval*10 + (st[q]-'0'); q++; }
+                                                            while (st[q] == ' ' || st[q] == '\t') q++;
+                                                            if (st[q] == 'M' || st[q] == 'm') { out->mhz = intval; }
+                                                            else if (st[q] == 'G' || st[q] == 'g') { out->mhz = intval * 1000u; }
+                                                            break;
+                                                        }
+                                                    }
+                                                    found_model = 1;
+                                                    break;
+                                                }
+                                            }
+                                            /* check Pentium token as fallback */
+                                            if ((st[i] == 'P' || st[i]=='p') && (st[i+1]=='e' || st[i+1]=='E') && (st[i+2]=='n' || st[i+2]=='N')) {
+                                                /* copy first words until digit or '(' */
+                                                int ci = 0; int si = i;
+                                                while (st[si] && ci < (int)sizeof(out->model)-1 && st[si] != '(' && !(st[si] >= '0' && st[si] <= '9')) {
+                                                    out->model[ci++] = st[si++];
+                                                }
+                                                while (ci > 0 && out->model[ci-1] == ' ') ci--;
+                                                out->model[ci] = '\0';
+                                                found_model = 1;
+                                                break;
+                                            }
+                                        }
+
+                                        /* parse frequency if present in this string even without model token */
+                                        for (int k = 0; st[k]; k++) {
+                                            if (st[k] >= '0' && st[k] <= '9') {
+                                                uint32_t intval = 0; int q = k; while (st[q] >= '0' && st[q] <= '9') { intval = intval*10 + (st[q]-'0'); q++; }
+                                                while (st[q] == ' ' || st[q] == '\t') q++;
+                                                if (st[q] == 'M' || st[q] == 'm') { if (out->mhz == 0) out->mhz = intval; }
+                                                else if (st[q] == 'G' || st[q] == 'g') { if (out->mhz == 0) out->mhz = intval * 1000u; }
+                                                break;
+                                            }
+                                        }
+
+                                        /* advance to next string */
+                                        while (*siter) siter++;
+                                        siter++;
+                                        if (found_model) break;
+                                    }
+
+                                    if (found_model) {
+                                        smbios_used = 1;
+                                        break;
+                                    }
+                                }
+
+                                /* advance to next structure (find terminating double NUL after strings) */
+                                const uint8_t *next = cur + lenf;
+                                const uint8_t *s2 = next;
+                                while ((uintptr_t)(s2 - tbl) < table_len) {
+                                    if (s2[0] == 0 && s2[1] == 0) { s2 += 2; break; }
+                                    s2++;
+                                }
+                                if ((uintptr_t)(s2 - tbl) >= table_len) break;
+                                rem = table_len - (s2 - tbl);
+                                cur = s2;
+                            }
+                        }
+                    }
+                }
+
+                if (!smbios_used) {
+                    /* No SMBIOS model found — fallback to CPUID leaf-1 mapping */
+                    uint32_t ea, eb, ec, ed;
+                    __asm__ volatile("cpuid" : "=a"(ea), "=b"(eb), "=c"(ec), "=d"(ed) : "a"(1));
+                    uint32_t base_model = (ea >> 4) & 0xF;
+                    uint32_t base_family = (ea >> 8) & 0xF;
+                    uint32_t ext_model = (ea >> 16) & 0xF;
+                    uint32_t ext_family = (ea >> 20) & 0xFF;
+                    uint32_t display_model = base_model;
+                    if (base_family == 6 || base_family == 15) display_model = base_model + (ext_model << 4);
+                    uint32_t display_family = base_family;
+                    if (base_family == 15) display_family = base_family + ext_family;
+
+                    /* small family/model -> marketing-name map (include Celeron entries if known) */
+                    struct fammap { uint8_t fam; uint8_t mod; const char *name; } fmap[] = {
+                        {6, 3, "Pentium II"},
+                        {6, 5, "Pentium II"},
+                        {6, 6, "Pentium III"},
+                        {6, 7, "Pentium III / Celeron"}, /* ambiguous - SMBIOS preferred */
+                        {5, 0, "Pentium"},
+                        {5, 4, "Pentium MMX"},
+                    };
+                    int found = 0;
+                    for (int m = 0; m < (int)(sizeof(fmap)/sizeof(fmap[0])); m++) {
+                        if (fmap[m].fam == display_family && fmap[m].mod == display_model) {
+                            int ci = 0; for (; ci < (int)sizeof(out->model)-1 && fmap[m].name[ci]; ci++) out->model[ci] = fmap[m].name[ci]; out->model[ci] = '\0';
+                            found = 1; break;
+                        }
+                    }
+                    if (!found) {
+                        int pos = 0;
+                        const char *shortvend = out->vendor; int sv = 0;
+                        while (shortvend[sv] && sv < 15 && pos < (int)sizeof(out->model)-2) out->model[pos++] = shortvend[sv++];
+                        out->model[pos++] = ' ';
+                        out->model[pos++] = 'F'; out->model[pos++] = 'a'; out->model[pos++] = 'm';
+                        uint32_t v = display_family; char numbuf[12]; int npos = 0; if (v == 0) numbuf[npos++] = '0'; while (v > 0 && npos < (int)sizeof(numbuf)-1) { numbuf[npos++] = (char)('0' + (v % 10)); v /= 10; }
+                        for (int k = npos-1; k >= 0 && pos < (int)sizeof(out->model)-1; k--) out->model[pos++] = numbuf[k];
+                        out->model[pos++] = ' ';
+                        out->model[pos++] = 'M'; out->model[pos++] = 'o'; out->model[pos++] = 'd';
+                        v = display_model; npos = 0; if (v == 0) numbuf[npos++] = '0'; while (v > 0 && npos < (int)sizeof(numbuf)-1) { numbuf[npos++] = (char)('0' + (v % 10)); v /= 10; }
+                        for (int k = npos-1; k >= 0 && pos < (int)sizeof(out->model)-1; k--) out->model[pos++] = numbuf[k];
+                        out->model[pos] = '\0';
+                    }
+                }
+            }
+
+            /* --- Determine clock speed --- */
+            if (out->mhz == 0) {
+                /* 1) Try CPUID leaf 0x16 (base frequency, common on newer Intel CPUs) */
+                uint32_t a16=0, b16=0, c16=0, d16=0;
+                __asm__ volatile("cpuid" : "=a"(a16), "=b"(b16), "=c"(c16), "=d"(d16) : "a"(0x16));
+                if (a16 && a16 < 0x80000) {
+                    /* a16 is base frequency in MHz */
+                    out->mhz = a16;
+                    return 0;
+                }
+
+                /* NOTE: CPUID.0x15 handling omitted (avoids 64-bit div helpers). */
+
+                /* 3) Try to parse explicit frequency from the brand string was handled earlier.
+                   4) Fallback — measure TSC over multiple PIT ticks (serialized). */
+                const uint32_t sample_ticks = 20; /* ~200ms at default 100Hz PIT — reduces error */
+
+                unsigned int lo1, hi1, lo2, hi2;
+                uint64_t t1, t2, cycles64;
+
+                /* serialize, read TSC */
+                uint32_t ca, cb, cc, cd;
+                __asm__ volatile("cpuid" : "=a"(ca), "=b"(cb), "=c"(cc), "=d"(cd) : "a"(0));
+                __asm__ volatile ("rdtsc" : "=a"(lo1), "=d"(hi1));
+
+                timer_wait(sample_ticks);
+
+                __asm__ volatile("cpuid" : "=a"(ca), "=b"(cb), "=c"(cc), "=d"(cd) : "a"(0));
+                __asm__ volatile ("rdtsc" : "=a"(lo2), "=d"(hi2));
+
+                t1 = ((uint64_t)hi1 << 32) | lo1;
+                t2 = ((uint64_t)hi2 << 32) | lo2;
+                cycles64 = (t2 > t1) ? (t2 - t1) : 0ULL;
+
+                uint32_t tf = timer_get_frequency();
+
+                /* Avoid 64-bit division helpers by doing the math in 32-bit pieces.
+                   cycles64 is expected to be small enough that casting to 32-bit is safe
+                   for the chosen sample_ticks; clamp if necessary. */
+                uint32_t cycles32 = (cycles64 > 0xFFFFFFFFULL) ? 0xFFFFFFFFu : (uint32_t)cycles64;
+                uint32_t cycles_per_tick = cycles32 / sample_ticks; /* 32-bit division */
+
+                /* mhz = (cycles_per_tick * tf) / 1_000_000
+                   compute as (cycles_per_tick / 1e6)*tf + ((cycles_per_tick % 1e6) * tf)/1e6
+                   to keep intermediate values 32-bit */
+                uint32_t whole = cycles_per_tick / 1000000u;
+                uint32_t rem = cycles_per_tick % 1000000u;
+                uint32_t mhz = whole * tf + (uint32_t)((rem * tf) / 1000000u);
+                if (mhz == 0 && cycles32 > 0) mhz = 1;
+                out->mhz = mhz;
+            }
+
+            return 0;
+        }
+
         default:
             return -1;
     }

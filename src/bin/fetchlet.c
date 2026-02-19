@@ -96,7 +96,9 @@ void print_color_bar(void) {
 __attribute__((section(".entry"), used))
 void _start(void) {
     sys_meminfo_t meminfo;
+    sys_cpuinfo_t cpu;
     sys_get_meminfo(&meminfo);
+    sys_get_cpuinfo(&cpu);
 
     uint32_t ticks = sys_uptime();
     uint32_t total_secs = ticks / 100;
@@ -130,10 +132,12 @@ void _start(void) {
                 print_label("Resolution");
                 printf(": 80x25");
                 break;
-            case 5:
+            case 5: {
                 print_label("CPU");
-                printf(": i386 Compatible");
+                if (cpu.model[0]) printf(": %s %d MHz", cpu.model, cpu.mhz);
+                else printf(": %s %d MHz", cpu.vendor, cpu.mhz);
                 break;
+            }
             case 6:
                 print_label("Memory");
                 printf(": %d / %d MB", meminfo.used_kb / 1024, meminfo.total_kb / 1024);

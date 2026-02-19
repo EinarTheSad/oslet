@@ -10,6 +10,7 @@
 
 static volatile uint32_t timer_ticks = 0;
 static volatile int scheduling_enabled = 0;
+static uint32_t timer_frequency_hz = 0;
 
 static void timer_handler(void) {
     timer_ticks++;
@@ -23,6 +24,8 @@ static void timer_handler(void) {
 void timer_init(uint32_t frequency) {
     if (frequency == 0 || frequency > PIT_BASE_FREQ)
         frequency = 100;
+
+    timer_frequency_hz = frequency;
     
     uint32_t divisor = PIT_BASE_FREQ / frequency;
     
@@ -35,6 +38,10 @@ void timer_init(uint32_t frequency) {
 
 uint32_t timer_get_ticks(void) {
     return timer_ticks;
+}
+
+uint32_t timer_get_frequency(void) {
+    return timer_frequency_hz ? timer_frequency_hz : 100;
 }
 
 void timer_wait(uint32_t ticks) {
