@@ -8,6 +8,7 @@
 const char *kernel_version = "0.8";
 const char *shell_version = "";
 char shell_name[64] = "SHELL.ELF";
+int bootscr = 0;
 
 static const console_t* CURRENT;
 
@@ -477,6 +478,8 @@ void load_system_config(void) {
 
                 if (strcasecmp_s(key, "SHELL") == 0 && value[0] != '\0') {
                     strcpy_s(shell_name, value, sizeof(shell_name));
+                } else if (strcasecmp_s(key, "BOOTSCR") == 0 && value[0] == '1') {
+                    bootscr = 1;
                 }
             }
         }
