@@ -7,6 +7,7 @@
 extern const char *kernel_version;
 extern const char *shell_version;
 extern char shell_name[64];
+extern int bootscr;
 
 typedef struct {
     // Write a chunk; return bytes written.
