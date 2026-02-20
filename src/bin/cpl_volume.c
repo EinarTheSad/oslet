@@ -4,6 +4,9 @@
 #include "../lib/string.h"
 #include "../lib/stdio.h"
 #include "../lib/stdlib.h"
+#include "../lib/ini.h"
+
+#define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
 
 #define CTRL_FRAME_ID      2
 #define CTRL_SCROLLBAR_ID  3
@@ -58,6 +61,55 @@ static void apply_volume(volume_state_t *state) {
     sys_sound_set_volume(hw_vol, hw_vol);
 }
 
+static void load_volume(volume_state_t *state) {
+    /* default already set by caller */
+    int fd = sys_open(SETTINGS_PATH, "r");
+    if (fd < 0) return;
+
+    char buf[2048];
+    int bytes = sys_read(fd, buf, sizeof(buf) - 1);
+    sys_close(fd);
+    if (bytes <= 0) return;
+    buf[bytes] = '\0';
+
+    ini_parser_t ini;
+    ini_init(&ini, buf);
+    int vol = ini_get_int(&ini, "SOUND", "VOL", state->volume);
+    if (vol < 0) vol = 0;
+    if (vol > 100) vol = 100;
+    state->volume = (uint8_t)vol;
+}
+
+static void save_volume(volume_state_t *state) {
+    char read_buf[2048];
+    char tmp1[4096];
+    char sound_text[128];
+
+    int fd = sys_open(SETTINGS_PATH, "r");
+    int bytes = 0;
+    if (fd >= 0) {
+        bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
+        sys_close(fd);
+    }
+    if (bytes > 0) read_buf[bytes] = '\0';
+    else read_buf[0] = '\0';
+
+    snprintf(sound_text, sizeof(sound_text),
+        "[SOUND]\r\n"
+        "VOL=%d\r\n",
+        state->volume
+    );
+
+    if (ini_replace_section(read_buf, "SOUND", sound_text, tmp1, sizeof(tmp1)) < 0)
+        return;
+
+    fd = sys_open(SETTINGS_PATH, "w");
+    if (fd >= 0) {
+        sys_write_file(fd, tmp1, strlen(tmp1));
+        sys_close(fd);
+    }
+}
+
 static int volume_init(prog_instance_t *inst) {
     volume_state_t *state = malloc(sizeof(volume_state_t));
     if (!state) return -1;
@@ -76,6 +128,9 @@ static int volume_init(prog_instance_t *inst) {
         /* Map 0..31 -> 0..100 */
         state->volume = (avg * 100 + 15) / 31;
     }
+
+    /* override with saved preference if present */
+    load_volume(state);
 
     state->form = sys_win_create_form("Sound", 555, 278, 85, 175);
     if (!state->form) {
@@ -141,6 +196,9 @@ static void volume_cleanup(prog_instance_t *inst) {
     if (!inst || !inst->user_data) return;
 
     volume_state_t *state = (volume_state_t*)inst->user_data;
+    /* persist volume to INI before freeing */
+    save_volume(state);
+
     free(state);
     inst->user_data = 0;
 }
