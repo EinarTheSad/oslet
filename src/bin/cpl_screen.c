@@ -25,8 +25,10 @@ extern void desktop_apply_settings(uint8_t color, const char *wallpaper, uint8_t
 #define CTRL_LBL_CHOOSE      12
 #define CTRL_RADIO_STRETCH   13
 #define CTRL_RADIO_CENTER    14
-#define CTRL_FRAME_COLOR     15
-#define CTRL_DROP_COLOR      16
+#define CTRL_RADIO_TILE      15
+#define CTRL_FRAME_COLOR     16
+#define CTRL_DROP_COLOR      17
+#define CTRL_DROP_MODE       18
 
 #define WIN_WIDTH  246
 #define WIN_HEIGHT 360
@@ -44,7 +46,7 @@ typedef struct {
     char folder[128];
     char bmp_files[MAX_BMP_FILES][64];
     int bmp_count;
-    int wallpaper_mode; /* 0=center, 1=stretch */
+    int wallpaper_mode; /* 0=center, 1=stretch, 2=tile */
     /* Originals for cancel */
     uint8_t orig_desktop_color;
     char orig_wallpaper[128];
@@ -70,7 +72,7 @@ static void load_settings(cpl_screen_state_t *state) {
     state->desktop_color = theme->desktop_color;
     state->wallpaper[0] = '\0';
     strcpy(state->folder, "C:/IMAGES");
-    state->wallpaper_mode = 0;
+    state->wallpaper_mode = 0; /* centre default */
 
     int fd = sys_open(SETTINGS_PATH, "r");
     if (fd < 0) goto store_orig;
@@ -110,7 +112,13 @@ static void load_settings(cpl_screen_state_t *state) {
     val = ini_get(&ini, "DESKTOP", "MODE");
     if (val) {
         int mode = atoi(val);
-        state->wallpaper_mode = (mode == 1) ? 1 : 0;
+        if (mode == 1) {
+            state->wallpaper_mode = 1;
+        } else if (mode == 2) {
+            state->wallpaper_mode = 2;
+        } else {
+            state->wallpaper_mode = 0;
+        }
     }
 
 store_orig:
@@ -242,14 +250,14 @@ static int cpl_screen_init(prog_instance_t *inst) {
     static gui_control_t controls[] = {
         { .type = CTRL_PICTUREBOX, .x = 42,  .y = 12,  .w = 162, .h = 144, .fg = 5,  .bg = -1, .id = CTRL_PIC_MONITOR, .text = "C:/OSLET/MONITOR.BMP" },
         { .type = CTRL_PICTUREBOX, .x = 57,  .y = 26,  .w = 133, .h = 100, .fg = 0,  .bg = 0,  .id = CTRL_PIC_PREVIEW,  .text = "" },
-        { .type = CTRL_FRAME,      .x = 6,   .y = 166, .w = 234, .h = 92,  .fg = 0,  .bg = 7,  .id = CTRL_FRAME_WALLPAPER, .text = "Wallpaper" },
+        { .type = CTRL_FRAME,      .x = 6,   .y = 166, .w = 234, .h = 92, .fg = 0,  .bg = 7,  .id = CTRL_FRAME_WALLPAPER, .text = "Wallpaper" },
         { .type = CTRL_LABEL,      .x = 12,  .y = 187,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_FOLDER,      .text = "Folder:" },
         { .type = CTRL_TEXTBOX,    .x = 58,  .y = 186, .w = 138, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_TXT_FOLDER,     .max_length = 127, .text = "" },
         { .type = CTRL_BUTTON,     .x = 198, .y = 186, .w = 35,  .h = 18,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_FOLDER_OK, .text = "OK" },
         { .type = CTRL_LABEL,      .x = 12,  .y = 209,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_CHOOSE,     .text = "Choose an image:" },
         { .type = CTRL_DROPDOWN,   .x = 13,  .y = 229, .w = 120, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_IMAGES,    .cursor_pos = 0, .item_count = 0, .text = "" },
-        { .type = CTRL_RADIOBUTTON,.x = 161, .y = 216, .w = 12,  .h = 12,  .fg = 0,  .bg = 7,  .id = CTRL_RADIO_STRETCH,  .checked = 0, .text = "Stretch" },
-        { .type = CTRL_RADIOBUTTON,.x = 161, .y = 234, .w = 12,  .h = 12,  .fg = 0,  .bg = 7,  .id = CTRL_RADIO_CENTER,   .checked = 0, .text = "Center" },
+        { .type = CTRL_LABEL,      .x = 160, .y = 209,                     .fg = 0,  .bg = -1, .id = 0,                   .text = "Mode:" },
+        { .type = CTRL_DROPDOWN,   .x = 161, .y = 229, .w = 70,  .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_MODE,      .cursor_pos = 0, .item_count = 3, .text = "Center|Stretch|Tile" },
         { .type = CTRL_FRAME,      .x = 6,   .y = 258, .w = 234, .h = 48,  .fg = 0,  .bg = 7,  .id = CTRL_FRAME_COLOR,     .text = "Colour" },
         { .type = CTRL_DROPDOWN,   .x = 13,  .y = 278, .w = 120, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_COLOR,     .cursor_pos = 0, .item_count = 16, .text = "" },
         { .type = CTRL_BUTTON,     .x = 36,  .y = 312, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_APPLY,      .text = "Apply" },
@@ -274,12 +282,12 @@ static int cpl_screen_init(prog_instance_t *inst) {
     gui_control_t *dc = sys_win_get_control(state->form, CTRL_DROP_COLOR);
     if (dc) { dc->cursor_pos = state->desktop_color; dc->item_count = 16; }
 
-    /* radio buttons reflect the current wallpaper mode */
-    ctrl_set_checked(state->form, CTRL_RADIO_STRETCH, (state->wallpaper_mode == 1));
-    ctrl_set_checked(state->form, CTRL_RADIO_CENTER,  (state->wallpaper_mode == 0));
+    /* dropdown reflects the current wallpaper mode */
+    gui_control_t *drop_mode = sys_win_get_control(state->form, CTRL_DROP_MODE);
+    if (drop_mode) { drop_mode->cursor_pos = state->wallpaper_mode; }
 
-    /* picturebox image-mode: stretch vs center */
-    sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, state->wallpaper_mode);
+    /* picturebox preview always uses centered mode */
+    sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, 0);
 
     update_dropdown_list(state);
     sys_win_draw(state->form);
@@ -294,11 +302,9 @@ static void apply_settings(cpl_screen_state_t *state) {
         state->desktop_color = (uint8_t)drop_color->cursor_pos;
     }
 
-    gui_control_t *radio_stretch = sys_win_get_control(state->form, CTRL_RADIO_STRETCH);
-    if (radio_stretch && radio_stretch->checked) {
-        state->wallpaper_mode = 1;
-    } else {
-        state->wallpaper_mode = 0;
+    gui_control_t *drop_mode = sys_win_get_control(state->form, CTRL_DROP_MODE);
+    if (drop_mode) {
+        state->wallpaper_mode = drop_mode->cursor_pos;
     }
 
     /* Get selected image from dropdown */
@@ -320,9 +326,6 @@ static void apply_settings(cpl_screen_state_t *state) {
         pic_preview->bg = state->desktop_color;
     }
 
-    /* Update preview control image-mode (center vs stretch) */
-    sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, state->wallpaper_mode);
-
     save_settings(state);
     desktop_apply_settings(state->desktop_color, state->wallpaper, state->wallpaper_mode);
 }
@@ -333,10 +336,6 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
     if (!state) return PROG_EVENT_NONE;
 
     if (event == -1 || event == -2) {
-        /* Read current radio button state for live preview */
-        gui_control_t *radio_stretch = sys_win_get_control(state->form, CTRL_RADIO_STRETCH);
-        int mode = (radio_stretch && radio_stretch->checked) ? 1 : 0;
-        sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, mode);
         return PROG_EVENT_NONE;
     }
 
@@ -377,21 +376,12 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
         return PROG_EVENT_HANDLED;
     }
 
-    /* Radio button toggled */
-    if (event == CTRL_RADIO_STRETCH) {
-        ctrl_set_checked(state->form, CTRL_RADIO_CENTER, 0);
-        ctrl_set_checked(state->form, CTRL_RADIO_STRETCH, 1);
-        /* Preview should show stretched image */
-        sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, 1);
-        sys_win_draw(state->form);
-        return PROG_EVENT_HANDLED;
-    }
-
-    if (event == CTRL_RADIO_CENTER) {
-        ctrl_set_checked(state->form, CTRL_RADIO_STRETCH, 0);
-        ctrl_set_checked(state->form, CTRL_RADIO_CENTER, 1);
-        /* Preview should show centered (preserve aspect) image */
-        sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, 0);
+    /* Wallpaper mode dropdown changed */
+    if (event == CTRL_DROP_MODE) {
+        gui_control_t *drop_mode = sys_win_get_control(state->form, CTRL_DROP_MODE);
+        if (drop_mode) {
+            state->wallpaper_mode = drop_mode->cursor_pos;
+        }
         sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
     }
