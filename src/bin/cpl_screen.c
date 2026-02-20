@@ -333,47 +333,11 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
     if (!state) return PROG_EVENT_NONE;
 
     if (event == -1 || event == -2) {
-        /* Check if dropdown selection changed and update preview accordingly */
-        gui_control_t *drop = sys_win_get_control(state->form, CTRL_DROP_IMAGES);
-        gui_control_t *dropcol = sys_win_get_control(state->form, CTRL_DROP_COLOR);
-        int changed = 0;
-
-        if (drop) {
-            char new_wallpaper[128];
-            if (drop->cursor_pos == 0) {
-                new_wallpaper[0] = '\0';
-            } else if (drop->cursor_pos - 1 < state->bmp_count) {
-                snprintf(new_wallpaper, sizeof(new_wallpaper), "%s/%s", 
-                         state->folder, state->bmp_files[drop->cursor_pos - 1]);
-            } else {
-                new_wallpaper[0] = '\0';
-            }
-            
-            /* Only update if wallpaper changed */
-            if (strcmp(state->wallpaper, new_wallpaper) != 0) {
-                strcpy(state->wallpaper, new_wallpaper);
-                ctrl_set_image(state->form, CTRL_PIC_PREVIEW, state->wallpaper);
-                changed = 1;
-            }
-        }
-
-        /* Check color dropdown and update preview only if it actually changed */
-        if (dropcol) {
-            uint8_t new_color = (uint8_t)dropcol->cursor_pos;
-            if (state->desktop_color != new_color) {
-                state->desktop_color = new_color;
-                gui_control_t *pic_preview = sys_win_get_control(state->form, CTRL_PIC_PREVIEW);
-                if (pic_preview) pic_preview->bg = new_color;
-                changed = 1;
-            }
-        }
-
         /* Read current radio button state for live preview */
         gui_control_t *radio_stretch = sys_win_get_control(state->form, CTRL_RADIO_STRETCH);
         int mode = (radio_stretch && radio_stretch->checked) ? 1 : 0;
         sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, mode);
-
-        return changed ? PROG_EVENT_REDRAW : PROG_EVENT_NONE;
+        return PROG_EVENT_NONE;
     }
 
     /* Folder OK button */
@@ -391,7 +355,24 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
 
     /* Dropdown selection changed */
     if (event == CTRL_DROP_IMAGES) {
-        /* Handled earlier */
+        gui_control_t *drop = sys_win_get_control(state->form, CTRL_DROP_IMAGES);
+        if (drop) {
+            char new_wallpaper[128];
+            if (drop->cursor_pos == 0) {
+                new_wallpaper[0] = '\0';
+            } else if (drop->cursor_pos - 1 < state->bmp_count) {
+                snprintf(new_wallpaper, sizeof(new_wallpaper), "%s/%s", 
+                         state->folder, state->bmp_files[drop->cursor_pos - 1]);
+            } else {
+                new_wallpaper[0] = '\0';
+            }
+            
+            /* Update wallpaper and preview image */
+            if (strcmp(state->wallpaper, new_wallpaper) != 0) {
+                strcpy(state->wallpaper, new_wallpaper);
+                ctrl_set_image(state->form, CTRL_PIC_PREVIEW, state->wallpaper);
+            }
+        }
         sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
     }
@@ -417,7 +398,15 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
 
     /* Color dropdown changed */
     if (event == CTRL_DROP_COLOR) {
-        /* Handled earlier */
+        gui_control_t *dropcol = sys_win_get_control(state->form, CTRL_DROP_COLOR);
+        if (dropcol) {
+            uint8_t new_color = (uint8_t)dropcol->cursor_pos;
+            if (state->desktop_color != new_color) {
+                state->desktop_color = new_color;
+                gui_control_t *pic_preview = sys_win_get_control(state->form, CTRL_PIC_PREVIEW);
+                if (pic_preview) pic_preview->bg = new_color;
+            }
+        }
         sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
     }
