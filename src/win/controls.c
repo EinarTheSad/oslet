@@ -597,6 +597,9 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
     int label_lines = icon_count_label_lines(control->text, max_line_width);
     int total_h = icon_calc_total_height(icon_size, label_lines);
 
+    /* Clear background to remove previous selection state */
+    gfx_fillrect(abs_x, abs_y, total_w, total_h, win_bg);
+
     /* Calculate icon position (centered horizontally) */
     int icon_x = abs_x + (total_w - icon_size) / 2;
     int icon_y = abs_y;
@@ -1139,7 +1142,8 @@ void ctrl_draw(window_t *win, gui_control_t *control) {
         ctrl_draw_frame(control, abs_x, abs_y);
     }
     else if (control->type == 8) { /* CTRL_ICON */
-        ctrl_draw_icon(control, abs_x, abs_y, 7);
+        window_theme_t *theme = theme_get_current();
+        ctrl_draw_icon(control, abs_x, abs_y, theme->bg_color);
     }
     else if (control->type == 9) { /* CTRL_DROPDOWN */
         ctrl_draw_dropdown(control, abs_x, abs_y);

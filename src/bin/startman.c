@@ -11,6 +11,7 @@
 #define PADDING_X 12
 #define PADDING_Y 8
 #define COLS 5
+#define COLS_CHILD 4
 
 #define WIN_WIDTH 330
 #define WIN_HEIGHT 200
@@ -369,6 +370,7 @@ static int startman_init(prog_instance_t *inst) {
     int win_h = WIN_HEIGHT;
 
     int icon_offset = 0;
+    int cols = state->is_main_window ? COLS : COLS_CHILD;
 
     if (!state->is_main_window) {
         /* Subgroup windows: offset position and calculate dynamic size */
@@ -380,7 +382,7 @@ static int startman_init(prog_instance_t *inst) {
         icon_offset = 1;
 
         /* Calculate rows needed */
-        int rows = (total_icons + COLS - 1) / COLS;
+        int rows = (total_icons + cols - 1) / cols;
         if (rows < 1) rows = 1;
 
         /* Dynamic height based on content */
@@ -389,7 +391,7 @@ static int startman_init(prog_instance_t *inst) {
         if (win_h > WIN_HEIGHT) win_h = WIN_HEIGHT;
 
         /* Dynamic width if few icons */
-        int cols_needed = (total_icons < COLS) ? total_icons : COLS;
+        int cols_needed = (total_icons < cols) ? total_icons : cols;
         if (cols_needed < 1) cols_needed = 1;
         win_w = PADDING_X + cols_needed * (ICON_W + PADDING_X) + PADDING_X;
         if (win_w < 120) win_w = 120;
@@ -429,8 +431,8 @@ static int startman_init(prog_instance_t *inst) {
     /* Add icons for each app */
     for (int i = 0; i < state->app_count; i++) {
         int pos = i + icon_offset;
-        int col = pos % COLS;
-        int row = pos / COLS;
+        int col = pos % cols;
+        int row = pos / cols;
         int x = PADDING_X + col * (ICON_W + PADDING_X);
         int y = PADDING_Y + row * (ICON_H + PADDING_Y);
 
@@ -461,10 +463,9 @@ static void raise_subwindows(void) {
     /* Bring all non-main Start Manager windows to the front so they
        never get covered by the main instance.  This is called by the
        main window when it receives any event or redraw request. */
-    int count = progman_get_running_count();
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
         prog_instance_t *inst = progman_get_instance(i);
-        if (!inst || !inst->module)
+        if (!inst || inst->state != PROG_STATE_RUNNING || !inst->module)
             continue;
         if (strcmp(inst->module->name, "Start Manager") != 0)
             continue;
@@ -493,14 +494,13 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
     if (event == -1 || event == -2)
         return PROG_EVENT_REDRAW;
 
-    /* Handle back button - open main Start Manager window and close this one */
-    if (event == CTRL_BACK_BUTTON && state) {
+    /* Handle back button - only for child windows */
+    if (event == CTRL_BACK_BUTTON && state && !state->is_main_window) {
         /* Check if main Start Manager window is already open */
         int main_exists = 0;
-        int count = progman_get_running_count();
-        for (int i = 0; i < count; i++) {
+        for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
             prog_instance_t *other = progman_get_instance(i);
-            if (other && other->module &&
+            if (other && other->state == PROG_STATE_RUNNING && other->module &&
                 strcmp(other->module->name, "Start Manager") == 0 &&
                 other->user_data) {
                 startman_state_t *other_state = other->user_data;
