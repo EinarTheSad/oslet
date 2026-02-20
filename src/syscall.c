@@ -1513,9 +1513,11 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                 int clicked_item = ctrl->dropdown_scroll + rel_item;
                 if (clicked_item >= 0 && clicked_item < ctrl->item_count) {
                     ctrl->cursor_pos = clicked_item;
+                    /* Generate event immediately when item is selected */
+                    form->clicked_id = ctrl->id;
                 }
                 ctrl_hide_dropdown_list(&form->win, ctrl);
-                form->press_control_id = ctrl->id;
+                form->press_control_id = -1;  /* Clear so release doesn't fire duplicate event */
                 /* Signal desktop to do full redraw (clears artifacts outside window) */
                 global_wm.needs_full_redraw = 1;
                 return 1;  /* needs_redraw */
@@ -2334,6 +2336,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         }
                     }
                 }
+            }
+
+            /* Check if an event was generated during button press (e.g., dropdown item selected) */
+            if (form->clicked_id >= 0 && !button_released) {
+                event_count = 1;
             }
 
             /* Handle mouse button release */
