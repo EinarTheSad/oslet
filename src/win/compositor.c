@@ -87,33 +87,6 @@ void compositor_draw_all(window_manager_t *wm) {
                     if (form->window_menu.visible) {
                         menu_draw(&form->window_menu);
                     }
-                } else {
-                    /* Even if window doesn't intersect, its open dropdown list may */
-                    if (form->controls) {
-                        for (int j = 0; j < form->ctrl_count; j++) {
-                            gui_control_t *ctrl = &form->controls[j];
-                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
-                                int abs_x = form->win.x + ctrl->x;
-                                int abs_y = form->win.y + ctrl->y + 20;
-                                int list_h = ctrl->item_count * 16;
-                                int list_y = abs_y + ctrl->h;
-                                
-                                /* Auto-flip: if list extends past screen bottom, render above control */
-                                if (list_y + list_h > WM_SCREEN_HEIGHT) {
-                                    list_y = abs_y - list_h;
-                                    if (list_y < 0) {
-                                        list_y = 0;
-                                        list_h = abs_y;
-                                        if (list_h < 16) list_h = 16;
-                                    }
-                                }
-                                
-                                if (rects_intersect(dx, dy, dw, dh, abs_x, list_y, ctrl->w, list_h)) {
-                                    win_draw_dropdown_list(&form->win, ctrl);
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -286,8 +259,23 @@ void compositor_invalidate_icon_backgrounds(window_manager_t *wm) {
 }
 
 void compositor_set_dirty_rect(window_manager_t *wm, int x, int y, int w, int h) {
-    wm->dirty_x = x;
-    wm->dirty_y = y;
-    wm->dirty_w = w;
-    wm->dirty_h = h;
+    if (wm->dirty_w <= 0 || wm->dirty_h <= 0) {
+        /* No existing dirty rect — just set it */
+        wm->dirty_x = x;
+        wm->dirty_y = y;
+        wm->dirty_w = w;
+        wm->dirty_h = h;
+    } else {
+        /* Union with existing dirty rect */
+        int x2 = x + w;
+        int y2 = y + h;
+        int ox2 = wm->dirty_x + wm->dirty_w;
+        int oy2 = wm->dirty_y + wm->dirty_h;
+        int nx = x < wm->dirty_x ? x : wm->dirty_x;
+        int ny = y < wm->dirty_y ? y : wm->dirty_y;
+        wm->dirty_x = nx;
+        wm->dirty_y = ny;
+        wm->dirty_w = (x2 > ox2 ? x2 : ox2) - nx;
+        wm->dirty_h = (y2 > oy2 ? y2 : oy2) - ny;
+    }
 }
