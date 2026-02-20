@@ -162,7 +162,7 @@ $(BUILD)/lib/%.o: $(LIB)/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(BINCFLAGS) -c $< -o $@
 
-DESKTOP_SRCS := $(BIN)/desktop.c $(BIN)/progman.c $(BIN)/startman.c $(BIN)/textmode.c $(BIN)/cpl_theme.c $(BIN)/cpl_screen.c $(BIN)/shutdown.c $(BIN)/cpl_volume.c
+DESKTOP_SRCS := $(BIN)/desktop.c $(BIN)/progman.c $(BIN)/startman.c $(BIN)/textmode.c $(BIN)/cpl_theme.c $(BIN)/cpl_screen.c $(BIN)/cpl_boot.c $(BIN)/shutdown.c $(BIN)/cpl_volume.c
 DESKTOP_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(DESKTOP_SRCS))
 
 $(BIN)/desktop.elf: $(DESKTOP_OBJS) $(LIB_OBJS)
