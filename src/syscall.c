@@ -32,8 +32,11 @@ typedef struct {
     int height;
 } cached_bmp_t;
 
-#define FD_CRITICAL_BEGIN __asm__ volatile("cli")
-#define FD_CRITICAL_END __asm__ volatile("sti")
+#define FD_CRITICAL_BEGIN \
+    uint32_t _fd_eflags; \
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(_fd_eflags) :: "memory")
+#define FD_CRITICAL_END \
+    __asm__ volatile("pushl %0\n\tpopfl" :: "r"(_fd_eflags) : "cc", "memory")
 extern int buffer_valid;
 
 /* Global window manager */
@@ -312,7 +315,7 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             if (!ebx) return -1;
             return fat32_chdir((const char*)ebx);
             
-        case 0x01:
+        case 0x01: {
             if (!ebx) return -1;
             char *result = fat32_getcwd((char*)ebx, ecx);
             if (!result || ((char*)ebx)[0] == '\0') {
@@ -322,6 +325,7 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
                 }
             }
             return (uint32_t)result;
+        }
         
         case 0x02:
             if (!ebx) return -1;
@@ -1719,7 +1723,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
                             ctrl->hovered_item = 2;
                             ctrl->pressed = 1;
                             if (ctrl->cursor_pos < max_val) ctrl->cursor_pos++;
-return 1;
+                            return 1;
                         } else if (mx >= thumb_x && mx < thumb_x + thumb_size) {
                             /* Thumb clicked - start dragging */
                             ctrl->hovered_item = 1;
@@ -2083,8 +2087,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             return (uint32_t)form;
         }
               
-        case 0x07: { /* SYS_WIN_PUMP_EVENTS 
-                    extern */
+        case 0x07: { /* SYS_WIN_PUMP_EVENTS */
             gui_form_t *form = (gui_form_t*)ebx;
 
             if (!form) return 0;
@@ -2271,6 +2274,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     if (mx >= check_x && mx < check_x + check_w &&
                         my >= check_y && my < check_y + check_h) {
                         z_order_changed = wm_bring_to_front(&global_wm, form);
+                        if (z_order_changed)
+                            global_wm.needs_full_redraw = 1;
                     }
 
                     /* Check if click is on an open dropdown list FIRST (highest priority, 
@@ -2728,8 +2733,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             }
                         }
                     } else if (z_order_changed) {
-                        /* Z-order changed: redraw only this window (it's now on top) */
-                        compositor_draw_single(&global_wm, form);
+                        /* Z-order changed: full composite so no lower window paints over the new top */
+                        compositor_draw_all(&global_wm);
                     } else {
                         /* Fallback to single window redraw if no specific controls tracked */
                         compositor_draw_single(&global_wm, form);
@@ -2754,8 +2759,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         }
                     }
                 } else if (z_order_changed) {
-                    /* Z-order changed: redraw only this window (it's now on top) */
-                    compositor_draw_single(&global_wm, form);
+                    /* Z-order changed: full composite so no lower window paints over the new top */
+                    compositor_draw_all(&global_wm);
                 } else {
                     /* Fallback to single window redraw if no specific controls tracked */
                     compositor_draw_single(&global_wm, form);
