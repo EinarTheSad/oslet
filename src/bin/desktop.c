@@ -18,6 +18,7 @@ typedef struct {
     uint8_t color;
     char wallpaper[128];
     uint8_t wallpaper_mode; /* 0=center, 1=stretch */
+    uint8_t volume; /* 0..100, imported from [SOUND] VOL */
 } desktop_settings_t;
 
 typedef struct {
@@ -35,6 +36,7 @@ extern const progmod_t startman_module;
 extern const progmod_t textmode_module;
 extern const progmod_t cpl_theme_module;
 extern const progmod_t cpl_screen_module;
+extern const progmod_t cpl_boot_module;
 extern const progmod_t shutdown_module;
 extern const progmod_t volume_module;
 
@@ -90,6 +92,7 @@ static void load_settings(void) {
     settings.color = 7;
     settings.wallpaper[0] = '\0';
     settings.wallpaper_mode = 0; /* center by default */
+    settings.volume = 66; /* match default used by volume control */
 
     int fd = sys_open(SETTINGS_PATH, "r");
     if (fd < 0) return;
@@ -128,6 +131,7 @@ static void load_settings(void) {
     theme->button_color = (uint8_t)ini_get_color(&ini, "THEME", "BUTTON_COLOR", theme->button_color);
     theme->taskbar_color = (uint8_t)ini_get_color(&ini, "THEME", "TASKBAR_COLOR", theme->taskbar_color);
     theme->start_button_color = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", theme->start_button_color);
+    settings.volume = (uint8_t)ini_get_int(&ini, "SOUND", "VOL", settings.volume);
 }
 
 static void cache_wallpaper(void) {
@@ -153,6 +157,7 @@ static void prog_register_all(void) {
     progman_register(&textmode_module);
     progman_register(&cpl_theme_module);
     progman_register(&cpl_screen_module);
+    progman_register(&cpl_boot_module);
     progman_register(&shutdown_module);
     progman_register(&volume_module);
 }
@@ -491,7 +496,16 @@ void _start(void) {
     sys_gfx_swap();
 
     if (sys_sound_detected()) {
-        sys_sound_set_volume(15,15);
+        /* apply configured volume (0..100 -> 0..31) */
+        uint8_t vol = settings.volume;
+        uint8_t hw_vol;
+        if (vol == 0) {
+            hw_vol = 0;
+        } else {
+            hw_vol = (vol * 31 + 50) / 100;
+            if (hw_vol == 0) hw_vol = 1;
+        }
+        sys_sound_set_volume(hw_vol, hw_vol);
         sys_sound_play_wav("C:/SOUNDS/boot.wav");
     }
 
@@ -579,9 +593,6 @@ void _start(void) {
         if (taskbar_needs_redraw) {
             taskbar_draw();
             clock_draw();
-            /* Redraw only windows overlapping the taskbar/clock to avoid a full redraw.
-               If no progman window intersects, ask the kernel compositor to mark the
-               taskbar rect dirty so non-progman windows (e.g. imgview) are repainted. */
             sys_win_mark_dirty_rect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT);
             taskbar_needs_redraw = 0;
         }
