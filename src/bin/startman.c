@@ -457,9 +457,37 @@ static int startman_init(prog_instance_t *inst) {
     return 0;
 }
 
+static void raise_subwindows(void) {
+    /* Bring all non-main Start Manager windows to the front so they
+       never get covered by the main instance.  This is called by the
+       main window when it receives any event or redraw request. */
+    int count = progman_get_running_count();
+    for (int i = 0; i < count; i++) {
+        prog_instance_t *inst = progman_get_instance(i);
+        if (!inst || !inst->module)
+            continue;
+        if (strcmp(inst->module->name, "Start Manager") != 0)
+            continue;
+        startman_state_t *s = inst->user_data;
+        if (!s)
+            continue;
+        if (!s->is_main_window && s->form) {
+            /* restore_form will also bring the window to front; if the
+               window is already frontmost this is a no-op. */
+            sys_win_restore_form(s->form);
+        }
+    }
+}
+
 static int startman_event(prog_instance_t *inst, int win_idx, int event) {
     (void)win_idx;
     startman_state_t *state = inst->user_data;
+
+    /* If this is the main instance, make sure any open sub-windows are
+       raised whenever we get an event. */
+    if (state && state->is_main_window) {
+        raise_subwindows();
+    }
 
     /* Handle window events */
     if (event == -1 || event == -2)
