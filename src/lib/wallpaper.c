@@ -15,19 +15,26 @@ int wallpaper_cache(const char *path, gfx_cached_bmp_t *out, int *out_x, int *ou
         if (out_x) *out_x = 0;
         if (out_y) *out_y = 0;
     } else {
-        /* Center mode: cache at original size */
+        /* Center or tile mode: cache at original size */
         if (sys_gfx_cache_bmp(path, out) != 0) {
             if (out) { out->data = 0; out->width = 0; out->height = 0; }
             return -1;
         }
-        /* Center the wallpaper */
-        int wx = (WM_SCREEN_WIDTH - out->width) / 2;
-        int wy = (WM_SCREEN_HEIGHT - out->height) / 2;
-        if (wx < 0) wx = 0;
-        if (wy < 0) wy = 0;
-
-        if (out_x) *out_x = wx;
-        if (out_y) *out_y = wy;
+        /* For center mode we compute a centered offset, for tile mode we start at 0,0 */
+        if (mode == 2) {
+            /* tile: origin is top-left
+             * wallpaper_draw will handle repetition
+             */
+            if (out_x) *out_x = 0;
+            if (out_y) *out_y = 0;
+        } else {
+            int wx = (WM_SCREEN_WIDTH - out->width) / 2;
+            int wy = (WM_SCREEN_HEIGHT - out->height) / 2;
+            if (wx < 0) wx = 0;
+            if (wy < 0) wy = 0;
+            if (out_x) *out_x = wx;
+            if (out_y) *out_y = wy;
+        }
     }
     return 0;
 }

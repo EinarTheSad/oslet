@@ -17,7 +17,7 @@
 typedef struct {
     uint8_t color;
     char wallpaper[128];
-    uint8_t wallpaper_mode; /* 0=center, 1=stretch */
+    uint8_t wallpaper_mode; /* 0=center, 1=stretch, 2=tile */
     uint8_t volume; /* 0..100, imported from [SOUND] VOL */
 } desktop_settings_t;
 
@@ -118,7 +118,13 @@ static void load_settings(void) {
     val = ini_get(&ini, "DESKTOP", "MODE");
     if (val) {
         int mode = atoi(val);
-        settings.wallpaper_mode = (mode == 1) ? 1 : 0;
+        if (mode == 1) {
+            settings.wallpaper_mode = 1;
+        } else if (mode == 2) {
+            settings.wallpaper_mode = 2;
+        } else {
+            settings.wallpaper_mode = 0;
+        }
     }
 
     sys_theme_t *theme = sys_win_get_theme();
@@ -149,7 +155,22 @@ static void cache_wallpaper(void) {
 static void draw_wallpaper(void) {
     if (settings.wallpaper[0] == '\0') return;
     if (!cached_wallpaper.data) return;
-    wallpaper_draw(&cached_wallpaper, wallpaper_x, wallpaper_y);
+
+    if (settings.wallpaper_mode == 2) {
+        /* tile mode: repeat the cached bitmap to cover entire screen */
+        int bw = cached_wallpaper.width;
+        int bh = cached_wallpaper.height;
+        if (bw > 0 && bh > 0) {
+            for (int yy = 0; yy < WM_SCREEN_HEIGHT; yy += bh) {
+                for (int xx = 0; xx < WM_SCREEN_WIDTH; xx += bw) {
+                    wallpaper_draw(&cached_wallpaper, xx, yy);
+                }
+            }
+        }
+    } else {
+        /* center or stretch behave as before */
+        wallpaper_draw(&cached_wallpaper, wallpaper_x, wallpaper_y);
+    }
 }
 
 static void prog_register_all(void) {
@@ -401,6 +422,33 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
                 taskbar_draw();
                 clock_draw();
                 taskbar_dirty = 0; /* already handled */
+            } else if (settings.wallpaper_mode == 2) {
+                /* Tile mode: repeat template only within dirty rectangle */
+                int bw = cached_wallpaper.width;
+                int bh = cached_wallpaper.height;
+                if (bw > 0 && bh > 0) {
+                    int start_x = x - (x % bw);
+                    if (start_x > x) start_x -= bw;
+                    int start_y = y - (y % bh);
+                    if (start_y > y) start_y -= bh;
+                    for (int ty = start_y; ty < y + h; ty += bh) {
+                        for (int tx = start_x; tx < x + w; tx += bw) {
+                            int sx = 0;
+                            int sy = 0;
+                            int dw = bw;
+                            int dh = bh;
+                            int dx = tx;
+                            int dy = ty;
+                            if (dx < x) { sx = x - dx; dw -= sx; dx = x; }
+                            if (dy < y) { sy = y - dy; dh -= sy; dy = y; }
+                            if (dx + dw > x + w) dw = x + w - dx;
+                            if (dy + dh > y + h) dh = y + h - dy;
+                            if (dw > 0 && dh > 0) {
+                                wallpaper_draw_partial(&cached_wallpaper, dx, dy, sx, sy, dw, dh);
+                            }
+                        }
+                    }
+                }
             } else {
                 /* Center mode: draw partial wallpaper if it intersects the dirty rect */
                 int ix, iy, iw, ih;
