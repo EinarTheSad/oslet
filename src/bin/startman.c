@@ -473,9 +473,11 @@ static void raise_subwindows(void) {
         if (!s)
             continue;
         if (!s->is_main_window && s->form) {
-            /* restore_form will also bring the window to front; if the
-               window is already frontmost this is a no-op. */
-            sys_win_restore_form(s->form);
+            /* Only bring to front if not minimized - restoring a minimized
+               window would prevent the user from keeping it iconified. */
+            gui_form_t *f = (gui_form_t *)s->form;
+            if (!f->win.is_minimized)
+                sys_win_restore_form(s->form);
         }
     }
 }
