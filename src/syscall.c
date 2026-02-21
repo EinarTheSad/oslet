@@ -2124,14 +2124,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                                button_pressed, button_released);
                 if (action > 0) {
                     /* Menu action selected */
-                    if (action == MENU_ACTION_MINIMIZE) {
+                        if (action == MENU_ACTION_MINIMIZE) {
                         int icon_x, icon_y;
                         wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
                         const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;
                         win_minimize(&form->win, icon_x, icon_y, icon_path);
-                        /* Ensure desktop updates immediately after minimizing */
+                        /* Let the desktop redraw run first to avoid compositing on stale wallpaper. */
                         global_wm.needs_full_redraw = 1;
-                        compositor_draw_all(&global_wm);
                         return -2;  /* Window minimized (major state change) */
                     } else if (action == MENU_ACTION_CLOSE) {
                         /* Signal close request - return special value */
@@ -3420,6 +3419,7 @@ void wm_cleanup_task(uint32_t tid) {
     if (!wm_initialized) return;
 
     /* Iterate through all windows and destroy those owned by this task */
+    int cleaned = 0;
     for (int i = global_wm.count - 1; i >= 0; i--) {
         gui_form_t *form = global_wm.windows[i];
         if (!form || form->owner_tid != tid) continue;
@@ -3459,6 +3459,14 @@ void wm_cleanup_task(uint32_t tid) {
 
         /* Free form */
         kfree(form);
+        cleaned = 1;
+    }
+    /* If we removed any windows, request a full desktop redraw so wallpaper and
+       desktop elements behind the removed windows are repainted. */
+    if (cleaned) {
+        global_wm.needs_full_redraw = 1;
+        /* Request immediate redraw so wallpaper/background is repainted now */
+        compositor_draw_all(&global_wm);
     }
 }
 
