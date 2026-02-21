@@ -59,7 +59,12 @@ void compositor_draw_all(window_manager_t *wm) {
         int dw = wm->dirty_w;
         int dh = wm->dirty_h;
 
-        /* Draw back-to-front only windows that intersect the dirty rect */
+        /* Determine lowest z-index that must be updated.
+           If any window intersects the dirty rect, we must redraw that
+           window and every window above it to preserve z-order (so
+           higher windows redraw over lower ones). Compute the minimal
+           index and draw from there up to the top. */
+        int min_index_to_draw = wm->count; /* if unchanged, nothing to draw */
         for (int i = 0; i < wm->count; i++) {
             gui_form_t *form = wm->windows[i];
             if (!form || !form->win.is_visible) continue;
@@ -71,16 +76,43 @@ void compositor_draw_all(window_manager_t *wm) {
                     int iw = WM_ICON_TOTAL_WIDTH;
                     int ih = icon_get_height(form->win.minimized_icon);
                     if (rects_intersect(dx, dy, dw, dh, ix, iy, iw, ih)) {
-                        icon_draw(form->win.minimized_icon);
+                        /* icon touches dirty rect - mark this index */
+                        if (i < min_index_to_draw) min_index_to_draw = i;
                     }
                 }
             } else {
-                int wx = form->win.x - WM_BG_MARGIN;
-                int wy = form->win.y - WM_BG_MARGIN;
-                int ww = form->win.w + (WM_BG_MARGIN * 2);
-                int wh = form->win.h + (WM_BG_MARGIN * 2);
+                /* Inline expressions to avoid unused-variable warnings */
+                if (rects_intersect(dx, dy, dw, dh,
+                                    form->win.x - WM_BG_MARGIN,
+                                    form->win.y - WM_BG_MARGIN,
+                                    form->win.w + (WM_BG_MARGIN * 2),
+                                    form->win.h + (WM_BG_MARGIN * 2))) {
+                    if (i < min_index_to_draw) min_index_to_draw = i;
+                }
+            }
+        }
 
-                if (rects_intersect(dx, dy, dw, dh, wx, wy, ww, wh)) {
+        /* If nothing intersects, nothing to do. Otherwise draw from the
+           lowest affected window up to the top in back-to-front order. */
+        if (min_index_to_draw < wm->count) {
+            for (int i = min_index_to_draw; i < wm->count; i++) {
+                gui_form_t *form = wm->windows[i];
+                if (!form || !form->win.is_visible) continue;
+
+                if (form->win.is_minimized) {
+                    if (form->win.minimized_icon) {
+                        int ix = form->win.minimized_icon->x;
+                        int iy = form->win.minimized_icon->y;
+                        int iw = WM_ICON_TOTAL_WIDTH;
+                        int ih = icon_get_height(form->win.minimized_icon);
+                        if (rects_intersect(dx, dy, dw, dh, ix, iy, iw, ih)) {
+                            icon_draw(form->win.minimized_icon);
+                        }
+                    }
+                } else {
+                    /* Draw windows in z-order (bottom->top); we intentionally
+                       draw some windows even if they don't intersect the dirty
+                       rect so they can properly cover earlier windows that do. */
                     int is_focused = (i == wm->focused_index);
                     win_draw_focused(&form->win, is_focused);
                     compositor_draw_controls(form);
