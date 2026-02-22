@@ -2361,6 +2361,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     int snap_x, snap_y;
                     wm_snap_to_slot(icon->x, icon->y, &snap_x, &snap_y);
 
+                    /* Release the icon's previous slot and claim the new one to
+                       avoid race conditions where another minimized window
+                       could reuse a slot that is being occupied by this icon. */
+                    wm_release_icon_slot(&global_wm, icon->original_x, icon->original_y);
+                    wm_claim_icon_slot(&global_wm, snap_x, snap_y);
                     /* End drag and move to snapped position */
                     icon_end_drag(icon, snap_x, snap_y);
                 }

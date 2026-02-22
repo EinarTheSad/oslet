@@ -198,6 +198,22 @@ void wm_release_icon_slot(window_manager_t *wm, int x, int y) {
     }
 }
 
+void wm_claim_icon_slot(window_manager_t *wm, int x, int y) {
+    /* Remove a matching free slot entry so the slot is considered used/claimed.
+       This prevents a new minimized window from being placed on a slot that
+       an icon was just moved into. */
+    for (int i = 0; i < wm->free_slot_count; i++) {
+        if (wm->free_slots[i].x == x && wm->free_slots[i].y == y) {
+            /* Shift remaining slots down */
+            for (int j = i; j < wm->free_slot_count - 1; j++) {
+                wm->free_slots[j] = wm->free_slots[j + 1];
+            }
+            wm->free_slot_count--;
+            return;
+        }
+    }
+}
+
 void wm_set_icon_click(window_manager_t *wm, uint32_t time, gui_form_t *form) {
     wm->last_icon_click_time = time;
     wm->last_icon_click_form = form;
