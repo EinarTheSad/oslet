@@ -34,6 +34,7 @@ gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y);
 
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y);
 void wm_release_icon_slot(window_manager_t *wm, int x, int y);
+void wm_claim_icon_slot(window_manager_t *wm, int x, int y);
 void wm_set_icon_click(window_manager_t *wm, uint32_t time, gui_form_t *form);
 int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, gui_form_t *form);
 void wm_snap_to_slot(int x, int y, int *out_x, int *out_y);
