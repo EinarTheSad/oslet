@@ -141,9 +141,12 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_RESTORE_FORM     0x0B16
 #define SYS_WIN_FORCE_FULL_REDRAW 0x0B17
 #define SYS_WIN_IS_FOCUSED 0x0B18
-#define SYS_WIN_DRAW_BUFFER 0x0B19  /* Draw a raw pixel buffer into a form with clipping to avoid overwriting other windows */
-#define SYS_WIN_MARK_DIRTY 0x0B1A   /* Mark window region as dirty and trigger compositor redraw with z-order */
-#define SYS_WIN_MARK_DIRTY_RECT 0x0B1B /* Mark a given screen rect dirty so compositor redraws overlapping windows */
+#define SYS_WIN_DRAW_BUFFER 0x0B19
+#define SYS_WIN_MARK_DIRTY 0x0B1A
+#define SYS_WIN_MARK_DIRTY_RECT 0x0B1B
+#define SYS_WIN_MENUBAR_ENABLE 0x0B1C
+#define SYS_WIN_MENUBAR_ADD_MENU 0x0B1D
+#define SYS_WIN_MENUBAR_ADD_ITEM 0x0B1E
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -237,6 +240,8 @@ typedef struct {
     menu_t window_menu;
     uint8_t window_menu_initialized;
     uint32_t owner_tid;
+    menubar_t menubar;
+    uint8_t menubar_enabled;
 } gui_form_t;
 
 typedef struct {
@@ -1042,4 +1047,22 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
         
         sys_yield();
     }
+}
+static inline void sys_win_menubar_enable(void *form) {
+    register int dummy_eax __asm__("eax") = SYS_WIN_MENUBAR_ENABLE;
+    register void *dummy_ebx __asm__("ebx") = form;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
+}
+
+static inline int sys_win_menubar_add_menu(void *form, const char *title) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MENUBAR_ADD_MENU), "b"(form), "c"(title));
+    return ret;
+}
+
+static inline int sys_win_menubar_add_item(void *form, int menu_index, const char *text, int action_id) {
+    int ret;
+    uint32_t packed = ((uint32_t)menu_index << 16) | (action_id & 0xFFFF);
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MENUBAR_ADD_ITEM), "b"(form), "c"(text), "d"(packed));
+    return ret;
 }

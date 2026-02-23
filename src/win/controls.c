@@ -1116,9 +1116,9 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
     }
 }
 
-void ctrl_draw(window_t *win, gui_control_t *control) {
+void ctrl_draw_with_offset(window_t *win, gui_control_t *control, int y_offset) {
     int abs_x = win->x + control->x;
-    int abs_y = win->y + control->y + 20;
+    int abs_y = win->y + control->y + y_offset;
 
     if (control->type == 1) { /* CTRL_BUTTON */
         ctrl_draw_button(control, abs_x, abs_y);
@@ -1154,6 +1154,11 @@ void ctrl_draw(window_t *win, gui_control_t *control) {
     else if (control->type == 11) { /* CTRL_SCROLLBAR */
         ctrl_draw_scrollbar(control, abs_x, abs_y);
     }
+}
+
+/* Need to keep it that way for backwards compatibility */
+void ctrl_draw(window_t *win, gui_control_t *control) {
+    ctrl_draw_with_offset(win, control, 20);
 }
 
 int text_split_lines(const char *text, char lines[][256], int max_lines) {

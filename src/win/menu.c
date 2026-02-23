@@ -297,3 +297,170 @@ int menu_handle_mouse(menu_t *menu, int mx, int my, int button_pressed, int butt
 
     return 0;  /* No action yet */
 }
+
+void menubar_init(menubar_t *menubar) {
+    if (!menubar) return;
+    menubar->menu_count = 0;
+    menubar->active_menu = -1;
+    menubar->hovered_menu = -1;
+    menubar->visible = 1;
+}
+
+void menubar_destroy(menubar_t *menubar) {
+    if (!menubar) return;
+    for (int i = 0; i < menubar->menu_count; i++) {
+        menu_destroy(&menubar->menus[i].menu);
+    }
+    menubar->menu_count = 0;
+    menubar->active_menu = -1;
+    menubar->visible = 0;
+}
+
+int menubar_add_menu(menubar_t *menubar, const char *title) {
+    if (!menubar || menubar->menu_count >= MENUBAR_MAX_MENUS) return -1;
+    
+    menubar_entry_t *entry = &menubar->menus[menubar->menu_count];
+    strcpy_s(entry->title, title, 16);
+    menu_init(&entry->menu);
+    
+    if (font_n.data) {
+        entry->title_width = bmf_measure_text(&font_n, 12, title) + 16;
+    } else {
+        entry->title_width = strlen_s(title) * 8 + 16;
+    }
+    
+    menubar->menu_count++;
+    return menubar->menu_count - 1;
+}
+
+menu_t* menubar_get_menu(menubar_t *menubar, int index) {
+    if (!menubar || index < 0 || index >= menubar->menu_count) return NULL;
+    return &menubar->menus[index].menu;
+}
+
+void menubar_draw(menubar_t *menubar, int win_x, int win_y, int win_w) {
+    if (!menubar || !menubar->visible) return;
+    
+    window_theme_t *theme = theme_get_current();
+    int bar_y = win_y + WM_TITLEBAR_HEIGHT + 2;
+    
+    mouse_restore();
+    mouse_invalidate_buffer();
+    
+    gfx_fillrect(win_x + 2, bar_y, win_w - 4, MENUBAR_HEIGHT, theme->bg_color);
+    gfx_hline(win_x + 2, bar_y + MENUBAR_HEIGHT - 1, win_w - 4, theme->frame_dark);
+    
+    int x_offset = win_x + 7;
+    for (int i = 0; i < menubar->menu_count; i++) {
+        menubar_entry_t *entry = &menubar->menus[i];
+        uint8_t bg_color = theme->bg_color;
+        uint8_t text_color = theme->text_color;
+        
+        if (i == menubar->hovered_menu || i == menubar->active_menu) {
+            bg_color = 7;
+            gfx_fillrect(x_offset - 4, bar_y + 2, entry->title_width - 4, MENUBAR_HEIGHT - 4, bg_color);
+        }
+        
+        if (font_n.data) {
+            bmf_printf(x_offset, bar_y + 5, &font_n, 12, text_color, "%s", entry->title);
+        }
+        
+        x_offset += entry->title_width;
+    }
+    
+    if (menubar->active_menu >= 0 && menubar->active_menu < menubar->menu_count) {
+        menu_draw(&menubar->menus[menubar->active_menu].menu);
+    }
+}
+
+int menubar_get_height(menubar_t *menubar) {
+    return menubar && menubar->visible ? MENUBAR_HEIGHT : 0;
+}
+
+void menubar_close_all(menubar_t *menubar) {
+    if (!menubar) return;
+    
+    if (menubar->active_menu >= 0 && menubar->active_menu < menubar->menu_count) {
+        menu_hide(&menubar->menus[menubar->active_menu].menu);
+    }
+    menubar->active_menu = -1;
+    menubar->hovered_menu = -1;
+}
+
+static int menubar_get_menu_at(menubar_t *menubar, int win_x, int win_y, int mx, int my) {
+    if (!menubar || !menubar->visible) return -1;
+    
+    int bar_y = win_y + WM_TITLEBAR_HEIGHT + 2;
+    if (my < bar_y || my >= bar_y + MENUBAR_HEIGHT) return -1;
+    
+    int x_offset = win_x + 6;
+    for (int i = 0; i < menubar->menu_count; i++) {
+        menubar_entry_t *entry = &menubar->menus[i];
+        if (mx >= x_offset - 4 && mx < x_offset + entry->title_width - 4) {
+            return i;
+        }
+        x_offset += entry->title_width;
+    }
+    return -1;
+}
+
+int menubar_handle_mouse(menubar_t *menubar, int win_x, int win_y, int win_w, int mx, int my, int button_pressed, int button_released) {
+    if (!menubar || !menubar->visible) return 0;
+    
+    int bar_y = win_y + WM_TITLEBAR_HEIGHT + 2;
+    int menu_at = menubar_get_menu_at(menubar, win_x, win_y, mx, my);
+    
+    if (menubar->active_menu >= 0) {
+        menu_t *active = &menubar->menus[menubar->active_menu].menu;
+        
+        if (active->visible) {
+            int result = menu_handle_mouse(active, mx, my, button_pressed, button_released);
+            
+            if (result != 0) {
+                menubar->active_menu = -1;
+                menubar->hovered_menu = -1;
+                return result;
+            }
+            
+            if (menu_at >= 0 && menu_at != menubar->active_menu && button_pressed) {
+                menu_hide(active);
+                menubar->active_menu = menu_at;
+                
+                int x_offset = win_x + 6;
+                for (int i = 0; i < menu_at; i++) {
+                    x_offset += menubar->menus[i].title_width;
+                }
+                
+                menu_show(&menubar->menus[menu_at].menu, x_offset - 4, bar_y + MENUBAR_HEIGHT);
+                return 0;
+            }
+        }
+    }
+    
+    if (menu_at >= 0) {
+        menubar->hovered_menu = menu_at;
+        
+        if (button_pressed) {
+            if (menubar->active_menu == menu_at) {
+                menu_hide(&menubar->menus[menu_at].menu);
+                menubar->active_menu = -1;
+            } else {
+                if (menubar->active_menu >= 0) {
+                    menu_hide(&menubar->menus[menubar->active_menu].menu);
+                }
+                menubar->active_menu = menu_at;
+                
+                int x_offset = win_x + 6;
+                for (int i = 0; i < menu_at; i++) {
+                    x_offset += menubar->menus[i].title_width;
+                }
+                
+                menu_show(&menubar->menus[menu_at].menu, x_offset - 4, bar_y + MENUBAR_HEIGHT);
+            }
+        }
+    } else if (my < bar_y || my >= bar_y + MENUBAR_HEIGHT) {
+        menubar->hovered_menu = -1;
+    }
+    
+    return 0;
+}
