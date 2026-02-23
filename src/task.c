@@ -374,7 +374,7 @@ task_t *task_find_by_tid(uint32_t tid) {
     return result;
 }
 
-int task_spawn_and_wait(const char *path) {
+int task_spawn_and_wait(const char *path, const char *args) {
     if (!path || !current_task) return -1;
     
     /* Load child process */
@@ -419,6 +419,13 @@ int task_spawn_and_wait(const char *path) {
     child->exec_end = image.end_addr;
     child->exec_slot = image.slot;
     
+    /* Store arguments */
+    if (args) {
+        strcpy_s(child->args, args, sizeof(child->args));
+    } else {
+        child->args[0] = '\0';
+    }
+    
     /* Block parent and wait for child to finish */
     __asm__ volatile ("cli");
     current_task->state = TASK_BLOCKED;
@@ -433,7 +440,7 @@ int task_spawn_and_wait(const char *path) {
     return 0;
 }
 
-int task_spawn(const char *path) {
+int task_spawn(const char *path, const char *args) {
     if (!path || !current_task) return -1;
 
     /* Load child process */
@@ -473,6 +480,13 @@ int task_spawn(const char *path) {
     child->exec_base = image.base_addr;
     child->exec_end = image.end_addr;
     child->exec_slot = image.slot;
+    
+    /* Store arguments */
+    if (args) {
+        strcpy_s(child->args, args, sizeof(child->args));
+    } else {
+        child->args[0] = '\0';
+    }
 
     /* Don't block - return immediately, child runs in parallel */
     return (int)child_tid;
