@@ -169,7 +169,7 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
 }
 
 static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
-    (void)ecx; (void)edx;
+    (void)edx;
     
     switch (al) {
         case 0x00:
@@ -200,11 +200,11 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
         
         case 0x05:
             if (!ebx) return -1;
-            return task_spawn_and_wait((const char*)ebx);
+            return task_spawn_and_wait((const char*)ebx, (const char*)ecx);
 
         case 0x06:  /* SYS_PROC_SPAWN_ASYNC - spawn without waiting */
             if (!ebx) return -1;
-            return task_spawn((const char*)ebx);
+            return task_spawn((const char*)ebx, (const char*)ecx);
 
         case 0x07: { /* SYS_PROC_SET_ICON */
             if (!ebx || !ecx) return (uint32_t)-1;
@@ -236,6 +236,21 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
 
             t->state = TASK_TERMINATED;
             return 0;
+        }
+
+        case 0x09: { /* SYS_PROC_GETARGS */
+            if (!ebx) return (uint32_t)NULL;
+            task_t *current = task_get_current();
+            if (!current) return (uint32_t)NULL;
+            
+            char *buf = (char*)ebx;
+            int len = (int)ecx;
+            
+            if (len > 0) {
+                strcpy_s(buf, current->args, len);
+                return (uint32_t)buf;
+            }
+            return (uint32_t)NULL;
         }
 
         default:

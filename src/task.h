@@ -36,6 +36,7 @@ typedef struct task {
     uint32_t exec_end;
     int exec_slot;
     char icon_path[64];
+    char args[256];
     struct task *next;
 } task_t;
 
@@ -45,8 +46,8 @@ void task_yield(void);
 void task_sleep(uint32_t milliseconds);
 void task_exit(void);
 task_t *task_get_current(void);
-int task_spawn_and_wait(const char *path);
-int task_spawn(const char *path);  /* Spawn without waiting */
+int task_spawn_and_wait(const char *path, const char *args);
+int task_spawn(const char *path, const char *args);  /* Spawn without waiting */
 void wakeup_sleeping_tasks(void);
 
 void schedule(void);

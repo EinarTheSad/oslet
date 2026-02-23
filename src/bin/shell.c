@@ -304,7 +304,25 @@ void _start(void) {
             }
             
             if (bin_found) {
-                if (sys_spawn(bin_path) != 0) {
+                /* Build arguments string from argv[1] onwards */
+                char args[256] = "";
+                if (argc > 1) {
+                    /* Reconstruct space-separated args */
+                    int pos = 0;
+                    for (int i = 1; i < argc && pos < (int)sizeof(args) - 1; i++) {
+                        if (i > 1 && pos < (int)sizeof(args) - 1) {
+                            args[pos++] = ' ';
+                        }
+                        int len = strlen(argv[i]);
+                        if (pos + len < (int)sizeof(args)) {
+                            strcpy(args + pos, argv[i]);
+                            pos += len;
+                        }
+                    }
+                    args[pos] = '\0';
+                }
+                
+                if (sys_spawn_args(bin_path, args) != 0) {
                     sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
                     printf("Could not execute %s\n", bin_path);
                     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);

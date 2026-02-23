@@ -28,6 +28,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_PROC_SPAWN      0x0205
 #define SYS_PROC_SPAWN_ASYNC 0x0206
 #define SYS_PROC_SET_ICON   0x0207
+#define SYS_PROC_GETARGS    0x0209
 
 static inline int sys_proc_set_icon(int tid, const char *icon_path) {
     int ret;
@@ -370,13 +371,31 @@ static inline int sys_exec(const char *path) {
 
 static inline int sys_spawn(const char *path) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN), "b"(path));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN), "b"(path), "c"(""));
+    return ret;
+}
+
+static inline int sys_spawn_args(const char *path, const char *args) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN), "b"(path), "c"(args));
     return ret;
 }
 
 static inline int sys_spawn_async(const char *path) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN_ASYNC), "b"(path));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN_ASYNC), "b"(path), "c"(""));
+    return ret;
+}
+
+static inline int sys_spawn_async_args(const char *path, const char *args) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_SPAWN_ASYNC), "b"(path), "c"(args));
+    return ret;
+}
+
+static inline char* sys_getargs(char *buf, int len) {
+    char* ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_PROC_GETARGS), "b"(buf), "c"(len));
     return ret;
 }
 
