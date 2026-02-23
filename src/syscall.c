@@ -1414,7 +1414,7 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
     return needs_redraw;
 }
 
-static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
+static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
     form->press_control_id = -1;
     int old_focus = form->focused_control_id;
     int clicked_on_focusable = 0;
@@ -1426,7 +1426,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
             if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown_open) continue;
 
             int abs_x = form->win.x + ctrl->x;
-            int abs_y = form->win.y + ctrl->y + 20;
+            int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
             int list_h = ctrl->item_count * 16;
             int list_y = abs_y + ctrl->h;
             
@@ -1573,7 +1573,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my) {
             }
 
             int abs_x = form->win.x + ctrl->x;
-            int abs_y = form->win.y + ctrl->y + 20;
+            int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
 
             /* For checkbox and radio - hit area includes the control and label */
             int hit_w = ctrl->w;
@@ -2221,7 +2221,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         gui_control_t *ctrl = &form->controls[i];
                         if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
                             int abs_x = form->win.x + ctrl->x;
-                            int abs_y = form->win.y + ctrl->y + 20;
+                            int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
                             int list_h = ctrl->item_count * 16;
                             int list_y = abs_y + ctrl->h;
                             
@@ -2290,7 +2290,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         for (int i = 0; i < form->ctrl_count; i++) {
                             gui_control_t *ctrl = &form->controls[i];
                             if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
-                                int abs_y = form->win.y + ctrl->y + 20;
+                                int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
                                 int list_h = ctrl->item_count * 16;
                                 int list_y = abs_y + ctrl->h;
                                 
@@ -2336,7 +2336,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             gui_control_t *ctrl = &form->controls[i];
                             if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
                                 int abs_x = form->win.x + ctrl->x;
-                                int abs_y = form->win.y + ctrl->y + 20;
+                                int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
                                 int list_h = ctrl->item_count * 16;
                                 int list_y = abs_y + ctrl->h;
                                 
@@ -2355,7 +2355,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     my >= list_y && my < list_y + list_h) {
                                     /* Let pump_handle_control_press handle the dropdown click */
                                     dropdown_handled = 1;
-                                    if (pump_handle_control_press(form, mx, my)) {
+                                    if (pump_handle_control_press(form, mx, my, ctrl_y_offset)) {
                                         needs_redraw = 1;
                                     }
                                     break;
@@ -2378,7 +2378,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             /* Dragging started, continue */
                         } else {
                             /* Find which control (if any) was pressed */
-                            if (pump_handle_control_press(form, mx, my)) {
+                            if (pump_handle_control_press(form, mx, my, ctrl_y_offset)) {
                                 needs_redraw = 1;
                             }
                         }
@@ -2434,7 +2434,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                             /* Calculate absolute control position */
                             int abs_x = form->win.x + ctrl->x;
-                            int abs_y = form->win.y + ctrl->y + 20;
+                            int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
 
                             /* For checkbox and radio - hit area includes the control and label */
                             int hit_w = ctrl->w;
@@ -2628,7 +2628,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 gui_control_t *ctrl = find_control_by_id(form, form->focused_control_id);
                 if (ctrl && ctrl->type == CTRL_TEXTBOX) {
                     int abs_x = form->win.x + ctrl->x;
-                    //int abs_y = form->win.y + ctrl->y + 20;
+                    //int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
 
                     extern bmf_font_t font_n;
                     int size = ctrl->font_size > 0 ? ctrl->font_size : 12;
@@ -2675,7 +2675,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     int max_val = ctrl->max_length > 0 ? ctrl->max_length : 100;
                     
                     int abs_x = form->win.x + ctrl->x;
-                    int abs_y = form->win.y + ctrl->y + 20;
+                    int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
                     
                     if (vertical) {
                         int track_y = abs_y + arrow_size;
@@ -2711,7 +2711,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* Dropdown inline scrollbar dragging (ctrl->hovered_item == -2 used as special flag) */
                 if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open && ctrl->pressed && ctrl->hovered_item == -2) {
                     int item_h = 16;
-                    int abs_y = form->win.y + ctrl->y + 20;
+                    int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
                     int list_h = ctrl->item_count * item_h;
                     int list_y = abs_y + ctrl->h;
 
