@@ -14,6 +14,9 @@
 #define MENU_ACTION_MINIMIZE 1
 #define MENU_ACTION_CLOSE    2
 
+#define MENUBAR_MAX_MENUS 8
+#define MENUBAR_HEIGHT 18
+
 typedef struct {
     char text[32];
     uint8_t flags;
@@ -28,8 +31,22 @@ typedef struct {
     menu_item_t items[MENU_MAX_ITEMS];
     int item_count;
     uint8_t *saved_bg;
-    int just_opened;  /* Ignore first button release after opening */
+    int just_opened;
 } menu_t;
+
+typedef struct {
+    char title[16];
+    menu_t menu;
+    int title_width;
+} menubar_entry_t;
+
+typedef struct {
+    menubar_entry_t menus[MENUBAR_MAX_MENUS];
+    int menu_count;
+    int active_menu;
+    int hovered_menu;
+    int visible;
+} menubar_t;
 
 void menu_init(menu_t *menu);
 void menu_destroy(menu_t *menu);
@@ -41,3 +58,12 @@ void menu_hide(menu_t *menu);
 void menu_draw(menu_t *menu);
 int menu_handle_mouse(menu_t *menu, int mx, int my, int button_pressed, int button_released);
 int menu_contains_point(menu_t *menu, int mx, int my);
+
+void menubar_init(menubar_t *menubar);
+void menubar_destroy(menubar_t *menubar);
+int menubar_add_menu(menubar_t *menubar, const char *title);
+menu_t* menubar_get_menu(menubar_t *menubar, int index);
+void menubar_draw(menubar_t *menubar, int win_x, int win_y, int win_w);
+int menubar_handle_mouse(menubar_t *menubar, int win_x, int win_y, int win_w, int mx, int my, int button_pressed, int button_released);
+int menubar_get_height(menubar_t *menubar);
+void menubar_close_all(menubar_t *menubar);

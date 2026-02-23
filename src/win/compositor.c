@@ -11,10 +11,14 @@
 
 static void compositor_draw_controls(gui_form_t *form) {
     if (!form || form->win.is_minimized || !form->controls) return;
+    int y_offset = 20;
+    if (form->menubar_enabled) {
+        y_offset += menubar_get_height(&form->menubar);
+    }
     for (int j = 0; j < form->ctrl_count; j++) {
         form->controls[j].is_focused =
             (form->controls[j].id == form->focused_control_id) ? 1 : 0;
-        win_draw_control(&form->win, &form->controls[j]);
+        ctrl_draw_with_offset(&form->win, &form->controls[j], y_offset);
     }
 }
 
@@ -81,7 +85,6 @@ void compositor_draw_all(window_manager_t *wm) {
                     }
                 }
             } else {
-                /* Inline expressions to avoid unused-variable warnings */
                 if (rects_intersect(dx, dy, dw, dh,
                                     form->win.x - WM_BG_MARGIN,
                                     form->win.y - WM_BG_MARGIN,
@@ -115,9 +118,29 @@ void compositor_draw_all(window_manager_t *wm) {
                        rect so they can properly cover earlier windows that do. */
                     int is_focused = (i == wm->focused_index);
                     win_draw_focused(&form->win, is_focused);
+                    if (form->menubar_enabled) {
+                        menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
+                    }
                     compositor_draw_controls(form);
-                    if (form->window_menu.visible) {
-                        menu_draw(&form->window_menu);
+                }
+            }
+        }
+
+        /* Draw popup menus on top of all windows (final pass) */
+        for (int i = 0; i < wm->count; i++) {
+            gui_form_t *form = wm->windows[i];
+            if (!form || !form->win.is_visible || form->win.is_minimized) continue;
+            
+            /* Draw window context menu */
+            if (form->window_menu.visible) {
+                menu_draw(&form->window_menu);
+            }
+            
+            /* Draw menubar popup menus */
+            if (form->menubar_enabled && form->menubar.visible) {
+                for (int j = 0; j < form->menubar.menu_count; j++) {
+                    if (form->menubar.menus[j].menu.visible) {
+                        menu_draw(&form->menubar.menus[j].menu);
                     }
                 }
             }
@@ -182,12 +205,32 @@ void compositor_draw_all(window_manager_t *wm) {
         int is_focused = (i == wm->focused_index);
         win_draw_focused(&form->win, is_focused);
 
+        /* Draw menubar if enabled */
+        if (!form->win.is_minimized && form->menubar_enabled) {
+            menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
+        }
+
         /* Draw controls if not minimized */
         compositor_draw_controls(form);
+    }
 
-        /* Draw window menu if visible (must be on top of controls) */
-        if (!form->win.is_minimized && form->window_menu.visible) {
+    /* Draw popup menus on top of ALL windows (final pass) */
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *form = wm->windows[i];
+        if (!form || !form->win.is_visible || form->win.is_minimized) continue;
+        
+        /* Draw window context menu */
+        if (form->window_menu.visible) {
             menu_draw(&form->window_menu);
+        }
+        
+        /* Draw menubar popup menus */
+        if (form->menubar_enabled && form->menubar.visible) {
+            for (int j = 0; j < form->menubar.menu_count; j++) {
+                if (form->menubar.menus[j].menu.visible) {
+                    menu_draw(&form->menubar.menus[j].menu);
+                }
+            }
         }
     }
 
@@ -227,16 +270,36 @@ void compositor_draw_single(window_manager_t *wm, gui_form_t *form) {
     /* Draw the window */
     win_draw_focused(&form->win, is_focused);
 
+    /* Draw menubar if enabled */
+    if (!form->win.is_minimized && form->menubar_enabled) {
+        menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
+    }
+
     /* Draw controls if not minimized */
     compositor_draw_controls(form);
 
-    /* Draw window menu if visible */
-    if (!form->win.is_minimized && form->window_menu.visible) {
-        menu_draw(&form->window_menu);
-    }
-
     /* Draw open dropdown lists on top */
     compositor_draw_dropdowns(form);
+
+    /* Draw ALL popup menus on top of everything (not just this window's menu) */
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *f = wm->windows[i];
+        if (!f || !f->win.is_visible || f->win.is_minimized) continue;
+        
+        /* Draw window context menu */
+        if (f->window_menu.visible) {
+            menu_draw(&f->window_menu);
+        }
+        
+        /* Draw menubar popup menus */
+        if (f->menubar_enabled && f->menubar.visible) {
+            for (int j = 0; j < f->menubar.menu_count; j++) {
+                if (f->menubar.menus[j].menu.visible) {
+                    menu_draw(&f->menubar.menus[j].menu);
+                }
+            }
+        }
+    }
 
     mouse_invalidate_buffer();
 }
@@ -261,6 +324,26 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
         }
     }
 
+    /* Draw ALL popup menus on top of everything */
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *f = wm->windows[i];
+        if (!f || !f->win.is_visible || f->win.is_minimized) continue;
+        
+        /* Draw window context menu */
+        if (f->window_menu.visible) {
+            menu_draw(&f->window_menu);
+        }
+        
+        /* Draw menubar popup menus */
+        if (f->menubar_enabled && f->menubar.visible) {
+            for (int j = 0; j < f->menubar.menu_count; j++) {
+                if (f->menubar.menus[j].menu.visible) {
+                    menu_draw(&f->menubar.menus[j].menu);
+                }
+            }
+        }
+    }
+
     mouse_invalidate_buffer();
 }
 
@@ -276,6 +359,26 @@ void compositor_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, 
     gui_control_t *ctrl = compositor_get_control_by_id(form, ctrl_id);
     if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
         win_draw_dropdown_list(&form->win, ctrl);
+    }
+
+    /* Draw ALL popup menus on top of everything */
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *f = wm->windows[i];
+        if (!f || !f->win.is_visible || f->win.is_minimized) continue;
+        
+        /* Draw window context menu */
+        if (f->window_menu.visible) {
+            menu_draw(&f->window_menu);
+        }
+        
+        /* Draw menubar popup menus */
+        if (f->menubar_enabled && f->menubar.visible) {
+            for (int j = 0; j < f->menubar.menu_count; j++) {
+                if (f->menubar.menus[j].menu.visible) {
+                    menu_draw(&f->menubar.menus[j].menu);
+                }
+            }
+        }
     }
 
     mouse_invalidate_buffer();

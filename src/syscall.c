@@ -1340,7 +1340,7 @@ static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
     return 0;
 }
 
-static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my) {
+static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
     /* Update hover state for any open dropdown list */
     int needs_redraw = 0;
 
@@ -1354,7 +1354,7 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my) {
         if (ctrl->pressed && ctrl->hovered_item == -2) continue;
 
         int abs_x = form->win.x + ctrl->x;
-        int abs_y = form->win.y + ctrl->y + 20;
+        int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
         int item_h = 16;
         int list_h = ctrl->item_count * item_h;
         int list_y = abs_y + ctrl->h;
@@ -2076,6 +2076,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->window_menu.saved_bg = NULL;
             form->window_menu.item_count = 0;
             form->window_menu.hovered_item = -1;
+            /* Initialize menubar */
+            form->menubar_enabled = 0;
 
             /* Track owner task for cleanup on process exit */
             task_t *current = task_get_current();
@@ -2108,6 +2110,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             gui_form_t *form = (gui_form_t*)ebx;
 
             if (!form) return 0;
+
+            /* Calculate Y offset for controls (titlebar + menubar if present) */
+            int ctrl_y_offset = 20;
+            if (form->menubar_enabled) {
+                ctrl_y_offset += menubar_get_height(&form->menubar);
+            }
 
             /* Reset clicked_id at start of event processing */
             form->clicked_id = -1;
@@ -2163,6 +2171,32 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 if (form->window_menu.visible || action != 0) {
                     if (needs_redraw) {
                         return (uint32_t)-1;
+                    }
+                    return 0;
+                }
+            }
+
+            /* Handle menubar if enabled */
+            if (form->menubar_enabled && form->menubar.visible) {
+                int action = menubar_handle_mouse(&form->menubar, form->win.x, form->win.y, 
+                                                  form->win.w, mx, my, button_pressed, button_released);
+                if (action > 0) {
+                    /* Menu item selected - return action ID as event */
+                    menubar_close_all(&form->menubar);
+                    form->clicked_id = action;
+                    event_count = 1;
+                    needs_redraw = 1;
+                } else if (action == -1) {
+                    /* Menu closed without selection */
+                    needs_redraw = 1;
+                }
+                /* Redraw if needed */
+                if (needs_redraw) {
+                    mouse_restore();
+                    mouse_invalidate_buffer();
+                    compositor_draw_single(&global_wm, form);
+                    if (action > 0) {
+                        return form->clicked_id;
                     }
                     return 0;
                 }
@@ -2720,7 +2754,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             }
 
             /* Update dropdown hover state (on any mouse move) */
-            if (pump_update_dropdown_hover(form, mx, my)) {
+            if (pump_update_dropdown_hover(form, mx, my, ctrl_y_offset)) {
                 needs_redraw = 1;
                 /* Find the dropdown control that's open and mark it changed */
                 for (int i = 0; i < form->ctrl_count; i++) {
@@ -3293,6 +3327,35 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             compositor_set_dirty_rect(&global_wm, rx, ry, rw, rh);
             compositor_draw_all(&global_wm);
             return 0;
+        }
+
+        case 0x1C: { /* SYS_WIN_MENUBAR_ENABLE */
+            gui_form_t *form = (gui_form_t*)ebx;
+            if (!form) return 0;
+            menubar_init(&form->menubar);
+            form->menubar_enabled = 1;
+            return 0;
+        }
+
+        case 0x1D: { /* SYS_WIN_MENUBAR_ADD_MENU */
+            gui_form_t *form = (gui_form_t*)ebx;
+            const char *title = (const char*)ecx;
+            if (!form || !title) return (uint32_t)-1;
+            if (!form->menubar_enabled) return (uint32_t)-1;
+            return (uint32_t)menubar_add_menu(&form->menubar, title);
+        }
+
+        case 0x1E: { /* SYS_WIN_MENUBAR_ADD_ITEM */
+            gui_form_t *form = (gui_form_t*)ebx;
+            const char *text = (const char*)ecx;
+            uint32_t packed = edx;
+            int menu_index = (int)(packed >> 16);
+            int action_id = (int)(packed & 0xFFFF);
+            if (!form || !text) return (uint32_t)-1;
+            if (!form->menubar_enabled) return (uint32_t)-1;
+            menu_t *menu = menubar_get_menu(&form->menubar, menu_index);
+            if (!menu) return (uint32_t)-1;
+            return (uint32_t)menu_add_item(menu, text, action_id, MENU_ITEM_ENABLED);
         }
 
         default:
