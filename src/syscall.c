@@ -1562,6 +1562,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
 
             /* Skip non-interactive controls (treat picturebox as interactive so clicks are detected) */
             if (ctrl->type != CTRL_BUTTON &&
+                ctrl->type != CTRL_LABEL &&
                 ctrl->type != CTRL_CHECKBOX &&
                 ctrl->type != CTRL_RADIOBUTTON &&
                 ctrl->type != CTRL_TEXTBOX &&
@@ -1601,6 +1602,10 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 if (ctrl->type == CTRL_BUTTON) {
                     ctrl->pressed = 1;
                     return 1;  /* needs_redraw */
+                }
+                /* For label, just record the press */
+                else if (ctrl->type == CTRL_LABEL) {
+                    return 0;  /* Press recorded, no visual change */
                 }
                 /* For checkbox and radio, just record the press */
                 else if (ctrl->type == CTRL_CHECKBOX || ctrl->type == CTRL_RADIOBUTTON) {
@@ -1905,7 +1910,9 @@ static int pump_handle_keyboard(gui_form_t *form) {
         /* Tab could be used to move focus to next control - for now skip */
     }
     else if (key == '\n' || key == '\r') {
-        /* Enter - could signal form submission, for now ignore in single-line textbox */
+        /* Enter - generate event for the textbox */
+        form->clicked_id = ctrl->id;
+        needs_redraw = 1;
     }
     else if (key == KEY_ESC) {
         /* Escape - clear selection and focus */
