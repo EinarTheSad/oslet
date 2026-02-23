@@ -1117,41 +1117,47 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
 }
 
 void ctrl_draw_with_offset(window_t *win, gui_control_t *control, int y_offset) {
+    /* Check visibility - high bit (0x80) indicates hidden */
+    if (control->type & 0x80) return;
+    
     int abs_x = win->x + control->x;
     int abs_y = win->y + control->y + y_offset;
+    
+    /* Mask out visibility bit to get actual type */
+    uint8_t ctrl_type = control->type & 0x7F;
 
-    if (control->type == 1) { /* CTRL_BUTTON */
+    if (ctrl_type == 1) { /* CTRL_BUTTON */
         ctrl_draw_button(control, abs_x, abs_y);
     }
-    else if (control->type == 2) { /* CTRL_LABEL */
+    else if (ctrl_type == 2) { /* CTRL_LABEL */
         ctrl_draw_label(control, abs_x, abs_y);
     }
-    else if (control->type == 3) { /* CTRL_PICTUREBOX */
+    else if (ctrl_type == 3) { /* CTRL_PICTUREBOX */
         ctrl_draw_picturebox(control, abs_x, abs_y);
     }
-    else if (control->type == 4) { /* CTRL_CHECKBOX */
+    else if (ctrl_type == 4) { /* CTRL_CHECKBOX */
         ctrl_draw_checkbox(control, abs_x, abs_y);
     }
-    else if (control->type == 5) { /* CTRL_RADIOBUTTON */
+    else if (ctrl_type == 5) { /* CTRL_RADIOBUTTON */
         ctrl_draw_radiobutton(control, abs_x, abs_y);
     }
-    else if (control->type == 6) { /* CTRL_TEXTBOX */
+    else if (ctrl_type == 6) { /* CTRL_TEXTBOX */
         ctrl_draw_textbox(control, abs_x, abs_y);
     }
-    else if (control->type == 7) { /* CTRL_FRAME */
+    else if (ctrl_type == 7) { /* CTRL_FRAME */
         ctrl_draw_frame(control, abs_x, abs_y);
     }
-    else if (control->type == 8) { /* CTRL_ICON */
+    else if (ctrl_type == 8) { /* CTRL_ICON */
         window_theme_t *theme = theme_get_current();
         ctrl_draw_icon(control, abs_x, abs_y, theme->bg_color);
     }
-    else if (control->type == 9) { /* CTRL_DROPDOWN */
+    else if (ctrl_type == 9) { /* CTRL_DROPDOWN */
         ctrl_draw_dropdown(control, abs_x, abs_y);
     }
-    else if (control->type == 10) { /* CTRL_CLOCK */
+    else if (ctrl_type == 10) { /* CTRL_CLOCK */
         ctrl_draw_clock(control, abs_x, abs_y);
     }
-    else if (control->type == 11) { /* CTRL_SCROLLBAR */
+    else if (ctrl_type == 11) { /* CTRL_SCROLLBAR */
         ctrl_draw_scrollbar(control, abs_x, abs_y);
     }
 }
