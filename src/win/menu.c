@@ -404,7 +404,7 @@ static int menubar_get_menu_at(menubar_t *menubar, int win_x, int win_y, int mx,
     return -1;
 }
 
-int menubar_handle_mouse(menubar_t *menubar, int win_x, int win_y, int win_w, int mx, int my, int button_pressed, int button_released) {
+int menubar_handle_mouse(menubar_t *menubar, int win_x, int win_y, int mx, int my, int button_pressed, int button_released) {
     if (!menubar || !menubar->visible) return 0;
     
     int bar_y = win_y + WM_TITLEBAR_HEIGHT + 2;
