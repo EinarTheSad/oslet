@@ -64,6 +64,6 @@ void menubar_destroy(menubar_t *menubar);
 int menubar_add_menu(menubar_t *menubar, const char *title);
 menu_t* menubar_get_menu(menubar_t *menubar, int index);
 void menubar_draw(menubar_t *menubar, int win_x, int win_y, int win_w);
-int menubar_handle_mouse(menubar_t *menubar, int win_x, int win_y, int win_w, int mx, int my, int button_pressed, int button_released);
+int menubar_handle_mouse(menubar_t *menubar, int win_x, int win_y, int mx, int my, int button_pressed, int button_released);
 int menubar_get_height(menubar_t *menubar);
 void menubar_close_all(menubar_t *menubar);

@@ -185,3 +185,4 @@ clock: $(APPS)/clock.elf
 calc: $(APPS)/calc.elf
 viewer: $(APPS)/imgview.elf
 letver: $(APPS)/letver.elf
+fileman: $(APPS)/fileman.elf

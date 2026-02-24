@@ -2185,8 +2185,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Handle menubar if enabled */
             if (form->menubar_enabled && form->menubar.visible) {
-                int action = menubar_handle_mouse(&form->menubar, form->win.x, form->win.y, 
-                                                  form->win.w, mx, my, button_pressed, button_released);
+                int action = menubar_handle_mouse(&form->menubar, form->win.x, form->win.y,
+                                                  mx, my, button_pressed, button_released);
                 if (action > 0) {
                     /* Menu item selected - return action ID as event */
                     menubar_close_all(&form->menubar);
