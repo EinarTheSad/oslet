@@ -64,12 +64,75 @@ typedef struct {
 
 static fileman_state_t state;
 
-static void build_path(char *dest, const char *base, const char *name) {
-    strcpy(dest, base);
-    int len = strlen(dest);
-    if (len > 0 && dest[len - 1] != '/' && dest[len - 1] != ':')
-        strcat(dest, "/");
-    strcat(dest, name);
+static void ensure_dir_suffix(char *path, size_t size) {
+    size_t len = strlen(path);
+    if (len == 0 || size == 0) return;
+
+    if (len == 2 && path[1] == ':') {
+        if (len + 1 < size) {
+            path[2] = '/';
+            path[3] = '\0';
+        }
+        return;
+    }
+
+    if (path[len - 1] != '/' && len + 1 < size) {
+        path[len] = '/';
+        path[len + 1] = '\0';
+    }
+}
+
+static void normalize_path(char *path, size_t size) {
+    if (size == 0) return;
+    path[size - 1] = '\0';
+    ensure_dir_suffix(path, size);
+}
+
+static void build_path(char *dest, size_t dest_size, const char *base, const char *name) {
+    if (!dest || dest_size == 0) return;
+
+    dest[0] = '\0';
+    if (base && base[0]) {
+        snprintf(dest, dest_size, "%s", base);
+    }
+
+    size_t len = strlen(dest);
+    if (len > 0 && dest[len - 1] != '/' && dest[len - 1] != ':') {
+        if (len + 1 < dest_size) {
+            dest[len] = '/';
+            dest[len + 1] = '\0';
+            len++;
+        }
+    }
+
+    if (name && name[0] && len < dest_size - 1) {
+        snprintf(dest + len, dest_size - len, "%s", name);
+    }
+}
+
+static int path_exists(const char *path) {
+    sys_dirent_t tmp[1];
+    return sys_readdir(path, tmp, 1) >= 0;
+}
+
+static int set_current_path(const char *path, int show_error) {
+    char new_path[256];
+    strncpy(new_path, path, sizeof(new_path) - 1);
+    new_path[sizeof(new_path) - 1] = '\0';
+    normalize_path(new_path, sizeof(new_path));
+
+    if (!path_exists(new_path)) {
+        if (show_error) {
+            sys_win_msgbox("Path not found", "OK", "File Manager");
+            sys_win_redraw_all();
+        }
+        return 0;
+    }
+
+    strcpy(state.current_path, new_path);
+    state.tree_scroll_offset = 0;
+    state.file_scroll_offset = 0;
+    return 1;
 }
 
 static void scan_directory(void) {
@@ -140,7 +203,7 @@ static void scan_directory(void) {
             tree_item_t *item = &state.tree_items[state.tree_count++];
             strncpy(item->name, entries[i].name, sizeof(item->name) - 1);
             item->name[sizeof(item->name) - 1] = '\0';
-            build_path(item->full_path, state.current_path, entries[i].name);
+            build_path(item->full_path, sizeof(item->full_path), state.current_path, entries[i].name);
             item->is_directory = 1;
             item->indent_level = current_level;
         }
@@ -154,7 +217,7 @@ static void scan_directory(void) {
         file_item_t *item = &state.file_items[state.file_count++];
         strncpy(item->name, entries[i].name, sizeof(item->name) - 1);
         item->name[sizeof(item->name) - 1] = '\0';
-        build_path(item->full_path, state.current_path, entries[i].name);
+        build_path(item->full_path, sizeof(item->full_path), state.current_path, entries[i].name);
         item->is_directory = entries[i].is_directory;
         item->size = entries[i].size;
     }
@@ -208,7 +271,7 @@ static void refresh_display(void) {
         int idx = i + state.tree_scroll_offset;
         gui_control_t *ctrl = sys_win_get_control(state.form, ID_TREE_BASE + i);
         if (ctrl) {
-            char display_text[68];
+            char display_text[96];
             char indent[32] = "";
 
             /* Build indentation string for non-root entries */
@@ -303,11 +366,13 @@ static int handle_event(void *f, int event, void *userdata) {
     if (event == ID_PATH_TEXTBOX) {
         gui_control_t *textbox = sys_win_get_control(state.form, ID_PATH_TEXTBOX);
         if (textbox && textbox->text[0]) {
-            strncpy(state.current_path, textbox->text, sizeof(state.current_path) - 1);
-            state.current_path[sizeof(state.current_path) - 1] = '\0';
-            state.tree_scroll_offset = 0;
-            state.file_scroll_offset = 0;
-            refresh_display();
+            char prev_path[256];
+            strcpy(prev_path, state.current_path);
+            if (set_current_path(textbox->text, 1)) {
+                refresh_display();
+            } else {
+                strcpy(state.current_path, prev_path);
+            }
         }
         return 0;
     }
@@ -316,19 +381,23 @@ static int handle_event(void *f, int event, void *userdata) {
     if (event == ID_BACK_BUTTON) {
         /* walk up from current path */
         if (strcmp(state.current_path, "C:/") != 0) {
-            int len = strlen(state.current_path);
-            if (len > 0 && state.current_path[len - 1] == '/')
-                state.current_path[--len] = '\0';
-            char *p = strrchr(state.current_path, '/');
-            if (p && p > state.current_path + 2) {
+            char new_path[256];
+            strcpy(new_path, state.current_path);
+
+            int len = strlen(new_path);
+            if (len > 0 && new_path[len - 1] == '/')
+                new_path[--len] = '\0';
+            char *p = strrchr(new_path, '/');
+            if (p && p > new_path + 2) {
                 *p = '\0';
-                strcat(state.current_path, "/");
+                normalize_path(new_path, sizeof(new_path));
             } else {
-                strcpy(state.current_path, "C:/");
+                strcpy(new_path, "C:/");
             }
-            state.tree_scroll_offset = 0;
-            state.file_scroll_offset = 0;
-            refresh_display();
+
+            if (set_current_path(new_path, 0)) {
+                refresh_display();
+            }
         }
         return 0;
     }
@@ -358,10 +427,9 @@ static int handle_event(void *f, int event, void *userdata) {
         int visible_idx = event - ID_TREE_BASE;
         int actual_idx = visible_idx + state.tree_scroll_offset;
         if (actual_idx >= 0 && actual_idx < state.tree_count) {
-            strcpy(state.current_path, state.tree_items[actual_idx].full_path);
-            state.tree_scroll_offset = 0;
-            state.file_scroll_offset = 0;
-            refresh_display();
+            if (set_current_path(state.tree_items[actual_idx].full_path, 0)) {
+                refresh_display();
+            }
         }
         return 0;
     }
@@ -372,10 +440,9 @@ static int handle_event(void *f, int event, void *userdata) {
         int actual_idx = (state.file_scroll_offset * FILE_COLS) + visible_idx;
         if (actual_idx >= 0 && actual_idx < state.file_count) {
             if (state.file_items[actual_idx].is_directory) {
-                strcpy(state.current_path, state.file_items[actual_idx].full_path);
-                state.tree_scroll_offset = 0;
-                state.file_scroll_offset = 0;
-                refresh_display();
+                if (set_current_path(state.file_items[actual_idx].full_path, 0)) {
+                    refresh_display();
+                }
             } else {
                 const char *dot = strrchr(state.file_items[actual_idx].name, '.');
                 if (dot && strcasecmp(dot, ".elf") == 0) {
@@ -387,7 +454,7 @@ static int handle_event(void *f, int event, void *userdata) {
                     char msg[128];
                     snprintf(msg, sizeof(msg), "No functionality to open %s yet", state.file_items[actual_idx].name);
                     sys_win_msgbox(msg, "OK", "File Manager");
-                    sys_win_draw(state.form);
+                    sys_win_redraw_all();
                 }
             }
         }
@@ -397,7 +464,7 @@ static int handle_event(void *f, int event, void *userdata) {
     /* Handle menu selections */
     if (event == MENU_FILE_DELETE) {
         sys_win_msgbox("Not implemented", "OK", "File Manager");
-        sys_win_draw(state.form);
+        sys_win_redraw_all();
         return 0;
     }
     
@@ -407,20 +474,20 @@ static int handle_event(void *f, int event, void *userdata) {
     }
     
     if (event == MENU_HELP_ABOUT) {
-        sys_win_msgbox("osLET File Manager\\n\\nThis is a work in progress!", "OK", "About");
-        sys_win_draw(state.form);
+        sys_win_msgbox("osLET File Manager\n\nThis is a work in progress!", "OK", "About");
+        sys_win_redraw_all();
         return 0;
     }
     
     if (event == MENU_FILE_OPEN) {
         sys_win_msgbox("Not implemented", "OK", "File Manager");
-        sys_win_draw(state.form);
+        sys_win_redraw_all();
         return 0;
     }
     
     if (event == MENU_EDIT_COPY || event == MENU_EDIT_PASTE) {
         sys_win_msgbox("Not implemented", "OK", "File Manager");
-        sys_win_draw(state.form);
+        sys_win_redraw_all();
         return 0;
     }
     
@@ -438,6 +505,7 @@ void _start(void) {
     if (!state.current_path[0]) {
         strcpy(state.current_path, "C:/");
     }
+    normalize_path(state.current_path, sizeof(state.current_path));
     
     /* Create main window */
     state.form = sys_win_create_form("File Manager", 80, 60, 450, 280);
@@ -471,7 +539,7 @@ void _start(void) {
     
     /* Add path textbox */
     gui_control_t path_textbox = {
-        CTRL_TEXTBOX, 8, 8, 408, 20, 0, 15, "", ID_PATH_TEXTBOX, 0, 12, 1, 8, NULL, NULL, 0, 0, 0, 0, 0, 255, 0, -1, -1, 0, 0, 0, 0
+        CTRL_TEXTBOX, 8, 8, 408, 20, 0, 15, "", ID_PATH_TEXTBOX, 0, 12, 1, 8, NULL, NULL, 0, 0, 0, 0, 0, 255, 0, 0, -1, -1, 0, 0, 0, 0
     };
     char upper_path[256];
     strcpy(upper_path, state.current_path);
@@ -481,13 +549,13 @@ void _start(void) {
 
     /* Add back button adjacent to path field */
     gui_control_t back_button = {
-        CTRL_BUTTON, 420, 8, 22, 20, 0, -1, "..", ID_BACK_BUTTON, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
+        CTRL_BUTTON, 420, 8, 22, 20, 0, -1, "..", ID_BACK_BUTTON, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
     };
     sys_win_add_control(state.form, &back_button);
     
     /* Add frame for tree view */
     gui_control_t tree_frame = {
-        CTRL_FRAME, TREE_X - 3, TREE_Y - 12, TREE_W + 8, 204, 8, 7, "", 0, 0, 12, 1, 8, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
+        CTRL_FRAME, TREE_X - 3, TREE_Y - 12, TREE_W + 8, 204, 8, 7, "", 0, 0, 12, 1, 8, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
     };
     sys_win_add_control(state.form, &tree_frame);
     
@@ -500,7 +568,7 @@ void _start(void) {
     
     /* Add file scrollbar (initially hidden) */
     gui_control_t file_scrollbar = {
-        CTRL_SCROLLBAR, FILES_X + FILES_W - 2, FILES_Y - 1, FILE_SCROLLBAR_W, FILE_VISIBLE_ROWS * (FILE_ICON_H + FILE_PAD), 8, 7, "", ID_FILE_SCROLLBAR, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
+        CTRL_SCROLLBAR, FILES_X + FILES_W - 2, FILES_Y - 1, FILE_SCROLLBAR_W, FILE_VISIBLE_ROWS * (FILE_ICON_H + FILE_PAD), 8, 7, "", ID_FILE_SCROLLBAR, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
     };
     sys_win_add_control(state.form, &file_scrollbar);
     ctrl_set_visible(state.form, ID_FILE_SCROLLBAR, 0);
@@ -511,7 +579,7 @@ void _start(void) {
         
         /* Use label for clickable tree item */
         gui_control_t tree_label = {
-            CTRL_LABEL, TREE_X, y, TREE_W, TREE_ITEM_H - 2, 0, -1, "", ID_TREE_BASE + i, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
+            CTRL_LABEL, TREE_X, y, TREE_W, TREE_ITEM_H - 2, 0, -1, "", ID_TREE_BASE + i, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
         };
         sys_win_add_control(state.form, &tree_label);
         ctrl_set_visible(state.form, ID_TREE_BASE + i, 0);
@@ -526,7 +594,7 @@ void _start(void) {
         int y = FILES_Y + row * (FILE_ICON_H + FILE_PAD);
         
         gui_control_t file_icon = {
-            CTRL_ICON, x, y, FILE_ICON_W, FILE_ICON_H, 0, 15, "", ID_FILE_BASE + i, 0, 9, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
+            CTRL_ICON, x, y, FILE_ICON_W, FILE_ICON_H, 0, 15, "", ID_FILE_BASE + i, 0, 9, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
         };
         sys_win_add_control(state.form, &file_icon);
         ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);
