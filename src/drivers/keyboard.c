@@ -206,6 +206,15 @@ static void keyboard_irq(void) {
             else if (c >= 'A' && c <= 'Z') c += 32;
         }
         
+        /* Ctrl+letter: Convert to control code (Ctrl+A=1, Ctrl+B=2, ..., Ctrl+Z=26) */
+        if (mod_ctrl && c) {
+            if (c >= 'a' && c <= 'z') {
+                c = c - 'a' + 1;
+            } else if (c >= 'A' && c <= 'Z') {
+                c = c - 'A' + 1;
+            }
+        }
+        
         if (c) buf_push(c);
     }
 }
