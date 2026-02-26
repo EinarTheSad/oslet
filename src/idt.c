@@ -2,6 +2,8 @@
 #include "console.h"
 #include "drivers/mouse.h"
 #include "drivers/vga.h"
+#include "drivers/graphics.h"
+#include "fonts/mono8x16.h"
 
 extern void syscall_handler_idt(void);
 
@@ -72,19 +74,177 @@ void irq_invoke_from_stub(int vector) {
     pic_send_eoi(irq);
 }
 
-void isr_common_stub(int vector, int error_code) {
-    vga_set_color(12,15);
-    printf("[EXCEPTION] Vector=%d Error=0x%X\n", vector, (unsigned)error_code);
+/* Draw a character using mono8x16 font in graphics mode */
+static void bsod_draw_char(int x, int y, char c, uint8_t fg, uint8_t bg) {
+    const uint8_t *glyph = font_8x16[(uint8_t)c];
+    for (int row = 0; row < 16; row++) {
+        uint8_t bits = glyph[row];
+        for (int col = 0; col < 8; col++) {
+            uint8_t color = (bits & (0x80 >> col)) ? fg : bg;
+            gfx_putpixel(x + col, y + row, color);
+        }
+    }
+}
 
-    /* For page fault (vector 14), show CR2 (faulting address) */
-    if (vector == 14) {
-        uint32_t cr2;
-        __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
-        printf("Page Fault at address: 0x%08X\n", cr2);
-        printf("Reason: %s, %s, %s\n",
-            (error_code & 1) ? "protection" : "not present",
-            (error_code & 2) ? "write" : "read",
-            (error_code & 4) ? "user" : "kernel");
+/* Draw a string in graphics mode */
+static void bsod_draw_string(int x, int y, const char *str, uint8_t fg, uint8_t bg) {
+    int cx = x;
+    while (*str) {
+        if (*str == '\n') {
+            cx = x;
+            y += 16;
+        } else {
+            bsod_draw_char(cx, y, *str, fg, bg);
+            cx += 8;
+        }
+        str++;
+    }
+}
+
+/* Convert number to hex string */
+static void bsod_itoh(uint32_t val, char *buf, int digits) {
+    static const char hex[] = "0123456789ABCDEF";
+    buf[0] = '0';
+    buf[1] = 'x';
+    for (int i = 0; i < digits; i++) {
+        buf[2 + i] = hex[(val >> ((digits - 1 - i) * 4)) & 0xF];
+    }
+    buf[2 + digits] = '\0';
+}
+
+/* Convert number to decimal string */
+static void bsod_itod(int val, char *buf) {
+    if (val == 0) {
+        buf[0] = '0';
+        buf[1] = '\0';
+        return;
+    }
+    
+    int neg = val < 0;
+    if (neg) val = -val;
+    
+    char temp[12];
+    int i = 0;
+    while (val > 0) {
+        temp[i++] = '0' + (val % 10);
+        val /= 10;
+    }
+    
+    int pos = 0;
+    if (neg) buf[pos++] = '-';
+    while (i > 0) {
+        buf[pos++] = temp[--i];
+    }
+    buf[pos] = '\0';
+}
+
+/* Exception names */
+static const char *exception_names[] = {
+    "Divide Error",
+    "Debug Exception",
+    "NMI Interrupt",
+    "Breakpoint",
+    "Overflow",
+    "BOUND Range Exceeded",
+    "Invalid Opcode",
+    "Device Not Available",
+    "Double Fault",
+    "Coprocessor Segment Overrun",
+    "Invalid TSS",
+    "Segment Not Present",
+    "Stack Fault",
+    "General Protection Fault",
+    "Page Fault",
+    "Reserved",
+    "x87 FPU Error",
+    "Alignment Check",
+    "Machine Check",
+    "SIMD Floating-Point Exception"
+};
+
+void isr_common_stub(int vector, int error_code) {
+    /* Check if graphics mode is active */
+    if (gfx_is_active()) {
+        /* Draw blue screen of death */
+        gfx_fillrect(0, 0, GFX_WIDTH, GFX_HEIGHT, COLOR_BLUE);
+        
+        /* Draw header */
+        int y = 40;
+        bsod_draw_string(40, y, "A fatal exception has occurred!", COLOR_WHITE, COLOR_BLUE);
+        y += 32;
+        
+        /* Exception type */
+        char buf[80];
+        bsod_draw_string(40, y, "Exception: ", COLOR_WHITE, COLOR_BLUE);
+        if (vector < 20) {
+            bsod_draw_string(40 + 11 * 8, y, exception_names[vector], COLOR_YELLOW, COLOR_BLUE);
+        }
+        y += 16;
+        
+        /* Vector and error code */
+        bsod_draw_string(40, y, "Vector: ", COLOR_WHITE, COLOR_BLUE);
+        bsod_itod(vector, buf);
+        bsod_draw_string(40 + 8 * 8, y, buf, COLOR_YELLOW, COLOR_BLUE);
+        y += 16;
+        
+        bsod_draw_string(40, y, "Error Code: ", COLOR_WHITE, COLOR_BLUE);
+        bsod_itoh(error_code, buf, 8);
+        bsod_draw_string(40 + 12 * 8, y, buf, COLOR_YELLOW, COLOR_BLUE);
+        y += 24;
+        
+        /* Page fault details */
+        if (vector == 14) {
+            uint32_t cr2;
+            __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
+            
+            bsod_draw_string(40, y, "Page Fault at address: ", COLOR_WHITE, COLOR_BLUE);
+            bsod_itoh(cr2, buf, 8);
+            bsod_draw_string(40 + 23 * 8, y, buf, COLOR_YELLOW, COLOR_BLUE);
+            y += 16;
+            
+            bsod_draw_string(40, y, "Access: ", COLOR_WHITE, COLOR_BLUE);
+            bsod_draw_string(40 + 8 * 8, y, 
+                (error_code & 1) ? "Protection violation" : "Page not present",
+                COLOR_YELLOW, COLOR_BLUE);
+            y += 16;
+            
+            bsod_draw_string(40, y, "Operation: ", COLOR_WHITE, COLOR_BLUE);
+            bsod_draw_string(40 + 11 * 8, y,
+                (error_code & 2) ? "Write" : "Read",
+                COLOR_YELLOW, COLOR_BLUE);
+            y += 16;
+            
+            bsod_draw_string(40, y, "Mode: ", COLOR_WHITE, COLOR_BLUE);
+            bsod_draw_string(40 + 6 * 8, y,
+                (error_code & 4) ? "User" : "Kernel",
+                COLOR_YELLOW, COLOR_BLUE);
+            y += 24;
+        }
+        
+        /* Footer */
+        y = GFX_HEIGHT - 80;
+        bsod_draw_string(40, y, "osLET has been halted to prevent damage.", 
+                        COLOR_LIGHT_GRAY, COLOR_BLUE);
+        y += 16;
+        bsod_draw_string(40, y, "Please restart your computer.", 
+                        COLOR_LIGHT_GRAY, COLOR_BLUE);
+        
+        gfx_swap_buffers();
+    } else {
+        /* Text mode fallback */
+        vga_set_color(12, 15);
+        printf("[EXCEPTION] Vector=%d Error=0x%X\n", vector, (unsigned)error_code);
+
+        /* For page fault (vector 14), show CR2 (faulting address) */
+        if (vector == 14) {
+            uint32_t cr2;
+            __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
+            printf("Page Fault at address: 0x%08X\n", cr2);
+            printf("Reason: %s, %s, %s\n",
+                (error_code & 1) ? "protection" : "not present",
+                (error_code & 2) ? "write" : "read",
+                (error_code & 4) ? "user" : "kernel");
+        }
     }
 
     for (;;) __asm__ volatile ("hlt");
