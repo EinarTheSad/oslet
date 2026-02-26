@@ -1,6 +1,6 @@
 # osLET – a 32-bit educational operating system
 
-<img width="640" height="480" alt="osLET desktop" src="https://github.com/user-attachments/assets/3b8cb53b-7f56-439d-be80-4ce3384ef6f6" />
+<img width="640" height="480" alt="osLET desktop" src="https://github.com/user-attachments/assets/27ac81d3-59a4-4739-8781-b4564ab4ecc7" />
 
 ------------------------------------------------------------------------
 
@@ -20,7 +20,7 @@ make disk shell desktop binstall run
 
 You can compile each binary separately. Remember to then run ```make binstall``` to copy it to the virtual hard drive. For more specific information, please consult the Makefile.
 
-Please note that while the system runs in **QEMU** and **PcEM**, it experiences VGA driver problems in VirtualBox. VMware, Bochs, and actual hardware are yet to be tested.
+Please note that while the system runs in **QEMU** and **PcEM**, it does not work in VirtualBox. VMware, Bochs, and actual hardware are yet to be tested.
 
 ------------------------------------------------------------------------
 
