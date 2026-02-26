@@ -150,6 +150,7 @@ static int cpl_boot_init(prog_instance_t *inst) {
         return -1;
     }
     sys_win_set_icon(state->form, "C:/ICONS/SHUTDOWN.ICO");
+    sys_win_set_resizable(state->form, 0);
 
     static gui_control_t controls[] = {
         { .type = CTRL_FRAME,      .x = 8,   .y = 5,   .w = 171, .h = 98, .fg = 0,  .bg = -1, .id = CTRL_FRAME_SHELL,      .text = "Shell" },

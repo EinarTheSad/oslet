@@ -482,6 +482,42 @@ static void raise_subwindows(void) {
     }
 }
 
+static void rebuild_layout(startman_state_t *state) {
+    if (!state || !state->form) return;
+    
+    gui_form_t *f = (gui_form_t *)state->form;
+    int win_w = f->win.w;
+    
+    /* Calculate columns based on window width */
+    int cols = (win_w - PADDING_X) / (ICON_W + PADDING_X);
+    if (cols < 1) cols = 1;
+    if (cols > 10) cols = 10;  /* reasonable max */
+    
+    /* Determine icon offset for back button */
+    int icon_offset = state->is_main_window ? 0 : 1;
+    
+    /* Rebuild controls - update positions of existing controls */
+    if (f->controls) {
+        for (int ctrl_idx = 0; ctrl_idx < f->ctrl_count; ctrl_idx++) {
+            gui_control_t *ctrl = &f->controls[ctrl_idx];
+            
+            if (ctrl->id == CTRL_BACK_BUTTON) {
+                /* Back button always at first position */
+                ctrl->x = PADDING_X;
+                ctrl->y = PADDING_Y;
+            } else if (ctrl->id >= CTRL_APP_BASE) {
+                /* App icon - recalculate position */
+                int app_idx = ctrl->id - CTRL_APP_BASE;
+                int pos = app_idx + icon_offset;
+                int col = pos % cols;
+                int row = pos / cols;
+                ctrl->x = PADDING_X + col * (ICON_W + PADDING_X);
+                ctrl->y = PADDING_Y + row * (ICON_H + PADDING_Y);
+            }
+        }
+    }
+}
+
 static int startman_event(prog_instance_t *inst, int win_idx, int event) {
     (void)win_idx;
     startman_state_t *state = inst->user_data;
@@ -495,6 +531,12 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
     /* Handle window events */
     if (event == -1 || event == -2)
         return PROG_EVENT_REDRAW;
+    
+    /* Handle resize event */
+    if (event == -4) {
+        rebuild_layout(state);
+        return PROG_EVENT_REDRAW;
+    }
 
     /* Handle back button - only for child windows */
     if (event == CTRL_BACK_BUTTON && state && !state->is_main_window) {

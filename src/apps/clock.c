@@ -2,13 +2,32 @@
 
 #define WIN_W 120
 #define WIN_H 140
+#define ID_CLOCK 1
+
+static void update_clock_size(void *form) {
+    gui_form_t *f = form;
+    int clock_w = f->win.w - 10;
+    int clock_h = f->win.h - 30;
+    
+    if (clock_w < 60) clock_w = 60;
+    if (clock_h < 60) clock_h = 60;
+    
+    sys_ctrl_set_prop(form, ID_CLOCK, PROP_W, clock_w);
+    sys_ctrl_set_prop(form, ID_CLOCK, PROP_H, clock_h);
+}
 
 static int clock_handle_event(void *form, int event, void *userdata) {
     int *last_second = userdata;
-    (void)event; /* no control events to handle in this app */
 
     gui_form_t *f = form;
     if (!f->win.is_minimized) {
+        /* Handle resize event */
+        if (event == -4) {
+            update_clock_size(form);
+            sys_win_mark_dirty(form);
+            return 0;
+        }
+        
         sys_time_t time = {0};
         sys_get_time(&time);
         if (time.second != *last_second) {
@@ -31,6 +50,7 @@ void _start(void) {
     /* Add clock control that fills most of the form */
     gui_control_t clock_ctrl = {0};
     clock_ctrl.type = CTRL_CLOCK;
+    clock_ctrl.id = ID_CLOCK;
     clock_ctrl.x = 5;
     clock_ctrl.y = 5;
     clock_ctrl.w = 110;

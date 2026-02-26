@@ -187,6 +187,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
         return -1;
     }
     sys_win_set_icon(state->form, "C:/ICONS/THEME.ICO");
+    sys_win_set_resizable(state->form, 0);
 
     static gui_control_t controls[] = {
         { .type = CTRL_FRAME,      .x = 6,   .y = 5,   .w = 262, .h = 137, .fg = 0,  .bg = -1, .id = CTRL_FRAME_THEME,    .text = "System theme" },

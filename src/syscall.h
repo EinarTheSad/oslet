@@ -147,6 +147,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_MENUBAR_ENABLE 0x0B1C
 #define SYS_WIN_MENUBAR_ADD_MENU 0x0B1D
 #define SYS_WIN_MENUBAR_ADD_ITEM 0x0B1E
+#define SYS_WIN_SET_RESIZABLE 0x0B1F
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -232,6 +233,11 @@ typedef struct {
     uint8_t dragging;
     int16_t drag_start_x;
     int16_t drag_start_y;
+    uint8_t resizing;
+    int16_t resize_start_w;
+    int16_t resize_start_h;
+    int16_t resize_start_mx;
+    int16_t resize_start_my;
     char icon_path[64];
     int16_t focused_control_id;
     uint8_t textbox_selecting;
@@ -849,6 +855,13 @@ static inline void sys_win_set_icon(void *form, const char *icon_path) {
     register int dummy_eax __asm__("eax") = SYS_WIN_SET_ICON;
     register void *dummy_ebx __asm__("ebx") = form;
     register const char *dummy_ecx __asm__("ecx") = icon_path;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx) :: "memory");
+}
+
+static inline void sys_win_set_resizable(void *form, int resizable) {
+    register int dummy_eax __asm__("eax") = SYS_WIN_SET_RESIZABLE;
+    register void *dummy_ebx __asm__("ebx") = form;
+    register int dummy_ecx __asm__("ecx") = resizable;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx) :: "memory");
 }
 

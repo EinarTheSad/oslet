@@ -1340,6 +1340,23 @@ static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
     return 0;
 }
 
+static int pump_handle_resize_corner_click(gui_form_t *form, int mx, int my) {
+    if (win_is_resize_corner(&form->win, mx, my)) {
+        if (is_any_icon_selected(&global_wm))
+            pump_deselect_all_icons(&global_wm);
+        mouse_restore();
+        mouse_invalidate_buffer();
+        form->resizing = 1;
+        form->resize_start_w = form->win.w;
+        form->resize_start_h = form->win.h;
+        form->resize_start_mx = mx;
+        form->resize_start_my = my;
+        form->press_control_id = -1;
+        return 1;  /* Resizing started */
+    }
+    return 0;
+}
+
 static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
     /* Update hover state for any open dropdown list */
     int needs_redraw = 0;
@@ -2072,6 +2089,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->dragging = 0;
             form->drag_start_x = 0;
             form->drag_start_y = 0;
+            form->resizing = 0;
+            form->resize_start_w = 0;
+            form->resize_start_h = 0;
+            form->resize_start_mx = 0;
+            form->resize_start_my = 0;
             form->icon_path[0] = '\0';
             form->focused_control_id = -1;  /* No control focused initially */
             form->textbox_selecting = 0;
@@ -2380,6 +2402,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         } else if (min_result == 1) {
                             return -1;  /* Window minimized directly */
                         }
+                        /* Check if resize corner was clicked */
+                        else if (pump_handle_resize_corner_click(form, mx, my)) {
+                            /* Resizing started, continue */
+                        }
                         /* Check if titlebar was clicked */
                         else if (pump_handle_titlebar_click(form, mx, my)) {
                             /* Dragging started, continue */
@@ -2402,8 +2428,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (button_released) {
                 /* End window dragging - signal full redraw needed */
                 int was_dragging = form->dragging;
+                int was_resizing = form->resizing;
                 if (form->dragging) {
                     form->dragging = 0;
+                }
+                if (form->resizing) {
+                    form->resizing = 0;
                 }
 
                 /* End icon dragging - snap to slot */
@@ -2579,9 +2609,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* Clear press state after release */
                 form->press_control_id = -1;
 
-                /* If we just finished dragging (window or icon), signal full redraw needed */
-                if (was_dragging || was_icon_dragging) {
+                /* If we just finished dragging or resizing, signal full redraw needed */
+                if (was_dragging || was_icon_dragging || was_resizing) {
                     global_wm.needs_full_redraw = 1;  /* Desktop will do full redraw */
+                    if (was_resizing) {
+                        return (uint32_t)-4;  /* -4 = resize ended */
+                    }
                     return (uint32_t)-2;  /* -2 = drag ended */
                 }
             }
@@ -2624,6 +2657,21 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     win_move(&form->win, dx, dy);
                     form->drag_start_x = mx;
                     form->drag_start_y = my;
+                    mouse_restore();
+                    compositor_draw_all(&global_wm);
+                    needs_redraw = 0;  /* Already drawn */
+                }
+            }
+
+            /* Handle active window resizing */
+            if (form->resizing && (mb & 1)) {
+                int dx = mx - form->resize_start_mx;
+                int dy = my - form->resize_start_my;
+
+                if (dx != 0 || dy != 0) {
+                    int new_w = form->resize_start_w + dx;
+                    int new_h = form->resize_start_h + dy;
+                    win_resize(&form->win, new_w, new_h);
                     mouse_restore();
                     compositor_draw_all(&global_wm);
                     needs_redraw = 0;  /* Already drawn */
@@ -3363,6 +3411,14 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             menu_t *menu = menubar_get_menu(&form->menubar, menu_index);
             if (!menu) return (uint32_t)-1;
             return (uint32_t)menu_add_item(menu, text, action_id, MENU_ITEM_ENABLED);
+        }
+
+        case 0x1F: { /* SYS_WIN_SET_RESIZABLE */
+            gui_form_t *form = (gui_form_t*)ebx;
+            int resizable = (int)ecx;
+            if (!form) return 0;
+            form->win.resizable = resizable ? 1 : 0;
+            return 0;
         }
 
         default:

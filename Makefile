@@ -183,6 +183,6 @@ $(BUILD)/apps/%.o: $(APPS)/%.c
 
 clock: $(APPS)/clock.elf
 calc: $(APPS)/calc.elf
-viewer: $(APPS)/imgview.elf
+imgview: $(APPS)/imgview.elf
 letver: $(APPS)/letver.elf
 fileman: $(APPS)/fileman.elf

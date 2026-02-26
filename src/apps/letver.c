@@ -37,6 +37,8 @@ void _start(void) {
         return;
     }
     sys_win_set_icon(Form1, "C:/ICONS/METALET.ICO");
+    sys_win_set_resizable(Form1, 0);  /* About dialog should not be resizable */
+    
     for (int i = 0; i < 5; i++) {
         sys_win_add_control(Form1, &Form1_controls[i]);
     }

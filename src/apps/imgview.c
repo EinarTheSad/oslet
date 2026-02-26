@@ -100,6 +100,35 @@ static void toggle_fullscreen(void *form, int *fullscreen_ptr, const char *cur_p
     }
 }
 
+/* Update layout when window is resized */
+static void update_layout(void *form) {
+    gui_form_t *f = form;
+    int win_w = f->win.w;
+    int win_h = f->win.h;
+    
+    /* Picturebox fills most of the window */
+    int pic_w = win_w - 16;
+    int pic_h = win_h - 77;
+    if (pic_w < 100) pic_w = 100;
+    if (pic_h < 100) pic_h = 100;
+    
+    sys_ctrl_set_prop(form, ID_PICTURE, PROP_W, pic_w);
+    sys_ctrl_set_prop(form, ID_PICTURE, PROP_H, pic_h);
+    
+    /* Position buttons at bottom, centered */
+    int btn_y = win_h - 58;
+    int center_x = win_w / 2;
+    
+    sys_ctrl_set_prop(form, ID_PREV, PROP_X, center_x - 118);
+    sys_ctrl_set_prop(form, ID_PREV, PROP_Y, btn_y);
+    
+    sys_ctrl_set_prop(form, ID_NEXT, PROP_X, center_x + 48);
+    sys_ctrl_set_prop(form, ID_NEXT, PROP_Y, btn_y);
+    
+    sys_ctrl_set_prop(form, ID_FULLSCREEN, PROP_X, center_x - 41);
+    sys_ctrl_set_prop(form, ID_FULLSCREEN, PROP_Y, btn_y - 9);
+}
+
 /* Helper: navigate directory by delta (-1 previous, +1 next). If fullscreen is true
    the function will also redraw the fullscreen overlay with the new image. */
 static void navigate_dir(void *form, int delta, int fullscreen, void *fs_form) {
@@ -174,6 +203,7 @@ void _start(void) {
     }
 
     sys_win_set_icon(form, "C:/ICONS/VIEWER.ICO");
+    update_layout(form);  /* Initialize dynamic layout */
     sys_win_draw(form);
     sys_win_force_full_redraw();
 
@@ -194,6 +224,12 @@ void _start(void) {
         if (ev == -3) {
             running = 0;
             continue;
+        }
+        if (ev == -4) {
+            /* Window was resized */
+            update_layout(form);
+            sys_win_draw(form);
+            sys_win_force_full_redraw();
         }
         if (ev == -1 || ev == -2) {
             sys_win_draw(form);

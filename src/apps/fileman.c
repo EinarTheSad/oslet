@@ -358,6 +358,25 @@ static int handle_event(void *f, int event, void *userdata) {
         return 1;
     }
     
+    /* Handle resize event */
+    if (event == -4) {
+        gui_form_t *form = (gui_form_t *)state.form;
+        int win_w = form->win.w;
+        int win_h = form->win.h;
+        
+        /* Update path textbox width */
+        int path_w = win_w - 70;
+        if (path_w < 100) path_w = 100;
+        sys_ctrl_set_prop(state.form, ID_PATH_TEXTBOX, PROP_W, path_w);
+        
+        /* Update back button position */
+        sys_ctrl_set_prop(state.form, ID_BACK_BUTTON, PROP_X, path_w + 42);
+        
+        /* Refresh display to update layout */
+        refresh_display();
+        return 0;
+    }
+    
     if (event == 0) {
         return 0;
     }
@@ -514,6 +533,7 @@ void _start(void) {
     }
     
     sys_win_set_icon(state.form, "C:/ICONS/CABINET.ICO");
+    sys_win_set_resizable(state.form, 0);
     
     /* Enable menubar */
     sys_win_menubar_enable(state.form);
