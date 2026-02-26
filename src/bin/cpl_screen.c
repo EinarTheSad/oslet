@@ -246,6 +246,7 @@ static int cpl_screen_init(prog_instance_t *inst) {
         return -1;
     }
     sys_win_set_icon(state->form, "C:/ICONS/SCREEN.ICO");
+    sys_win_set_resizable(state->form, 0);
 
     static gui_control_t controls[] = {
         { .type = CTRL_PICTUREBOX, .x = 42,  .y = 12,  .w = 162, .h = 144, .fg = 5,  .bg = -1, .id = CTRL_PIC_MONITOR, .text = "C:/OSLET/MONITOR.BMP" },

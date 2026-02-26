@@ -11,6 +11,10 @@
 
 static void compositor_draw_controls(gui_form_t *form) {
     if (!form || form->win.is_minimized || !form->controls) return;
+    
+    /* Don't draw controls while actively resizing to avoid visual glitches */
+    if (form->resizing) return;
+    
     int y_offset = 20;
     if (form->menubar_enabled) {
         y_offset += menubar_get_height(&form->menubar);

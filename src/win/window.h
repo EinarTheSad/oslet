@@ -13,6 +13,7 @@ typedef struct {
     uint8_t *saved_bg;
     int is_minimized;
     icon_t *minimized_icon;
+    int resizable;
 } window_t;
 
 typedef enum { MB_ICON_NONE = 0, MB_ICON_INFO, MB_ICON_WARN, MB_ICON_ERROR } msgbox_icon_t;
@@ -37,10 +38,12 @@ void win_draw_focused(window_t *win, int is_focused);
 void win_destroy(window_t *win);
 int win_is_titlebar(window_t *win, int mx, int my);
 int win_is_minimize_button(window_t *win, int mx, int my);
+int win_is_resize_corner(window_t *win, int mx, int my);
 void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path);
 void win_restore(window_t *win);
 int win_is_icon_clicked(window_t *win, int mx, int my);
 void win_move(window_t *win, int dx, int dy);
+void win_resize(window_t *win, int new_w, int new_h);
 void win_save_background(window_t *win);
 void win_restore_background(window_t *win);
 

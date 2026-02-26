@@ -319,6 +319,7 @@ void _start(void) {
         return;
     }
     sys_win_set_icon(form, "C:/ICONS/CALC.ICO");
+    sys_win_set_resizable(form, 0);  /* Calculator should not be resizable */
 
     for (int i = 0; i < (int)NUM_CONTROLS; i++) {
         sys_win_add_control(form, &calc_controls[i]);

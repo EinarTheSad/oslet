@@ -30,6 +30,7 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
     win->saved_bg = NULL;
     win->is_minimized = 0;
     win->minimized_icon = NULL;
+    win->resizable = 1;
 
     strcpy_s(win->title, title, 64);
 }
@@ -342,6 +343,7 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     int win_y = (WM_SCREEN_HEIGHT - win_h) / 2;
 
     win_create(&box->base, win_x, win_y, win_w, win_h, title);
+    box->base.resizable = 0;  /* Message boxes are not resizable */
 
     /* Button positions - centered at bottom */
     int start_x = (win_w - total_btn_w) / 2;
@@ -533,6 +535,37 @@ void win_move(window_t *win, int dx, int dy) {
     win->dirty = 1;
 }
 
+void win_resize(window_t *win, int new_w, int new_h) {
+    /* Restore cursor before any window operations to prevent artifacts */
+    extern int buffer_valid;
+    if (buffer_valid) {
+        mouse_restore();
+        mouse_invalidate_buffer();
+    }
+
+    win_restore_background(win);
+    
+    /* Apply minimum size constraints */
+    if (new_w < 100) new_w = 100;
+    if (new_h < 80) new_h = 80;
+    
+    /* Keep window on screen */
+    if (win->x + new_w > WM_SCREEN_WIDTH) new_w = WM_SCREEN_WIDTH - win->x;
+    if (win->y + new_h > WM_SCREEN_HEIGHT) new_h = WM_SCREEN_HEIGHT - win->y;
+    
+    /* Free old saved_bg since size is changing */
+    if (win->saved_bg) {
+        kfree(win->saved_bg);
+        win->saved_bg = NULL;
+    }
+    
+    win->w = new_w;
+    win->h = new_h;
+    
+    win_save_background(win);
+    win->dirty = 1;
+}
+
 void win_save_background(window_t *win) {
     if (!win->is_visible) return;
 
@@ -616,6 +649,21 @@ int win_is_minimize_button(window_t *win, int mx, int my) {
     
     if (mx >= btn_x && mx < btn_x + 14 &&
         my >= btn_y && my < btn_y + 14) {
+        return 1;
+    }
+    return 0;
+}
+
+int win_is_resize_corner(window_t *win, int mx, int my) {
+    /* Don't allow resize if window is not resizable */
+    if (!win->resizable) return 0;
+    
+    /* Bottom-right corner resize area (12x12 pixels) */
+    int corner_x = win->x + win->w - 12;
+    int corner_y = win->y + win->h - 12;
+    
+    if (mx >= corner_x && mx < win->x + win->w &&
+        my >= corner_y && my < win->y + win->h) {
         return 1;
     }
     return 0;
