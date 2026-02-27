@@ -67,6 +67,7 @@ int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries);
 int fat32_mkdir(const char *path);
 int fat32_rmdir(const char *path);
 int fat32_unlink(const char *path);
+int fat32_rename(const char *oldpath, const char *newpath);
 int fat32_stat(const char *path, fat32_dirent_t *entry);
 
 char* fat32_getcwd(char *buf, size_t size);
