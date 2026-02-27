@@ -14,6 +14,7 @@ typedef struct {
     int is_minimized;
     icon_t *minimized_icon;
     int resizable;
+    uint8_t is_taskbar;  /* 1=taskbar window (always on top, non-movable, no titlebar) */
 } window_t;
 
 typedef enum { MB_ICON_NONE = 0, MB_ICON_INFO, MB_ICON_WARN, MB_ICON_ERROR } msgbox_icon_t;

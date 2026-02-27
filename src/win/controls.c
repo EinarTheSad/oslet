@@ -143,10 +143,39 @@ void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
     /* Use theme button_color when bg is -1 (unset) */
     uint8_t btn_color = (control->bg == -1) ? theme->button_color : control->bg;
 
+    /* Check if button has an icon AND text (like Start button) */
+    int has_icon = (control->cached_bitmap_orig != NULL);
+    int has_text = (control->text[0] != '\0');
+    
+    /* Draw button border and background */
+    /* Don't pass text to win_draw_button if we have an icon - we'll draw it ourselves */
     if (control->pressed) {
-        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, control->text, 1);
+        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, has_icon ? "" : control->text, 1);
     } else {
-        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, control->text, 0);
+        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, has_icon ? "" : control->text, 0);
+    }
+    
+    /* Handle icon drawing */
+    if (has_icon) {
+        bitmap_t *bmp = control->cached_bitmap_orig;
+        int offset = control->pressed ? 1 : 0;
+        
+        if (has_text) {
+            /* Button has both icon and text (like Start button) - icon on left, text on right */
+            int icon_x = abs_x + 3 + offset;
+            int icon_y = abs_y + 2 + offset;
+            bitmap_draw(bmp, icon_x, icon_y);
+            
+            /* Draw text to the right of icon */
+            int text_x = abs_x + 22;
+            int text_y = abs_y + 7;
+            bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", control->text);
+        } else {
+            /* Icon-only button - center the icon */
+            int icon_x = abs_x + (control->w - bmp->width) / 2 + offset;
+            int icon_y = abs_y + (control->h - bmp->height) / 2 + offset;
+            bitmap_draw(bmp, icon_x, icon_y);
+        }
     }
 }
 

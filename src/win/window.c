@@ -31,6 +31,7 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
     win->is_minimized = 0;
     win->minimized_icon = NULL;
     win->resizable = 1;
+    win->is_taskbar = 0;
 
     strcpy_s(win->title, title, 64);
 }
@@ -48,8 +49,16 @@ void win_draw_focused(window_t *win, int is_focused) {
         win_save_background(win);
     }
 
-    win_draw_frame(win->x, win->y, win->w, win->h);
-    win_draw_titlebar(win->x+2, win->y+2, win->w-4, win->title, is_focused);
+    /* Taskbar windows don't have frames or titlebars - just the background */
+    if (win->is_taskbar) {
+        window_theme_t *theme = theme_get_current();
+        gfx_fillrect(win->x, win->y, win->w, win->h, theme->taskbar_color);
+        /* Draw top highlight line */
+        gfx_hline(win->x, win->y, win->w, COLOR_WHITE);
+    } else {
+        win_draw_frame(win->x, win->y, win->w, win->h);
+        win_draw_titlebar(win->x+2, win->y+2, win->w-4, win->title, is_focused);
+    }
 
     win->dirty = 0;
 }
