@@ -24,9 +24,10 @@ typedef struct {
 typedef struct {
     int x, y, w, h;
     int pressed;
-    char label[6];
+    char label[32];
     char icon_path[128];
     char action[64]; /* progman module name to launch */
+    uint8_t bg_color;  /* Button background color */
 } taskbar_button_t;
 
 static taskbar_button_t taskbar_buttons[MAX_TASKBAR_BUTTONS];
@@ -57,15 +58,25 @@ static int taskbar_add_button(const char *icon_path, const char *action) {
     taskbar_buttons[idx].h = 21;
     taskbar_buttons[idx].pressed = 0;
     taskbar_buttons[idx].label[0] = '\0';
+    taskbar_buttons[idx].bg_color = 0;  /* 0 = use theme button_color */
+    
     if (icon_path) {
-        strncpy(taskbar_buttons[idx].icon_path, icon_path, sizeof(taskbar_buttons[idx].icon_path)-1);
-        taskbar_buttons[idx].icon_path[sizeof(taskbar_buttons[idx].icon_path)-1] = '\0';
+        int i = 0;
+        while (icon_path[i] && i < 127) {
+            taskbar_buttons[idx].icon_path[i] = icon_path[i];
+            i++;
+        }
+        taskbar_buttons[idx].icon_path[i] = '\0';
     } else {
         taskbar_buttons[idx].icon_path[0] = '\0';
     }
     if (action) {
-        strncpy(taskbar_buttons[idx].action, action, sizeof(taskbar_buttons[idx].action)-1);
-        taskbar_buttons[idx].action[sizeof(taskbar_buttons[idx].action)-1] = '\0';
+        int i = 0;
+        while (action[i] && i < 63) {
+            taskbar_buttons[idx].action[i] = action[i];
+            i++;
+        }
+        taskbar_buttons[idx].action[i] = '\0';
     } else {
         taskbar_buttons[idx].action[0] = '\0';
     }
@@ -111,8 +122,12 @@ static void load_settings(void) {
 
     const char *val = ini_get(&ini, "DESKTOP", "WALLPAPER");
     if (val && val[0] != '\0') {
-        strncpy(settings.wallpaper, val, sizeof(settings.wallpaper) - 1);
-        settings.wallpaper[sizeof(settings.wallpaper) - 1] = '\0';
+        int i = 0;
+        while (val[i] && i < 127) {
+            settings.wallpaper[i] = val[i];
+            i++;
+        }
+        settings.wallpaper[i] = '\0';
     }
 
     val = ini_get(&ini, "DESKTOP", "MODE");
@@ -183,46 +198,6 @@ static void prog_register_all(void) {
     progman_register(&volume_module);
 }
 
-static void taskbar_button_draw(int x, int y, int w, int h, uint8_t btn_color, const char *label, const char *icon, int pressed) {
-    sys_theme_t *theme = sys_win_get_theme();
-    uint8_t shad_a, shad_b;
-
-    sys_gfx_rect(x, y, w, h, COLOR_BLACK);
-    sys_gfx_fillrect(x+2, y+2, w-3, h-3, btn_color);
-
-    if (pressed) {
-        shad_a = COLOR_WHITE;
-        shad_b = theme->frame_dark;
-    } else {
-        shad_a = theme->frame_dark;
-        shad_b = COLOR_WHITE;
-    }
-
-    sys_gfx_rect(x+1, y+1, w-2, h-2, shad_a);
-    sys_gfx_line(x+1, y+1, x+w-3, y+1, shad_b);
-    sys_gfx_line(x+1, y+1, x+1, y+h-3, shad_b);
-
-    /* If this is a labeled button (Start), draw icon on the left and text to the right
-       otherwise center the 16x16 icon for icon-only buttons */
-    if (label && label[0] != '\0' && icon && icon[0] != '\0') {
-        sys_gfx_load_bmp(icon, x+3, y+2);
-        if (font_b.data) {
-            int text_x = x + 22;
-            int text_y = y + 7;
-            usr_bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
-        }
-    } else if (icon && icon[0] != '\0') {
-        /* Draw 16x16 icon centered */
-        int ix = x + (w - 16) / 2 + 1;
-        int iy = y + (h - 16) / 2 + 1;
-        sys_gfx_load_bmp(icon, ix, iy);
-    } else if (font_b.data && label) {
-        int text_x = x + 22;
-        int text_y = y + 7;
-        usr_bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
-    }
-} 
-
 static void start_init(void) {
     /* Initialize start button as index 0 */
     taskbar_button_count = 1;
@@ -231,11 +206,27 @@ static void start_init(void) {
     taskbar_buttons[0].w = 57;
     taskbar_buttons[0].h = 21;
     taskbar_buttons[0].pressed = 0;
-    strncpy(taskbar_buttons[0].label, "Start", sizeof(taskbar_buttons[0].label)-1);
-    taskbar_buttons[0].label[sizeof(taskbar_buttons[0].label)-1] = '\0';
+    taskbar_buttons[0].bg_color = 0;  /* Will use theme start_button_color */
+    
+    /* Copy label */
+    int i = 0;
+    const char *label = "Start";
+    while (label[i] && i < sizeof(taskbar_buttons[0].label)-1) {
+        taskbar_buttons[0].label[i] = label[i];
+        i++;
+    }
+    taskbar_buttons[0].label[i] = '\0';
+    
     taskbar_buttons[0].action[0] = '\0';
-    strncpy(taskbar_buttons[0].icon_path, "C:/ICONS/LET.ICO", sizeof(taskbar_buttons[0].icon_path)-1);
-    taskbar_buttons[0].icon_path[sizeof(taskbar_buttons[0].icon_path)-1] = '\0';
+    
+    /* Copy icon path */
+    i = 0;
+    const char *icon = "C:/ICONS/LET.ICO";
+    while (icon[i] && i < sizeof(taskbar_buttons[0].icon_path)-1) {
+        taskbar_buttons[0].icon_path[i] = icon[i];
+        i++;
+    }
+    taskbar_buttons[0].icon_path[i] = '\0';
 } 
 
 static void clock_draw(void) {
@@ -270,8 +261,13 @@ static void taskbar_draw(void) {
         taskbar_button_t *b = &taskbar_buttons[i];
         const char *label = b->label[0] ? b->label : NULL;
         const char *icon = b->icon_path[0] ? b->icon_path : NULL;
-        uint8_t color = (i == 0) ? theme->start_button_color : theme->button_color;
-        taskbar_button_draw(b->x, b->y, b->w, b->h, color, label, icon, b->pressed);
+        
+        /* Determine button color: Start button uses start_button_color, others use button_color */
+        uint8_t btn_color = (i == 0) ? theme->start_button_color : 
+                            (b->bg_color != 0) ? b->bg_color : theme->button_color;
+        
+        /* Use unified syscall for button rendering */
+        sys_win_draw_taskbar_button(b->x, b->y, b->w, b->h, icon, label, b->pressed, btn_color);
     }
 
     /* Volume control applet icon */
