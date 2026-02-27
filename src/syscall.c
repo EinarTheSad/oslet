@@ -318,6 +318,12 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
             int result = fat32_unlink((const char*)ebx);
             return (uint32_t)result;
         }
+        
+        case 0x06: {
+            if (!ebx || !ecx) return (uint32_t)-1;
+            int result = fat32_rename((const char*)ebx, (const char*)ecx);
+            return (uint32_t)result;
+        }
             
         default:
             return (uint32_t)-1;
@@ -3109,9 +3115,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         /* Reset load failure state on new image */
                         ctrl->load_failed = 0;
 
-                        if (ctrl->type == CTRL_ICON) {
+                        if (ctrl->type == CTRL_ICON || ctrl->type == CTRL_BUTTON) {
+                            /* Load image immediately for icons and buttons */
                             ctrl->cached_bitmap_orig = bitmap_load_from_file(path);
                         } else {
+                            /* For picturebox and others, store path in text field */
                             ctrl->text[0] = '\0';
                             strcpy_s(ctrl->text, path, sizeof(ctrl->text));
                         }
@@ -3418,6 +3426,46 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             int resizable = (int)ecx;
             if (!form) return 0;
             form->win.resizable = resizable ? 1 : 0;
+            return 0;
+        }
+
+        case 0x20: { /* SYS_WIN_DRAW_TASKBAR_BUTTON */
+            struct { int x; int y; int w; int h; const char *icon; const char *label; int pressed; uint8_t color; } *params;
+            params = (void*)ebx;
+            if (!params) return 0;
+            
+            /* Create a temporary control to render with unified button logic */
+            gui_control_t temp_ctrl = {0};
+            temp_ctrl.type = CTRL_BUTTON;
+            temp_ctrl.w = params->w;
+            temp_ctrl.h = params->h;
+            temp_ctrl.pressed = params->pressed ? 1 : 0;
+            temp_ctrl.bg = params->color;
+            temp_ctrl.fg = COLOR_BLACK;
+            
+            /* Set label if provided */
+            if (params->label && params->label[0]) {
+                int len = 0;
+                while (params->label[len] && len < 255) {
+                    temp_ctrl.text[len] = params->label[len];
+                    len++;
+                }
+                temp_ctrl.text[len] = '\0';
+            }
+            
+            /* Load icon if provided */
+            if (params->icon && params->icon[0]) {
+                temp_ctrl.cached_bitmap_orig = bitmap_load_from_file(params->icon);
+            }
+            
+            /* Draw using unified control rendering */
+            ctrl_draw_button(&temp_ctrl, params->x, params->y);
+            
+            /* Clean up loaded bitmap */
+            if (temp_ctrl.cached_bitmap_orig) {
+                bitmap_free(temp_ctrl.cached_bitmap_orig);
+            }
+            
             return 0;
         }
 

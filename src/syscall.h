@@ -43,6 +43,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_FILE_WRITE      0x0303
 #define SYS_FILE_SEEK       0x0304
 #define SYS_FILE_DELETE     0x0305
+#define SYS_FILE_RENAME     0x0306
 
 /* AH = 04h - Directory Operations */
 #define SYS_DIR_CHDIR       0x0400
@@ -148,6 +149,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_MENUBAR_ADD_MENU 0x0B1D
 #define SYS_WIN_MENUBAR_ADD_ITEM 0x0B1E
 #define SYS_WIN_SET_RESIZABLE 0x0B1F
+#define SYS_WIN_DRAW_TASKBAR_BUTTON 0x0B20
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -468,6 +470,12 @@ static inline int sys_write_file(int fd, const void *buf, uint32_t size) {
 static inline int sys_unlink(const char *path) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_FILE_DELETE), "b"(path));
+    return ret;
+}
+
+static inline int sys_rename(const char *oldpath, const char *newpath) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_FILE_RENAME), "b"(oldpath), "c"(newpath));
     return ret;
 }
 
@@ -882,6 +890,16 @@ static inline void sys_win_mark_dirty_rect(int x, int y, int w, int h) {
     register int dummy_eax __asm__("eax") = SYS_WIN_MARK_DIRTY_RECT;
     struct { int x; int y; int w; int h; } params;
     params.x = x; params.y = y; params.w = w; params.h = h;
+    register void *dummy_ebx __asm__("ebx") = &params;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
+}
+
+/* Draw a taskbar button using kernel's unified button rendering */
+static inline void sys_win_draw_taskbar_button(int x, int y, int w, int h, const char *icon_path, const char *label, int pressed, uint8_t bg_color) {
+    register int dummy_eax __asm__("eax") = SYS_WIN_DRAW_TASKBAR_BUTTON;
+    struct { int x; int y; int w; int h; const char *icon; const char *label; int pressed; uint8_t color; } params;
+    params.x = x; params.y = y; params.w = w; params.h = h;
+    params.icon = icon_path; params.label = label; params.pressed = pressed; params.color = bg_color;
     register void *dummy_ebx __asm__("ebx") = &params;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
 }

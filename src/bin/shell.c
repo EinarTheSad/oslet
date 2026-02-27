@@ -888,18 +888,11 @@ static void cmd_ren(int argc, char *argv[]) {
     const char *oldname = argv[1];
     const char *newname = argv[2];
 
-    /* Check if source exists and is a file */
+    /* Check if source exists */
     sys_dirent_t entry;
     if (sys_stat(oldname, &entry) != 0) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Error: file '%s' not found\n", oldname);
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-        return;
-    }
-
-    if (entry.is_directory) {
-        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Error: cannot rename directory '%s'\n", oldname);
+        printf("Error: '%s' not found\n", oldname);
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         return;
     }
@@ -907,37 +900,18 @@ static void cmd_ren(int argc, char *argv[]) {
     /* Check if destination already exists */
     if (sys_stat(newname, NULL) == 0) {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Error: file '%s' already exists\n", newname);
+        printf("Error: '%s' already exists\n", newname);
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
         return;
     }
 
-    /* Copy file to new name */
-    int result = copy_file(oldname, newname);
-
-    if (result < 0) {
+    /* Use sys_rename syscall */
+    if (sys_rename(oldname, newname) == 0) {
+        printf("Renamed '%s' to '%s'\n", oldname, newname);
+    } else {
         sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        switch (result) {
-            case -1:
-                printf("Error: cannot open file '%s'\n", oldname);
-                break;
-            case -2:
-                printf("Error: cannot create file '%s'\n", newname);
-                break;
-            case -3:
-                printf("Error: write failed during rename\n");
-                break;
-        }
+        printf("Error: rename failed\n");
         sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-        return;
-    }
-
-    /* Delete old file */
-    if (sys_unlink(oldname) != 0) {
-        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
-        printf("Warning: copied but failed to delete '%s'\n", oldname);
-        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
-        return;
     }
 }
 

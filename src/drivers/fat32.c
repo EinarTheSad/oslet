@@ -1374,6 +1374,143 @@ int fat32_unlink(const char *path) {
     return 0;
 }
 
+int fat32_rename(const char *oldpath, const char *newpath) {
+    if (!oldpath || !newpath) return -1;
+    
+    uint8_t old_drive, new_drive;
+    char old_rest[FAT32_MAX_PATH], new_rest[FAT32_MAX_PATH];
+    
+    if (parse_path(oldpath, &old_drive, old_rest, sizeof(old_rest)) != 0) return -1;
+    if (parse_path(newpath, &new_drive, new_rest, sizeof(new_rest)) != 0) return -1;
+    
+    /* Both paths must be on the same drive */
+    if (old_drive != new_drive) return -1;
+    
+    fat32_volume_t *vol = get_volume(old_drive);
+    if (!vol) return -1;
+    
+    /* Parse old path to get directory and filename */
+    uint32_t old_dir_cluster;
+    char old_filename[FAT32_MAX_PATH];
+    if (navigate_path(vol, old_rest, &old_dir_cluster, old_filename) != 0) return -1;
+    if (old_filename[0] == '\0') return -1;
+    
+    /* Parse new path to get directory and filename */
+    uint32_t new_dir_cluster;
+    char new_filename[FAT32_MAX_PATH];
+    if (navigate_path(vol, new_rest, &new_dir_cluster, new_filename) != 0) return -1;
+    if (new_filename[0] == '\0') return -1;
+    
+    /* Find old entry and get all its information */
+    fat32_direntry_t old_entry;
+    uint32_t entry_cluster, entry_offset;
+    if (find_in_dir(vol, old_dir_cluster, old_filename, &old_entry, &entry_cluster, &entry_offset) != 0) return -1;
+    
+    /* Get file/directory information from old entry */
+    uint32_t first_cluster = ((uint32_t)old_entry.first_cluster_high << 16) | old_entry.first_cluster_low;
+    uint32_t file_size = old_entry.file_size;
+    uint8_t attr = old_entry.attr;
+    
+    /* Check if destination already exists */
+    fat32_direntry_t dummy;
+    if (find_in_dir(vol, new_dir_cluster, new_filename, &dummy, NULL, NULL) == 0) {
+        return -1;  /* Destination already exists */
+    }
+    
+    /* Case 1: Same directory rename - update entry in place */
+    if (old_dir_cluster == new_dir_cluster) {
+        size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
+        uint8_t *cluster_buf = kmalloc(cluster_size);
+        if (!cluster_buf) return -1;
+        
+        if (read_cluster(vol, entry_cluster, cluster_buf) != 0) {
+            kfree(cluster_buf);
+            return -1;
+        }
+        
+        fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
+        uint32_t entry_idx = entry_offset / 32;
+        
+        /* Determine if new filename requires LFN entries */
+        char new_83name[11];
+        parse_filename(new_filename, new_83name);
+        
+        int new_needs_lfn = 0;
+        int name_len = strlen_s(new_filename);
+        for (int i = 0; i < name_len; i++) {
+            if (new_filename[i] == ' ' || (uint8_t)new_filename[i] > 127) {
+                new_needs_lfn = 1;
+                break;
+            }
+        }
+        
+        if (!new_needs_lfn) {
+            char *dot = NULL;
+            for (int i = 0; new_filename[i]; i++) {
+                if (new_filename[i] == '.') {
+                    dot = (char*)&new_filename[i];
+                    break;
+                }
+            }
+            int base_len = dot ? (int)(dot - new_filename) : name_len;
+            int ext_len = dot ? (name_len - base_len - 1) : 0;
+            if (base_len > 8 || ext_len > 3) new_needs_lfn = 1;
+        }
+        
+        if (new_needs_lfn) {
+            /* Complex case: need to remove old entry and add new with LFN */
+            kfree(cluster_buf);
+            
+            /* Remove old entry */
+            if (remove_dir_entry(vol, old_dir_cluster, old_filename) != 0) return -1;
+            
+            /* Add new entry with same cluster and size */
+            if (add_dir_entry(vol, new_dir_cluster, new_filename, first_cluster, file_size, attr) != 0) {
+                /* Try to restore old entry on failure */
+                add_dir_entry(vol, old_dir_cluster, old_filename, first_cluster, file_size, attr);
+                return -1;
+            }
+            
+            sync_fat(vol);
+            return 0;
+        }
+        
+        /* Simple 8.3 rename: just update the name in place */
+        memcpy_s(entries[entry_idx].name, new_83name, 11);
+        
+        /* Update modification time */
+        rtc_time_t rtc;
+        rtc_read_time(&rtc);
+        entries[entry_idx].modified_time = rtc_to_fat_time(&rtc);
+        entries[entry_idx].modified_date = rtc_to_fat_date(&rtc);
+        
+        if (write_cluster(vol, entry_cluster, cluster_buf) != 0) {
+            kfree(cluster_buf);
+            return -1;
+        }
+        
+        kfree(cluster_buf);
+        sync_fat(vol);
+        return 0;
+    }
+    
+    /* Case 2: Different directory - move entry */
+    /* Create new entry in destination directory */
+    if (add_dir_entry(vol, new_dir_cluster, new_filename, first_cluster, file_size, attr) != 0) {
+        return -1;
+    }
+    
+    /* Remove old entry */
+    if (remove_dir_entry(vol, old_dir_cluster, old_filename) != 0) {
+        /* Try to remove the newly created entry if we fail to remove old one */
+        remove_dir_entry(vol, new_dir_cluster, new_filename);
+        return -1;
+    }
+    
+    sync_fat(vol);
+    return 0;
+}
+
 int fat32_stat(const char *path, fat32_dirent_t *entry) {
     if (!path || !entry) return -1;
     
