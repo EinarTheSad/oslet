@@ -4,7 +4,7 @@
 
 #define MENU_FILE_NEW_FOLDER 101
 #define MENU_FILE_NEW_FILE   102
-#define MENU_FILE_OPEN       103
+/*#define MENU_FILE_OPEN       103   removed, opening handled by double-click*/
 #define MENU_FILE_EXIT       104
 #define MENU_GO_BACK         301
 #define MENU_GO_HOME         302
@@ -17,6 +17,8 @@
 #define ID_TREE_FRAME        53
 #define ID_TREE_SCROLLBAR    60
 #define ID_FILE_SCROLLBAR    61
+
+#define ID_TB_BACK           69
 #define ID_TB_CUT            70
 #define ID_TB_COPY           71
 #define ID_TB_PASTE          72
@@ -383,10 +385,9 @@ static void relayout(void) {
     if (avail_h < 40) avail_h = 40;
 
     /* Path bar */
-    int path_w = win_w - 42;
+    int path_w = win_w - 16;
     if (path_w < 100) path_w = 100;
     sys_ctrl_set_prop(state.form, ID_PATH_TEXTBOX, PROP_W, path_w);
-    sys_ctrl_set_prop(state.form, ID_BACK_BUTTON, PROP_X, 8 + path_w + 4);
 
     /* Toolbar */
     sys_ctrl_set_prop(state.form, ID_TOOLBAR_FRAME, PROP_W, win_w - 16);
@@ -414,7 +415,6 @@ static void relayout(void) {
     if (state.file_rows < 1) state.file_rows = 1;
     if (state.file_rows > MAX_FILE_ROWS) state.file_rows = MAX_FILE_ROWS;
 
-    /* File scrollbar: pinned to right edge, stretches to bottom */
     sys_ctrl_set_prop(state.form, ID_FILE_SCROLLBAR, PROP_X, sb_x);
     sys_ctrl_set_prop(state.form, ID_FILE_SCROLLBAR, PROP_H, avail_h-9);
 }
@@ -526,12 +526,16 @@ static void refresh_display(void) {
                 if (dot) {
                     if (strcasecmp(dot, ".elf") == 0) {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/EXE.ICO");
-                    } else if (strcasecmp(dot, ".txt") == 0) {
+                    } else if (strcasecmp(dot, ".txt") == 0 || (strcasecmp(dot, ".ini") == 0)) {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/TEXT.ICO");
                     } else if (strcasecmp(dot, ".bmp") == 0 || (strcasecmp(dot, ".ico") == 0)) {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/BITMAP.ICO");
                     } else if (strcasecmp(dot, ".wav") == 0) {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/SOUND.ICO");
+                    } else if (strcasecmp(dot, ".bmf") == 0) {
+                        ctrl_set_image(state.form, ctrl_id, "C:/ICONS/FONT.ICO");
+                    } else if (strcasecmp(dot, ".grp") == 0) {
+                        ctrl_set_image(state.form, ctrl_id, "C:/ICONS/GROUP.ICO");
                     } else {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/FILE.ICO");
                     }
@@ -596,8 +600,9 @@ static void open_selected_file(int idx) {
         sys_spawn_async(state.file_items[idx].full_path);
     } else if (strcasecmp(dot, ".txt") == 0 || strcasecmp(dot, ".ini") == 0 ||
                strcasecmp(dot, ".grp") == 0) {
-        sys_spawn_async_args("C:/EDIT.ELF", state.file_items[idx].full_path);
-    } else if (strcasecmp(dot, ".bmp") == 0) {
+        //sys_spawn_async_args("C:/EDIT.ELF", state.file_items[idx].full_path);
+        /* TODO: Either create a graphical text editor, or make non-graphical programs switch to AGIX session */
+    } else if (strcasecmp(dot, ".bmp") == 0 || strcasecmp(dot, ".ico") == 0) {
         sys_spawn_async_args("C:/OSLET/START/IMGVIEW.ELF", state.file_items[idx].full_path);
     }
 }
@@ -730,8 +735,8 @@ static int handle_event(int event) {
         return 0;
     }
 
-    /* Back button */
-    if (event == ID_BACK_BUTTON || event == MENU_GO_BACK) {
+    /* Back button (toolbar or menu) */
+    if (event == ID_BACK_BUTTON || event == ID_TB_BACK || event == MENU_GO_BACK) {
         if (strcmp(state.current_path, "C:/") != 0) {
             char new_path[256];
             strcpy(new_path, state.current_path);
@@ -845,13 +850,7 @@ static int handle_event(int event) {
         return 0;
     }
     
-    /* Menu: Open */
-    if (event == MENU_FILE_OPEN) {
-        int sel = find_checked_file_index();
-        if (sel >= 0)
-            open_selected_file(sel);
-        return 0;
-    }
+    /* Menu: Open removed */
     
     /* Menu: Refresh */
     if (event == MENU_VIEW_REFRESH) {
@@ -893,7 +892,7 @@ void _start(void) {
     int file_menu = sys_win_menubar_add_menu(state.form, "File");
     sys_win_menubar_add_item(state.form, file_menu, "New Folder", MENU_FILE_NEW_FOLDER);
     sys_win_menubar_add_item(state.form, file_menu, "New File", MENU_FILE_NEW_FILE);
-    sys_win_menubar_add_item(state.form, file_menu, "Open", MENU_FILE_OPEN);
+    /* open menu item removed - users double-click files instead */
     sys_win_menubar_add_item(state.form, file_menu, "Exit", MENU_FILE_EXIT);
     
     int go_menu = sys_win_menubar_add_menu(state.form, "Go");
@@ -920,14 +919,6 @@ void _start(void) {
     strncpy(path_textbox.text, upper_path, sizeof(path_textbox.text) - 1);
     sys_win_add_control(state.form, &path_textbox);
 
-    /* Back button */
-    gui_control_t back_button = {0};
-    back_button.type = CTRL_BUTTON;
-    back_button.x = 420; back_button.y = 8; back_button.w = 22; back_button.h = 20;
-    back_button.id = ID_BACK_BUTTON; back_button.font_size = 12; back_button.bg = -1;
-    strncpy(back_button.text, "..", sizeof(back_button.text) - 1);
-    sys_win_add_control(state.form, &back_button);
-
     /* Toolbar frame */
     gui_control_t toolbar_frame = {0};
     toolbar_frame.type = CTRL_FRAME;
@@ -951,8 +942,10 @@ void _start(void) {
         { ID_TB_DELETE,     "C:/ICONS/DEL.ICO" },
         { ID_TB_NEW_FOLDER, "C:/ICONS/DRA.ICO" },
         { ID_TB_NEW_FILE,   "C:/ICONS/FLA.ICO" },
+        { ID_TB_BACK,       "C:/ICONS/BCK.ICO" },
     };
-    for (int i = 0; i < 7; i++) {
+    int tb_count = sizeof(tb_defs) / sizeof(tb_defs[0]);
+    for (int i = 0; i < tb_count; i++) {
         gui_control_t tb = {0};
         tb.type = CTRL_BUTTON;
         tb.x = btn_x_start + i * btn_spacing; tb.y = btn_y;
