@@ -203,7 +203,14 @@ void _start(void) {
     }
 
     sys_win_set_icon(form, "C:/ICONS/VIEWER.ICO");
-    update_layout(form);  /* Initialize dynamic layout */
+    update_layout(form);
+
+    /* Load image from launch arguments if provided */
+    char args[256];
+    if (sys_getargs(args, sizeof(args)) && args[0]) {
+        ctrl_set_image(form, ID_PICTURE, args);
+    }
+
     sys_win_draw(form);
     sys_win_force_full_redraw();
 
