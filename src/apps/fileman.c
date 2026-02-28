@@ -2,40 +2,49 @@
 #include "../lib/stdio.h"
 #include "../lib/string.h"
 
-#define MENU_FILE_OPEN       101
-#define MENU_FILE_DELETE     102
-#define MENU_FILE_EXIT       103
-#define MENU_EDIT_COPY       201
-#define MENU_EDIT_PASTE      202
-#define MENU_VIEW_REFRESH    301
-#define MENU_HELP_ABOUT      401
+#define MENU_FILE_NEW_FOLDER 101
+#define MENU_FILE_NEW_FILE   102
+#define MENU_FILE_OPEN       103
+#define MENU_FILE_EXIT       104
+#define MENU_GO_BACK         301
+#define MENU_GO_HOME         302
+#define MENU_VIEW_REFRESH    401
+#define MENU_HELP_ABOUT      501
 
 #define ID_PATH_TEXTBOX      50
 #define ID_BACK_BUTTON       51
+#define ID_TOOLBAR_FRAME     52
+#define ID_TREE_FRAME        53
 #define ID_TREE_SCROLLBAR    60
 #define ID_FILE_SCROLLBAR    61
+#define ID_TB_CUT            70
+#define ID_TB_COPY           71
+#define ID_TB_PASTE          72
+#define ID_TB_RENAME         73
+#define ID_TB_DELETE         74
+#define ID_TB_NEW_FOLDER     75
+#define ID_TB_NEW_FILE       76
 #define ID_TREE_BASE         1000
 #define ID_FILE_BASE         2000
 
 #define MAX_TREE_ITEMS       32
 #define MAX_FILE_ITEMS       64
 
+#define TOOLBAR_Y            30
+#define TOOLBAR_H            35
+#define CONTENT_Y            66
 #define TREE_X               11
-#define TREE_Y               42
 #define TREE_W               120
 #define TREE_ITEM_H          18
 #define TREE_SCROLLBAR_W     18
-#define TREE_VISIBLE_ITEMS   10
-
-#define FILES_X              (TREE_X + TREE_W + 12)
-#define FILES_Y              42
-#define FILES_W              288
 #define FILE_ICON_W          48
 #define FILE_ICON_H          58
-#define FILE_COLS            5
 #define FILE_PAD             8
 #define FILE_SCROLLBAR_W     18
-#define FILE_VISIBLE_ROWS    3
+
+#define MAX_TREE_VISIBLE     20
+#define MAX_FILE_COLS        9
+#define MAX_FILE_ROWS        6
 
 typedef struct {
     char name[64];
@@ -60,9 +69,84 @@ typedef struct {
     int file_count;
     int tree_scroll_offset;
     int file_scroll_offset;
+    int selected_file_index;
+    char clipboard_path[256];
+    int clipboard_is_cut;
+    int tree_visible;
+    int file_cols;
+    int file_rows;
+    int files_x;
+    int files_w;
 } fileman_state_t;
 
 static fileman_state_t state;
+
+static char* show_prompt_dialog(const char *title, const char *label, const char *default_value) {
+    static char result[256];
+    result[0] = '\0';
+    
+    void *dlg = sys_win_create_form(title, 193, 199, 300, 82);
+    if (!dlg) return NULL;
+    
+    gui_control_t label_ctrl = {0};
+    label_ctrl.type = CTRL_LABEL;
+    label_ctrl.x = 9; label_ctrl.y = 6;
+    label_ctrl.id = 1; label_ctrl.font_size = 12; label_ctrl.bg = -1;
+    strncpy(label_ctrl.text, label, sizeof(label_ctrl.text) - 1);
+    sys_win_add_control(dlg, &label_ctrl);
+
+    gui_control_t textbox = {0};
+    textbox.type = CTRL_TEXTBOX;
+    textbox.x = 80; textbox.y = 5; textbox.w = 210; textbox.h = 20;
+    textbox.id = 2; textbox.font_size = 12; textbox.max_length = 255;
+    if (default_value && default_value[0])
+        strncpy(textbox.text, default_value, sizeof(textbox.text) - 1);
+    sys_win_add_control(dlg, &textbox);
+
+    gui_control_t ok_btn = {0};
+    ok_btn.type = CTRL_BUTTON;
+    ok_btn.x = 76; ok_btn.y = 33; ok_btn.w = 70; ok_btn.h = 23;
+    ok_btn.id = 3; ok_btn.font_size = 12; ok_btn.bg = -1;
+    strncpy(ok_btn.text, "OK", sizeof(ok_btn.text) - 1);
+    sys_win_add_control(dlg, &ok_btn);
+
+    gui_control_t cancel_btn = {0};
+    cancel_btn.type = CTRL_BUTTON;
+    cancel_btn.x = 150; cancel_btn.y = 33; cancel_btn.w = 70; cancel_btn.h = 23;
+    cancel_btn.id = 4; cancel_btn.font_size = 12; cancel_btn.bg = -1;
+    strncpy(cancel_btn.text, "Cancel", sizeof(cancel_btn.text) - 1);
+    sys_win_add_control(dlg, &cancel_btn);
+    
+    sys_win_draw(dlg);
+    sys_win_redraw_all();
+    
+    int dlg_running = 1;
+    int confirmed = 0;
+    
+    while (dlg_running) {
+        int ev = sys_win_pump_events(dlg);
+        if (ev == -3 || ev == 4) {
+            dlg_running = 0;
+        } else if (ev == 3) {
+            gui_control_t *tb = sys_win_get_control(dlg, 2);
+            if (tb && tb->text[0]) {
+                strncpy(result, tb->text, sizeof(result) - 1);
+                result[sizeof(result) - 1] = '\0';
+                confirmed = 1;
+            }
+            dlg_running = 0;
+        } else if (ev == -1 || ev == -2) {
+            sys_win_draw(dlg);
+            sys_win_redraw_all();
+        }
+        sys_yield();
+    }
+    
+    sys_win_destroy_form(dlg);
+    sys_win_redraw_all();
+    
+    return confirmed ? result : NULL;
+}
 
 static void ensure_dir_suffix(char *path, size_t size) {
     size_t len = strlen(path);
@@ -132,6 +216,7 @@ static int set_current_path(const char *path, int show_error) {
     strcpy(state.current_path, new_path);
     state.tree_scroll_offset = 0;
     state.file_scroll_offset = 0;
+    state.selected_file_index = -1;
     return 1;
 }
 
@@ -198,6 +283,7 @@ static void scan_directory(void) {
     int current_level = state.tree_count > 0 ? state.tree_items[state.tree_count - 1].indent_level + 1 : 1;
     if (strcmp(state.current_path, "C:/") == 0) current_level = 1;
     
+    int tree_sub_start = state.tree_count;
     for (int i = 0; i < count && state.tree_count < MAX_TREE_ITEMS; i++) {
         if (entries[i].is_directory && strcmp(entries[i].name, ".") != 0 && strcmp(entries[i].name, "..") != 0) {
             tree_item_t *item = &state.tree_items[state.tree_count++];
@@ -208,35 +294,143 @@ static void scan_directory(void) {
             item->indent_level = current_level;
         }
     }
+    for (int i = tree_sub_start + 1; i < state.tree_count; i++) {
+        tree_item_t tmp = state.tree_items[i];
+        int j = i - 1;
+        while (j >= tree_sub_start && strcasecmp(state.tree_items[j].name, tmp.name) > 0) {
+            state.tree_items[j + 1] = state.tree_items[j];
+            j--;
+        }
+        state.tree_items[j + 1] = tmp;
+    }
     
-    /* Add all files and folders to file pane */
-    for (int i = 0; i < count && state.file_count < MAX_FILE_ITEMS; i++) {
-        if (strcmp(entries[i].name, ".") == 0 || strcmp(entries[i].name, "..") == 0)
-            continue;
-            
+    /* In subfolders, add ".." as the first file item */
+    if (strcmp(state.current_path, "C:/") != 0) {
+        file_item_t *back = &state.file_items[state.file_count++];
+        strcpy(back->name, "..");
+        /* Compute parent path */
+        char parent[256];
+        strcpy(parent, state.current_path);
+        int plen = strlen(parent);
+        if (plen > 0 && parent[plen - 1] == '/') parent[--plen] = '\0';
+        char *sl = strrchr(parent, '/');
+        if (sl && sl > parent + 2) { *sl = '\0'; normalize_path(parent, sizeof(parent)); }
+        else strcpy(parent, "C:/");
+        strcpy(back->full_path, parent);
+        back->is_directory = 1;
+        back->size = 0;
+    }
+
+    /* Collect directories and files separately, then sort */
+    int dir_start = state.file_count;
+    for (int i = 0; i < count; i++) {
+        if (strcmp(entries[i].name, ".") == 0 || strcmp(entries[i].name, "..") == 0) continue;
+        if (!entries[i].is_directory) continue;
+        if (state.file_count >= MAX_FILE_ITEMS) break;
         file_item_t *item = &state.file_items[state.file_count++];
         strncpy(item->name, entries[i].name, sizeof(item->name) - 1);
         item->name[sizeof(item->name) - 1] = '\0';
         build_path(item->full_path, sizeof(item->full_path), state.current_path, entries[i].name);
-        item->is_directory = entries[i].is_directory;
+        item->is_directory = 1;
         item->size = entries[i].size;
+    }
+    int dir_end = state.file_count;
+
+    int file_start = state.file_count;
+    for (int i = 0; i < count; i++) {
+        if (strcmp(entries[i].name, ".") == 0 || strcmp(entries[i].name, "..") == 0) continue;
+        if (entries[i].is_directory) continue;
+        if (state.file_count >= MAX_FILE_ITEMS) break;
+        file_item_t *item = &state.file_items[state.file_count++];
+        strncpy(item->name, entries[i].name, sizeof(item->name) - 1);
+        item->name[sizeof(item->name) - 1] = '\0';
+        build_path(item->full_path, sizeof(item->full_path), state.current_path, entries[i].name);
+        item->is_directory = 0;
+        item->size = entries[i].size;
+    }
+    int file_end = state.file_count;
+
+    /* Insertion sort directories alphabetically (case-insensitive) */
+    for (int i = dir_start + 1; i < dir_end; i++) {
+        file_item_t tmp = state.file_items[i];
+        int j = i - 1;
+        while (j >= dir_start && strcasecmp(state.file_items[j].name, tmp.name) > 0) {
+            state.file_items[j + 1] = state.file_items[j];
+            j--;
+        }
+        state.file_items[j + 1] = tmp;
+    }
+
+    /* Insertion sort files alphabetically (case-insensitive) */
+    for (int i = file_start + 1; i < file_end; i++) {
+        file_item_t tmp = state.file_items[i];
+        int j = i - 1;
+        while (j >= file_start && strcasecmp(state.file_items[j].name, tmp.name) > 0) {
+            state.file_items[j + 1] = state.file_items[j];
+            j--;
+        }
+        state.file_items[j + 1] = tmp;
     }
 }
 
+static void relayout(void) {
+    gui_form_t *form = (gui_form_t *)state.form;
+    int win_w = form->win.w;
+    int win_h = form->win.h;
+
+    int client_h = win_h - 40;
+    int avail_h = client_h - CONTENT_Y;
+    if (avail_h < 40) avail_h = 40;
+
+    /* Path bar */
+    int path_w = win_w - 42;
+    if (path_w < 100) path_w = 100;
+    sys_ctrl_set_prop(state.form, ID_PATH_TEXTBOX, PROP_W, path_w);
+    sys_ctrl_set_prop(state.form, ID_BACK_BUTTON, PROP_X, 8 + path_w + 4);
+
+    /* Toolbar */
+    sys_ctrl_set_prop(state.form, ID_TOOLBAR_FRAME, PROP_W, win_w - 16);
+
+    /* Tree pane */
+    sys_ctrl_set_prop(state.form, ID_TREE_FRAME, PROP_H, avail_h + 4);
+
+    state.tree_visible = avail_h / TREE_ITEM_H;
+    if (state.tree_visible < 1) state.tree_visible = 1;
+    if (state.tree_visible > MAX_TREE_VISIBLE) state.tree_visible = MAX_TREE_VISIBLE;
+
+    sys_ctrl_set_prop(state.form, ID_TREE_SCROLLBAR, PROP_H, avail_h-9);
+
+    /* File pane */
+    state.files_x = TREE_X + TREE_W + 12;
+    int sb_x = win_w - FILE_SCROLLBAR_W - 8;
+    state.files_w = sb_x - state.files_x;
+    if (state.files_w < FILE_ICON_W) state.files_w = FILE_ICON_W;
+
+    state.file_cols = state.files_w / (FILE_ICON_W + FILE_PAD);
+    if (state.file_cols < 1) state.file_cols = 1;
+    if (state.file_cols > MAX_FILE_COLS) state.file_cols = MAX_FILE_COLS;
+
+    state.file_rows = avail_h / (FILE_ICON_H + FILE_PAD);
+    if (state.file_rows < 1) state.file_rows = 1;
+    if (state.file_rows > MAX_FILE_ROWS) state.file_rows = MAX_FILE_ROWS;
+
+    /* File scrollbar: pinned to right edge, stretches to bottom */
+    sys_ctrl_set_prop(state.form, ID_FILE_SCROLLBAR, PROP_X, sb_x);
+    sys_ctrl_set_prop(state.form, ID_FILE_SCROLLBAR, PROP_H, avail_h-9);
+}
+
 static void clear_tree_controls(void) {
-    for (int i = 0; i < TREE_VISIBLE_ITEMS; i++) {
+    for (int i = 0; i < MAX_TREE_VISIBLE; i++) {
         gui_control_t *ctrl = sys_win_get_control(state.form, ID_TREE_BASE + i);
         if (ctrl) ctrl_set_visible(state.form, ID_TREE_BASE + i, 0);
     }
 }
 
 static void clear_file_controls(void) {
-    int visible_file_count = FILE_VISIBLE_ROWS * FILE_COLS;
-    for (int i = 0; i < visible_file_count; i++) {
+    int max_count = MAX_FILE_ROWS * MAX_FILE_COLS;
+    for (int i = 0; i < max_count; i++) {
         gui_control_t *ctrl = sys_win_get_control(state.form, ID_FILE_BASE + i);
-        if (ctrl) {
-            ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);
-        }
+        if (ctrl) ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);
     }
 }
 
@@ -246,11 +440,11 @@ static void refresh_display(void) {
     clear_file_controls();
     
     /* Update tree scrollbar */
-    if (state.tree_count > TREE_VISIBLE_ITEMS) {
+    if (state.tree_count > state.tree_visible) {
         ctrl_set_visible(state.form, ID_TREE_SCROLLBAR, 1);
         gui_control_t *scrollbar = sys_win_get_control(state.form, ID_TREE_SCROLLBAR);
         if (scrollbar) {
-            scrollbar->max_length = state.tree_count - TREE_VISIBLE_ITEMS;
+            scrollbar->max_length = state.tree_count - state.tree_visible;
             if (state.tree_scroll_offset > scrollbar->max_length)
                 state.tree_scroll_offset = scrollbar->max_length;
             scrollbar->cursor_pos = state.tree_scroll_offset;
@@ -260,21 +454,20 @@ static void refresh_display(void) {
         state.tree_scroll_offset = 0;
     }
     
-    /* Update path textbox with uppercase */
+    /* Update path textbox */
     char upper_path[256];
     strcpy(upper_path, state.current_path);
     str_toupper(upper_path);
     ctrl_set_text(state.form, ID_PATH_TEXTBOX, upper_path);
     
-    /* Update tree items with scroll offset and indentation */
-    for (int i = 0; i < TREE_VISIBLE_ITEMS && (i + state.tree_scroll_offset) < state.tree_count; i++) {
+    /* Update tree items */
+    for (int i = 0; i < state.tree_visible && (i + state.tree_scroll_offset) < state.tree_count; i++) {
         int idx = i + state.tree_scroll_offset;
         gui_control_t *ctrl = sys_win_get_control(state.form, ID_TREE_BASE + i);
         if (ctrl) {
             char display_text[96];
             char indent[32] = "";
 
-            /* Build indentation string for non-root entries */
             if (!(idx == 0 && strcmp(state.tree_items[idx].full_path, "C:/") == 0)) {
                 for (int j = 0; j < state.tree_items[idx].indent_level && j < 8; j++) {
                     strcat(indent, "  ");
@@ -282,7 +475,6 @@ static void refresh_display(void) {
             }
 
             if (idx == 0 && strcmp(state.tree_items[idx].full_path, "C:/") == 0) {
-                /* main catalogue has no indent */
                 snprintf(display_text, sizeof(display_text), "\x8D %s", state.tree_items[idx].name);
             } else {
                 snprintf(display_text, sizeof(display_text), "%s\x8D %s", indent, state.tree_items[idx].name);
@@ -294,12 +486,12 @@ static void refresh_display(void) {
     }
     
     /* Update file scrollbar */
-    int file_rows = (state.file_count + FILE_COLS - 1) / FILE_COLS;
-    if (file_rows > FILE_VISIBLE_ROWS) {
+    int file_rows_total = (state.file_count + state.file_cols - 1) / state.file_cols;
+    if (file_rows_total > state.file_rows) {
         ctrl_set_visible(state.form, ID_FILE_SCROLLBAR, 1);
         gui_control_t *scrollbar = sys_win_get_control(state.form, ID_FILE_SCROLLBAR);
         if (scrollbar) {
-            scrollbar->max_length = file_rows - FILE_VISIBLE_ROWS;
+            scrollbar->max_length = file_rows_total - state.file_rows;
             if (state.file_scroll_offset > scrollbar->max_length)
                 state.file_scroll_offset = scrollbar->max_length;
             scrollbar->cursor_pos = state.file_scroll_offset;
@@ -309,79 +501,221 @@ static void refresh_display(void) {
         state.file_scroll_offset = 0;
     }
     
-    /* Update file items with scroll offset */
-    int visible_file_count = FILE_VISIBLE_ROWS * FILE_COLS;
+    /* Update file items with repositioning for dynamic layout */
+    int visible_file_count = state.file_rows * state.file_cols;
     for (int i = 0; i < visible_file_count; i++) {
-        int idx = (state.file_scroll_offset * FILE_COLS) + i;
-        gui_control_t *ctrl = sys_win_get_control(state.form, ID_FILE_BASE + i);
+        int idx = (state.file_scroll_offset * state.file_cols) + i;
+        int ctrl_id = ID_FILE_BASE + i;
+        gui_control_t *ctrl = sys_win_get_control(state.form, ctrl_id);
         
         if (idx < state.file_count && ctrl) {
-            ctrl_set_text(state.form, ID_FILE_BASE + i, state.file_items[idx].name);
-            ctrl_set_visible(state.form, ID_FILE_BASE + i, 1);
+            int col = i % state.file_cols;
+            int row = i / state.file_cols;
+            sys_ctrl_set_prop(state.form, ctrl_id, PROP_X, state.files_x + col * (FILE_ICON_W + FILE_PAD));
+            sys_ctrl_set_prop(state.form, ctrl_id, PROP_Y, CONTENT_Y + row * (FILE_ICON_H + FILE_PAD));
+
+            ctrl_set_text(state.form, ctrl_id, state.file_items[idx].name);
+            ctrl_set_visible(state.form, ctrl_id, 1);
             
-            /* Set appropriate icon */
-            if (state.file_items[idx].is_directory) {
-                ctrl_set_image(state.form, ID_FILE_BASE + i, "C:/ICONS/DIRECTRY.ICO");
+            if (state.file_items[idx].is_directory && strcmp(state.file_items[idx].name, "..") == 0) {
+                ctrl_set_image(state.form, ctrl_id, "C:/ICONS/BACK.ICO");
+            } else if (state.file_items[idx].is_directory) {
+                ctrl_set_image(state.form, ctrl_id, "C:/ICONS/DIRECTRY.ICO");
             } else {
-                /* Different icons based on extension */
                 const char *dot = strrchr(state.file_items[idx].name, '.');
                 if (dot) {
                     if (strcasecmp(dot, ".elf") == 0) {
-                        ctrl_set_image(state.form, ID_FILE_BASE + i, "C:/ICONS/EXE.ICO");
+                        ctrl_set_image(state.form, ctrl_id, "C:/ICONS/EXE.ICO");
                     } else if (strcasecmp(dot, ".txt") == 0) {
-                        ctrl_set_image(state.form, ID_FILE_BASE + i, "C:/ICONS/TEXT.ICO");
+                        ctrl_set_image(state.form, ctrl_id, "C:/ICONS/TEXT.ICO");
                     } else if (strcasecmp(dot, ".bmp") == 0 || (strcasecmp(dot, ".ico") == 0)) {
-                        ctrl_set_image(state.form, ID_FILE_BASE + i, "C:/ICONS/BITMAP.ICO");
+                        ctrl_set_image(state.form, ctrl_id, "C:/ICONS/BITMAP.ICO");
                     } else if (strcasecmp(dot, ".wav") == 0) {
-                        ctrl_set_image(state.form, ID_FILE_BASE + i, "C:/ICONS/SOUND.ICO");
+                        ctrl_set_image(state.form, ctrl_id, "C:/ICONS/SOUND.ICO");
                     } else {
-                        ctrl_set_image(state.form, ID_FILE_BASE + i, "C:/ICONS/FILE.ICO");
+                        ctrl_set_image(state.form, ctrl_id, "C:/ICONS/FILE.ICO");
                     }
                 } else {
-                    ctrl_set_image(state.form, ID_FILE_BASE + i, "C:/ICONS/FILE.ICO");
+                    ctrl_set_image(state.form, ctrl_id, "C:/ICONS/FILE.ICO");
                 }
             }
         } else if (ctrl) {
-            ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);
+            ctrl_set_visible(state.form, ctrl_id, 0);
         }
     }
     
     sys_win_draw(state.form);
 }
 
-/* Event handling */
-static int handle_event(void *f, int event, void *userdata) {
-    (void)f;
-    (void)userdata;
-    
-    if (event == -3 || event == MENU_FILE_EXIT) {
-        return 1;
+static int find_checked_file_index(void) {
+    int visible_file_count = state.file_rows * state.file_cols;
+    for (int i = 0; i < visible_file_count; i++) {
+        gui_control_t *ctrl = sys_win_get_control(state.form, ID_FILE_BASE + i);
+        if (ctrl && ctrl->checked) {
+            int actual_idx = (state.file_scroll_offset * state.file_cols) + i;
+            if (actual_idx >= 0 && actual_idx < state.file_count)
+                return actual_idx;
+        }
     }
-    
-    /* Handle resize event */
-    if (event == -4) {
-        gui_form_t *form = (gui_form_t *)state.form;
-        int win_w = form->win.w;
-        int win_h = form->win.h;
-        
-        /* Update path textbox width */
-        int path_w = win_w - 70;
-        if (path_w < 100) path_w = 100;
-        sys_ctrl_set_prop(state.form, ID_PATH_TEXTBOX, PROP_W, path_w);
-        
-        /* Update back button position */
-        sys_ctrl_set_prop(state.form, ID_BACK_BUTTON, PROP_X, path_w + 42);
-        
-        /* Refresh display to update layout */
+    return -1;
+}
+
+static int copy_file_data(const char *src, const char *dst) {
+    int src_fd = sys_open(src, "r");
+    if (src_fd < 0) return -1;
+
+    int dst_fd = sys_open(dst, "w");
+    if (dst_fd < 0) {
+        sys_close(src_fd);
+        return -1;
+    }
+
+    char buffer[512];
+    int bytes_read;
+    while ((bytes_read = sys_read(src_fd, buffer, sizeof(buffer))) > 0)
+        sys_write_file(dst_fd, buffer, bytes_read);
+
+    sys_close(src_fd);
+    sys_close(dst_fd);
+    return 0;
+}
+
+static void open_selected_file(int idx) {
+    if (idx < 0 || idx >= state.file_count) return;
+
+    if (state.file_items[idx].is_directory) {
+        if (set_current_path(state.file_items[idx].full_path, 0))
+            refresh_display();
+        return;
+    }
+
+    const char *dot = strrchr(state.file_items[idx].name, '.');
+    if (!dot) return;
+
+    if (strcasecmp(dot, ".elf") == 0) {
+        sys_spawn_async(state.file_items[idx].full_path);
+    } else if (strcasecmp(dot, ".txt") == 0 || strcasecmp(dot, ".ini") == 0 ||
+               strcasecmp(dot, ".grp") == 0) {
+        sys_spawn_async_args("C:/EDIT.ELF", state.file_items[idx].full_path);
+    } else if (strcasecmp(dot, ".bmp") == 0) {
+        sys_spawn_async_args("C:/OSLET/START/IMGVIEW.ELF", state.file_items[idx].full_path);
+    }
+}
+
+static void do_cut_action(void) {
+    int sel = find_checked_file_index();
+    if (sel < 0) {
+        sys_win_msgbox("Please select a file first", "OK", "Cut");
+        sys_win_redraw_all();
+        return;
+    }
+    state.selected_file_index = sel;
+    strcpy(state.clipboard_path, state.file_items[sel].full_path);
+    state.clipboard_is_cut = 1;
+}
+
+static void do_copy_action(void) {
+    int sel = find_checked_file_index();
+    if (sel < 0) {
+        sys_win_msgbox("Please select a file first", "OK", "Copy");
+        sys_win_redraw_all();
+        return;
+    }
+    state.selected_file_index = sel;
+    strcpy(state.clipboard_path, state.file_items[sel].full_path);
+    state.clipboard_is_cut = 0;
+}
+
+static void do_paste_action(void) {
+    if (!state.clipboard_path[0]) {
+        sys_win_msgbox("Nothing to paste", "OK", "Paste");
+        sys_win_redraw_all();
+        return;
+    }
+
+    char *filename = strrchr(state.clipboard_path, '/');
+    if (filename) filename++;
+    else filename = state.clipboard_path;
+
+    char dest_path[256];
+    build_path(dest_path, sizeof(dest_path), state.current_path, filename);
+
+    if (copy_file_data(state.clipboard_path, dest_path) != 0) {
+        sys_win_msgbox("Failed to paste file", "OK", "Paste");
+        sys_win_redraw_all();
+        return;
+    }
+
+    if (state.clipboard_is_cut) {
+        sys_unlink(state.clipboard_path);
+        state.clipboard_path[0] = '\0';
+    }
+
+    refresh_display();
+}
+
+static void do_rename_action(void) {
+    int sel = find_checked_file_index();
+    if (sel < 0) {
+        sys_win_msgbox("Please select a file first", "OK", "Rename");
+        sys_win_redraw_all();
+        return;
+    }
+    state.selected_file_index = sel;
+
+    char *new_name = show_prompt_dialog("Rename", "New name:", state.file_items[sel].name);
+    if (new_name && new_name[0]) {
+        char new_path[256];
+        build_path(new_path, sizeof(new_path), state.current_path, new_name);
+
+        if (sys_rename(state.file_items[sel].full_path, new_path) == 0) {
+            refresh_display();
+        } else {
+            sys_win_msgbox("Failed to rename", "OK", "Rename");
+            sys_win_redraw_all();
+        }
+    }
+}
+
+static void do_delete_action(void) {
+    int sel = find_checked_file_index();
+    if (sel < 0) {
+        sys_win_msgbox("Please select a file first", "OK", "Delete");
+        sys_win_redraw_all();
+        return;
+    }
+    state.selected_file_index = sel;
+
+    char msg[320];
+    snprintf(msg, sizeof(msg), "Delete '%s'?", state.file_items[sel].name);
+    int resp = sys_win_msgbox(msg, "Yes|No", "Confirm Delete");
+    sys_win_redraw_all();
+    if (resp != 1) return;
+
+    int ok;
+    if (state.file_items[sel].is_directory)
+        ok = sys_rmdir(state.file_items[sel].full_path);
+    else
+        ok = sys_unlink(state.file_items[sel].full_path);
+
+    if (ok == 0) {
+        state.selected_file_index = -1;
         refresh_display();
-        return 0;
+    } else {
+        sys_win_msgbox("Delete failed", "OK", "Delete");
+        sys_win_redraw_all();
     }
+}
+
+/* Event handling — returns 1 to exit */
+static int handle_event(int event) {
+    if (event == MENU_FILE_EXIT)
+        return 1;
     
-    if (event == 0) {
+    if (event <= 0)
         return 0;
-    }
     
-    /* Handle path textbox - navigate when Enter is pressed */
+    /* Handle path textbox */
     if (event == ID_PATH_TEXTBOX) {
         gui_control_t *textbox = sys_win_get_control(state.form, ID_PATH_TEXTBOX);
         if (textbox && textbox->text[0]) {
@@ -396,9 +730,8 @@ static int handle_event(void *f, int event, void *userdata) {
         return 0;
     }
 
-    /* Back button pressed: go up one directory level */
-    if (event == ID_BACK_BUTTON) {
-        /* walk up from current path */
+    /* Back button */
+    if (event == ID_BACK_BUTTON || event == MENU_GO_BACK) {
         if (strcmp(state.current_path, "C:/") != 0) {
             char new_path[256];
             strcpy(new_path, state.current_path);
@@ -418,6 +751,13 @@ static int handle_event(void *f, int event, void *userdata) {
                 refresh_display();
             }
         }
+        return 0;
+    }
+
+    /* Go Home */
+    if (event == MENU_GO_HOME) {
+        if (set_current_path("C:/", 0))
+            refresh_display();
         return 0;
     }
     
@@ -441,8 +781,8 @@ static int handle_event(void *f, int event, void *userdata) {
         return 0;
     }
     
-    /* Handle tree (folder) clicks */
-    if (event >= ID_TREE_BASE && event < ID_TREE_BASE + TREE_VISIBLE_ITEMS) {
+    /* Handle tree clicks */
+    if (event >= ID_TREE_BASE && event < ID_TREE_BASE + MAX_TREE_VISIBLE) {
         int visible_idx = event - ID_TREE_BASE;
         int actual_idx = visible_idx + state.tree_scroll_offset;
         if (actual_idx >= 0 && actual_idx < state.tree_count) {
@@ -453,59 +793,75 @@ static int handle_event(void *f, int event, void *userdata) {
         return 0;
     }
     
-    /* Handle file/folder icon clicks */
-    if (event >= ID_FILE_BASE && event < ID_FILE_BASE + (FILE_VISIBLE_ROWS * FILE_COLS)) {
+    /* Handle file icon double-clicks */
+    if (event >= ID_FILE_BASE && event < ID_FILE_BASE + (MAX_FILE_ROWS * MAX_FILE_COLS)) {
         int visible_idx = event - ID_FILE_BASE;
-        int actual_idx = (state.file_scroll_offset * FILE_COLS) + visible_idx;
-        if (actual_idx >= 0 && actual_idx < state.file_count) {
-            if (state.file_items[actual_idx].is_directory) {
-                if (set_current_path(state.file_items[actual_idx].full_path, 0)) {
-                    refresh_display();
-                }
+        int actual_idx = (state.file_scroll_offset * state.file_cols) + visible_idx;
+        if (actual_idx >= 0 && actual_idx < state.file_count)
+            open_selected_file(actual_idx);
+        return 0;
+    }
+    
+    /* Toolbar buttons */
+    if (event == ID_TB_CUT)    { do_cut_action();    return 0; }
+    if (event == ID_TB_COPY)   { do_copy_action();   return 0; }
+    if (event == ID_TB_PASTE)  { do_paste_action();  return 0; }
+    if (event == ID_TB_RENAME) { do_rename_action();  return 0; }
+    if (event == ID_TB_DELETE) { do_delete_action();  return 0; }
+    
+    /* New Folder (toolbar + menu) */
+    if (event == ID_TB_NEW_FOLDER || event == MENU_FILE_NEW_FOLDER) {
+        char *folder_name = show_prompt_dialog("New Folder", "Name:", "");
+        if (folder_name && folder_name[0]) {
+            char folder_path[256];
+            build_path(folder_path, sizeof(folder_path), state.current_path, folder_name);
+            
+            if (sys_mkdir(folder_path) == 0) {
+                refresh_display();
             } else {
-                const char *dot = strrchr(state.file_items[actual_idx].name, '.');
-                if (dot && strcasecmp(dot, ".elf") == 0) {
-                    sys_spawn_async(state.file_items[actual_idx].full_path);
-                } else {
-                    /* TODO: handle files by using default programs,
-                       for instance open images with Image Viewer
-                    */
-                    char msg[128];
-                    snprintf(msg, sizeof(msg), "No functionality to open %s yet", state.file_items[actual_idx].name);
-                    sys_win_msgbox(msg, "OK", "File Manager");
-                    sys_win_redraw_all();
-                }
+                sys_win_msgbox("Failed to create folder", "OK", "New Folder");
+                sys_win_redraw_all();
             }
         }
         return 0;
     }
     
-    /* Handle menu selections */
-    if (event == MENU_FILE_DELETE) {
-        sys_win_msgbox("Not implemented", "OK", "File Manager");
-        sys_win_redraw_all();
+    /* Toolbar and menu: New File */
+    if (event == ID_TB_NEW_FILE || event == MENU_FILE_NEW_FILE) {
+        char *file_name = show_prompt_dialog("New File", "Name:", "");
+        if (file_name && file_name[0]) {
+            char file_path[256];
+            build_path(file_path, sizeof(file_path), state.current_path, file_name);
+            
+            int fd = sys_open(file_path, "w");
+            if (fd >= 0) {
+                sys_close(fd);
+                refresh_display();
+            } else {
+                sys_win_msgbox("Failed to create file", "OK", "New File");
+                sys_win_redraw_all();
+            }
+        }
         return 0;
     }
     
+    /* Menu: Open */
+    if (event == MENU_FILE_OPEN) {
+        int sel = find_checked_file_index();
+        if (sel >= 0)
+            open_selected_file(sel);
+        return 0;
+    }
+    
+    /* Menu: Refresh */
     if (event == MENU_VIEW_REFRESH) {
         refresh_display();
         return 0;
     }
     
+    /* Menu: About */
     if (event == MENU_HELP_ABOUT) {
         sys_win_msgbox("osLET File Manager\n\nThis is a work in progress!", "OK", "About");
-        sys_win_redraw_all();
-        return 0;
-    }
-    
-    if (event == MENU_FILE_OPEN) {
-        sys_win_msgbox("Not implemented", "OK", "File Manager");
-        sys_win_redraw_all();
-        return 0;
-    }
-    
-    if (event == MENU_EDIT_COPY || event == MENU_EDIT_PASTE) {
-        sys_win_msgbox("Not implemented", "OK", "File Manager");
         sys_win_redraw_all();
         return 0;
     }
@@ -516,115 +872,170 @@ static int handle_event(void *f, int event, void *userdata) {
 /* Main entry point */
 __attribute__((section(".entry"), used))
 void _start(void) {
-    /* Initialize state */
     memset(&state, 0, sizeof(state));
+    state.selected_file_index = -1;
+    state.clipboard_is_cut = 0;
     
-    /* Get current directory */
     sys_getcwd(state.current_path, sizeof(state.current_path));
-    if (!state.current_path[0]) {
+    if (!state.current_path[0])
         strcpy(state.current_path, "C:/");
-    }
     normalize_path(state.current_path, sizeof(state.current_path));
     
-    /* Create main window */
-    state.form = sys_win_create_form("File Manager", 80, 60, 450, 280);
-    if (!state.form) {
-        sys_exit();
-    }
+    state.form = sys_win_create_form("File Manager", 80, 60, 450, 305);
+    if (!state.form) sys_exit();
     
     sys_win_set_icon(state.form, "C:/ICONS/CABINET.ICO");
-    sys_win_set_resizable(state.form, 0);
+    sys_win_set_resizable(state.form, 1);
     
-    /* Enable menubar */
+    /* Menus */
     sys_win_menubar_enable(state.form);
     
-    /* Add File menu */
     int file_menu = sys_win_menubar_add_menu(state.form, "File");
+    sys_win_menubar_add_item(state.form, file_menu, "New Folder", MENU_FILE_NEW_FOLDER);
+    sys_win_menubar_add_item(state.form, file_menu, "New File", MENU_FILE_NEW_FILE);
     sys_win_menubar_add_item(state.form, file_menu, "Open", MENU_FILE_OPEN);
-    sys_win_menubar_add_item(state.form, file_menu, "Delete", MENU_FILE_DELETE);
     sys_win_menubar_add_item(state.form, file_menu, "Exit", MENU_FILE_EXIT);
     
-    /* Add Edit menu */
-    int edit_menu = sys_win_menubar_add_menu(state.form, "Edit");
-    sys_win_menubar_add_item(state.form, edit_menu, "Copy", MENU_EDIT_COPY);
-    sys_win_menubar_add_item(state.form, edit_menu, "Paste", MENU_EDIT_PASTE);
+    int go_menu = sys_win_menubar_add_menu(state.form, "Go");
+    sys_win_menubar_add_item(state.form, go_menu, "Back", MENU_GO_BACK);
+    sys_win_menubar_add_item(state.form, go_menu, "Home (C:/)", MENU_GO_HOME);
     
-    /* Add View menu */
     int view_menu = sys_win_menubar_add_menu(state.form, "View");
     sys_win_menubar_add_item(state.form, view_menu, "Refresh", MENU_VIEW_REFRESH);
     
-    /* Add Help menu */
     int help_menu = sys_win_menubar_add_menu(state.form, "Help");
     sys_win_menubar_add_item(state.form, help_menu, "About", MENU_HELP_ABOUT);
     
-    /* Add path textbox */
-    gui_control_t path_textbox = {
-        CTRL_TEXTBOX, 8, 8, 408, 20, 0, 15, "", ID_PATH_TEXTBOX, 0, 12, 1, 8, NULL, NULL, 0, 0, 0, 0, 0, 255, 0, 0, -1, -1, 0, 0, 0, 0
-    };
+    /* Path textbox */
+    gui_control_t path_textbox = {0};
+    path_textbox.type = CTRL_TEXTBOX;
+    path_textbox.x = 8; path_textbox.y = 8; path_textbox.w = 408; path_textbox.h = 20;
+    path_textbox.bg = 15;
+    path_textbox.id = ID_PATH_TEXTBOX; path_textbox.font_size = 12;
+    path_textbox.border = 1; path_textbox.border_color = 8;
+    path_textbox.max_length = 255;
     char upper_path[256];
     strcpy(upper_path, state.current_path);
     str_toupper(upper_path);
     strncpy(path_textbox.text, upper_path, sizeof(path_textbox.text) - 1);
     sys_win_add_control(state.form, &path_textbox);
 
-    /* Add back button adjacent to path field */
-    gui_control_t back_button = {
-        CTRL_BUTTON, 420, 8, 22, 20, 0, -1, "..", ID_BACK_BUTTON, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
-    };
+    /* Back button */
+    gui_control_t back_button = {0};
+    back_button.type = CTRL_BUTTON;
+    back_button.x = 420; back_button.y = 8; back_button.w = 22; back_button.h = 20;
+    back_button.id = ID_BACK_BUTTON; back_button.font_size = 12; back_button.bg = -1;
+    strncpy(back_button.text, "..", sizeof(back_button.text) - 1);
     sys_win_add_control(state.form, &back_button);
-    
-    /* Add frame for tree view */
-    gui_control_t tree_frame = {
-        CTRL_FRAME, TREE_X - 3, TREE_Y - 12, TREE_W + 8, 204, 8, 7, "", 0, 0, 12, 1, 8, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
+
+    /* Toolbar frame */
+    gui_control_t toolbar_frame = {0};
+    toolbar_frame.type = CTRL_FRAME;
+    toolbar_frame.x = 8; toolbar_frame.y = TOOLBAR_Y - 6;
+    toolbar_frame.w = 434; toolbar_frame.h = TOOLBAR_H;
+    toolbar_frame.fg = 8; toolbar_frame.bg = 7;
+    toolbar_frame.id = ID_TOOLBAR_FRAME;
+    toolbar_frame.font_size = 12; toolbar_frame.border = 1; toolbar_frame.border_color = 8;
+    sys_win_add_control(state.form, &toolbar_frame);
+
+    /* Toolbar buttons */
+    const int btn_x_start = 10;
+    const int btn_y = TOOLBAR_Y + 5;
+    const int btn_size = 22;
+    const int btn_spacing = 24;
+    const struct { int id; const char *icon; } tb_defs[] = {
+        { ID_TB_CUT,        "C:/ICONS/CUT.ICO" },
+        { ID_TB_COPY,       "C:/ICONS/CPY.ICO" },
+        { ID_TB_PASTE,      "C:/ICONS/PST.ICO" },
+        { ID_TB_RENAME,     "C:/ICONS/REN.ICO" },
+        { ID_TB_DELETE,     "C:/ICONS/DEL.ICO" },
+        { ID_TB_NEW_FOLDER, "C:/ICONS/DRA.ICO" },
+        { ID_TB_NEW_FILE,   "C:/ICONS/FLA.ICO" },
     };
+    for (int i = 0; i < 7; i++) {
+        gui_control_t tb = {0};
+        tb.type = CTRL_BUTTON;
+        tb.x = btn_x_start + i * btn_spacing; tb.y = btn_y;
+        tb.w = btn_size; tb.h = btn_size;
+        tb.id = tb_defs[i].id; tb.font_size = 12;
+        tb.image_mode = 1; tb.bg = -1;
+        sys_win_add_control(state.form, &tb);
+        ctrl_set_image(state.form, tb_defs[i].id, tb_defs[i].icon);
+    }
+
+    /* Tree frame */
+    gui_control_t tree_frame = {0};
+    tree_frame.type = CTRL_FRAME;
+    tree_frame.x = TREE_X - 3; tree_frame.y = CONTENT_Y - 12;
+    tree_frame.w = TREE_W + 8; tree_frame.h = 204;
+    tree_frame.fg = 8; tree_frame.bg = 7;
+    tree_frame.id = ID_TREE_FRAME;
+    tree_frame.font_size = 12; tree_frame.border = 1; tree_frame.border_color = 8;
     sys_win_add_control(state.form, &tree_frame);
-    
-    /* Add tree scrollbar (initially hidden) */
-    gui_control_t tree_scrollbar = {
-        CTRL_SCROLLBAR, TREE_X + TREE_W + 3 - TREE_SCROLLBAR_W, TREE_Y - 1, TREE_SCROLLBAR_W, 192, 8, 7, "", ID_TREE_SCROLLBAR, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
-    };
+
+    /* Tree scrollbar */
+    gui_control_t tree_scrollbar = {0};
+    tree_scrollbar.type = CTRL_SCROLLBAR;
+    tree_scrollbar.x = TREE_X + TREE_W + 3 - TREE_SCROLLBAR_W; tree_scrollbar.y = CONTENT_Y - 1;
+    tree_scrollbar.w = TREE_SCROLLBAR_W; tree_scrollbar.h = 192;
+    tree_scrollbar.fg = 8; tree_scrollbar.bg = 7;
+    tree_scrollbar.id = ID_TREE_SCROLLBAR; tree_scrollbar.font_size = 12;
     sys_win_add_control(state.form, &tree_scrollbar);
     ctrl_set_visible(state.form, ID_TREE_SCROLLBAR, 0);
-    
-    /* Add file scrollbar (initially hidden) */
-    gui_control_t file_scrollbar = {
-        CTRL_SCROLLBAR, FILES_X + FILES_W - 2, FILES_Y - 1, FILE_SCROLLBAR_W, FILE_VISIBLE_ROWS * (FILE_ICON_H + FILE_PAD), 8, 7, "", ID_FILE_SCROLLBAR, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
-    };
+
+    /* File scrollbar */
+    gui_control_t file_scrollbar = {0};
+    file_scrollbar.type = CTRL_SCROLLBAR;
+    file_scrollbar.x = TREE_X + TREE_W + 12 + MAX_FILE_COLS * (FILE_ICON_W + FILE_PAD);
+    file_scrollbar.y = CONTENT_Y - 1;
+    file_scrollbar.w = FILE_SCROLLBAR_W;
+    file_scrollbar.h = MAX_FILE_ROWS * (FILE_ICON_H + FILE_PAD);
+    file_scrollbar.fg = 8; file_scrollbar.bg = 7;
+    file_scrollbar.id = ID_FILE_SCROLLBAR; file_scrollbar.font_size = 12;
     sys_win_add_control(state.form, &file_scrollbar);
     ctrl_set_visible(state.form, ID_FILE_SCROLLBAR, 0);
-    
-    /* Pre-create tree item controls (labels in left pane) */
-    for (int i = 0; i < TREE_VISIBLE_ITEMS; i++) {
-        int y = TREE_Y + i * TREE_ITEM_H;
-        
-        /* Use label for clickable tree item */
-        gui_control_t tree_label = {
-            CTRL_LABEL, TREE_X, y, TREE_W, TREE_ITEM_H - 2, 0, -1, "", ID_TREE_BASE + i, 0, 12, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
-        };
+
+    /* Pre-create tree item labels */
+    for (int i = 0; i < MAX_TREE_VISIBLE; i++) {
+        gui_control_t tree_label = {0};
+        tree_label.type = CTRL_LABEL;
+        tree_label.x = TREE_X; tree_label.y = CONTENT_Y + i * TREE_ITEM_H;
+        tree_label.w = TREE_W - 20; tree_label.h = TREE_ITEM_H - 2;
+        tree_label.id = ID_TREE_BASE + i; tree_label.font_size = 12;
+        tree_label.bg = -1;
         sys_win_add_control(state.form, &tree_label);
         ctrl_set_visible(state.form, ID_TREE_BASE + i, 0);
     }
-    
-    /* Pre-create file item controls (larger icons in right pane) */
-    int visible_file_count = FILE_VISIBLE_ROWS * FILE_COLS;
-    for (int i = 0; i < visible_file_count; i++) {
-        int col = i % FILE_COLS;
-        int row = i / FILE_COLS;
-        int x = FILES_X + col * (FILE_ICON_W + FILE_PAD);
-        int y = FILES_Y + row * (FILE_ICON_H + FILE_PAD);
-        
-        gui_control_t file_icon = {
-            CTRL_ICON, x, y, FILE_ICON_W, FILE_ICON_H, 0, 15, "", ID_FILE_BASE + i, 0, 9, 0, 0, NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0
-        };
+
+    /* Pre-create file icon controls */
+    int max_file_count = MAX_FILE_ROWS * MAX_FILE_COLS;
+    for (int i = 0; i < max_file_count; i++) {
+        int col = i % MAX_FILE_COLS;
+        int row = i / MAX_FILE_COLS;
+        gui_control_t file_icon = {0};
+        file_icon.type = CTRL_ICON;
+        file_icon.x = (TREE_X + TREE_W + 12) + col * (FILE_ICON_W + FILE_PAD);
+        file_icon.y = CONTENT_Y + row * (FILE_ICON_H + FILE_PAD);
+        file_icon.w = FILE_ICON_W; file_icon.h = FILE_ICON_H;
+        file_icon.bg = 15;
+        file_icon.id = ID_FILE_BASE + i; file_icon.font_size = 9;
         sys_win_add_control(state.form, &file_icon);
         ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);
     }
     
-    /* Initial display */
+    /* Compute initial layout and display */
+    relayout();
     refresh_display();
     
-    /* Run event loop */
-    sys_win_run_event_loop(state.form, handle_event, NULL);
+    int running = 1;
+    while (running) {
+        int ev = sys_win_pump_events(state.form);
+        if (ev == -3) { running = 0; break; }
+        if (ev == -4) { relayout(); refresh_display(); }
+        if (ev == -1 || ev == -2) { sys_win_mark_dirty(state.form); }
+        if (ev > 0 && handle_event(ev)) { running = 0; break; }
+        sys_yield();
+    }
     
     sys_win_destroy_form(state.form);
     sys_exit();
