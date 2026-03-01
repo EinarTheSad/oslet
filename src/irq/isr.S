@@ -30,10 +30,11 @@
 isr\vec:
     cli
     SAVE_REGS
+    pushl 28(%esp)
     pushl $0
     pushl $\vec
     call isr_common_stub
-    addl $8, %esp
+    addl $12, %esp
     RESTORE_REGS
     sti
     iret
@@ -44,10 +45,13 @@ isr\vec:
 isr\vec:
     cli
     SAVE_REGS
+    pushl 32(%esp)
+    pushl 32(%esp)
     pushl $\vec
     call isr_common_stub
-    addl $8, %esp
+    addl $12, %esp
     RESTORE_REGS
+    addl $4, %esp
     sti
     iret
 .endm
