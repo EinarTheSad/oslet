@@ -278,16 +278,18 @@ void schedule(void) {
     task_t *next = pick_next_task();
     
     if (next == current_task) {
-        /* No switch - restore stack that task_yield pushed */
+        /* No switch needed - restore task_yield's saved context directly */
         __asm__ volatile (
+            "movl %0, %%esp\n\t"
             "popl %%ebp\n\t"
             "popl %%ebx\n\t"
             "popl %%esi\n\t"
             "popl %%edi\n\t"
-            "sti"
-            ::: "memory"
+            "sti\n\t"
+            "ret"
+            :: "r"(current_task->esp)
         );
-        return;
+        __builtin_unreachable();
     }
     
     task_t *prev = current_task;
@@ -326,7 +328,7 @@ void task_tick(void) {
     }
 }
 
-void task_yield(void) {
+__attribute__((noinline)) void task_yield(void) {
     if (!tasking_enabled || !current_task) return;
 
     __asm__ volatile ("cli");
@@ -413,6 +415,7 @@ int task_spawn_and_wait(const char *path, const char *args) {
     
     child->parent_tid = current_task->tid;
     current_task->child_tid = child_tid;
+    child->vconsole = current_task->vconsole;
     
     /* Store exec info for cleanup on exit */
     child->exec_base = image.base_addr;
@@ -480,6 +483,7 @@ int task_spawn(const char *path, const char *args) {
     child->exec_base = image.base_addr;
     child->exec_end = image.end_addr;
     child->exec_slot = image.slot;
+    child->vconsole = current_task->vconsole;
     
     /* Store arguments */
     if (args) {
