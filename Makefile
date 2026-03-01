@@ -144,6 +144,7 @@ binstall:
 			sudo cp $(APPS)/*.[eE][lL][fF] mnt/OSLET/START/; \
 		fi; \
 		sudo cp $(BIN)/system.ini mnt/OSLET/; \
+		sudo cp $(BIN)/agix.ini mnt/OSLET/AGIX.INI; \
 		sudo cp $(APPS)/*.[gG][rR][pP] mnt/OSLET/START/; \
 		sudo cp $(BIN)/*.[bB][mM][pP] mnt/OSLET/; \
 	sudo umount mnt; \
@@ -173,6 +174,7 @@ fetchlet: $(BIN)/fetchlet.elf
 shell: $(BIN)/shell.elf
 edit: $(BIN)/edit.elf
 beep: $(BIN)/beep.elf
+terminal: $(BIN)/terminal.elf
 
 $(APPS)/%.elf: $(BUILD)/apps/%.o $(LIB_OBJS)
 	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
