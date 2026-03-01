@@ -67,7 +67,9 @@ typedef struct {
 } dropdown_item_t;
 
 static editor_t ed;
-static volatile uint16_t *vga = (uint16_t*)0xB8000;
+
+static uint8_t scr_chars[SCREEN_HEIGHT * SCREEN_WIDTH];
+static uint8_t scr_attrs[SCREEN_HEIGHT * SCREEN_WIDTH];
 
 /* Undo/redo stacks */
 static undo_state_t undo_stack[UNDO_STACK_SIZE];
@@ -133,8 +135,15 @@ static void perform_undo(void);
 static void perform_redo(void);
 
 static void vga_putc(int x, int y, char c, uint8_t attr) {
-    if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT)
-        vga[y * SCREEN_WIDTH + x] = ((uint16_t)attr << 8) | (uint8_t)c;
+    if (x >= 0 && x < SCREEN_WIDTH && y >= 0 && y < SCREEN_HEIGHT) {
+        int idx = y * SCREEN_WIDTH + x;
+        scr_chars[idx] = (uint8_t)c;
+        scr_attrs[idx] = attr;
+    }
+}
+
+static void flush_screen(void) {
+    sys_console_blit(scr_chars, scr_attrs);
 }
 
 static void vga_puts(int x, int y, const char *s, uint8_t attr) {
@@ -261,6 +270,7 @@ static void draw_all(void) {
 }
 
 static void update_cursor(void) {
+    flush_screen();
     int screen_x = EDIT_START_X + ed.cursor_x;
     int screen_y = EDIT_START_Y + (ed.cursor_y - ed.scroll_offset);
     sys_setcur(screen_x, screen_y);
@@ -486,7 +496,8 @@ static void prompt_filename(const char *prompt, char *buf, int maxlen) {
     /* Input field */
     vga_fill(box_x + 2, box_y + 2, box_w - 4, 1, ' ', COL_EDIT);
     sys_setcur(box_x + 2, box_y + 2);
-    
+    flush_screen();
+
     /* Read input */
     int pos = 0;
     buf[0] = '\0';
@@ -502,12 +513,14 @@ static void prompt_filename(const char *prompt, char *buf, int maxlen) {
             buf[pos] = '\0';
             vga_putc(box_x + 2 + pos, box_y + 2, ' ', COL_EDIT);
             sys_setcur(box_x + 2 + pos, box_y + 2);
+            flush_screen();
         } else if (ch >= 32 && ch < 127 && pos < maxlen - 1) {
             buf[pos] = ch;
             buf[pos + 1] = '\0';
             vga_putc(box_x + 2 + pos, box_y + 2, ch, COL_EDIT);
             pos++;
             sys_setcur(box_x + 2 + pos, box_y + 2);
+            flush_screen();
         }
     }
     
@@ -522,11 +535,12 @@ static void show_about(void) {
     
     draw_dialog_box(box_x, box_y, box_w, box_h, COL_DROPDOWN);
     
-    char *line1 = "osLET Text Editor v0.4";
+    char *line1 = "osLET Text Editor v0.5";
     char *line2 = "EinarTheSad, 2026";
     vga_puts(box_w - strlen(line1)/2, box_y + 2, line1, COL_DROPDOWN);
     vga_puts(box_w - strlen(line2)/2, box_y + 4, line2, COL_DROPDOWN);
-    
+    flush_screen();
+
     sys_getchar();
     draw_all();
 }
@@ -544,8 +558,8 @@ static int ask_yes_no(const char *question) {
     vga_puts(box_x + 20, box_y + 4, "es  ", (15 << 4) | 0);
     vga_puts(box_x + 25, box_y + 4, "  N", (15 << 4) | 4);
     vga_puts(box_x + 28, box_y + 4, "o  ", (15 << 4) | 0);
+    flush_screen();
 
-    
     while (1) {
         int ch = sys_getchar();
         if (ch == 'y' || ch == 'Y') {
@@ -570,7 +584,8 @@ static void show_message(const char *msg) {
     
     int text_x = box_x + (box_w - msg_len) / 2;
     vga_puts(text_x, box_y + 2, msg, COL_DROPDOWN);
-    
+    flush_screen();
+
     sys_getchar();
     draw_all();
 }
@@ -764,7 +779,8 @@ static void show_dropdown(int menu_idx) {
                 vga_puts(sx, menu_y + i, items[i].shortcut, attr);
             }
         }
-        
+        flush_screen();
+
         int ch = sys_getchar();
         
         if (ch == KEY_UP) {
