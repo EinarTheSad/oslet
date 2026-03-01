@@ -18,6 +18,7 @@ typedef rtc_time_t sys_time_t;
 #define SYS_CONSOLE_CLEAR   0x0104
 #define SYS_CONSOLE_SETCUR  0x0105
 #define SYS_CONSOLE_GETCUR  0x0106
+#define SYS_CONSOLE_BLIT   0x0107
 
 /* AH = 02h - Process Control */
 #define SYS_PROC_EXIT       0x0200
@@ -120,6 +121,14 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define WAVE_TRIANGLE  1
 #define WAVE_SINE      2
 #define WAVE_SAWTOOTH  3
+
+/* AH = 0Fh - Virtual Console */
+#define SYS_VC_CREATE   0x0F00
+#define SYS_VC_DESTROY  0x0F01
+#define SYS_VC_ATTACH   0x0F02
+#define SYS_VC_READ     0x0F03
+#define SYS_VC_SEND_KEY 0x0F04
+#define SYS_VC_DIRTY    0x0F05
 
 /* AH = 0Bh - Windows */
 #define SYS_WIN_MSGBOX          0x0B00
@@ -372,6 +381,10 @@ static inline void sys_getcur(int *x, int *y) {
     __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_GETCUR), "b"(x), "c"(y) : "memory");
 }
 
+static inline void sys_console_blit(const uint8_t *chars, const uint8_t *attrs) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_CONSOLE_BLIT), "b"(chars), "c"(attrs) : "memory");
+}
+
 static inline void sys_exit(void) {
     __asm__ volatile("int $0x80" :: "a"(SYS_PROC_EXIT));
 }
@@ -529,7 +542,7 @@ static inline int sys_get_meminfo(sys_meminfo_t *info) {
 
 static inline int sys_get_cpuinfo(sys_cpuinfo_t *info) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_CPU), "b"(info));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_CPU), "b"(info) : "memory");
     return ret;
 }
 
@@ -1095,5 +1108,46 @@ static inline int sys_win_menubar_add_item(void *form, int menu_index, const cha
     int ret;
     uint32_t packed = ((uint32_t)menu_index << 16) | (action_id & 0xFFFF);
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MENUBAR_ADD_ITEM), "b"(form), "c"(text), "d"(packed));
+    return ret;
+}
+
+/* ---- Virtual Console structs and wrappers ---- */
+
+typedef struct {
+    uint8_t chars[80 * 25];
+    uint8_t attrs[80 * 25];
+    int cursor_x;
+    int cursor_y;
+} sys_vc_screen_t;
+
+static inline void *sys_vc_create(void) {
+    void *ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_VC_CREATE));
+    return ret;
+}
+
+static inline void sys_vc_destroy(void *vc) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_VC_DESTROY), "b"(vc));
+}
+
+static inline int sys_vc_attach(void *vc, int tid) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_VC_ATTACH), "b"(vc), "c"(tid));
+    return ret;
+}
+
+static inline int sys_vc_read(void *vc, sys_vc_screen_t *out) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_VC_READ), "b"(vc), "c"(out) : "memory");
+    return ret;
+}
+
+static inline void sys_vc_send_key(void *vc, int key) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_VC_SEND_KEY), "b"(vc), "c"(key));
+}
+
+static inline int sys_vc_dirty(void *vc) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_VC_DIRTY), "b"(vc));
     return ret;
 }

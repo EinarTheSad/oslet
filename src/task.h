@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include "syscall.h"
 
+struct vconsole;
+
 #define TASK_STACK_SIZE 65536
 
 typedef enum {
@@ -37,6 +39,7 @@ typedef struct task {
     int exec_slot;
     char icon_path[64];
     char args[256];
+    struct vconsole *vconsole;
     struct task *next;
 } task_t;
 

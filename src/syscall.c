@@ -23,6 +23,7 @@
 #include "win/compositor.h"
 #include "irq/io.h"
 #include "win/theme.h"
+#include "vconsole.h"
 
 #define MAX_OPEN_FILES 32
 
@@ -128,6 +129,43 @@ void fd_cleanup_task(uint32_t tid) {
 
 static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     (void)edx;
+
+    task_t *cur = task_get_current();
+    if (cur && cur->vconsole) {
+        vconsole_t *vc = (vconsole_t *)cur->vconsole;
+        switch (al) {
+            case 0x00:
+                if (!ebx) return (uint32_t)-1;
+                vc_write(vc, (const char*)ebx);
+                return 0;
+            case 0x01:
+                if (!ebx) return (uint32_t)-1;
+                return (uint32_t)vc_getline(vc, (char*)ebx, ecx);
+            case 0x02:
+                vc_set_color(vc, (uint8_t)ebx, (uint8_t)ecx);
+                return 0;
+            case 0x03:
+                return (uint32_t)vc_getchar(vc);
+            case 0x04:
+                vc_clear(vc);
+                return 0;
+            case 0x05:
+                vc_set_cursor(vc, (int)ebx, (int)ecx);
+                return 0;
+            case 0x06:
+                if (!ebx || !ecx) return (uint32_t)-1;
+                vc_get_cursor(vc, (int*)ebx, (int*)ecx);
+                return 0;
+            case 0x07:
+                if (!ebx || !ecx) return (uint32_t)-1;
+                memcpy_s(vc->chars, (const void*)ebx, VC_COLS * VC_ROWS);
+                memcpy_s(vc->attrs, (const void*)ecx, VC_COLS * VC_ROWS);
+                vc->dirty = 1;
+                return 0;
+            default:
+                return (uint32_t)-1;
+        }
+    }
     
     switch (al) {
         case 0x00:
@@ -162,7 +200,17 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             if (!ebx || !ecx) return -1;
             vga_get_cursor((int*)ebx, (int*)ecx);
             return 0;
-            
+
+        case 0x07: { /* Blit screen buffer */
+            if (!ebx || !ecx) return -1;
+            volatile uint16_t *vmem = (volatile uint16_t*)0xB8000;
+            const uint8_t *ch = (const uint8_t*)ebx;
+            const uint8_t *at = (const uint8_t*)ecx;
+            for (int i = 0; i < 80 * 25; i++)
+                vmem[i] = ((uint16_t)at[i] << 8) | ch[i];
+            return 0;
+        }
+
         default:
             return -1;
     }
@@ -461,7 +509,7 @@ static uint32_t handle_time(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
     }
 }
 
-static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     (void)edx;
     
     switch (al) {
@@ -557,12 +605,13 @@ static uint32_t handle_info(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
 
             /* --- Vendor string (CPUID leaf 0) --- */
             uint32_t a, b, c, d;
+            char vbuf[13];
             __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0));
-            /* vendor in EBX, EDX, ECX (12 bytes) */
-            ((uint32_t*)out->vendor)[0] = b;
-            ((uint32_t*)out->vendor)[1] = d;
-            ((uint32_t*)out->vendor)[2] = c;
-            out->vendor[12] = '\0';
+            ((uint32_t*)vbuf)[0] = b;
+            ((uint32_t*)vbuf)[1] = d;
+            ((uint32_t*)vbuf)[2] = c;
+            vbuf[12] = '\0';
+            for (int i = 0; i < 13; i++) out->vendor[i] = vbuf[i];
 
             /* --- Brand string (if supported) --- */
             __asm__ volatile("cpuid" : "=a"(a) : "a"(0x80000000) : "ebx","ecx","edx");
@@ -3565,6 +3614,60 @@ static uint32_t handle_power(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t e
     }
 }
 
+static uint32_t handle_vconsole(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    (void)edx;
+    task_t *cur = task_get_current();
+
+    switch (al) {
+        case 0x00: { /* SYS_VC_CREATE */
+            if (!cur) return 0;
+            vconsole_t *vc = vc_create(cur->tid);
+            return (uint32_t)vc;
+        }
+        case 0x01: { /* SYS_VC_DESTROY */
+            vconsole_t *vc = (vconsole_t*)ebx;
+            if (!vc) return (uint32_t)-1;
+            vc_destroy(vc);
+            return 0;
+        }
+        case 0x02: { /* SYS_VC_ATTACH */
+            vconsole_t *vc = (vconsole_t*)ebx;
+            uint32_t tid = (uint32_t)ecx;
+            if (!vc) return (uint32_t)-1;
+            task_t *t = task_find_by_tid(tid);
+            if (!t) return (uint32_t)-1;
+            t->vconsole = (struct vconsole *)vc;
+            return 0;
+        }
+        case 0x03: { /* SYS_VC_READ */
+            vconsole_t *vc = (vconsole_t*)ebx;
+            if (!vc || !ecx) return (uint32_t)-1;
+            uint8_t *dst = (uint8_t*)ecx;
+            memcpy_s(dst, vc->chars, VC_ROWS * VC_COLS);
+            memcpy_s(dst + VC_ROWS * VC_COLS, vc->attrs, VC_ROWS * VC_COLS);
+            int *cursor = (int*)(dst + 2 * VC_ROWS * VC_COLS);
+            cursor[0] = vc->cursor_x;
+            cursor[1] = vc->cursor_y;
+            return 0;
+        }
+        case 0x04: { /* SYS_VC_SEND_KEY */
+            vconsole_t *vc = (vconsole_t*)ebx;
+            if (!vc) return (uint32_t)-1;
+            vc_send_key(vc, (uint8_t)ecx);
+            return 0;
+        }
+        case 0x05: { /* SYS_VC_DIRTY */
+            vconsole_t *vc = (vconsole_t*)ebx;
+            if (!vc) return 0;
+            uint8_t was = vc->dirty;
+            vc->dirty = 0;
+            return was;
+        }
+        default:
+            return (uint32_t)-1;
+    }
+}
+
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     uint32_t ah = (eax >> 8) & 0xFF;
     uint32_t al = eax & 0xFF;
@@ -3583,6 +3686,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x0B: return handle_window(al, ebx, ecx, edx);
         case 0x0C: return handle_power(al, ebx, ecx, edx);
         case 0x0E: return handle_sound(al, ebx, ecx, edx);
+        case 0x0F: return handle_vconsole(al, ebx, ecx, edx);
         case 0x0D: {
             /* Input namespace - subcodes in AL */
             switch (al) {
