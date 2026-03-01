@@ -204,6 +204,8 @@ void _start(void) {
     memset(argv, 0, sizeof(argv));
     int argc;
 
+    printf("osLET %s, EinarTheSad 2025-2026\n\n", sys_version());
+
     for (;;) {
         print_prompt();
         int n = sys_readline(line, sizeof(line));
