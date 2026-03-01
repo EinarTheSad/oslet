@@ -162,7 +162,7 @@ static const char *exception_names[] = {
     "SIMD Floating-Point Exception"
 };
 
-void isr_common_stub(int vector, int error_code) {
+void isr_common_stub(int vector, int error_code, uint32_t eip) {
     /* Check if graphics mode is active */
     if (gfx_is_active()) {
         /* Draw blue screen of death */
@@ -190,6 +190,11 @@ void isr_common_stub(int vector, int error_code) {
         bsod_draw_string(40, y, "Error Code: ", COLOR_WHITE, COLOR_BLUE);
         bsod_itoh(error_code, buf, 8);
         bsod_draw_string(40 + 12 * 8, y, buf, COLOR_YELLOW, COLOR_BLUE);
+        y += 16;
+
+        bsod_draw_string(40, y, "EIP: ", COLOR_WHITE, COLOR_BLUE);
+        bsod_itoh(eip, buf, 8);
+        bsod_draw_string(40 + 5 * 8, y, buf, COLOR_YELLOW, COLOR_BLUE);
         y += 24;
         
         /* Page fault details */
@@ -233,7 +238,7 @@ void isr_common_stub(int vector, int error_code) {
     } else {
         /* Text mode fallback */
         vga_set_color(12, 15);
-        printf("[EXCEPTION] Vector=%d Error=0x%X\n", vector, (unsigned)error_code);
+        printf("[EXCEPTION] Vector=%d Error=0x%X EIP=0x%X\n", vector, (unsigned)error_code, (unsigned)eip);
 
         /* For page fault (vector 14), show CR2 (faulting address) */
         if (vector == 14) {
