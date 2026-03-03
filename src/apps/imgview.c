@@ -18,9 +18,9 @@
 /* Controls for Form1 */
 static gui_control_t Form1_controls[] = {
     { .type = CTRL_PICTUREBOX, .x = 8, .y = 5, .w = 467, .h = 350, .fg = 0, .bg = 7, .text = "", .id = ID_PICTURE, .font_type = 0, .font_size = 12, .border = 1, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_BUTTON, .x = 126, .y = 369, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Previous", .id = ID_PREV, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_BUTTON, .x = 292, .y = 369, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Next", .id = ID_NEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-    { .type = CTRL_BUTTON, .x = 203, .y = 360, .w = 82, .h = 40, .fg = 0, .bg = -1, .text = "Full screen", .id = ID_FULLSCREEN, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 }
+    { .type = CTRL_BUTTON, .x = 174, .y = 370, .w = 22, .h = 22, .fg = 0, .bg = -1, .text = "", .id = ID_PREV, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
+    { .type = CTRL_BUTTON, .x = 244, .y = 370, .w = 22, .h = 22, .fg = 0, .bg = -1, .text = "", .id = ID_NEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
+    { .type = CTRL_BUTTON, .x = 224, .y = 360, .w = 40, .h = 40, .fg = 0, .bg = -1, .text = "", .id = ID_FULLSCREEN, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 255, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 }
 };
 
 /* Controls for Form2 */
@@ -100,7 +100,6 @@ static void toggle_fullscreen(void *form, int *fullscreen_ptr, const char *cur_p
     }
 }
 
-/* Update layout when window is resized */
 static void update_layout(void *form) {
     gui_form_t *f = form;
     int win_w = f->win.w;
@@ -119,13 +118,13 @@ static void update_layout(void *form) {
     int btn_y = win_h - 58;
     int center_x = win_w / 2;
     
-    sys_ctrl_set_prop(form, ID_PREV, PROP_X, center_x - 118);
+    sys_ctrl_set_prop(form, ID_PREV, PROP_X, center_x - 47);
     sys_ctrl_set_prop(form, ID_PREV, PROP_Y, btn_y);
     
-    sys_ctrl_set_prop(form, ID_NEXT, PROP_X, center_x + 48);
+    sys_ctrl_set_prop(form, ID_NEXT, PROP_X, center_x + 25);
     sys_ctrl_set_prop(form, ID_NEXT, PROP_Y, btn_y);
     
-    sys_ctrl_set_prop(form, ID_FULLSCREEN, PROP_X, center_x - 41);
+    sys_ctrl_set_prop(form, ID_FULLSCREEN, PROP_X, center_x - 20);
     sys_ctrl_set_prop(form, ID_FULLSCREEN, PROP_Y, btn_y - 9);
 }
 
@@ -192,7 +191,7 @@ static void navigate_dir(void *form, int delta, int fullscreen, void *fs_form) {
 
 __attribute__((section(".entry"), used))
 void _start(void) {
-    void *form = sys_win_create_form("Image Viewer", 78, 16, 483, 427);
+    void *form = sys_win_create_form("Image Viewer", 240, 87, 400, 366);
     if (!form) {
         sys_exit();
         return;
@@ -201,6 +200,10 @@ void _start(void) {
     for (int i = 0; i < (int)(sizeof(Form1_controls) / sizeof(Form1_controls[0])); i++) {
         sys_win_add_control(form, &Form1_controls[i]);
     }
+
+    ctrl_set_image(form, ID_FULLSCREEN, "C:/ICONS/VIEWER.ICO");
+    ctrl_set_image(form, ID_PREV, "C:/ICONS/ARL.ICO");
+    ctrl_set_image(form, ID_NEXT, "C:/ICONS/ARR.ICO");
 
     sys_win_set_icon(form, "C:/ICONS/VIEWER.ICO");
     update_layout(form);
