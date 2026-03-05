@@ -159,6 +159,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_MENUBAR_ADD_ITEM 0x0B1E
 #define SYS_WIN_SET_RESIZABLE 0x0B1F
 #define SYS_WIN_DRAW_TASKBAR_BUTTON 0x0B20
+#define SYS_WIN_GET_TOPMOST_AT  0x0B21
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -1030,6 +1031,12 @@ static inline void sys_win_get_dirty_rect(int *out) {
 static inline sys_theme_t* sys_win_get_theme(void) {
     sys_theme_t *ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_GET_THEME));
+    return ret;
+}
+
+static inline void* sys_wm_get_topmost_at(int x, int y) {
+    void *ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_GET_TOPMOST_AT), "b"(x), "c"(y));
     return ret;
 }
 

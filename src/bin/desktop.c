@@ -483,10 +483,23 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
 
 static void pump_all_program_events(int mx, int my) {
     prog_instance_t *inst;
+    
+    /* Determine which window is topmost at the mouse position */
+    gui_form_t *topmost = sys_wm_get_topmost_at(mx, my);
+    
     PROGMAN_FOREACH_RUNNING(inst) {
         for (int j = 0; j < inst->window_count; j++) {
             void *form = inst->windows[j];
             if (!form) continue;
+
+            /* Only process events for the topmost window, or windows that are currently dragging/resizing
+               (they need to receive mouse move events even if another window is on top) */
+            gui_form_t *gform = (gui_form_t*)form;
+            int should_process = (topmost == form) || gform->dragging || gform->resizing || 
+                                 (gform->win.is_minimized && gform->win.minimized_icon && 
+                                  gform->win.minimized_icon->dragging);
+            
+            if (!should_process) continue;
 
             int event = sys_win_pump_events(form);
             if (event != 0) {
@@ -512,8 +525,6 @@ static void pump_all_program_events(int mx, int my) {
             }
         }
     }
-    (void)mx;
-    (void)my;
 }
 
 __attribute__((section(".entry"), used))

@@ -2292,46 +2292,47 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 if (topmost == NULL) {
                     pump_deselect_all_icons(&global_wm);
                     needs_redraw = 1;
-                }
+                } else {
+                    /* Only process window clicks if topmost is not NULL */
 
-                /* Ignore presses for windows that are not the topmost at the mouse position. This
-                   prevents clicks on controls/titlebars of windows that are overlapped by another
-                   (focused) window. Exception: allow clicks on open dropdown lists even if they
-                   extend outside the window bounds. */
-                int click_on_dropdown = 0;
-                if (topmost != form && form->controls) {
-                    /* Check if click is on an open dropdown list */
-                    for (int i = 0; i < form->ctrl_count; i++) {
-                        gui_control_t *ctrl = &form->controls[i];
-                        if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
-                            int abs_x = form->win.x + ctrl->x;
-                            int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-                            int list_h = ctrl->item_count * 16;
-                            int list_y = abs_y + ctrl->h;
-                            
-                            /* Account for auto-flip */
-                            if (list_y + list_h > GFX_HEIGHT) {
-                                list_y = abs_y - list_h;
-                                if (list_y < 0) {
-                                    list_y = 0;
-                                    list_h = abs_y;
-                                    if (list_h < 16) list_h = 16;
+                    /* Ignore presses for windows that are not the topmost at the mouse position. This
+                       prevents clicks on controls/titlebars of windows that are overlapped by another
+                       (focused) window. Exception: allow clicks on open dropdown lists even if they
+                       extend outside the window bounds. */
+                    int click_on_dropdown = 0;
+                    if (topmost != form && form->controls) {
+                        /* Check if click is on an open dropdown list */
+                        for (int i = 0; i < form->ctrl_count; i++) {
+                            gui_control_t *ctrl = &form->controls[i];
+                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                                int abs_x = form->win.x + ctrl->x;
+                                int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
+                                int list_h = ctrl->item_count * 16;
+                                int list_y = abs_y + ctrl->h;
+                                
+                                /* Account for auto-flip */
+                                if (list_y + list_h > GFX_HEIGHT) {
+                                    list_y = abs_y - list_h;
+                                    if (list_y < 0) {
+                                        list_y = 0;
+                                        list_h = abs_y;
+                                        if (list_h < 16) list_h = 16;
+                                    }
                                 }
-                            }
-                            
-                            /* Check if click is within dropdown list area */
-                            if (mx >= abs_x && mx < abs_x + ctrl->w &&
-                                my >= list_y && my < list_y + list_h) {
-                                click_on_dropdown = 1;
-                                break;
+                                
+                                /* Check if click is within dropdown list area */
+                                if (mx >= abs_x && mx < abs_x + ctrl->w &&
+                                    my >= list_y && my < list_y + list_h) {
+                                    click_on_dropdown = 1;
+                                    break;
+                                }
                             }
                         }
                     }
-                }
-                
-                if (topmost != form && !click_on_dropdown) {
-                    /* If click landed on another window, do not process this press for this form. */
-                } else if (form->win.is_minimized) {
+                    
+                    if (topmost != form && !click_on_dropdown) {
+                        /* If click landed on another window, do not process this press for this form. */
+                    } else if (form->win.is_minimized) {
                     /* Check for click on icon (single or double) */
                     int icon_result = pump_handle_icon_click(form, mx, my);
                     if (icon_result == 2) {
@@ -2472,6 +2473,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         }
                     }
                 }
+                }  /* Close the else block for topmost != NULL */
             }
 
             /* Check if an event was generated during button press (e.g., dropdown item selected) */
@@ -3516,6 +3518,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             }
             
             return 0;
+        }
+
+        case 0x21: { /* SYS_WIN_GET_TOPMOST_AT - return the topmost window at position (x, y) */
+            int x = ebx;
+            int y = ecx;
+            gui_form_t *topmost = wm_get_window_at(&global_wm, x, y);
+            return (uint32_t)topmost;
         }
 
         default:
