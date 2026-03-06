@@ -2,8 +2,8 @@
 #include "dma.h"
 #include "../irq/io.h"
 #include "../irq/irq.h"
-#include "../timer.h"
-#include "../task.h"
+#include "../task/timer.h"
+#include "../task/task.h"
 
 /* Waveform types */
 #define WAVE_SQUARE    0

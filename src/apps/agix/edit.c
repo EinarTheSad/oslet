@@ -1,7 +1,7 @@
-#include "../syscall.h"
-#include "../lib/stdio.h"
-#include "../lib/string.h"
-#include "../drivers/keyboard.h"
+#include "../../syscall.h"
+#include "../../lib/stdio.h"
+#include "../../lib/string.h"
+#include "../../drivers/keyboard.h"
 #include <stdint.h>
 
 #define MAX_LINES 200

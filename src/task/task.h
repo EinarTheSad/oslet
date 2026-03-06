@@ -1,6 +1,6 @@
 #pragma once
 #include <stdint.h>
-#include "syscall.h"
+#include "../syscall.h"
 
 struct vconsole;
 

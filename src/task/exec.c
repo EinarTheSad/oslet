@@ -1,9 +1,9 @@
 #include "exec.h"
-#include "drivers/fat32.h"
-#include "mem/heap.h"
-#include "mem/paging.h"
-#include "mem/pmm.h"
-#include "console.h"
+#include "../drivers/fat32.h"
+#include "../mem/heap.h"
+#include "../mem/paging.h"
+#include "../mem/pmm.h"
+#include "../console.h"
 #include "task.h"
 
 /* ELF Section Header (needed for relocations) */

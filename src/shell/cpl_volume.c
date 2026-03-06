@@ -1,5 +1,5 @@
-#include "../bin/progmod.h"
-#include "../bin/progman.h"
+#include "progmod.h"
+#include "progman.h"
 #include "../syscall.h"
 #include "../lib/string.h"
 #include "../lib/stdio.h"

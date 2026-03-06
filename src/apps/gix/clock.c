@@ -1,4 +1,4 @@
-#include "../syscall.h"
+#include "../../syscall.h"
 
 #define WIN_W 120
 #define WIN_H 140

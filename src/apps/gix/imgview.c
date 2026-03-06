@@ -1,8 +1,8 @@
-#include "../syscall.h"
-#include "../lib/stdio.h"
-#include "../lib/string.h"
-#include "../drivers/keyboard.h"
-#include "../win/wm_config.h"
+#include "../../syscall.h"
+#include "../../lib/stdio.h"
+#include "../../lib/string.h"
+#include "../../drivers/keyboard.h"
+#include "../../win/wm_config.h"
 
 /* Control IDs */
 #define ID_PICTURE    1

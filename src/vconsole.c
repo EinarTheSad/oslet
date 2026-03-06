@@ -1,7 +1,7 @@
 #include "vconsole.h"
 #include "mem/heap.h"
 #include "console.h"
-#include "task.h"
+#include "task/task.h"
 #include "drivers/keyboard.h"
 
 vconsole_t *vc_create(uint32_t owner_tid) {

@@ -1,9 +1,9 @@
-#include "../syscall.h"
-#include "../lib/fonts.h"
-#include "../lib/string.h"
-#include "../lib/stdlib.h"
-#include "../lib/ini.h"
-#include "../drivers/keyboard.h"
+#include "../../syscall.h"
+#include "../../lib/fonts.h"
+#include "../../lib/string.h"
+#include "../../lib/stdlib.h"
+#include "../../lib/ini.h"
+#include "../../drivers/keyboard.h"
 
 #define TERM_COLS  80
 #define TERM_ROWS  25

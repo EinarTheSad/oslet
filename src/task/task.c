@@ -1,10 +1,10 @@
 #include "task.h"
-#include "mem/heap.h"
-#include "console.h"
+#include "../mem/heap.h"
+#include "../console.h"
 #include "timer.h"
-#include "drivers/vga.h"
+#include "../drivers/vga.h"
 #include <stddef.h>
-#include "syscall.h"
+#include "../syscall.h"
 #include "exec.h"
 
 static task_t *task_list = NULL;

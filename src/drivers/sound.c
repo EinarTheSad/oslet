@@ -5,7 +5,7 @@
 #include "../irq/io.h"
 #include "../mem/heap.h"
 #include "../console.h"
-#include "../timer.h"
+#include "../task/timer.h"
 
 #define SB_DSP_RESET     0x226
 #define SB_DSP_READ      0x22A

@@ -1,6 +1,6 @@
-#include "../syscall.h"
-#include "../lib/stdio.h"
-#include "../lib/string.h"
+#include "../../syscall.h"
+#include "../../lib/stdio.h"
+#include "../../lib/string.h"
 
 #define MENU_FILE_NEW_FOLDER 101
 #define MENU_FILE_NEW_FILE   102
