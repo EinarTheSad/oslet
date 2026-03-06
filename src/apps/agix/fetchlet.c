@@ -1,7 +1,5 @@
-/* neofetch-like system information display */
-
-#include "../syscall.h"
-#include "../lib/stdio.h"
+#include "../../syscall.h"
+#include "../../lib/stdio.h"
 
 const char *logo[] = {
     "▀▀▀▀▀▀▀█▀",

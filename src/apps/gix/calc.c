@@ -1,6 +1,6 @@
-#include "../syscall.h"
-#include "../lib/stdio.h"
-#include "../lib/string.h"
+#include "../../syscall.h"
+#include "../../lib/stdio.h"
+#include "../../lib/string.h"
 
 /* Calculator state */
 static double first_num = 0.0;

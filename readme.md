@@ -12,10 +12,10 @@ Ensure the following dependencies are installed (built in Ubuntu 24.04 LTS, may 
 sudo apt install build-essential gcc-multilib binutils grub-pc grub-common dosfstools util-linux qemu-system-x86
 ```
 
-The following sequence will compile the OS and run it in QEMU:
+To compile the OS with all its programs and run it in QEMU (`sudo` is required):
 
 ``` bash
-make disk shell desktop binstall run
+make full
 ```
 
 You can compile each binary separately. Remember to then run ```make binstall``` to copy it to the virtual hard drive. For more specific information, please consult the Makefile.

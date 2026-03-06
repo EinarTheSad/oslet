@@ -1,6 +1,6 @@
-#include "../syscall.h"
-#include "../lib/stdio.h"
-#include "../lib/string.h"
+#include "../../syscall.h"
+#include "../../lib/stdio.h"
+#include "../../lib/string.h"
 
 static void *Form1 = 0;
 

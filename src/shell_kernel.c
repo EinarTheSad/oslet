@@ -3,8 +3,8 @@
 #include "drivers/vga.h"
 #include "drivers/fat32.h"
 #include "drivers/graphics.h"
-#include "task.h"
-#include "timer.h"
+#include "task/task.h"
+#include "task/timer.h"
 #include "mem/heap.h"
 
 int bootscreen(void) {

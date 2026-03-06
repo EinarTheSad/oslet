@@ -1,9 +1,9 @@
 #include <stdint.h>
-#include "console.h"
-#include "drivers/mouse.h"
-#include "drivers/vga.h"
-#include "drivers/graphics.h"
-#include "fonts/mono8x16.h"
+#include "../console.h"
+#include "../drivers/mouse.h"
+#include "../drivers/vga.h"
+#include "../drivers/graphics.h"
+#include "../fonts/mono8x16.h"
 
 extern void syscall_handler_idt(void);
 

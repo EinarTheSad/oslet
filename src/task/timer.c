@@ -1,7 +1,7 @@
 #include "timer.h"
-#include "irq/io.h"
-#include "irq/irq.h"
-#include "console.h"
+#include "../irq/io.h"
+#include "../irq/irq.h"
+#include "../console.h"
 #include "task.h"
 
 #define PIT_CHANNEL0 0x40

@@ -1,8 +1,6 @@
 TARGET  = kernel.elf
 BUILD   = build
 SRC     = src
-BIN     = $(SRC)/bin
-LIB     = $(SRC)/lib
 LNK     = linker.ld
 DISK    = disk.img
 DISK_SIZE = 32
@@ -16,10 +14,12 @@ LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
 
 KERNEL_SRC_DIRS := \
 	$(SRC) \
+	$(SRC)/arch \
 	$(SRC)/drivers \
-	$(SRC)/mem \
-	$(SRC)/irq \
 	$(SRC)/fonts \
+	$(SRC)/irq \
+	$(SRC)/mem \
+	$(SRC)/task \
 	$(SRC)/win
 
 KERNEL_SRC_C := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.c))
@@ -28,10 +28,37 @@ KERNEL_SRC_S := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.S))
 KERNEL_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(KERNEL_SRC_C)) \
                $(patsubst $(SRC)/%.S,$(BUILD)/%.o,$(KERNEL_SRC_S))
 
-.PHONY: all iso run clean disk install
+SHELL_SRC        = $(SRC)/shell
+SHELL_OBJ_DIR    = $(BUILD)/obj/shell
+SHELL_SRCS       = $(wildcard $(SHELL_SRC)/*.c)
+SHELL_OBJS       = $(patsubst $(SHELL_SRC)/%.c,$(SHELL_OBJ_DIR)/%.o,$(SHELL_SRCS))
+
+APPS_AGIX_SRC    = $(SRC)/apps/agix
+APPS_AGIX_OBJ_DIR = $(BUILD)/obj/apps/agix
+APPS_AGIX_SRCS   = $(wildcard $(APPS_AGIX_SRC)/*.c)
+APPS_AGIX_OBJS   = $(patsubst $(APPS_AGIX_SRC)/%.c,$(APPS_AGIX_OBJ_DIR)/%.o,$(APPS_AGIX_SRCS))
+
+APPS_GIX_SRC     = $(SRC)/apps/gix
+APPS_GIX_OBJ_DIR = $(BUILD)/obj/apps/gix
+APPS_GIX_SRCS    = $(wildcard $(APPS_GIX_SRC)/*.c)
+APPS_GIX_OBJS    = $(patsubst $(APPS_GIX_SRC)/%.c,$(APPS_GIX_OBJ_DIR)/%.o,$(APPS_GIX_SRCS))
+
+LIB_SRC          = $(SRC)/lib
+LIB_OBJ_DIR      = $(BUILD)/lib
+LIB_SRCS         = $(wildcard $(LIB_SRC)/*.c)
+LIB_OBJS         = $(patsubst $(LIB_SRC)/%.c,$(LIB_OBJ_DIR)/%.o,$(LIB_SRCS))
+
+BUILD_BIN        = $(BUILD)/bin
+
+SHELL_TARGETS    = desktop.elf shell.elf
+APPS_AGIX_TARGETS = edit.elf fetchlet.elf
+APPS_GIX_TARGETS  = calc.elf clock.elf fileman.elf imgview.elf letver.elf terminal.elf
+
+.PHONY: all run clean clean-all disk install binstall desktop fetchlet shell edit terminal clock calc imgview letver fileman binaries full
 
 all: $(BUILD)/$(TARGET)
 
+# Kernel
 $(BUILD)/$(TARGET): $(KERNEL_OBJS)
 	$(LD) $(LDFLAGS) -o $@ $^
 
@@ -43,10 +70,92 @@ $(BUILD)/%.o: $(SRC)/%.S
 	@mkdir -p $(dir $@)
 	$(CC) -m32 -c $< -o $@
 
+# Programs
+$(SHELL_OBJ_DIR)/%.o: $(SHELL_SRC)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
+$(APPS_AGIX_OBJ_DIR)/%.o: $(APPS_AGIX_SRC)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
+$(APPS_GIX_OBJ_DIR)/%.o: $(APPS_GIX_SRC)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
+# Userland libraries
+$(LIB_OBJ_DIR)/%.o: $(LIB_SRC)/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
+# Shells
+$(BUILD_BIN)/desktop.elf: $(SHELL_OBJ_DIR)/desktop.o \
+                          $(SHELL_OBJ_DIR)/progman.o \
+                          $(SHELL_OBJ_DIR)/startman.o \
+                          $(SHELL_OBJ_DIR)/textmode.o \
+                          $(SHELL_OBJ_DIR)/cpl_theme.o \
+                          $(SHELL_OBJ_DIR)/cpl_screen.o \
+                          $(SHELL_OBJ_DIR)/cpl_boot.o \
+                          $(SHELL_OBJ_DIR)/shutdown.o \
+                          $(SHELL_OBJ_DIR)/cpl_volume.o \
+                          $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD_BIN)/shell.elf: $(SHELL_OBJ_DIR)/shell.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+# Text programs
+$(BUILD_BIN)/edit.elf: $(APPS_AGIX_OBJ_DIR)/edit.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD_BIN)/fetchlet.elf: $(APPS_AGIX_OBJ_DIR)/fetchlet.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+# Graphical programs
+$(BUILD_BIN)/calc.elf: $(APPS_GIX_OBJ_DIR)/calc.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD_BIN)/clock.elf: $(APPS_GIX_OBJ_DIR)/clock.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD_BIN)/fileman.elf: $(APPS_GIX_OBJ_DIR)/fileman.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD_BIN)/imgview.elf: $(APPS_GIX_OBJ_DIR)/imgview.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD_BIN)/letver.elf: $(APPS_GIX_OBJ_DIR)/letver.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+$(BUILD_BIN)/terminal.elf: $(APPS_GIX_OBJ_DIR)/terminal.o $(LIB_OBJS)
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
+# Quickies for building specific programs
+desktop: $(BUILD_BIN)/desktop.elf
+fetchlet: $(BUILD_BIN)/fetchlet.elf
+shell: $(BUILD_BIN)/shell.elf
+edit: $(BUILD_BIN)/edit.elf
+terminal: $(BUILD_BIN)/terminal.elf
+clock: $(BUILD_BIN)/clock.elf
+calc: $(BUILD_BIN)/calc.elf
+imgview: $(BUILD_BIN)/imgview.elf
+letver: $(BUILD_BIN)/letver.elf
+fileman: $(BUILD_BIN)/fileman.elf
+
+# Disk
 $(DISK):
 	@echo "Creating $(DISK_SIZE)MB disk with MBR..."
 	dd if=/dev/zero of=$(DISK) bs=1M count=$(DISK_SIZE)
-	# Use fdisk with explicit geometry for better compatibility
 	echo -e "o\nn\np\n1\n2048\n\nt\nc\na\nw\n" | fdisk $(DISK) || true
 	@echo "Setting up loop device..."
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
@@ -69,65 +178,36 @@ $(DISK):
 	rmdir mnt; \
 	echo "Disk ready!"
 
+disk: $(DISK)
+
+# Install kernel and assets
 install: $(BUILD)/$(TARGET)
 	@if [ ! -f "$(DISK)" ]; then \
 		echo "Error: $(DISK) not found. Run 'make disk' first."; \
 		exit 1; \
 	fi
-	@echo "Installing kernel..."
+	@echo "Installing kernel and resources..."
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
 	sudo cp $(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
 	sudo mkdir -p mnt/FONTS; \
-		sudo cp src/fonts/*.[bB][mM][fF] mnt/FONTS/; \
-		sudo mkdir -p mnt/IMAGES; \
-		sudo cp images/*.[bB][mM][pP] mnt/IMAGES/; \
-		sudo mkdir -p mnt/ICONS; \
-		sudo cp src/icons/*.[iI][cC][oO] mnt/ICONS/; \
-		sudo mkdir -p mnt/SOUNDS; \
-		sudo cp src/sounds/*.[wW][aA][vV] mnt/SOUNDS/; \
+	sudo cp $(SRC)/assets/bmf/*.[bB][mM][fF] mnt/FONTS/ 2>/dev/null || true; \
+	sudo mkdir -p mnt/IMAGES; \
+	sudo cp images/*.[bB][mM][pP] mnt/IMAGES/ 2>/dev/null || true; \
+	sudo mkdir -p mnt/ICONS; \
+	sudo cp $(SRC)/assets/ico/*.[iI][cC][oO] mnt/ICONS/ 2>/dev/null || true; \
+	sudo mkdir -p mnt/SOUNDS; \
+	sudo cp $(SRC)/assets/wav/*.[wW][aA][vV] mnt/SOUNDS/ 2>/dev/null || true; \
+	sudo mkdir -p mnt/OSLET; \
+	sudo cp $(SRC)/assets/bmp/*.[bB][mM][pP] mnt/OSLET/ 2>/dev/null || true; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	rmdir mnt; \
-	echo "Kernel installed!"
+	echo "Kernel and resources installed!"
 
-disk: $(DISK)
-
-iso: $(BUILD)/$(TARGET)
-	@mkdir -p mnt/boot/grub
-	@cp $(BUILD)/$(TARGET) mnt/boot/$(TARGET)
-	@cp grub.cfg mnt/boot/grub
-	@if command -v grub-mkrescue >/dev/null 2>&1; then \
-		grub-mkrescue -o oslet.iso mnt; \
-	else \
-		echo "grub-mkrescue not found; skipping ISO creation."; \
-	fi
-	@rm -rf mnt
-
-run: $(BUILD)/$(TARGET)
-	@if [ ! -f "$(DISK)" ]; then \
-		$(MAKE) disk; \
-	fi
-	@$(MAKE) install
-	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -vga std -rtc base=localtime -audiodev pa,id=audio0 -device sb16,audiodev=audio0
-
-clean:
-	@echo "Cleaning..."
-	rm -rf $(BUILD)
-	rm -f $(BIN)/*.elf
-	rm -f $(APPS)/*.elf
-
-clean-all: clean
-	rm -f $(DISK)
-	rm -f oslet.iso
-
-# Binaries
-LIB_SRCS := $(wildcard $(LIB)/*.c)
-LIB_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(LIB_SRCS))
-APPS = $(SRC)/apps
-
-binstall:
+# Install programs
+binstall: $(addprefix $(BUILD_BIN)/, $(SHELL_TARGETS) $(APPS_AGIX_TARGETS) $(APPS_GIX_TARGETS))
 	@if [ ! -f "$(DISK)" ]; then \
 		echo "Error: $(DISK) not found. Run 'make disk' first."; \
 		exit 1; \
@@ -136,55 +216,45 @@ binstall:
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
-		if ls $(BIN)/*.[eE][lL][fF] 1>/dev/null 2>&1; then \
-			sudo cp $(BIN)/*.[eE][lL][fF] mnt/; \
+	# Kopiowanie programów shell do katalogu głównego \
+	for f in $(SHELL_TARGETS); do \
+		if [ -f $(BUILD_BIN)/$$f ]; then \
+			sudo cp $(BUILD_BIN)/$$f mnt/; \
 		fi; \
-		sudo mkdir -p mnt/OSLET/START; \
-		if ls $(APPS)/*.[eE][lL][fF] 1>/dev/null 2>&1; then \
-			sudo cp $(APPS)/*.[eE][lL][fF] mnt/OSLET/START/; \
+	done; \
+	# Kopiowanie aplikacji do katalogu START \
+	sudo mkdir -p mnt/OSLET/START; \
+	for f in $(APPS_AGIX_TARGETS) $(APPS_GIX_TARGETS); do \
+		if [ -f $(BUILD_BIN)/$$f ]; then \
+			sudo cp $(BUILD_BIN)/$$f mnt/OSLET/START/; \
 		fi; \
-		sudo cp $(BIN)/system.ini mnt/OSLET/; \
-		sudo cp $(BIN)/agix.ini mnt/OSLET/AGIX.INI; \
-		sudo cp $(APPS)/*.[gG][rR][pP] mnt/OSLET/START/; \
-		sudo cp $(BIN)/*.[bB][mM][pP] mnt/OSLET/; \
+	done; \
+	# Pliki konfiguracyjne i grupy \
+	sudo cp $(SRC)/ini/system.ini mnt/OSLET/ 2>/dev/null || true; \
+	sudo cp $(SRC)/ini/agix.ini mnt/OSLET/AGIX.INI 2>/dev/null || true; \
+	sudo cp $(SRC)/grp/*.[gG][rR][pP] mnt/OSLET/START/ 2>/dev/null || true; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
-	rmdir mnt
-	@echo "Binaries installed!"
+	rmdir mnt; \
+	echo "Binaries installed!"
 
-$(BIN)/%.elf: $(BUILD)/bin/%.o $(LIB_OBJS)
-	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
+binaries: $(BUILD)/$(TARGET) \
+         desktop shell edit fetchlet calc clock fileman imgview letver terminal
 
-$(BUILD)/bin/%.o: $(BIN)/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(BINCFLAGS) -c $< -o $@
+full: disk binaries install binstall run
 
-$(BUILD)/lib/%.o: $(LIB)/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(BINCFLAGS) -c $< -o $@
+# QEMU
+run: $(BUILD)/$(TARGET)
+	@if [ ! -f "$(DISK)" ]; then \
+		$(MAKE) disk; \
+	fi
+	@$(MAKE) install
+	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -vga std -rtc base=localtime -audiodev pa,id=audio0 -device sb16,audiodev=audio0
 
-DESKTOP_SRCS := $(BIN)/desktop.c $(BIN)/progman.c $(BIN)/startman.c $(BIN)/textmode.c $(BIN)/cpl_theme.c $(BIN)/cpl_screen.c $(BIN)/cpl_boot.c $(BIN)/shutdown.c $(BIN)/cpl_volume.c
-DESKTOP_OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/%.o,$(DESKTOP_SRCS))
+# Cleaning
+clean:
+	@echo "Cleaning..."
+	rm -rf $(BUILD)
 
-$(BIN)/desktop.elf: $(DESKTOP_OBJS) $(LIB_OBJS)
-	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
-
-desktop: $(BIN)/desktop.elf
-fetchlet: $(BIN)/fetchlet.elf
-shell: $(BIN)/shell.elf
-edit: $(BIN)/edit.elf
-beep: $(BIN)/beep.elf
-terminal: $(BIN)/terminal.elf
-
-$(APPS)/%.elf: $(BUILD)/apps/%.o $(LIB_OBJS)
-	$(LD) -m elf_i386 -T $(BIN)/binary.ld -nostdlib -pie -o $@ $^
-
-$(BUILD)/apps/%.o: $(APPS)/%.c
-	@mkdir -p $(dir $@)
-	$(CC) $(BINCFLAGS) -c $< -o $@
-
-clock: $(APPS)/clock.elf
-calc: $(APPS)/calc.elf
-imgview: $(APPS)/imgview.elf
-letver: $(APPS)/letver.elf
-fileman: $(APPS)/fileman.elf
+clean-all: clean
+	rm -f $(DISK)
