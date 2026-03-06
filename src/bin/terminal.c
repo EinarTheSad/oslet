@@ -32,9 +32,40 @@ static int buf_h;
 static sys_vc_screen_t screen;
 static int cursor_visible;
 static uint32_t cursor_blink_tick;
+static int need_cursor = 0;
+static int shell_tid = 0;
+
+static void redraw(void) {
+    gui_form_t *f = (gui_form_t*)form;
+
+    int cw = f->win.w - BORDER*2;
+    int ch = f->win.h - TITLEBAR_H - BORDER;
+
+    if (cw > buf_w) cw = buf_w;
+    if (ch > buf_h) ch = buf_h;
+
+    sys_win_draw_buffer(form, pixbuf, buf_w, buf_h, 0, 0, cw, ch, BORDER, 0, 0);
+}
+
+static void recalc_buf(void) {
+    buf_w = TERM_COLS * glyph_w;
+    buf_h = TERM_ROWS * glyph_h;
+}
+
+static void resize(gui_form_t *f) {
+    int cw = f->win.w - BORDER*2;
+    int ch = f->win.h - TITLEBAR_H - BORDER;
+
+    if (cw < 0) cw = 0;
+    if (ch < 0) ch = 0;
+
+    sys_ctrl_set_prop(form, BG_CTRL_ID, PROP_W, cw);
+    sys_ctrl_set_prop(form, BG_CTRL_ID, PROP_H, ch);
+
+    recalc_buf();
+}
 
 static void render(void) {
-    memset(pixbuf, 0, buf_w * buf_h);
     for (int row = 0; row < TERM_ROWS; row++) {
         for (int col = 0; col < TERM_COLS; col++) {
             int idx = row * TERM_COLS + col;
@@ -81,21 +112,6 @@ static void render(void) {
     }
 }
 
-static void blit(void) {
-    /* Calculate how much of buffer to blit based on window size */
-    gui_form_t *f = (gui_form_t *)form;
-    int client_w = f->win.w - BORDER * 2;
-    int client_h = f->win.h - TITLEBAR_H - BORDER;
-    int blit_w = client_w;
-    int blit_h = client_h;
-    if (blit_w > buf_w) blit_w = buf_w;
-    if (blit_h > buf_h) blit_h = buf_h;
-    
-    sys_win_draw_buffer(form, pixbuf, buf_w, buf_h,
-                        0, 0, blit_w, blit_h,
-                        BORDER, 0, 0);
-}
-
 static void refresh_cursor(void) {
     int cx = screen.cursor_x;
     int cy = screen.cursor_y;
@@ -135,7 +151,7 @@ static void refresh_cursor(void) {
 
     sys_win_draw_buffer(form, pixbuf, buf_w, buf_h,
                         px, py, glyph_w, glyph_h,
-                        px, py, 0);
+                        px + BORDER, py, 0);
 }
 
 static int task_alive(int tid) {
@@ -147,33 +163,59 @@ static int task_alive(int tid) {
     return 0;
 }
 
-static void recalc_buf(void) {
-    buf_w = TERM_COLS * glyph_w;
-    buf_h = TERM_ROWS * glyph_h;
-}
+static int handle_event(void *form_arg, int event, void *userdata)
+{
+    (void)userdata;
+    gui_form_t *f = (gui_form_t*)form_arg;
 
-static void resize_to_fit(void) {
-    gui_form_t *f = (gui_form_t *)form;
-    int client_w = f->win.w - BORDER * 2;
-    int client_h = f->win.h - TITLEBAR_H - BORDER;
+    if (event == -3) {
+        sys_kill(shell_tid);
+        /* Wait for shell to actually terminate before destroying vconsole */
+        while (task_alive(shell_tid)) {
+            sys_yield();
+        }
+        sys_vc_destroy(vc);
+        sys_win_destroy_form(form);
+        usr_bmf_free(&font);
+        sys_exit();
+    }
 
-    int cols_fit = client_w / glyph_w;
-    int rows_fit = client_h / glyph_h;
-    if (cols_fit > TERM_COLS) cols_fit = TERM_COLS;
-    if (rows_fit > TERM_ROWS) rows_fit = TERM_ROWS;
-    if (cols_fit < 20) cols_fit = 20;
-    if (rows_fit < 5)  rows_fit = 5;
+    if (event == -4) {
+        resize(f);
+    }
 
-    render();
-    
-    int blit_w = cols_fit * glyph_w;
-    int blit_h = rows_fit * glyph_h;
-    if (blit_w > buf_w) blit_w = buf_w;
-    if (blit_h > buf_h) blit_h = buf_h;
-    
-    sys_win_draw_buffer(form, pixbuf, buf_w, buf_h,
-                        0, 0, blit_w, blit_h,
-                        BORDER, 0, 0);
+    if (sys_win_is_focused(form)) {
+        int key = sys_get_key_nonblock();
+        while (key > 0) {
+            sys_vc_send_key(vc, key);
+            key = sys_get_key_nonblock();
+        }
+    }
+
+    if (!task_alive(shell_tid))
+        return 1;
+
+    if (sys_vc_dirty(vc)) {
+        sys_vc_read(vc, &screen);
+        render();
+        redraw();
+    }
+
+    uint32_t now = sys_uptime();
+    if (now - cursor_blink_tick >= CURSOR_BLINK_TICKS) {
+        cursor_visible = !cursor_visible;
+        cursor_blink_tick = now;
+        need_cursor = 1;
+        render();
+        redraw();
+    }
+
+    if (need_cursor) {
+        refresh_cursor();
+        need_cursor = 0;
+    }
+
+    return 0;
 }
 
 __attribute__((section(".entry"), used))
@@ -282,7 +324,7 @@ void _start(void) {
         }
     }
 
-    int shell_tid = sys_spawn_async_args(spawn_path, spawn_args);
+    shell_tid = sys_spawn_async_args(spawn_path, spawn_args);
     if (shell_tid <= 0) {
         sys_vc_destroy(vc);
         sys_win_destroy_form(form);
@@ -292,89 +334,11 @@ void _start(void) {
     }
 
     sys_vc_attach(vc, shell_tid);
+    sys_vc_read(vc, &screen);
 
     cursor_visible = 1;
     cursor_blink_tick = sys_uptime();
-    int content_dirty = 1;
-    int cursor_dirty = 0;
-    int reblit_countdown = 0;
+    memset(pixbuf, 0, buf_w * buf_h);
 
-    while (1) {
-        int evt = sys_win_pump_events(form);
-        if (evt == -3) {
-            sys_kill(shell_tid);
-            /* Wait for shell to actually terminate before destroying vconsole */
-            while (task_alive(shell_tid)) {
-                sys_yield();
-            }
-            break;
-        }
-
-        if (evt == -1 || evt == -2) {
-            content_dirty = 1;
-            reblit_countdown = 3;
-        }
-
-        if (evt == -4) {
-            gui_form_t *f = (gui_form_t *)form;
-            int cw = f->win.w - BORDER * 2;
-            int ch = f->win.h - TITLEBAR_H - BORDER;
-            if (cw < 0) cw = 0;
-            if (ch < 0) ch = 0;
-            sys_ctrl_set_prop(form, BG_CTRL_ID, PROP_W, cw);
-            sys_ctrl_set_prop(form, BG_CTRL_ID, PROP_H, ch);
-            resize_to_fit();
-            content_dirty = 0;
-            cursor_dirty = 0;
-            reblit_countdown = 3;
-        }
-
-        if (sys_win_is_focused(form)) {
-            int key = sys_get_key_nonblock();
-            while (key > 0) {
-                sys_vc_send_key(vc, key);
-                key = sys_get_key_nonblock();
-            }
-        }
-
-        if (!task_alive(shell_tid))
-            break;
-
-        if (sys_vc_dirty(vc)) {
-            sys_vc_read(vc, &screen);
-            content_dirty = 1;
-        }
-
-        uint32_t now = sys_uptime();
-        if (now - cursor_blink_tick >= CURSOR_BLINK_TICKS) {
-            cursor_visible = !cursor_visible;
-            cursor_blink_tick = now;
-            if (!content_dirty) {
-                cursor_dirty = 1;
-                reblit_countdown = 1;
-            }
-        }
-
-        if (content_dirty) {
-            render();
-            blit();
-            content_dirty = 0;
-            cursor_dirty = 0;
-        } else if (cursor_dirty) {
-            refresh_cursor();
-            cursor_dirty = 0;
-        }
-
-        if (reblit_countdown > 0) {
-            blit();
-            reblit_countdown--;
-        }
-
-        sys_yield();
-    }
-
-    sys_vc_destroy(vc);
-    sys_win_destroy_form(form);
-    usr_bmf_free(&font);
-    sys_exit();
+    sys_win_run_event_loop(form, handle_event, NULL);
 }
