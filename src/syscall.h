@@ -1084,21 +1084,25 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
         }
         
         if (event == -1 || event == -2) {
-            /* Ensure the form is marked dirty after minimize/restore so
-               userland controls that depend on visibility get an immediate redraw. */
             sys_win_mark_dirty(form);
         }
+
+        if (event == -4) {
+            sys_win_force_full_redraw();
+            sys_win_invalidate_icons();
+        }
         
-        /* Call the handler for positive control events *and* for idle ticks
-           (event == 0). This lets applications receive periodic callbacks
-           without spinning their own event loop (useful for animations, clocks, etc.). */
-        if (event >= 0 && handler && handler(form, event, userdata) != 0) {
+        /* Call the handler for all events.
+           This lets applications receive periodic callbacks and respond to user interactions
+           without spinning their own event loop. */
+        if (event >= -4 && event != -3 && handler && handler(form, event, userdata) != 0) {
             running = 0;
         }
         
         sys_yield();
     }
 }
+
 static inline void sys_win_menubar_enable(void *form) {
     register int dummy_eax __asm__("eax") = SYS_WIN_MENUBAR_ENABLE;
     register void *dummy_ebx __asm__("ebx") = form;

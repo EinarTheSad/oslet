@@ -4,8 +4,6 @@
 #include "menu.h"
 #include "../drivers/mouse.h"
 
-extern void mouse_invalidate_buffer(void);
-
 void wm_init(window_manager_t *wm) {
     wm->count = 0;
     wm->focused_index = -1;
@@ -156,13 +154,6 @@ gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
 
     return NULL;  // No window at this position
 }
-
-/* Composition helpers moved to src/win/compositor.c */
-/* The drawing and dirty-rect helpers were refactored into a dedicated compositor
-   module (src/win/compositor.c / compositor.h). This keeps window management
-   (wm.c) focused on state and ordering, while compositing lives in its own
-   implementation.
-*/
 
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
     // First check if there are any free slots to reuse
