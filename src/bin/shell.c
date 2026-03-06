@@ -127,6 +127,7 @@ static void cmd_mkdir(int argc, char *argv[]);
 static void cmd_rm(int argc, char *argv[]);
 static void cmd_rmdir(int argc, char *argv[]);
 static void cmd_ps(int argc, char *argv[]);
+static void cmd_kill(int argc, char *argv[]);
 static void cmd_uptime(int argc, char *argv[]);
 static void cmd_cls(int argc, char *argv[]);
 static void cmd_shutdown(int argc, char *argv[]);
@@ -153,6 +154,7 @@ static const Command commands[] = {
     { "mv",     "mv <src> <dst>",      "Alias of 'move'",            cmd_mv },
     { "move",   "move <src> <dst>",    "Move file",                  cmd_mv },
     { "ps",     "ps",                  "List running tasks",         cmd_ps },
+    { "kill",   "kill <tid|name>",     "Kill a process",             cmd_kill },
     { "ren",    "ren <old> <new>",     "Rename file",                cmd_ren },
     { "rm",     "rm <file>",           "Alias of 'del'",             cmd_rm },
     { "del",    "del <file>",          "Delete file",                cmd_rm },
@@ -386,6 +388,77 @@ static void cmd_help(int argc, char *argv[]) {
     }
 
     printf("\n");
+}
+
+static void cmd_kill(int argc, char *argv[]) {
+    if (argc < 2) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("Usage: kill <tid|name>\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    const char *target = argv[1];
+
+    /* Determine if target is numeric TID */
+    int is_num = 1;
+    for (const char *p = target; *p; p++) {
+        if (*p < '0' || *p > '9') { is_num = 0; break; }
+    }
+
+    if (is_num) {
+        int tid = 0;
+        for (const char *p = target; *p; p++) tid = tid * 10 + (*p - '0');
+        if (tid <= 0) {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Invalid TID: %s\n", target);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            return;
+        }
+
+        int r = sys_kill(tid);
+        if (r == 0) {
+            printf("Killed %d\n", tid);
+        } else {
+            sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+            printf("Failed to kill %d\n", tid);
+            sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        }
+        return;
+    }
+
+    /* Kill by name (case-insensitive exact match) */
+    sys_taskinfo_t tasks[64];
+    int count = sys_get_tasks(tasks, 64);
+    if (count <= 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("No tasks available\n");
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+        return;
+    }
+
+    int killed = 0;
+    for (int i = 0; i < count; i++) {
+        if (!strcasecmp(tasks[i].name, target)) {
+            int r = sys_kill(tasks[i].tid);
+            if (r == 0) {
+                printf("Killed %u (%s)\n", tasks[i].tid, tasks[i].name);
+                killed++;
+            } else {
+                sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+                printf("Failed to kill %u (%s)\n", tasks[i].tid, tasks[i].name);
+                sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+            }
+        }
+    }
+
+    if (killed == 0) {
+        sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+        printf("No matching process '%s'\n", target);
+        sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+    } else {
+        printf("Killed %d process(es)\n", killed);
+    }
 }
 
 static void cmd_exit(int argc, char *argv[]) {
