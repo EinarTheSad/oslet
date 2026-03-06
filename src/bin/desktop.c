@@ -518,7 +518,7 @@ static void pump_all_program_events(int mx, int my) {
                     break;
                 }
 
-                if (event == -2) {
+                if (event == -2 || event == -4) {
                     /* Major window state change - full redraw */
                     desktop_redraw();
                 }
