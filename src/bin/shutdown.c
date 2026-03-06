@@ -6,14 +6,18 @@
 static int shutdown_init(prog_instance_t *inst) {
     (void)inst;
 
-    int resp = sys_win_msgbox("Do you want to shut down osLET?",
-                              "ICON=SHUTDOWN;Yes|No",
+    int resp = sys_win_msgbox("This will end your osLET session.",
+                              "ICON=SHUTDOWN;Power off|Reboot|Cancel",
                               "Shutdown");
 
-    if (resp == 1) {
+    if (resp != 3) {
         progman_kill_tasks();
         sys_gfx_exit();
-        sys_shutdown();
+
+        if (resp == 1)
+            sys_shutdown();
+        else if (resp == 2)
+            sys_reboot();
     }
 
     return 0; /* app exits immediately after handling */
