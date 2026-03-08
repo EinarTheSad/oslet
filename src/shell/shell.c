@@ -1,6 +1,7 @@
 #include "../syscall.h"
 #include "../lib/stdio.h"
 #include "../lib/string.h"
+#include "../lib/elf.h"
 
 #define COLOR_PROMPT_BG    COLOR_BLACK
 #define COLOR_PROMPT_FG    COLOR_LIGHT_GREEN
@@ -170,6 +171,7 @@ static const Command commands[] = {
 
 static char current_path[FAT32_MAX_PATH];
 static int parse_args(char *line, char *argv[], int max_args);
+static int is_desktop_running(void);
 
 static void sort_commands(Command* arr, int count) {
     for (int i = 0; i < count - 1; i++) {
@@ -326,7 +328,10 @@ void _start(void) {
                     args[pos] = '\0';
                 }
                 
-                if (sys_spawn_args(bin_path, args) != 0) {
+                /* warn if graphical program would run without desktop */
+                if (elf_is_textmode(bin_path) == 1 && !is_desktop_running()) {
+                    printf("This program cannot be run in text mode\n");
+                } else if (sys_spawn_args(bin_path, args) != 0) {
                     sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
                     printf("Could not execute %s\n", bin_path);
                     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
@@ -340,6 +345,16 @@ void _start(void) {
             printf("'%s'\n", cmd);
         }
     }
+}
+
+static int is_desktop_running(void) {
+    sys_taskinfo_t tasks[16];
+    int count = sys_get_tasks(tasks, 16);
+    for (int i = 0; i < count; i++) {
+        if (strcasecmp(tasks[i].name, "DESKTOP.ELF") == 0)
+            return 1;
+    }
+    return 0;
 }
 
 static int parse_args(char *line, char *argv[], int max_args) {

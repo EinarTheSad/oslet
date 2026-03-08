@@ -7,3 +7,4 @@ build/
 src/apps/*.elf
 src/bin/*.elf
 mnt/
+agents.md

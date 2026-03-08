@@ -209,9 +209,9 @@ static void start_init(void) {
     taskbar_buttons[0].bg_color = 0;  /* Will use theme start_button_color */
     
     /* Copy label */
-    int i = 0;
+    size_t i = 0;
     const char *label = "Start";
-    while (label[i] && i < sizeof(taskbar_buttons[0].label)-1) {
+    while (i < sizeof(taskbar_buttons[0].label)-1 && label[i]) {
         taskbar_buttons[0].label[i] = label[i];
         i++;
     }
@@ -222,7 +222,7 @@ static void start_init(void) {
     /* Copy icon path */
     i = 0;
     const char *icon = "C:/ICONS/LET.ICO";
-    while (icon[i] && i < sizeof(taskbar_buttons[0].icon_path)-1) {
+    while (i < sizeof(taskbar_buttons[0].icon_path)-1 && icon[i]) {
         taskbar_buttons[0].icon_path[i] = icon[i];
         i++;
     }

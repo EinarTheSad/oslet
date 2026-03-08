@@ -1,10 +1,10 @@
 #include "../../syscall.h"
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
+#include "../../lib/elf.h"
 
 #define MENU_FILE_NEW_FOLDER 101
 #define MENU_FILE_NEW_FILE   102
-/*#define MENU_FILE_OPEN       103   removed, opening handled by double-click*/
 #define MENU_FILE_EXIT       104
 #define MENU_GO_BACK         301
 #define MENU_GO_HOME         302
@@ -597,11 +597,16 @@ static void open_selected_file(int idx) {
     if (!dot) return;
 
     if (strcasecmp(dot, ".elf") == 0) {
-        sys_spawn_async(state.file_items[idx].full_path);
+        /* decide whether the ELF wants a text session */
+        if (elf_is_textmode(state.file_items[idx].full_path) == 0) {
+            /* launch in a terminal */
+            sys_spawn_async_args("C:/OSLET/GIX/TERMINAL.ELF", state.file_items[idx].full_path);
+        } else {
+            sys_spawn_async(state.file_items[idx].full_path);
+        }
     } else if (strcasecmp(dot, ".txt") == 0 || strcasecmp(dot, ".ini") == 0 ||
                strcasecmp(dot, ".grp") == 0) {
-        //sys_spawn_async_args("C:/EDIT.ELF", state.file_items[idx].full_path);
-        /* TODO: Either create a graphical text editor, or make non-graphical programs switch to AGIX session */
+        /* TODO: create graphical text editor */
     } else if (strcasecmp(dot, ".bmp") == 0 || strcasecmp(dot, ".ico") == 0) {
         sys_spawn_async_args("C:/OSLET/START/IMGVIEW.ELF", state.file_items[idx].full_path);
     }

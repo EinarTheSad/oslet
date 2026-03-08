@@ -19,12 +19,17 @@ static int textmode_init(prog_instance_t *inst) {
     (void)inst;
 
     progman_kill_tasks();
+    sys_gfx_exit();
 
     if (!is_shell_running()) {
+        void *vc = sys_vc_create();
+        if (vc) {
+            /* attach to our own task so the child inherits it */
+            sys_vc_attach(vc, sys_getpid());
+        }
         sys_spawn_async("SHELL.ELF");
     }
 
-    sys_gfx_exit();
     sys_exit();
 
     return 0; /* Never reached */
