@@ -66,9 +66,9 @@ $(LIB_OBJ_DIR)/mode_marker_agix.o: $(LIB_SRC)/mode_marker.c
 
 BUILD_BIN        = $(BUILD)/bin
 
-SHELL_TARGETS    = desktop.elf shell.elf
+SHELL_TARGETS     = desktop.elf shell.elf
 APPS_AGIX_TARGETS = edit.elf fetchlet.elf
-APPS_GIX_TARGETS  = calc.elf clock.elf fileman.elf imgview.elf letver.elf terminal.elf
+APPS_GIX_TARGETS  = calc.elf clock.elf fileman.elf imgview.elf letver.elf terminal.elf 2048.elf
 
 .PHONY: all run clean clean-all disk install binstall desktop fetchlet shell edit terminal clock calc imgview letver fileman binaries full
 
@@ -160,6 +160,10 @@ $(BUILD_BIN)/terminal.elf: $(APPS_GIX_OBJ_DIR)/terminal.o $(LIB_OBJS) $(LIB_OBJ_
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
+$(BUILD_BIN)/2048.elf: $(APPS_GIX_OBJ_DIR)/2048.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
+
 # Quickies for building specific programs
 desktop: $(BUILD_BIN)/desktop.elf
 fetchlet: $(BUILD_BIN)/fetchlet.elf
@@ -171,6 +175,7 @@ calc: $(BUILD_BIN)/calc.elf
 imgview: $(BUILD_BIN)/imgview.elf
 letver: $(BUILD_BIN)/letver.elf
 fileman: $(BUILD_BIN)/fileman.elf
+2048: $(BUILD_BIN)/2048.elf
 
 # Disk
 $(DISK):
@@ -255,7 +260,7 @@ binstall:
 	echo "Binaries installed!"
 
 binaries: $(BUILD)/$(TARGET) \
-         desktop shell edit fetchlet calc clock fileman imgview letver terminal
+         desktop shell edit fetchlet calc clock fileman imgview letver terminal 2048
 
 full: disk binaries install binstall run
 
