@@ -59,7 +59,8 @@ void compositor_draw_all(window_manager_t *wm) {
     /* If a full redraw was requested, draw everything and clear the flag */
     if (wm->needs_full_redraw) {
         wm->needs_full_redraw = 0;
-        /* Fall back to full draw */
+        /* Clear dirty rect to prevent stale values affecting subsequent calls */
+        wm->dirty_x = wm->dirty_y = wm->dirty_w = wm->dirty_h = 0;
     } else if (wm->dirty_w > 0 && wm->dirty_h > 0) {
         /* Partial redraw: only draw items overlapping the dirty rect */
         int dx = wm->dirty_x;
