@@ -1079,19 +1079,27 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
         int event = sys_win_pump_events(form);
         
         if (event == -3) {
+            if (form)
+                sys_win_destroy_form(form);
+            sys_win_redraw_all();
             running = 0;
             continue;
         }
         
-        if (event == -1 || event == -2) {
+        if (event == -1) {
             sys_win_mark_dirty(form);
         }
 
-        if (event == -4) {
+        if (event == -2 || event == -4) {
+            sys_win_draw(form);
             sys_win_force_full_redraw();
             sys_win_invalidate_icons();
         }
         
+        if (event > 0 && !form) {
+            continue;
+        }
+
         /* Call the handler for all events.
            This lets applications receive periodic callbacks and respond to user interactions
            without spinning their own event loop. */

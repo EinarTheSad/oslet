@@ -14,18 +14,15 @@ static gui_control_t Form1_controls[] = {
 };
 
 static int Form1_handle_event(void *form, int event, void *userdata) {
-    (void)userdata;
-    if (event == -1 || event == -2) {
-        sys_win_restore_form(form);
-        return 0;
+    (void)userdata; (void)form;
+    if (event == 2) 
+        return 1;
+
+    if (event == -2) {
+        sys_win_draw(form);
+        sys_win_force_full_redraw();
     }
-    if (event > 0) {
-        switch (event) {
-            case 2: /* OK */
-                return 1;
-                break;
-        }
-    }
+
     return 0;
 }
 
@@ -37,7 +34,7 @@ void _start(void) {
         return;
     }
     sys_win_set_icon(Form1, "C:/ICONS/METALET.ICO");
-    sys_win_set_resizable(Form1, 0);  /* About dialog should not be resizable */
+    sys_win_set_resizable(Form1, 0);
     
     for (int i = 0; i < 5; i++) {
         sys_win_add_control(Form1, &Form1_controls[i]);
@@ -60,8 +57,6 @@ void _start(void) {
     ctrl_set_text(Form1, 5, buf2);
 
     sys_win_draw(Form1);
-
-    sys_win_force_full_redraw();
 
     sys_win_run_event_loop(Form1, Form1_handle_event, NULL);
 
