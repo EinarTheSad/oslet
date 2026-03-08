@@ -4,6 +4,7 @@
 #include "../../lib/stdlib.h"
 #include "../../lib/ini.h"
 #include "../../drivers/keyboard.h"
+#include "../../lib/elf.h"  /* needed for mode detection */
 
 #define TERM_COLS  80
 #define TERM_ROWS  25
@@ -309,7 +310,7 @@ void _start(void) {
         while (args[i] == ' ' || args[i] == '\t') i++;
         
         /* Extract program path (until space or end) */
-        while (args[i] && args[i] != ' ' && args[i] != '\t' && j < sizeof(spawn_path) - 1) {
+        while (args[i] && args[i] != ' ' && args[i] != '\t' && j < (int)sizeof(spawn_path) - 1) {
             spawn_path[j++] = args[i++];
         }
         spawn_path[j] = '\0';

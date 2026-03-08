@@ -7,6 +7,8 @@
 #include "../syscall.h"
 #include "exec.h"
 
+extern int gfx_is_active(void);
+
 static task_t *task_list = NULL;
 static task_t *current_task = NULL;
 static uint32_t next_tid = 0;
@@ -380,7 +382,7 @@ int task_spawn_and_wait(const char *path, const char *args) {
     if (!path || !current_task) return -1;
     
     /* Load child process */
-    exec_image_t image;
+    exec_image_t image = {0};
     if (exec_load(path, &image) != 0) return -1;
     
     /* Free file_data - it's been copied to process memory */
@@ -447,7 +449,7 @@ int task_spawn(const char *path, const char *args) {
     if (!path || !current_task) return -1;
 
     /* Load child process */
-    exec_image_t image;
+    exec_image_t image = {0};
     if (exec_load(path, &image) != 0) return -1;
 
     /* Free file_data - it's been copied to process memory */
@@ -483,7 +485,13 @@ int task_spawn(const char *path, const char *args) {
     child->exec_base = image.base_addr;
     child->exec_end = image.end_addr;
     child->exec_slot = image.slot;
-    child->vconsole = current_task->vconsole;
+    /* Inherit vconsole from parent, but if graphics mode is not active we want
+       the child to write to the system VGA console */
+    if (gfx_is_active()) {
+        child->vconsole = current_task->vconsole;
+    } else {
+        child->vconsole = NULL;
+    }
     
     /* Store arguments */
     if (args) {

@@ -45,8 +45,24 @@ APPS_GIX_OBJS    = $(patsubst $(APPS_GIX_SRC)/%.c,$(APPS_GIX_OBJ_DIR)/%.o,$(APPS
 
 LIB_SRC          = $(SRC)/lib
 LIB_OBJ_DIR      = $(BUILD)/lib
-LIB_SRCS         = $(wildcard $(LIB_SRC)/*.c)
+# elf.c contains the ELF‑inspection helper; it is only needed by
+# a couple of graphical utilities and should not be pulled into every
+# program. filter it out of the general library list and build it on demand later.
+LIB_SRCS         = $(filter-out $(LIB_SRC)/elf.c $(LIB_SRC)/mode_marker.c,$(wildcard $(LIB_SRC)/*.c))
 LIB_OBJS         = $(patsubst $(LIB_SRC)/%.c,$(LIB_OBJ_DIR)/%.o,$(LIB_SRCS))
+
+# build the ELF helper and two copies of the mode marker
+$(LIB_OBJ_DIR)/elf.o: $(LIB_SRC)/elf.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
+$(LIB_OBJ_DIR)/mode_marker_gix.o: $(LIB_SRC)/mode_marker.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -DGIX_BUILD -c $< -o $@
+
+$(LIB_OBJ_DIR)/mode_marker_agix.o: $(LIB_SRC)/mode_marker.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -DAGIX_BUILD -c $< -o $@
 
 BUILD_BIN        = $(BUILD)/bin
 
@@ -77,11 +93,13 @@ $(SHELL_OBJ_DIR)/%.o: $(SHELL_SRC)/%.c
 
 $(APPS_AGIX_OBJ_DIR)/%.o: $(APPS_AGIX_SRC)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(BINCFLAGS) -c $< -o $@
+	# mark agix binaries so we can detect them at runtime
+	$(CC) $(BINCFLAGS) -DAGIX_BUILD -c $< -o $@
 
 $(APPS_GIX_OBJ_DIR)/%.o: $(APPS_GIX_SRC)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) $(BINCFLAGS) -c $< -o $@
+	# compile graphical programs
+	$(CC) $(BINCFLAGS) -DGIX_BUILD -c $< -o $@
 
 # Userland libraries
 $(LIB_OBJ_DIR)/%.o: $(LIB_SRC)/%.c
@@ -90,53 +108,55 @@ $(LIB_OBJ_DIR)/%.o: $(LIB_SRC)/%.c
 
 # Shells
 $(BUILD_BIN)/desktop.elf: $(SHELL_OBJ_DIR)/desktop.o \
-                          $(SHELL_OBJ_DIR)/progman.o \
-                          $(SHELL_OBJ_DIR)/startman.o \
-                          $(SHELL_OBJ_DIR)/textmode.o \
-                          $(SHELL_OBJ_DIR)/cpl_theme.o \
-                          $(SHELL_OBJ_DIR)/cpl_screen.o \
-                          $(SHELL_OBJ_DIR)/cpl_boot.o \
-                          $(SHELL_OBJ_DIR)/shutdown.o \
-                          $(SHELL_OBJ_DIR)/cpl_volume.o \
-                          $(LIB_OBJS)
+						  $(SHELL_OBJ_DIR)/progman.o \
+						  $(SHELL_OBJ_DIR)/startman.o \
+						  $(SHELL_OBJ_DIR)/textmode.o \
+						  $(SHELL_OBJ_DIR)/cpl_theme.o \
+						  $(SHELL_OBJ_DIR)/cpl_screen.o \
+						  $(SHELL_OBJ_DIR)/cpl_boot.o \
+						  $(SHELL_OBJ_DIR)/shutdown.o \
+						  $(SHELL_OBJ_DIR)/cpl_volume.o \
+						  $(LIB_OBJS) \
+						  $(LIB_OBJ_DIR)/elf.o \
+						  $(LIB_OBJ_DIR)/mode_marker_agix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
-$(BUILD_BIN)/shell.elf: $(SHELL_OBJ_DIR)/shell.o $(LIB_OBJS)
+$(BUILD_BIN)/shell.elf: $(SHELL_OBJ_DIR)/shell.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_agix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
 # Text programs
-$(BUILD_BIN)/edit.elf: $(APPS_AGIX_OBJ_DIR)/edit.o $(LIB_OBJS)
+$(BUILD_BIN)/edit.elf: $(APPS_AGIX_OBJ_DIR)/edit.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
-$(BUILD_BIN)/fetchlet.elf: $(APPS_AGIX_OBJ_DIR)/fetchlet.o $(LIB_OBJS)
+$(BUILD_BIN)/fetchlet.elf: $(APPS_AGIX_OBJ_DIR)/fetchlet.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
 # Graphical programs
-$(BUILD_BIN)/calc.elf: $(APPS_GIX_OBJ_DIR)/calc.o $(LIB_OBJS)
+$(BUILD_BIN)/calc.elf: $(APPS_GIX_OBJ_DIR)/calc.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_gix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
-$(BUILD_BIN)/clock.elf: $(APPS_GIX_OBJ_DIR)/clock.o $(LIB_OBJS)
+$(BUILD_BIN)/clock.elf: $(APPS_GIX_OBJ_DIR)/clock.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_gix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
-$(BUILD_BIN)/fileman.elf: $(APPS_GIX_OBJ_DIR)/fileman.o $(LIB_OBJS)
+$(BUILD_BIN)/fileman.elf: $(APPS_GIX_OBJ_DIR)/fileman.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
-$(BUILD_BIN)/imgview.elf: $(APPS_GIX_OBJ_DIR)/imgview.o $(LIB_OBJS)
+$(BUILD_BIN)/imgview.elf: $(APPS_GIX_OBJ_DIR)/imgview.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_gix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
-$(BUILD_BIN)/letver.elf: $(APPS_GIX_OBJ_DIR)/letver.o $(LIB_OBJS)
+$(BUILD_BIN)/letver.elf: $(APPS_GIX_OBJ_DIR)/letver.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_gix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
-$(BUILD_BIN)/terminal.elf: $(APPS_GIX_OBJ_DIR)/terminal.o $(LIB_OBJS)
+$(BUILD_BIN)/terminal.elf: $(APPS_GIX_OBJ_DIR)/terminal.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SHELL_SRC)/binary.ld -nostdlib -pie -o $@ $^
 
@@ -207,7 +227,7 @@ install: $(BUILD)/$(TARGET)
 	echo "Kernel and resources installed!"
 
 # Install programs
-binstall: $(addprefix $(BUILD_BIN)/, $(SHELL_TARGETS) $(APPS_AGIX_TARGETS) $(APPS_GIX_TARGETS))
+binstall:
 	@if [ ! -f "$(DISK)" ]; then \
 		echo "Error: $(DISK) not found. Run 'make disk' first."; \
 		exit 1; \
@@ -216,22 +236,18 @@ binstall: $(addprefix $(BUILD_BIN)/, $(SHELL_TARGETS) $(APPS_AGIX_TARGETS) $(APP
 	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
-	# Kopiowanie programów shell do katalogu głównego \
 	for f in $(SHELL_TARGETS); do \
 		if [ -f $(BUILD_BIN)/$$f ]; then \
 			sudo cp $(BUILD_BIN)/$$f mnt/; \
 		fi; \
 	done; \
-	# Kopiowanie aplikacji do katalogu START \
 	sudo mkdir -p mnt/OSLET/START; \
 	for f in $(APPS_AGIX_TARGETS) $(APPS_GIX_TARGETS); do \
 		if [ -f $(BUILD_BIN)/$$f ]; then \
 			sudo cp $(BUILD_BIN)/$$f mnt/OSLET/START/; \
 		fi; \
 	done; \
-	# Pliki konfiguracyjne i grupy \
-	sudo cp $(SRC)/ini/system.ini mnt/OSLET/ 2>/dev/null || true; \
-	sudo cp $(SRC)/ini/agix.ini mnt/OSLET/AGIX.INI 2>/dev/null || true; \
+	sudo cp $(SRC)/ini/*.[iI][nN][iI] mnt/OSLET/ 2>/dev/null || true; \
 	sudo cp $(SRC)/grp/*.[gG][rR][pP] mnt/OSLET/START/ 2>/dev/null || true; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
@@ -249,7 +265,8 @@ run: $(BUILD)/$(TARGET)
 		$(MAKE) disk; \
 	fi
 	@$(MAKE) install
-	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -vga std -rtc base=localtime -audiodev pa,id=audio0 -device sb16,audiodev=audio0
+	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -vga std -rtc base=localtime
+#-audiodev pa,id=audio0 -device sb16,audiodev=audio0
 
 # Cleaning
 clean:

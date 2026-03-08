@@ -2,6 +2,7 @@
 #include "progman.h"
 #include "../syscall.h"
 #include "../lib/string.h"
+#include "../lib/elf.h"
 
 #define CTRL_APP_BASE 100
 #define CTRL_BACK_BUTTON 99
@@ -575,8 +576,33 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
                 /* Launch internal module (propagate icon override) */
                 progman_launch_with_icon(app->path, app->icon_path);
             } else {
-                /* Launch ELF */
-                int child_tid = sys_spawn_async(app->path);
+                /* Launch ELF - use terminal if the executable is a text-mode program. */
+                int child_tid;
+                if (elf_is_textmode(app->path) == 0) {
+                    /* text-mode program: run inside a terminal window */
+                    char term_args[256];
+                    strncpy(term_args, app->path, sizeof(term_args) - 1);
+                    term_args[sizeof(term_args) - 1] = '\0';
+                    child_tid = sys_spawn_async_args("C:/OSLET/GIX/TERMINAL.ELF", term_args);
+                    if (child_tid <= 0) {
+                        /* If terminal spawn failed for some reason, try launching
+                           the program directly as a last resort */
+                        child_tid = sys_spawn_async(app->path);
+                    }
+                } else {
+                    /* graphical program can be executed directly */
+                    child_tid = sys_spawn_async(app->path);
+                    if (child_tid <= 0) {
+                        /* if direct launch failed but app looks like textmode,
+                           retry via terminal */
+                        if (elf_is_textmode(app->path) == 0) {
+                            char term_args[256];
+                            strncpy(term_args, app->path, sizeof(term_args) - 1);
+                            term_args[sizeof(term_args) - 1] = '\0';
+                            child_tid = sys_spawn_async_args("C:/OSLET/GIX/TERMINAL.ELF", term_args);
+                        }
+                    }
+                }
                 if (child_tid > 0) {
                     /* Ask kernel to set default icon for the newly spawned task */
                     sys_proc_set_icon(child_tid, app->icon_path);
