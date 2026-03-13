@@ -271,6 +271,7 @@ static int sqrt(void) {
         op = 0;
         entering_second = 0;
     }
+    return res;
 }
 
 static int handle_event(void *f, int event, void *userdata) {
