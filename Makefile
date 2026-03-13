@@ -76,6 +76,10 @@ $(CURDIR)/$(BUILD)/%.o: $(SRC)/%.S
 	@mkdir -p $(dir $@)
 	$(CC) -m32 -c $< -o $@
 
+$(CURDIR)/$(BUILD)/obj/shell/%.o: $(SRC)/shell/%.c
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
+
 shell-build:
 	@$(MAKE) -C $(SRC)/shell BUILD=$(CURDIR)/$(BUILD) BINCFLAGS="$(BINCFLAGS)"
 
@@ -91,17 +95,17 @@ lib-build:
 programs: lib-build shell-build agix-build gix-build
 
 $(BUILD_BIN)/desktop.elf: $(SHELL_OBJ_DIR)/desktop.o \
-						  $(SHELL_OBJ_DIR)/progman.o \
-						  $(SHELL_OBJ_DIR)/startman.o \
-						  $(SHELL_OBJ_DIR)/textmode.o \
-						  $(SHELL_OBJ_DIR)/cpl_theme.o \
-						  $(SHELL_OBJ_DIR)/cpl_screen.o \
-						  $(SHELL_OBJ_DIR)/cpl_boot.o \
-						  $(SHELL_OBJ_DIR)/shutdown.o \
-						  $(SHELL_OBJ_DIR)/cpl_volume.o \
-						  $(LIB_OBJS) \
-						  $(LIB_OBJ_DIR)/elf.o \
-						  $(LIB_OBJ_DIR)/mode_marker_agix.o
+					  $(SHELL_OBJ_DIR)/progman.o \
+					  $(SHELL_OBJ_DIR)/startman.o \
+					  $(SHELL_OBJ_DIR)/textmode.o \
+					  $(SHELL_OBJ_DIR)/cpl_theme.o \
+					  $(SHELL_OBJ_DIR)/cpl_screen.o \
+					  $(SHELL_OBJ_DIR)/cpl_boot.o \
+					  $(SHELL_OBJ_DIR)/shutdown.o \
+					  $(SHELL_OBJ_DIR)/cpl_volume.o \
+					  $(LIB_OBJS) \
+					  $(LIB_OBJ_DIR)/elf.o \
+					  $(LIB_OBJ_DIR)/mode_marker_agix.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $^
 
@@ -109,13 +113,20 @@ $(BUILD_BIN)/shell.elf: $(SHELL_OBJ_DIR)/shell.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $^
 
-$(BUILD_BIN)/%.elf: $(APPS_AGIX_OBJ_DIR)/%.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
-	@mkdir -p $(BUILD_BIN)
-	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $^
+GIX_TARGETS_NOEXT := $(patsubst $(SRC)/apps/gix/%.c,%,$(GIX_SRCS))
+AGIX_TARGETS_NOEXT := $(patsubst $(SRC)/apps/agix/%.c,%,$(AGIX_SRCS))
 
-$(BUILD_BIN)/%.elf: $(APPS_GIX_OBJ_DIR)/%.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
+$(GIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
+	@mkdir -p $(APPS_GIX_OBJ_DIR)
+	$(CC) $(BINCFLAGS) -DGIX_BUILD -c $(SRC)/apps/gix/$*.c -o $(APPS_GIX_OBJ_DIR)/$*.o
 	@mkdir -p $(BUILD_BIN)
-	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $^
+	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $(APPS_GIX_OBJ_DIR)/$*.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
+
+$(AGIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
+	@mkdir -p $(APPS_AGIX_OBJ_DIR)
+	$(CC) $(BINCFLAGS) -DAGIX_BUILD -c $(SRC)/apps/agix/$*.c -o $(APPS_AGIX_OBJ_DIR)/$*.o
+	@mkdir -p $(BUILD_BIN)
+	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $(APPS_AGIX_OBJ_DIR)/$*.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
 
 binaries: programs
 	@for t in $(filter-out desktop.elf shell.elf,$(SHELL_TARGETS)); do \
@@ -129,7 +140,7 @@ binaries: programs
 		$(MAKE) $(BUILD_BIN)/$$t; \
 	done
 
-$(PROGRAM_NAMES): programs
+$(PROGRAM_NAMES): lib-build
 	@$(MAKE) $(BUILD_BIN)/$@.elf
 
 $(DISK):
