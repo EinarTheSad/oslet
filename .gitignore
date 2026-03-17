@@ -3,8 +3,4 @@
 .github/
 build/
 *.img
-*.iso
-src/apps/*.elf
-src/bin/*.elf
-mnt/
 agents.md
