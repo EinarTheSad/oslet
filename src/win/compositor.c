@@ -20,8 +20,10 @@ static void compositor_draw_controls(gui_form_t *form) {
         y_offset += menubar_get_height(&form->menubar);
     }
     for (int j = 0; j < form->ctrl_count; j++) {
-        form->controls[j].is_focused =
-            (form->controls[j].id == form->focused_control_id) ? 1 : 0;
+        if (form->controls[j].type == CTRL_TEXTBOX) {
+            form->controls[j].textbox.is_focused =
+                (form->controls[j].id == form->focused_control_id) ? 1 : 0;
+        }
         ctrl_draw_with_offset(&form->win, &form->controls[j], y_offset);
     }
 }
@@ -29,7 +31,7 @@ static void compositor_draw_controls(gui_form_t *form) {
 static void compositor_draw_dropdowns(gui_form_t *form) {
     if (!form || form->win.is_minimized || !form->controls) return;
     for (int j = 0; j < form->ctrl_count; j++) {
-        if (form->controls[j].type == CTRL_DROPDOWN && form->controls[j].dropdown_open) {
+        if (form->controls[j].type == CTRL_DROPDOWN && form->controls[j].dropdown.dropdown_open) {
             win_draw_dropdown_list(&form->win, &form->controls[j]);
         }
     }
@@ -159,10 +161,10 @@ void compositor_draw_all(window_manager_t *wm) {
 
             for (int j = 0; j < form->ctrl_count; j++) {
                 gui_control_t *ctrl = &form->controls[j];
-                if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                     int abs_x = form->win.x + ctrl->x;
                     int abs_y = form->win.y + ctrl->y + 20;
-                    int list_h = ctrl->item_count * 16;
+                    int list_h = ctrl->dropdown.item_count * 16;
                     int list_y = abs_y + ctrl->h;
                     
                     /* Auto-flip: if list extends past screen bottom, render above control */
@@ -321,10 +323,10 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
     gui_control_t *ctrl = compositor_get_control_by_id(form, ctrl_id);
     if (ctrl) {
         /* Set focus state before drawing */
-        ctrl->is_focused = (ctrl->id == form->focused_control_id) ? 1 : 0;
+        ctrl->textbox.is_focused = (ctrl->id == form->focused_control_id) ? 1 : 0;
         win_draw_control(&form->win, ctrl);
         /* If it's a dropdown with an open list, redraw that too */
-        if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+        if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
             win_draw_dropdown_list(&form->win, ctrl);
         }
     }
@@ -362,7 +364,7 @@ void compositor_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, 
 
     /* Find and redraw only the dropdown list */
     gui_control_t *ctrl = compositor_get_control_by_id(form, ctrl_id);
-    if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+    if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
         win_draw_dropdown_list(&form->win, ctrl);
     }
 

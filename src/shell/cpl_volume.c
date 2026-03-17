@@ -42,7 +42,7 @@ static void update_volume_display(volume_state_t *state) {
 
     /* Put scrollbar in inverted position */
     gui_control_t *sb = sys_win_get_control(state->form, CTRL_SCROLLBAR_ID);
-    if (sb) sb->cursor_pos = 100 - state->volume;
+    if (sb) sb->scrollbar.cursor_pos = 100 - state->volume;
 
     sys_win_draw(state->form);
 }
@@ -142,11 +142,11 @@ static int volume_init(prog_instance_t *inst) {
     prog_register_window(inst, state->form);
 
     gui_control_t controls[] = {
-        { .type = CTRL_FRAME,     .x = 6,  .y = 5,  .w = 73, .h = 140, .fg = 0, .bg = 7,  .text = "Volume", .id = CTRL_FRAME_ID,     .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 0, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-        { .type = CTRL_SCROLLBAR, .x = 31, .y = 24, .w = 18, .h = 114, .fg = 0, .bg = 7,  .text = "",       .id = CTRL_SCROLLBAR_ID, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 100, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-        { .type = CTRL_LABEL,     .x = 55, .y = 24, .w = 0,  .h = 0,   .fg = 0, .bg = -1, .text = "100",     .id = CTRL_LABEL_TOP,    .font_type = 0, .font_size = 10, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 0, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-        { .type = CTRL_LABEL,     .x = 55, .y = 72, .w = 0,  .h = 0,   .fg = 0, .bg = -1, .text = "100",     .id = CTRL_LABEL_MID,    .font_type = 0, .font_size = 10, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 0, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 },
-        { .type = CTRL_LABEL,     .x = 55, .y = 120, .w = 0, .h = 0,   .fg = 0, .bg = -1, .text = "0",       .id = CTRL_LABEL_BOTTOM, .font_type = 0, .font_size = 10, .border = 0, .border_color = 0, .cached_bitmap_orig = NULL, .cached_bitmap_scaled = NULL, .pressed = 0, .checked = 0, .group_id = 0, .cursor_pos = 0, .max_length = 0, .scroll_offset = 0, .is_focused = 0, .sel_start = -1, .sel_end = -1, .dropdown_open = 0, .item_count = 0, .hovered_item = -1 }
+        { .type = CTRL_FRAME,     .x = 6,  .y = 5,  .w = 73, .h = 140, .fg = 0, .bg = 7,  .text = "Volume", .id = CTRL_FRAME_ID,     .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
+        { .type = CTRL_SCROLLBAR, .x = 31, .y = 24, .w = 18, .h = 114, .fg = 0, .bg = 7,  .text = "",       .id = CTRL_SCROLLBAR_ID, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .scrollbar = { .max_length = 100 } },
+        { .type = CTRL_LABEL,     .x = 55, .y = 24, .w = 0,  .h = 0,   .fg = 0, .bg = -1, .text = "100",     .id = CTRL_LABEL_TOP,    .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 },
+        { .type = CTRL_LABEL,     .x = 55, .y = 72, .w = 0,  .h = 0,   .fg = 0, .bg = -1, .text = "100",     .id = CTRL_LABEL_MID,    .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 },
+        { .type = CTRL_LABEL,     .x = 55, .y = 120, .w = 0, .h = 0,   .fg = 0, .bg = -1, .text = "0",       .id = CTRL_LABEL_BOTTOM, .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 }
     };
 
     for (int i = 0; i < (int)(sizeof(controls)/sizeof(controls[0])); ++i) {
@@ -177,14 +177,14 @@ static int volume_event(prog_instance_t *inst, int win_idx, int event) {
         if (!sb) return PROG_EVENT_NONE;
 
         /* inverted mapping: scrollbar=0 -> volume=100, scrollbar=100 -> volume=0 */
-        int inv = 100 - sb->cursor_pos;
+        int inv = 100 - sb->scrollbar.cursor_pos;
         if (inv < 0) inv = 0;
         if (inv > 100) inv = 100;
 
         state->volume = (uint8_t)inv;
         update_volume_display(state);
         apply_volume(state);
-        if (sb->pressed == 0) {
+        if (sb->scrollbar.pressed == 0) {
             sys_sound_play_wav("C:/SOUNDS/DING.WAV");
         }
         return PROG_EVENT_HANDLED;

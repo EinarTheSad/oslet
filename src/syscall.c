@@ -1420,15 +1420,15 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
 
     for (int i = 0; i < form->ctrl_count; i++) {
         gui_control_t *ctrl = &form->controls[i];
-        if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown_open) continue;
+        if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown.dropdown_open) continue;
 
         /* If user is dragging the dropdown scrollbar, don't overwrite that state */
-        if (ctrl->pressed && ctrl->hovered_item == -2) continue;
+        if (ctrl->dropdown.pressed && ctrl->dropdown.hovered_item == -2) continue;
 
         int abs_x = form->win.x + ctrl->x;
         int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
         int item_h = 16;
-        int list_h = ctrl->item_count * item_h;
+        int list_h = ctrl->dropdown.item_count * item_h;
         int list_y = abs_y + ctrl->h;
         
         /* Auto-flip: if list extends past screen bottom, render above control */
@@ -1444,15 +1444,15 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
         /* Calculate visible area and scrollbar requirements */
         int visible_count = list_h / item_h;
         if (visible_count < 1) visible_count = 1;
-        int max_scroll = ctrl->item_count > visible_count ? (ctrl->item_count - visible_count) : 0;
-        int need_scrollbar = ctrl->item_count > visible_count;
+        int max_scroll = ctrl->dropdown.item_count > visible_count ? (ctrl->dropdown.item_count - visible_count) : 0;
+        int need_scrollbar = ctrl->dropdown.item_count > visible_count;
         int sb_w = need_scrollbar ? 18 : 0;
         int content_w = ctrl->w - sb_w;
         
         /* Clamp dropdown_scroll */
-        if (ctrl->dropdown_scroll > (uint16_t)max_scroll) ctrl->dropdown_scroll = max_scroll;
+        if (ctrl->dropdown.dropdown_scroll > (uint16_t)max_scroll) ctrl->dropdown.dropdown_scroll = max_scroll;
 
-        int old_hover = ctrl->hovered_item;
+        int old_hover = ctrl->dropdown.hovered_item;
 
         /* Use clipped list bounds when checking hover (support inline scrollbar) */
         if (mx >= abs_x && mx < abs_x + ctrl->w && my >= list_y && my < list_y + list_h) {
@@ -1460,24 +1460,24 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
             /* If mouse is over the scrollbar area, mark with special hovered value (-2) */
             if (need_scrollbar && mx >= abs_x + content_w && mx < abs_x + ctrl->w) {
                 if (old_hover != -2) {
-                    ctrl->hovered_item = -2; /* scrollbar region */
+                    ctrl->dropdown.hovered_item = -2; /* scrollbar region */
                     needs_redraw = 1;
                 }
             } else {
                 /* Mouse over item region: translate to absolute item index using dropdown_scroll */
                 int rel = (my - list_y) / item_h;
-                int hovered = ctrl->dropdown_scroll + rel;
+                int hovered = ctrl->dropdown.dropdown_scroll + rel;
                 if (hovered < 0) hovered = 0;
-                if (hovered >= ctrl->item_count) hovered = ctrl->item_count - 1;
+                if (hovered >= ctrl->dropdown.item_count) hovered = ctrl->dropdown.item_count - 1;
                 if (hovered != old_hover) {
-                    ctrl->hovered_item = hovered;
+                    ctrl->dropdown.hovered_item = hovered;
                     needs_redraw = 1;
                 }
             }
         } else {
             /* Mouse not over dropdown list */
             if (old_hover != -1) {
-                ctrl->hovered_item = -1;
+                ctrl->dropdown.hovered_item = -1;
                 needs_redraw = 1;
             }
         }
@@ -1495,11 +1495,11 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
         /* FIRST: Check if click is on any open dropdown list (highest priority) */
         for (int i = 0; i < form->ctrl_count; i++) {
             gui_control_t *ctrl = &form->controls[i];
-            if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown_open) continue;
+            if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown.dropdown_open) continue;
 
             int abs_x = form->win.x + ctrl->x;
             int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-            int list_h = ctrl->item_count * 16;
+            int list_h = ctrl->dropdown.item_count * 16;
             int list_y = abs_y + ctrl->h;
             
             /* Auto-flip: if list extends past screen bottom, render above control */
@@ -1517,8 +1517,8 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 int item_h = 16;
                 int visible_count = list_h / item_h;
                 if (visible_count < 1) visible_count = 1;
-                int max_scroll = ctrl->item_count > visible_count ? (ctrl->item_count - visible_count) : 0;
-                int need_scrollbar = ctrl->item_count > visible_count;
+                int max_scroll = ctrl->dropdown.item_count > visible_count ? (ctrl->dropdown.item_count - visible_count) : 0;
+                int need_scrollbar = ctrl->dropdown.item_count > visible_count;
                 int sb_w = need_scrollbar ? 18 : 0;
                 int content_w = ctrl->w - sb_w;
 
@@ -1530,18 +1530,18 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     if (thumb_size > track_len) thumb_size = track_len;
                     int thumb_pos = 0;
                     if (max_scroll > 0 && track_len > thumb_size)
-                        thumb_pos = ((track_len - thumb_size) * ctrl->dropdown_scroll) / max_scroll;
+                        thumb_pos = ((track_len - thumb_size) * ctrl->dropdown.dropdown_scroll) / max_scroll;
 
                     int rel_y = my - list_y; /* position within the list box */
 
                     /* Up arrow clicked */
                     if (rel_y < arrow_size) {
-                        if (ctrl->dropdown_scroll > 0) {
-                            ctrl->dropdown_scroll--;
+                        if (ctrl->dropdown.dropdown_scroll > 0) {
+                            ctrl->dropdown.dropdown_scroll--;
                         }
                         /* show pressed state for inline scrollbar */
-                        ctrl->pressed = 1;
-                        ctrl->hovered_item = -2;
+                        ctrl->dropdown.pressed = 1;
+                        ctrl->dropdown.hovered_item = -2;
                         form->press_control_id = ctrl->id;
                         global_wm.needs_full_redraw = 1;
                         return 1;
@@ -1549,13 +1549,13 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
 
                     /* Down arrow clicked */
                     if (rel_y >= list_h - arrow_size) {
-                        if (ctrl->dropdown_scroll < max_scroll) {
-                            ctrl->dropdown_scroll++;
-                            if (ctrl->dropdown_scroll > max_scroll) ctrl->dropdown_scroll = max_scroll;
+                        if (ctrl->dropdown.dropdown_scroll < max_scroll) {
+                            ctrl->dropdown.dropdown_scroll++;
+                            if (ctrl->dropdown.dropdown_scroll > max_scroll) ctrl->dropdown.dropdown_scroll = max_scroll;
                         }
                         /* show pressed state for inline scrollbar */
-                        ctrl->pressed = 1;
-                        ctrl->hovered_item = -2;
+                        ctrl->dropdown.pressed = 1;
+                        ctrl->dropdown.hovered_item = -2;
                         form->press_control_id = ctrl->id;
                         global_wm.needs_full_redraw = 1;
                         return 1;
@@ -1565,9 +1565,9 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     int thumb_y = arrow_size + thumb_pos;
                     if (rel_y >= thumb_y && rel_y < thumb_y + thumb_size) {
                         /* Start thumb drag for inline scrollbar */
-                        ctrl->pressed = 1;
-                        ctrl->hovered_item = -2; /* indicate scrollbar interaction */
-                        ctrl->scroll_offset = rel_y - thumb_y; /* store drag offset */
+                        ctrl->dropdown.pressed = 1;
+                        ctrl->dropdown.hovered_item = -2; /* indicate scrollbar interaction */
+                        ctrl->dropdown.scroll_offset = rel_y - thumb_y; /* store drag offset */
                         form->press_control_id = ctrl->id;
                         return 1;
                     }
@@ -1583,13 +1583,13 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                             new_scroll = (rel_track * max_scroll) / (track_len - thumb_size);
                         if (new_scroll < 0) new_scroll = 0;
                         if (new_scroll > max_scroll) new_scroll = max_scroll;
-                        if (new_scroll != ctrl->dropdown_scroll) {
-                            ctrl->dropdown_scroll = new_scroll;
+                        if (new_scroll != ctrl->dropdown.dropdown_scroll) {
+                            ctrl->dropdown.dropdown_scroll = new_scroll;
                             global_wm.needs_full_redraw = 1;
                         }
-                        ctrl->pressed = 1;
-                        ctrl->hovered_item = -2;
-                        ctrl->scroll_offset = thumb_size / 2;
+                        ctrl->dropdown.pressed = 1;
+                        ctrl->dropdown.hovered_item = -2;
+                        ctrl->dropdown.scroll_offset = thumb_size / 2;
                         form->press_control_id = ctrl->id;
                         return 1;
                     }
@@ -1597,9 +1597,9 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
 
                 /* Click is in item region: map using dropdown_scroll */
                 int rel_item = (my - list_y) / item_h;
-                int clicked_item = ctrl->dropdown_scroll + rel_item;
-                if (clicked_item >= 0 && clicked_item < ctrl->item_count) {
-                    ctrl->cursor_pos = clicked_item;
+                int clicked_item = ctrl->dropdown.dropdown_scroll + rel_item;
+                if (clicked_item >= 0 && clicked_item < ctrl->dropdown.item_count) {
+                    ctrl->dropdown.cursor_pos = clicked_item;
                     /* Generate event immediately when item is selected */
                     form->clicked_id = ctrl->id;
                 }
@@ -1651,6 +1651,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
             /* For checkbox and radio - hit area includes the control and label */
             int hit_w = ctrl->w;
             int hit_h = ctrl->h;
+            int hit_y_offset = 0;
 
             /* For checkbox/radio, if w/h are just the box size, expand hit area to include text */
             if (ctrl->type == CTRL_CHECKBOX && ctrl->w == 13) {
@@ -1662,17 +1663,30 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 /* Icon hit area: 48x58 (32px icon + 24px label + 2px spacing) */
                 hit_w = ctrl->w > 0 ? ctrl->w : 48;
                 hit_h = ctrl->h > 0 ? ctrl->h : 58;
-            } else if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+            } else if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                 /* Extend hit area to include dropdown list */
-                hit_h = ctrl->h + (ctrl->item_count * 16);
+                int list_h = ctrl->dropdown.item_count * 16;
+                int list_y = abs_y + ctrl->h;
+                
+                /* Auto-flip: if list extends past screen bottom, it renders above control */
+                if (list_y + list_h > GFX_HEIGHT) {
+                    /* Rendered above - adjust hit area to start above control */
+                    hit_y_offset = -(list_h);
+                    hit_h = ctrl->h + list_h;
+                } else {
+                    /* Rendered below - extend hit area downward */
+                    hit_h = ctrl->h + list_h;
+                }
             }
-
+            
+            int hit_test_y = abs_y + (hit_y_offset != 0 ? hit_y_offset : 0);
+            
             if (mx >= abs_x && mx < abs_x + hit_w &&
-                my >= abs_y && my < abs_y + hit_h) {
+                my >= hit_test_y && my < hit_test_y + hit_h) {
                 form->press_control_id = ctrl->id;
 
                 if (ctrl->type == CTRL_BUTTON) {
-                    ctrl->pressed = 1;
+                    ctrl->button.pressed = 1;
                     return 1;  /* needs_redraw */
                 }
                 /* For label, just record the press */
@@ -1695,12 +1709,12 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     int rel_x = mx - text_area_x;
 
                     int new_pos = textbox_pos_from_x(&font_n, size, ctrl->text,
-                                                     ctrl->scroll_offset, rel_x);
-                    ctrl->cursor_pos = new_pos;
+                                                     ctrl->textbox.scroll_offset, rel_x);
+                    ctrl->textbox.cursor_pos = new_pos;
 
                     /* Start mouse selection */
-                    ctrl->sel_start = new_pos;
-                    ctrl->sel_end = new_pos;
+                    ctrl->textbox.sel_start = new_pos;
+                    ctrl->textbox.sel_end = new_pos;
                     form->textbox_selecting = 1;
 
                     return 1;  /* Always redraw to show cursor position */
@@ -1711,7 +1725,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 }
                 /* For dropdown - open it (closing/selection handled in priority check above) */
                 else if (ctrl->type == CTRL_DROPDOWN) {
-                    if (!ctrl->dropdown_open) {
+                    if (!ctrl->dropdown.dropdown_open) {
                         /* Count items in text */
                         int count = 1;
                         const char *p = ctrl->text;
@@ -1719,11 +1733,11 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                             if (*p == '|') count++;
                             p++;
                         }
-                        ctrl->item_count = count;
+                        ctrl->dropdown.item_count = count;
 
                         /* Ensure dropdown_scroll keeps current selection visible when opened */
                         int item_h = 16;
-                        int list_h = ctrl->item_count * item_h;
+                        int list_h = ctrl->dropdown.item_count * item_h;
                         int list_y = abs_y + ctrl->h;
                         if (list_y + list_h > GFX_HEIGHT) {
                             /* clipped; compute available height above control */
@@ -1732,35 +1746,35 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                         }
                         int visible_count = list_h / item_h;
                         if (visible_count < 1) visible_count = 1;
-                        int max_scroll = ctrl->item_count > visible_count ? (ctrl->item_count - visible_count) : 0;
-                        int sel = ctrl->cursor_pos;
+                        int max_scroll = ctrl->dropdown.item_count > visible_count ? (ctrl->dropdown.item_count - visible_count) : 0;
+                        int sel = ctrl->dropdown.cursor_pos;
                         if (sel < 0) sel = 0;
-                        if (sel >= ctrl->item_count) sel = ctrl->item_count - 1;
+                        if (sel >= ctrl->dropdown.item_count) sel = ctrl->dropdown.item_count - 1;
                         if (sel > visible_count - 1) {
                             int s = sel - (visible_count - 1);
                             if (s > max_scroll) s = max_scroll;
-                            ctrl->dropdown_scroll = s;
+                            ctrl->dropdown.dropdown_scroll = s;
                         } else {
-                            ctrl->dropdown_scroll = 0;
+                            ctrl->dropdown.dropdown_scroll = 0;
                         }
 
-                        ctrl->dropdown_open = 1;
+                        ctrl->dropdown.dropdown_open = 1;
                         return 1;  /* needs_redraw */
                     }
                 }
                 /* For scrollbar - detect which part was clicked (arrow, thumb, or track) */
                 else if (ctrl->type == CTRL_SCROLLBAR) {
-                    int vertical = !ctrl->checked;
+                    int vertical = !ctrl->scrollbar.checked;
                     int arrow_size = vertical ? ctrl->w : ctrl->h;
                     int track_len = vertical ? (ctrl->h - 2 * arrow_size) : (ctrl->w - 2 * arrow_size);
                     int thumb_size = 20;
                     if (thumb_size > track_len) thumb_size = track_len;
-                    int max_val = ctrl->max_length > 0 ? ctrl->max_length : 100;
+                    int max_val = ctrl->scrollbar.max_length > 0 ? ctrl->scrollbar.max_length : 100;
                     
                     /* Calculate current thumb position */
                     int thumb_pos = 0;
                     if (max_val > 0 && track_len > thumb_size) {
-                        thumb_pos = ((track_len - thumb_size) * ctrl->cursor_pos) / max_val;
+                        thumb_pos = ((track_len - thumb_size) * ctrl->scrollbar.cursor_pos) / max_val;
                     }
                     
                     if (vertical) {
@@ -1771,32 +1785,32 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                         
                         if (my >= up_y && my < up_y + arrow_size) {
                             /* Up arrow clicked */
-                            ctrl->hovered_item = 0;
-                            ctrl->pressed = 1;
-                            if (ctrl->cursor_pos > 0) ctrl->cursor_pos--;
+                            ctrl->scrollbar.hovered_item = 0;
+                            ctrl->scrollbar.pressed = 1;
+                            if (ctrl->scrollbar.cursor_pos > 0) ctrl->scrollbar.cursor_pos--;
                             return 1;
                         } else if (my >= down_y && my < down_y + arrow_size) {
                             /* Down arrow clicked */
-                            ctrl->hovered_item = 2;
-                            ctrl->pressed = 1;
-                            if (ctrl->cursor_pos < max_val) ctrl->cursor_pos++;
+                            ctrl->scrollbar.hovered_item = 2;
+                            ctrl->scrollbar.pressed = 1;
+                            if (ctrl->scrollbar.cursor_pos < max_val) ctrl->scrollbar.cursor_pos++;
                             return 1;
                         } else if (my >= thumb_y && my < thumb_y + thumb_size) {
                             /* Thumb clicked - start dragging, store offset */
-                            ctrl->hovered_item = 1;
-                            ctrl->pressed = 1;
-                            ctrl->scroll_offset = my - thumb_y; /* Store drag offset */
+                            ctrl->scrollbar.hovered_item = 1;
+                            ctrl->scrollbar.pressed = 1;
+                            ctrl->scrollbar.scroll_offset = my - thumb_y; /* Store drag offset */
                             return 1;
                         } else if (my >= track_y && my < track_y + track_len) {
                             /* Track clicked (not on thumb) - jump to position */
                             int rel_y = my - track_y - thumb_size / 2; /* Center thumb on click */
                             if (rel_y < 0) rel_y = 0;
                             if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
-                            ctrl->cursor_pos = (rel_y * max_val) / (track_len - thumb_size);
-                            if (ctrl->cursor_pos > max_val) ctrl->cursor_pos = max_val;
-                            ctrl->hovered_item = 1;
-                            ctrl->pressed = 1;
-                            ctrl->scroll_offset = thumb_size / 2; /* Store drag offset at center */
+                            ctrl->scrollbar.cursor_pos = (rel_y * max_val) / (track_len - thumb_size);
+                            if (ctrl->scrollbar.cursor_pos > max_val) ctrl->scrollbar.cursor_pos = max_val;
+                            ctrl->scrollbar.hovered_item = 1;
+                            ctrl->scrollbar.pressed = 1;
+                            ctrl->scrollbar.scroll_offset = thumb_size / 2; /* Store drag offset at center */
                             return 1;
                         }
                     } else {
@@ -1808,32 +1822,32 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                         
                         if (mx >= left_x && mx < left_x + arrow_size) {
                             /* Left arrow clicked */
-                            ctrl->hovered_item = 0;
-                            ctrl->pressed = 1;
-                            if (ctrl->cursor_pos > 0) ctrl->cursor_pos--;
+                            ctrl->scrollbar.hovered_item = 0;
+                            ctrl->scrollbar.pressed = 1;
+                            if (ctrl->scrollbar.cursor_pos > 0) ctrl->scrollbar.cursor_pos--;
                             return 1;
                         } else if (mx >= right_x && mx < right_x + arrow_size) {
                             /* Right arrow clicked */
-                            ctrl->hovered_item = 2;
-                            ctrl->pressed = 1;
-                            if (ctrl->cursor_pos < max_val) ctrl->cursor_pos++;
+                            ctrl->scrollbar.hovered_item = 2;
+                            ctrl->scrollbar.pressed = 1;
+                            if (ctrl->scrollbar.cursor_pos < max_val) ctrl->scrollbar.cursor_pos++;
                             return 1;
                         } else if (mx >= thumb_x && mx < thumb_x + thumb_size) {
                             /* Thumb clicked - start dragging */
-                            ctrl->hovered_item = 1;
-                            ctrl->pressed = 1;
-                            ctrl->scroll_offset = mx - thumb_x; /* Store drag offset */
+                            ctrl->scrollbar.hovered_item = 1;
+                            ctrl->scrollbar.pressed = 1;
+                            ctrl->scrollbar.scroll_offset = mx - thumb_x; /* Store drag offset */
                             return 1;
                         } else if (mx >= track_x && mx < track_x + track_len) {
                             /* Track clicked (not on thumb) - jump to position */
                             int rel_x = mx - track_x - thumb_size / 2;
                             if (rel_x < 0) rel_x = 0;
                             if (rel_x > track_len - thumb_size) rel_x = track_len - thumb_size;
-                            ctrl->cursor_pos = (rel_x * max_val) / (track_len - thumb_size);
-                            if (ctrl->cursor_pos > max_val) ctrl->cursor_pos = max_val;
-                            ctrl->hovered_item = 1;
-                            ctrl->pressed = 1;
-                            ctrl->scroll_offset = thumb_size / 2;
+                            ctrl->scrollbar.cursor_pos = (rel_x * max_val) / (track_len - thumb_size);
+                            if (ctrl->scrollbar.cursor_pos > max_val) ctrl->scrollbar.cursor_pos = max_val;
+                            ctrl->scrollbar.hovered_item = 1;
+                            ctrl->scrollbar.pressed = 1;
+                            ctrl->scrollbar.scroll_offset = thumb_size / 2;
                             return 1;
                         }
                     }
@@ -1853,8 +1867,8 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
     if (form->press_control_id == -1 && form->controls) {
         int deselected = 0;
         for (int i = 0; i < form->ctrl_count; i++) {
-            if (form->controls[i].type == CTRL_ICON && form->controls[i].checked) {
-                form->controls[i].checked = 0;
+            if (form->controls[i].type == CTRL_ICON && form->controls[i].icon.checked) {
+                form->controls[i].icon.checked = 0;
                 deselected = 1;
             }
         }
@@ -1879,10 +1893,10 @@ static gui_control_t* find_control_by_id(gui_form_t *form, int16_t id) {
 
 /* Helper: delete selected text in textbox, return 1 if deleted */
 static int textbox_delete_selection(gui_control_t *ctrl) {
-    if (ctrl->sel_start < 0 || ctrl->sel_start == ctrl->sel_end) return 0;
+    if (ctrl->textbox.sel_start < 0 || ctrl->textbox.sel_start == ctrl->textbox.sel_end) return 0;
 
-    int sel_min = ctrl->sel_start < ctrl->sel_end ? ctrl->sel_start : ctrl->sel_end;
-    int sel_max = ctrl->sel_start > ctrl->sel_end ? ctrl->sel_start : ctrl->sel_end;
+    int sel_min = ctrl->textbox.sel_start < ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
+    int sel_max = ctrl->textbox.sel_start > ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
 
     int text_len = 0;
     while (ctrl->text[text_len]) text_len++;
@@ -1893,9 +1907,9 @@ static int textbox_delete_selection(gui_control_t *ctrl) {
         ctrl->text[i] = ctrl->text[i + del_count];
     }
 
-    ctrl->cursor_pos = sel_min;
-    ctrl->sel_start = -1;
-    ctrl->sel_end = -1;
+    ctrl->textbox.cursor_pos = sel_min;
+    ctrl->textbox.sel_start = -1;
+    ctrl->textbox.sel_end = -1;
     return 1;
 }
 
@@ -1912,57 +1926,57 @@ static int pump_handle_keyboard(gui_form_t *form) {
     int text_len = 0;
     while (ctrl->text[text_len]) text_len++;
 
-    int max_len = ctrl->max_length > 0 ? ctrl->max_length : 255;
+    int max_len = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
     int needs_redraw = 0;
-    int has_selection = (ctrl->sel_start >= 0 && ctrl->sel_start != ctrl->sel_end);
+    int has_selection = (ctrl->textbox.sel_start >= 0 && ctrl->textbox.sel_start != ctrl->textbox.sel_end);
 
     /* Handle special keys */
     if (key == KEY_LEFT) {
         if (has_selection) {
             /* Move cursor to start of selection, clear selection */
-            int sel_min = ctrl->sel_start < ctrl->sel_end ? ctrl->sel_start : ctrl->sel_end;
-            ctrl->cursor_pos = sel_min;
-            ctrl->sel_start = -1;
-            ctrl->sel_end = -1;
-        } else if (ctrl->cursor_pos > 0) {
-            ctrl->cursor_pos--;
+            int sel_min = ctrl->textbox.sel_start < ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
+            ctrl->textbox.cursor_pos = sel_min;
+            ctrl->textbox.sel_start = -1;
+            ctrl->textbox.sel_end = -1;
+        } else if (ctrl->textbox.cursor_pos > 0) {
+            ctrl->textbox.cursor_pos--;
         }
         needs_redraw = 1;
     }
     else if (key == KEY_RIGHT) {
         if (has_selection) {
             /* Move cursor to end of selection, clear selection */
-            int sel_max = ctrl->sel_start > ctrl->sel_end ? ctrl->sel_start : ctrl->sel_end;
-            ctrl->cursor_pos = sel_max;
-            ctrl->sel_start = -1;
-            ctrl->sel_end = -1;
-        } else if (ctrl->cursor_pos < text_len) {
-            ctrl->cursor_pos++;
+            int sel_max = ctrl->textbox.sel_start > ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
+            ctrl->textbox.cursor_pos = sel_max;
+            ctrl->textbox.sel_start = -1;
+            ctrl->textbox.sel_end = -1;
+        } else if (ctrl->textbox.cursor_pos < text_len) {
+            ctrl->textbox.cursor_pos++;
         }
         needs_redraw = 1;
     }
     else if (key == KEY_HOME) {
-        ctrl->cursor_pos = 0;
-        ctrl->sel_start = -1;
-        ctrl->sel_end = -1;
+        ctrl->textbox.cursor_pos = 0;
+        ctrl->textbox.sel_start = -1;
+        ctrl->textbox.sel_end = -1;
         needs_redraw = 1;
     }
     else if (key == KEY_END) {
-        ctrl->cursor_pos = text_len;
-        ctrl->sel_start = -1;
-        ctrl->sel_end = -1;
+        ctrl->textbox.cursor_pos = text_len;
+        ctrl->textbox.sel_start = -1;
+        ctrl->textbox.sel_end = -1;
         needs_redraw = 1;
     }
     else if (key == '\b') {  /* Backspace */
         if (has_selection) {
             textbox_delete_selection(ctrl);
             needs_redraw = 1;
-        } else if (ctrl->cursor_pos > 0) {
+        } else if (ctrl->textbox.cursor_pos > 0) {
             /* Shift text left from cursor position */
-            for (int i = ctrl->cursor_pos - 1; i < text_len; i++) {
+            for (int i = ctrl->textbox.cursor_pos - 1; i < text_len; i++) {
                 ctrl->text[i] = ctrl->text[i + 1];
             }
-            ctrl->cursor_pos--;
+            ctrl->textbox.cursor_pos--;
             needs_redraw = 1;
         }
     }
@@ -1970,9 +1984,9 @@ static int pump_handle_keyboard(gui_form_t *form) {
         if (has_selection) {
             textbox_delete_selection(ctrl);
             needs_redraw = 1;
-        } else if (ctrl->cursor_pos < text_len) {
+        } else if (ctrl->textbox.cursor_pos < text_len) {
             /* Shift text left from position after cursor */
-            for (int i = ctrl->cursor_pos; i < text_len; i++) {
+            for (int i = ctrl->textbox.cursor_pos; i < text_len; i++) {
                 ctrl->text[i] = ctrl->text[i + 1];
             }
             needs_redraw = 1;
@@ -1988,8 +2002,8 @@ static int pump_handle_keyboard(gui_form_t *form) {
     }
     else if (key == KEY_ESC) {
         /* Escape - clear selection and focus */
-        ctrl->sel_start = -1;
-        ctrl->sel_end = -1;
+        ctrl->textbox.sel_start = -1;
+        ctrl->textbox.sel_end = -1;
         form->focused_control_id = -1;
         needs_redraw = 1;
     }
@@ -2005,11 +2019,11 @@ static int pump_handle_keyboard(gui_form_t *form) {
 
         if (text_len < max_len - 1) {
             /* Shift text right from cursor position */
-            for (int i = text_len; i >= ctrl->cursor_pos; i--) {
+            for (int i = text_len; i >= ctrl->textbox.cursor_pos; i--) {
                 ctrl->text[i + 1] = ctrl->text[i];
             }
-            ctrl->text[ctrl->cursor_pos] = (char)key;
-            ctrl->cursor_pos++;
+            ctrl->text[ctrl->textbox.cursor_pos] = (char)key;
+            ctrl->textbox.cursor_pos++;
             needs_redraw = 1;
         }
     }
@@ -2304,10 +2318,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         /* Check if click is on an open dropdown list */
                         for (int i = 0; i < form->ctrl_count; i++) {
                             gui_control_t *ctrl = &form->controls[i];
-                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                                 int abs_x = form->win.x + ctrl->x;
                                 int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-                                int list_h = ctrl->item_count * 16;
+                                int list_h = ctrl->dropdown.item_count * 16;
                                 int list_y = abs_y + ctrl->h;
                                 
                                 /* Account for auto-flip */
@@ -2374,9 +2388,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     if (form->controls) {
                         for (int i = 0; i < form->ctrl_count; i++) {
                             gui_control_t *ctrl = &form->controls[i];
-                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                                 int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-                                int list_h = ctrl->item_count * 16;
+                                int list_h = ctrl->dropdown.item_count * 16;
                                 int list_y = abs_y + ctrl->h;
                                 
                                 /* Account for auto-flip */
@@ -2419,10 +2433,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     if (form->controls) {
                         for (int i = 0; i < form->ctrl_count; i++) {
                             gui_control_t *ctrl = &form->controls[i];
-                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                            if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                                 int abs_x = form->win.x + ctrl->x;
                                 int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-                                int list_h = ctrl->item_count * 16;
+                                int list_h = ctrl->dropdown.item_count * 16;
                                 int list_y = abs_y + ctrl->h;
                                 
                                 /* Account for auto-flip */
@@ -2521,7 +2535,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (ctrl->id == form->press_control_id) {
                             /* Clear pressed state for buttons */
                             if (ctrl->type == CTRL_BUTTON) {
-                                ctrl->pressed = 0;
+                                ctrl->button.pressed = 0;
                                 needs_redraw = 1;  /* Button visual changed */
                                 if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                             }
@@ -2543,9 +2557,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 /* Icon hit area: 48x58 (32px icon + 24px label + 2px spacing) */
                                 hit_w = ctrl->w > 0 ? ctrl->w : 48;
                                 hit_h = ctrl->h > 0 ? ctrl->h : 58;
-                            } else if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                            } else if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                                 /* Extended hit area when dropdown is open */
-                                hit_h = ctrl->h + (ctrl->item_count * 16);
+                                hit_h = ctrl->h + (ctrl->dropdown.item_count * 16);
                             }
 
                             /* Check if release is within same control */
@@ -2554,7 +2568,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                                 /* Handle checkbox toggle */
                                 if (ctrl->type == CTRL_CHECKBOX) {
-                                    ctrl->checked = !ctrl->checked;
+                                    ctrl->checkbox.checked = !ctrl->checkbox.checked;
                                     needs_redraw = 1;
                                     if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                                     /* Don't set clicked_id for checkbox - just redraw */
@@ -2566,13 +2580,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     for (int j = 0; j < form->ctrl_count; j++) {
                                         gui_control_t *other = &form->controls[j];
                                         if (other->type == CTRL_RADIOBUTTON &&
-                                            other->group_id == ctrl->group_id) {
-                                            other->checked = 0;
+                                            other->checkbox.group_id == ctrl->checkbox.group_id) {
+                                            other->icon.checked = 0;
                                             if (changed_count < 32) changed_controls[changed_count++] = other->id;
                                         }
                                     }
                                     /* Check this radio button */
-                                    ctrl->checked = 1;
+                                    ctrl->checkbox.checked = 1;
                                     needs_redraw = 1;
                                     /* Don't set clicked_id for radio - just redraw */
                                 }
@@ -2585,7 +2599,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     for (int j = 0; j < form->ctrl_count; j++) {
                                         gui_control_t *other = &form->controls[j];
                                         if (other->type == CTRL_ICON && other->id != ctrl->id) {
-                                            other->checked = 0;
+                                            other->icon.checked = 0;
                                             if (changed_count < 32) changed_controls[changed_count++] = other->id;
                                         }
                                     }
@@ -2594,13 +2608,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     if (form->last_icon_click_id == ctrl->id &&
                                         (now - form->last_icon_click_time) < WM_DOUBLECLICK_TICKS) {
                                         /* Double-click - activate the icon and deselect it */
-                                        ctrl->checked = 0;
+                                        ctrl->icon.checked = 0;
                                         form->clicked_id = ctrl->id;
                                         event_count = 1;
                                         form->last_icon_click_id = -1;
                                     } else {
                                         /* Single click - just select */
-                                        ctrl->checked = 1;
+                                        ctrl->icon.checked = 1;
                                         form->last_icon_click_time = now;
                                         form->last_icon_click_id = ctrl->id;
                                     }
@@ -2612,8 +2626,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 else if (ctrl->type == CTRL_DROPDOWN) {
                                     /* Dropdown click was already handled in press, just generate event */
                                     /* Clear any temporary pressed state used for inline scrollbar dragging */
-                                    ctrl->pressed = 0;
-                                    if (ctrl->hovered_item == -2) ctrl->hovered_item = -1;
+                                    ctrl->dropdown.pressed = 0;
+                                    if (ctrl->dropdown.hovered_item == -2) ctrl->dropdown.hovered_item = -1;
                                     form->clicked_id = ctrl->id;
                                     event_count = 1;
                                     needs_redraw = 1;
@@ -2622,7 +2636,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                                 /* Handle scrollbar - clear pressed state and generate event */
                                 else if (ctrl->type == CTRL_SCROLLBAR) {
-                                    ctrl->pressed = 0;
+                                    ctrl->scrollbar.pressed = 0;
                                     form->clicked_id = ctrl->id;
                                     event_count = 1;
                                     needs_redraw = 1;
@@ -2643,20 +2657,20 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* Clear all pressed states on any button that might still be pressed */
                 if (form->controls) {
                     for (int i = 0; i < form->ctrl_count; i++) {
-                        if (form->controls[i].type == CTRL_BUTTON && form->controls[i].pressed) {
-                            form->controls[i].pressed = 0;
+                        if (form->controls[i].type == CTRL_BUTTON && form->controls[i].button.pressed) {
+                            form->controls[i].button.pressed = 0;
                             needs_redraw = 1;  /* Button visual changed */
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
-                        if (form->controls[i].type == CTRL_SCROLLBAR && form->controls[i].pressed) {
-                            form->controls[i].pressed = 0;
+                        if (form->controls[i].type == CTRL_SCROLLBAR && form->controls[i].scrollbar.pressed) {
+                            form->controls[i].scrollbar.pressed = 0;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
                         /* Clear dropdown inline scrollbar pressed state */
-                        if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].pressed) {
-                            form->controls[i].pressed = 0;
-                            if (form->controls[i].hovered_item == -2) form->controls[i].hovered_item = -1;
+                        if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown.pressed) {
+                            form->controls[i].dropdown.pressed = 0;
+                            if (form->controls[i].dropdown.hovered_item == -2) form->controls[i].dropdown.hovered_item = -1;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
@@ -2748,12 +2762,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     int rel_x = mx - text_area_x;
 
                     int new_pos = textbox_pos_from_x(&font_n, size, ctrl->text,
-                                                     ctrl->scroll_offset, rel_x);
+                                                     ctrl->textbox.scroll_offset, rel_x);
 
                     /* Update selection end and cursor */
-                    if (new_pos != ctrl->sel_end) {
-                        ctrl->sel_end = new_pos;
-                        ctrl->cursor_pos = new_pos;
+                    if (new_pos != ctrl->textbox.sel_end) {
+                        ctrl->textbox.sel_end = new_pos;
+                        ctrl->textbox.cursor_pos = new_pos;
                         needs_redraw = 1;
                         if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                     }
@@ -2766,9 +2780,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* If sel_start == sel_end, clear selection */
                 gui_control_t *ctrl = find_control_by_id(form, form->focused_control_id);
                 if (ctrl && ctrl->type == CTRL_TEXTBOX) {
-                    if (ctrl->sel_start == ctrl->sel_end) {
-                        ctrl->sel_start = -1;
-                        ctrl->sel_end = -1;
+                    if (ctrl->textbox.sel_start == ctrl->textbox.sel_end) {
+                        ctrl->textbox.sel_start = -1;
+                        ctrl->textbox.sel_end = -1;
                     }
                 }
             }
@@ -2778,26 +2792,26 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 gui_control_t *ctrl = find_control_by_id(form, form->press_control_id);
 
                 /* Regular scrollbar control dragging */
-                if (ctrl && ctrl->type == CTRL_SCROLLBAR && ctrl->hovered_item == 1 && ctrl->pressed) {
-                    int vertical = !ctrl->checked;
+                if (ctrl && ctrl->type == CTRL_SCROLLBAR && ctrl->scrollbar.hovered_item == 1 && ctrl->scrollbar.pressed) {
+                    int vertical = !ctrl->scrollbar.checked;
                     int arrow_size = vertical ? ctrl->w : ctrl->h;
                     int track_len = vertical ? (ctrl->h - 2 * arrow_size) : (ctrl->w - 2 * arrow_size);
                     int thumb_size = 20;
                     if (thumb_size > track_len) thumb_size = track_len;
-                    int max_val = ctrl->max_length > 0 ? ctrl->max_length : 100;
+                    int max_val = ctrl->scrollbar.max_length > 0 ? ctrl->scrollbar.max_length : 100;
                     
                     int abs_x = form->win.x + ctrl->x;
                     int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
                     
                     if (vertical) {
                         int track_y = abs_y + arrow_size;
-                        int rel_y = my - track_y - ctrl->scroll_offset; /* Account for drag offset */
+                        int rel_y = my - track_y - ctrl->scrollbar.scroll_offset; /* Account for drag offset */
                         if (rel_y < 0) rel_y = 0;
                         if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
                         int new_val = (rel_y * max_val) / (track_len - thumb_size);
                         if (new_val > max_val) new_val = max_val;
-                        if (new_val != ctrl->cursor_pos) {
-                            ctrl->cursor_pos = new_val;
+                        if (new_val != ctrl->scrollbar.cursor_pos) {
+                            ctrl->scrollbar.cursor_pos = new_val;
                             form->clicked_id = ctrl->id;
                             event_count = 1; /* Generate event during drag */
                             needs_redraw = 1;
@@ -2805,13 +2819,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         }
                     } else {
                         int track_x = abs_x + arrow_size;
-                        int rel_x = mx - track_x - ctrl->scroll_offset;
+                        int rel_x = mx - track_x - ctrl->scrollbar.scroll_offset;
                         if (rel_x < 0) rel_x = 0;
                         if (rel_x > track_len - thumb_size) rel_x = track_len - thumb_size;
                         int new_val = (rel_x * max_val) / (track_len - thumb_size);
                         if (new_val > max_val) new_val = max_val;
-                        if (new_val != ctrl->cursor_pos) {
-                            ctrl->cursor_pos = new_val;
+                        if (new_val != ctrl->scrollbar.cursor_pos) {
+                            ctrl->scrollbar.cursor_pos = new_val;
                             form->clicked_id = ctrl->id;
                             event_count = 1; /* Generate event during drag */
                             needs_redraw = 1;
@@ -2820,11 +2834,11 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     }
                 }
 
-                /* Dropdown inline scrollbar dragging (ctrl->hovered_item == -2 used as special flag) */
-                if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open && ctrl->pressed && ctrl->hovered_item == -2) {
+                /* Dropdown inline scrollbar dragging (ctrl->scrollbar.hovered_item == -2 used as special flag) */
+                if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open && ctrl->dropdown.pressed && ctrl->dropdown.hovered_item == -2) {
                     int item_h = 16;
                     int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-                    int list_h = ctrl->item_count * item_h;
+                    int list_h = ctrl->dropdown.item_count * item_h;
                     int list_y = abs_y + ctrl->h;
 
                     /* Auto-flip and clipping like draw routine */
@@ -2839,7 +2853,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                     int visible_count = list_h / item_h;
                     if (visible_count < 1) visible_count = 1;
-                    int max_val = ctrl->item_count > visible_count ? (ctrl->item_count - visible_count) : 0;
+                    int max_val = ctrl->dropdown.item_count > visible_count ? (ctrl->dropdown.item_count - visible_count) : 0;
                     if (max_val > 0) {
                         int sb_w = 18;
                         int arrow_size = sb_w;
@@ -2848,14 +2862,14 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (thumb_size > track_len) thumb_size = track_len;
                         int track_y = list_y + arrow_size;
 
-                        int rel_y = my - track_y - ctrl->scroll_offset; /* scroll_offset used as drag offset */
+                        int rel_y = my - track_y - ctrl->dropdown.scroll_offset; /* scroll_offset used as drag offset */
                         if (rel_y < 0) rel_y = 0;
                         if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
                         int new_val = 0;
                         if (track_len - thumb_size > 0) new_val = (rel_y * max_val) / (track_len - thumb_size);
                         if (new_val > max_val) new_val = max_val;
-                        if (new_val != ctrl->dropdown_scroll) {
-                            ctrl->dropdown_scroll = new_val;
+                        if (new_val != ctrl->dropdown.dropdown_scroll) {
+                            ctrl->dropdown.dropdown_scroll = new_val;
                             form->clicked_id = ctrl->id;
                             event_count = 1; /* Generate event during drag */
                             needs_redraw = 1;
@@ -2870,7 +2884,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 needs_redraw = 1;
                 /* Find the dropdown control that's open and mark it changed */
                 for (int i = 0; i < form->ctrl_count; i++) {
-                    if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown_open) {
+                    if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown.dropdown_open) {
                         if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         break;
                     }
@@ -2898,7 +2912,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         for (int i = 0; i < changed_count; i++) {
                             /* Check if this is a dropdown with hover change - only redraw list */
                             gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
-                            if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                            if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                                 compositor_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
                             } else {
                                 compositor_draw_control_by_id(&global_wm, form, changed_controls[i]);
@@ -2924,7 +2938,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     for (int i = 0; i < changed_count; i++) {
                         /* Check if this is a dropdown with hover change - only redraw list */
                         gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
-                        if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown_open) {
+                        if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                             compositor_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
                         } else {
                             compositor_draw_control_by_id(&global_wm, form, changed_controls[i]);
@@ -2960,51 +2974,83 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (form->ctrl_count < WM_MAX_CONTROLS_PER_FORM) {
                 /* Copy the control data */
                 gui_control_t *dest = &form->controls[form->ctrl_count];
+                dest->id = ctrl->id;
                 dest->type = ctrl->type;
+                dest->font_type = ctrl->font_type;
+                dest->font_size = ctrl->font_size;
                 dest->x = ctrl->x;
                 dest->y = ctrl->y;
                 dest->w = ctrl->w;
                 dest->h = ctrl->h;
                 dest->fg = ctrl->fg;
                 dest->bg = ctrl->bg;
-                dest->id = ctrl->id;
-                dest->font_type = ctrl->font_type;
-                dest->font_size = ctrl->font_size;
                 dest->border = ctrl->border;
                 dest->border_color = ctrl->border_color;
-                dest->cached_bitmap_orig = NULL;
-                dest->cached_bitmap_scaled = NULL;
-                dest->image_mode = ctrl->image_mode;
-                dest->pressed = 0;
-                dest->checked = ctrl->checked;
-                dest->group_id = ctrl->group_id;
-                /* Textbox-specific fields */
-                dest->cursor_pos = ctrl->cursor_pos;
-                dest->max_length = ctrl->max_length > 0 ? ctrl->max_length : 255;
-                dest->scroll_offset = 0;
-                dest->is_focused = 0;
-                dest->sel_start = -1;
-                dest->sel_end = -1;
-                /* Dropdown-specific fields - ensure closed on init */
-                dest->dropdown_open = 0;
-                dest->item_count = ctrl->item_count;
-                dest->hovered_item = -1;
-                /* Ensure saved dropdown bg is cleared for the new control */
-                dest->dropdown_saved_bg = NULL;
-                dest->dropdown_saved_w = 0;
-                dest->dropdown_saved_h = 0;
-                dest->dropdown_saved_x = 0;
-                dest->dropdown_saved_y = 0;
-                /* Initialize load_failed to prevent garbage data from blocking bitmap loads */
-                dest->load_failed = 0;
-
                 strcpy_s(dest->text, ctrl->text, 256);
+                
+                /* Initialize union based on control type */
+                switch (dest->type) {
+                    case CTRL_BUTTON:
+                        dest->button.cached_bitmap_orig = NULL;
+                        dest->button.pressed = 0;
+                        break;
+                    case CTRL_PICTUREBOX:
+                        dest->picturebox.cached_bitmap_orig = NULL;
+                        dest->picturebox.cached_bitmap_scaled = NULL;
+                        dest->picturebox.image_mode = ctrl->picturebox.image_mode;
+                        dest->picturebox.load_failed = 0;
+                        break;
+                    case CTRL_CHECKBOX:
+                        dest->checkbox.checked = 0;
+                        dest->checkbox.group_id = ctrl->checkbox.group_id;
+                        break;
+                    case CTRL_RADIOBUTTON:
+                        dest->radiobutton.checked = 0;
+                        dest->radiobutton.group_id = ctrl->radiobutton.group_id;
+                        break;
+                    case CTRL_TEXTBOX:
+                        dest->textbox.cursor_pos = 0;
+                        dest->textbox.max_length = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
+                        dest->textbox.scroll_offset = 0;
+                        dest->textbox.is_focused = 0;
+                        dest->textbox.sel_start = -1;
+                        dest->textbox.sel_end = -1;
+                        break;
+                    case CTRL_DROPDOWN:
+                        dest->dropdown.dropdown_open = 0;
+                        dest->dropdown.item_count = ctrl->dropdown.item_count;
+                        dest->dropdown.hovered_item = -1;
+                        dest->dropdown.dropdown_saved_bg = NULL;
+                        dest->dropdown.dropdown_saved_w = 0;
+                        dest->dropdown.dropdown_saved_h = 0;
+                        dest->dropdown.dropdown_saved_x = 0;
+                        dest->dropdown.dropdown_saved_y = 0;
+                        dest->dropdown.dropdown_scroll = 0;
+                        dest->dropdown.pressed = 0;
+                        dest->dropdown.scroll_offset = 0;
+                        dest->dropdown.cursor_pos = 0;
+                        break;
+                    case CTRL_SCROLLBAR:
+                        dest->scrollbar.hovered_item = -1;
+                        dest->scrollbar.pressed = 0;
+                        dest->scrollbar.cursor_pos = 0;
+                        dest->scrollbar.max_length = 100;
+                        dest->scrollbar.checked = 0;
+                        break;
+                    case CTRL_ICON:
+                        dest->icon.cached_bitmap_orig = NULL;
+                        dest->icon.checked = 0;
+                        break;
+                    default:
+                        /* No special initialization */
+                        break;
+                }
 
-                /* For textbox, set cursor to end of initial text */
+                /* For textbox, update cursor to end of text */
                 if (dest->type == CTRL_TEXTBOX) {
                     int len = 0;
                     while (dest->text[len]) len++;
-                    dest->cursor_pos = len;
+                    dest->textbox.cursor_pos = len;
                 }
 
                 form->ctrl_count++;
@@ -3037,20 +3083,46 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Free cached bitmaps in controls and restore any open dropdown backgrounds */
             if (form->controls) {
                 for (int i = 0; i < form->ctrl_count; i++) {
-                    if (form->controls[i].cached_bitmap_orig) {
-                        bitmap_free(form->controls[i].cached_bitmap_orig);
-                        form->controls[i].cached_bitmap_orig = NULL;
-                    }
-                    if (form->controls[i].cached_bitmap_scaled) {
-                        bitmap_free(form->controls[i].cached_bitmap_scaled);
-                        form->controls[i].cached_bitmap_scaled = NULL;
-                    }
-                    /* If a dropdown was left open, restore its saved region */
-                    if (form->controls[i].dropdown_saved_bg) {
-                        ctrl_hide_dropdown_list(&form->win, &form->controls[i]);
+                    gui_control_t *ctrl = &form->controls[i];
+
+                    switch (ctrl->type) {
+                        case CTRL_BUTTON:
+                            if (ctrl->button.cached_bitmap_orig) {
+                                bitmap_free(ctrl->button.cached_bitmap_orig);
+                                ctrl->button.cached_bitmap_orig = NULL;
+                            }
+                            break;
+
+                        case CTRL_PICTUREBOX:
+                            if (ctrl->picturebox.cached_bitmap_orig) {
+                                bitmap_free(ctrl->picturebox.cached_bitmap_orig);
+                                ctrl->picturebox.cached_bitmap_orig = NULL;
+                            }
+                            if (ctrl->picturebox.cached_bitmap_scaled) {
+                                bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
+                                ctrl->picturebox.cached_bitmap_scaled = NULL;
+                            }
+                            break;
+
+                        case CTRL_ICON:
+                            if (ctrl->icon.cached_bitmap_orig) {
+                                bitmap_free(ctrl->icon.cached_bitmap_orig);
+                                ctrl->icon.cached_bitmap_orig = NULL;
+                            }
+                            break;
+
+                        case CTRL_DROPDOWN:
+                            if (ctrl->dropdown.dropdown_saved_bg) {
+                                ctrl_hide_dropdown_list(&form->win, ctrl);
+                            }
+                            break;
+
+                        default:
+                            break;
                     }
                 }
                 kfree(form->controls);
+                form->controls = NULL;
             }
 
             /* Destroy window menu */
@@ -3120,64 +3192,85 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (!ctrl) return 0;
 
             switch (prop_id) {
-                case 0: /* PROP_TEXT */
+                case 0: /* PROP_TEXT - universal */
                     if (value) strcpy_s(ctrl->text, (const char*)value, 256);
                     break;
                 case 1: /* PROP_CHECKED */
-                    ctrl->checked = (uint8_t)value;
+                    switch (ctrl->type) {
+                        case CTRL_CHECKBOX:
+                            ctrl->checkbox.checked = (uint8_t)value;
+                            break;
+                        case CTRL_RADIOBUTTON:
+                            ctrl->radiobutton.checked = (uint8_t)value;
+                            break;
+                        case CTRL_ICON:
+                            ctrl->icon.checked = (uint8_t)value;
+                            break;
+                        default:
+                            break;
+                    }
                     break;
-                case 2: /* PROP_X */
+                case 2: /* PROP_X - universal */
                     ctrl->x = (uint16_t)value;
                     break;
-                case 3: /* PROP_Y */
+                case 3: /* PROP_Y - universal */
                     ctrl->y = (uint16_t)value;
                     break;
-                case 4: /* PROP_W */
+                case 4: /* PROP_W - universal */
                     ctrl->w = (uint16_t)value;
                     break;
-                case 5: /* PROP_H */
+                case 5: /* PROP_H - universal */
                     ctrl->h = (uint16_t)value;
                     break;
-                case 6: /* PROP_VISIBLE - use high bit of type as flag */
+                case 6: /* PROP_VISIBLE - universal */
                     if (value)
-                        ctrl->type &= 0x7F;  /* Clear hidden bit */
+                        ctrl->type &= 0x7F;
                     else
-                        ctrl->type |= 0x80;  /* Set hidden bit */
+                        ctrl->type |= 0x80;
                     break;
-                case 7: /* PROP_FG */
+                case 7: /* PROP_FG - universal */
                     ctrl->fg = (uint8_t)value;
                     break;
-                case 8: /* PROP_BG */
+                case 8: /* PROP_BG - universal */
                     ctrl->bg = (uint8_t)value;
                     break;
                 case 9: /* PROP_IMAGE */
                     if (value) {
                         const char *path = (const char*)value;
 
-                        if (ctrl->cached_bitmap_orig) {
-                            bitmap_free(ctrl->cached_bitmap_orig);
-                            ctrl->cached_bitmap_orig = NULL;
-                        }
-                        if (ctrl->cached_bitmap_scaled) {
-                            bitmap_free(ctrl->cached_bitmap_scaled);
-                            ctrl->cached_bitmap_scaled = NULL;
-                        }
-
-                        /* Reset load failure state on new image */
-                        ctrl->load_failed = 0;
-
-                        if (ctrl->type == CTRL_ICON || ctrl->type == CTRL_BUTTON) {
-                            /* Load image immediately for icons and buttons */
-                            ctrl->cached_bitmap_orig = bitmap_load_from_file(path);
-                        } else {
-                            /* For picturebox and others, store path in text field */
+                        if (ctrl->type == CTRL_BUTTON) {
+                            if (ctrl->button.cached_bitmap_orig) {
+                                bitmap_free(ctrl->button.cached_bitmap_orig);
+                                ctrl->button.cached_bitmap_orig = NULL;
+                            }
+                            ctrl->button.cached_bitmap_orig = bitmap_load_from_file(path);
+                        } else if (ctrl->type == CTRL_ICON) {
+                            if (ctrl->icon.cached_bitmap_orig) {
+                                bitmap_free(ctrl->icon.cached_bitmap_orig);
+                                ctrl->icon.cached_bitmap_orig = NULL;
+                            }
+                            ctrl->icon.cached_bitmap_orig = bitmap_load_from_file(path);
+                        } else if (ctrl->type == CTRL_PICTUREBOX) {
+                            if (ctrl->picturebox.cached_bitmap_orig) {
+                                bitmap_free(ctrl->picturebox.cached_bitmap_orig);
+                                ctrl->picturebox.cached_bitmap_orig = NULL;
+                            }
+                            if (ctrl->picturebox.cached_bitmap_scaled) {
+                                bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
+                                ctrl->picturebox.cached_bitmap_scaled = NULL;
+                            }
+                            ctrl->picturebox.load_failed = 0;
                             ctrl->text[0] = '\0';
                             strcpy_s(ctrl->text, path, sizeof(ctrl->text));
                         }
                     }
                     break;
-                case 10: /* PROP_ENABLED - repurposed for picturebox image_mode */
-                    ctrl->image_mode = (uint8_t)value;
+                case 10: /* PROP_ENABLED - picturebox image_mode */
+                    if (ctrl->type == CTRL_PICTUREBOX) {
+                        ctrl->picturebox.image_mode = (uint8_t)value;
+                    } else {
+                        // For now - nothing. TODO: disabled controls
+                    }
                     break;
                 default:
                     return 0;
@@ -3206,7 +3299,14 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 case 0: /* PROP_TEXT */
                     return (uint32_t)ctrl->text;
                 case 1: /* PROP_CHECKED */
-                    return ctrl->checked;
+                    if (ctrl->type == CTRL_CHECKBOX) {
+                        return ctrl->checkbox.checked;
+                    } else if (ctrl->type == CTRL_RADIOBUTTON) {
+                        return ctrl->radiobutton.checked;
+                    } else if (ctrl->type == CTRL_ICON) {
+                        return ctrl->icon.checked;
+                    }
+                    return 0;
                 case 2: /* PROP_X */
                     return ctrl->x;
                 case 3: /* PROP_Y */
@@ -3222,9 +3322,19 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 case 8: /* PROP_BG */
                     return ctrl->bg;
                 case 9: /* PROP_IMAGE */
-                    return (uint32_t)ctrl->text;
-                case 10: /* PROP_ENABLED - repurposed for picturebox image_mode */
-                    return ctrl->image_mode;
+                    if (ctrl->type == CTRL_BUTTON) {
+                        return (uint32_t)ctrl->button.cached_bitmap_orig;
+                    } else if (ctrl->type == CTRL_ICON) {
+                        return (uint32_t)ctrl->icon.cached_bitmap_orig;
+                    } else if (ctrl->type == CTRL_PICTUREBOX) {
+                        return (uint32_t)ctrl->text;
+                    }
+                    return 0;
+                case 10: /* PROP_ENABLED - picturebox image_mode */
+                    if (ctrl->type == CTRL_PICTUREBOX) {
+                        return ctrl->picturebox.image_mode;
+                    }
+                    return 0;
                 default:
                     return 0;
             }
@@ -3329,9 +3439,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* Free any saved dropdown background for controls */
                 if (f->controls) {
                     for (int j = 0; j < f->ctrl_count; j++) {
-                        if (f->controls[j].dropdown_saved_bg) {
-                            kfree(f->controls[j].dropdown_saved_bg);
-                            f->controls[j].dropdown_saved_bg = NULL;
+                        if (f->controls[j].type == CTRL_DROPDOWN && f->controls[j].dropdown.dropdown_saved_bg) {
+                            kfree(f->controls[j].dropdown.dropdown_saved_bg);
+                            f->controls[j].dropdown.dropdown_saved_bg = NULL;
                         }
                     }
                 }
@@ -3490,7 +3600,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             temp_ctrl.type = CTRL_BUTTON;
             temp_ctrl.w = params->w;
             temp_ctrl.h = params->h;
-            temp_ctrl.pressed = params->pressed ? 1 : 0;
+            temp_ctrl.button.pressed = params->pressed ? 1 : 0;
             temp_ctrl.bg = params->color;
             temp_ctrl.fg = COLOR_BLACK;
             
@@ -3506,15 +3616,15 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             
             /* Load icon if provided */
             if (params->icon && params->icon[0]) {
-                temp_ctrl.cached_bitmap_orig = bitmap_load_from_file(params->icon);
+                temp_ctrl.button.cached_bitmap_orig = bitmap_load_from_file(params->icon);
             }
             
             /* Draw using unified control rendering */
             ctrl_draw_button(&temp_ctrl, params->x, params->y);
             
             /* Clean up loaded bitmap */
-            if (temp_ctrl.cached_bitmap_orig) {
-                bitmap_free(temp_ctrl.cached_bitmap_orig);
+            if (temp_ctrl.button.cached_bitmap_orig) {
+                bitmap_free(temp_ctrl.button.cached_bitmap_orig);
             }
             
             return 0;
@@ -3744,13 +3854,25 @@ void wm_cleanup_task(uint32_t tid) {
         /* Free cached bitmaps in controls */
         if (form->controls) {
             for (int j = 0; j < form->ctrl_count; j++) {
-                if (form->controls[j].cached_bitmap_orig) {
-                    bitmap_free(form->controls[j].cached_bitmap_orig);
-                    form->controls[j].cached_bitmap_orig = NULL;
+                gui_control_t *ctrl = &form->controls[j];
+                /* Free bitmaps based on control type */
+                if (ctrl->type == CTRL_BUTTON && ctrl->button.cached_bitmap_orig) {
+                    bitmap_free(ctrl->button.cached_bitmap_orig);
+                    ctrl->button.cached_bitmap_orig = NULL;
                 }
-                if (form->controls[j].cached_bitmap_scaled) {
-                    bitmap_free(form->controls[j].cached_bitmap_scaled);
-                    form->controls[j].cached_bitmap_scaled = NULL;
+                if (ctrl->type == CTRL_PICTUREBOX) {
+                    if (ctrl->picturebox.cached_bitmap_orig) {
+                        bitmap_free(ctrl->picturebox.cached_bitmap_orig);
+                        ctrl->picturebox.cached_bitmap_orig = NULL;
+                    }
+                    if (ctrl->picturebox.cached_bitmap_scaled) {
+                        bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
+                        ctrl->picturebox.cached_bitmap_scaled = NULL;
+                    }
+                }
+                if (ctrl->type == CTRL_ICON && ctrl->icon.cached_bitmap_orig) {
+                    bitmap_free(ctrl->icon.cached_bitmap_orig);
+                    ctrl->icon.cached_bitmap_orig = NULL;
                 }
             }
             kfree(form->controls);

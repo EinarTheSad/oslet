@@ -228,8 +228,8 @@ static void update_dropdown_list(cpl_screen_state_t *state) {
         }
     }
     drop->text[pos] = '\0';
-    drop->item_count = state->bmp_count + 1; /* +1 for (none) */
-    drop->cursor_pos = selected_idx;
+    drop->dropdown.item_count = state->bmp_count + 1; /* +1 for (none) */
+    drop->dropdown.cursor_pos = selected_idx;
 }
 
 static int cpl_screen_init(prog_instance_t *inst) {
@@ -253,14 +253,14 @@ static int cpl_screen_init(prog_instance_t *inst) {
         { .type = CTRL_PICTUREBOX, .x = 57,  .y = 26,  .w = 133, .h = 100, .fg = 0,  .bg = 0,  .id = CTRL_PIC_PREVIEW,  .text = "" },
         { .type = CTRL_FRAME,      .x = 6,   .y = 166, .w = 234, .h = 92, .fg = 0,  .bg = 7,  .id = CTRL_FRAME_WALLPAPER, .text = "Wallpaper" },
         { .type = CTRL_LABEL,      .x = 12,  .y = 187,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_FOLDER,      .text = "Folder:" },
-        { .type = CTRL_TEXTBOX,    .x = 58,  .y = 186, .w = 138, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_TXT_FOLDER,     .max_length = 127, .text = "" },
+        { .type = CTRL_TEXTBOX,    .x = 58,  .y = 186, .w = 138, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_TXT_FOLDER,     .textbox = { .max_length = 127 }, .text = "" },
         { .type = CTRL_BUTTON,     .x = 198, .y = 186, .w = 35,  .h = 18,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_FOLDER_OK, .text = "OK" },
         { .type = CTRL_LABEL,      .x = 12,  .y = 209,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_CHOOSE,     .text = "Choose an image:" },
-        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 229, .w = 120, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_IMAGES,    .cursor_pos = 0, .item_count = 0, .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 229, .w = 120, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_IMAGES,    .dropdown = { .cursor_pos = 0, .item_count = 0 }, .text = "" },
         { .type = CTRL_LABEL,      .x = 160, .y = 209,                     .fg = 0,  .bg = -1, .id = 0,                   .text = "Mode:" },
-        { .type = CTRL_DROPDOWN,   .x = 161, .y = 229, .w = 70,  .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_MODE,      .cursor_pos = 0, .item_count = 3, .text = "Center|Stretch|Tile" },
+        { .type = CTRL_DROPDOWN,   .x = 161, .y = 229, .w = 70,  .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_MODE,      .dropdown = { .cursor_pos = 0, .item_count = 3 }, .text = "Center|Stretch|Tile" },
         { .type = CTRL_FRAME,      .x = 6,   .y = 258, .w = 234, .h = 48,  .fg = 0,  .bg = 7,  .id = CTRL_FRAME_COLOR,     .text = "Colour" },
-        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 278, .w = 120, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_COLOR,     .cursor_pos = 0, .item_count = 16, .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 278, .w = 120, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_COLOR,     .dropdown = { .cursor_pos = 0, .item_count = 16 }, .text = "" },
         { .type = CTRL_BUTTON,     .x = 36,  .y = 312, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_APPLY,      .text = "Apply" },
         { .type = CTRL_BUTTON,     .x = 96,  .y = 312, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_OK,         .text = "OK" },
         { .type = CTRL_BUTTON,     .x = 156, .y = 312, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_CANCEL,     .text = "Cancel" },
@@ -281,11 +281,11 @@ static int cpl_screen_init(prog_instance_t *inst) {
     /* populate colour dropdown and set selection */
     ctrl_set_text(state->form, CTRL_DROP_COLOR, color_options);
     gui_control_t *dc = sys_win_get_control(state->form, CTRL_DROP_COLOR);
-    if (dc) { dc->cursor_pos = state->desktop_color; dc->item_count = 16; }
+    if (dc) { dc->dropdown.cursor_pos = state->desktop_color; dc->dropdown.item_count = 16; }
 
     /* dropdown reflects the current wallpaper mode */
     gui_control_t *drop_mode = sys_win_get_control(state->form, CTRL_DROP_MODE);
-    if (drop_mode) { drop_mode->cursor_pos = state->wallpaper_mode; }
+    if (drop_mode) { drop_mode->dropdown.cursor_pos = state->wallpaper_mode; }
 
     /* picturebox preview always uses centered mode */
     sys_ctrl_set_prop(state->form, CTRL_PIC_PREVIEW, PROP_ENABLED, 0);
@@ -300,24 +300,24 @@ static void apply_settings(cpl_screen_state_t *state) {
     /* Read values from controls */
     gui_control_t *drop_color = sys_win_get_control(state->form, CTRL_DROP_COLOR);
     if (drop_color) {
-        state->desktop_color = (uint8_t)drop_color->cursor_pos;
+        state->desktop_color = (uint8_t)drop_color->dropdown.cursor_pos;
     }
 
     gui_control_t *drop_mode = sys_win_get_control(state->form, CTRL_DROP_MODE);
     if (drop_mode) {
-        state->wallpaper_mode = drop_mode->cursor_pos;
+        state->wallpaper_mode = drop_mode->dropdown.cursor_pos;
     }
 
     /* Get selected image from dropdown */
     gui_control_t *drop_images = sys_win_get_control(state->form, CTRL_DROP_IMAGES);
-    if (drop_images && drop_images->item_count > 0) {
-        if (drop_images->cursor_pos == 0) {
+    if (drop_images && drop_images->dropdown.item_count > 0) {
+        if (drop_images->dropdown.cursor_pos == 0) {
             /* "(none)" selected */
             state->wallpaper[0] = '\0';
-        } else if (drop_images->cursor_pos - 1 < state->bmp_count) {
+        } else if (drop_images->dropdown.cursor_pos - 1 < state->bmp_count) {
             /* File selected (subtract 1 for (none) offset) */
             snprintf(state->wallpaper, sizeof(state->wallpaper), "%s/%s", 
-                     state->folder, state->bmp_files[drop_images->cursor_pos - 1]);
+                     state->folder, state->bmp_files[drop_images->dropdown.cursor_pos - 1]);
         }
     }
 
@@ -358,11 +358,11 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
         gui_control_t *drop = sys_win_get_control(state->form, CTRL_DROP_IMAGES);
         if (drop) {
             char new_wallpaper[128];
-            if (drop->cursor_pos == 0) {
+            if (drop->dropdown.cursor_pos == 0) {
                 new_wallpaper[0] = '\0';
-            } else if (drop->cursor_pos - 1 < state->bmp_count) {
+            } else if (drop->dropdown.cursor_pos - 1 < state->bmp_count) {
                 snprintf(new_wallpaper, sizeof(new_wallpaper), "%s/%s", 
-                         state->folder, state->bmp_files[drop->cursor_pos - 1]);
+                         state->folder, state->bmp_files[drop->dropdown.cursor_pos - 1]);
             } else {
                 new_wallpaper[0] = '\0';
             }
@@ -381,7 +381,7 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
     if (event == CTRL_DROP_MODE) {
         gui_control_t *drop_mode = sys_win_get_control(state->form, CTRL_DROP_MODE);
         if (drop_mode) {
-            state->wallpaper_mode = drop_mode->cursor_pos;
+            state->wallpaper_mode = drop_mode->dropdown.cursor_pos;
         }
         sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
@@ -391,7 +391,7 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
     if (event == CTRL_DROP_COLOR) {
         gui_control_t *dropcol = sys_win_get_control(state->form, CTRL_DROP_COLOR);
         if (dropcol) {
-            uint8_t new_color = (uint8_t)dropcol->cursor_pos;
+            uint8_t new_color = (uint8_t)dropcol->dropdown.cursor_pos;
             if (state->desktop_color != new_color) {
                 state->desktop_color = new_color;
                 gui_control_t *pic_preview = sys_win_get_control(state->form, CTRL_PIC_PREVIEW);

@@ -154,14 +154,14 @@ static int cpl_boot_init(prog_instance_t *inst) {
 
     static gui_control_t controls[] = {
         { .type = CTRL_FRAME,      .x = 8,   .y = 5,   .w = 171, .h = 98, .fg = 0,  .bg = -1, .id = CTRL_FRAME_SHELL,      .text = "Shell" },
-        { .type = CTRL_RADIOBUTTON,.x = 16,  .y = 29,  .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_SHELL_GUI,  .text = "Graphical", .group_id = 1 },
-        { .type = CTRL_RADIOBUTTON,.x = 95,  .y = 29,  .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_SHELL_TEXT, .text = "Textmode", .group_id = 1 },
+        { .type = CTRL_RADIOBUTTON,.x = 16,  .y = 29,  .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_SHELL_GUI,  .text = "Graphical", .radiobutton = { .group_id = 1 } },
+        { .type = CTRL_RADIOBUTTON,.x = 95,  .y = 29,  .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_SHELL_TEXT, .text = "Textmode", .radiobutton = { .group_id = 1 } },
         { .type = CTRL_LABEL,      .x = 15,  .y = 50,                      .fg = 0,  .bg = -1, .id = CTRL_LBL_OTHER,        .text = "Other (e.g. C:/SHELL.ELF):" },
-        { .type = CTRL_TEXTBOX,    .x = 17,  .y = 70,  .w = 153, .h = 20,  .fg = 0,  .bg = 7,  .id = CTRL_TXT_OTHER,        .text = "", .max_length = 255 },
+        { .type = CTRL_TEXTBOX,    .x = 17,  .y = 70,  .w = 153, .h = 20,  .fg = 0,  .bg = 7,  .id = CTRL_TXT_OTHER,        .text = "", .textbox = { .max_length = 255 } },
 
         { .type = CTRL_FRAME,      .x = 8,   .y = 108, .w = 171, .h = 47,  .fg = 0,  .bg = -1, .id = CTRL_FRAME_BOOTSCR,    .text = "Boot screen" },
-        { .type = CTRL_RADIOBUTTON,.x = 16,  .y = 130, .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_BOOTSCR_EN, .text = "Enabled", .group_id = 2 },
-        { .type = CTRL_RADIOBUTTON,.x = 106, .y = 130, .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_BOOTSCR_DIS,.text = "Disabled", .group_id = 2 },
+        { .type = CTRL_RADIOBUTTON,.x = 16,  .y = 130, .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_BOOTSCR_EN, .text = "Enabled", .radiobutton = { .group_id = 2 } },
+        { .type = CTRL_RADIOBUTTON,.x = 106, .y = 130, .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_BOOTSCR_DIS,.text = "Disabled", .radiobutton = { .group_id = 2 } },
 
         { .type = CTRL_BUTTON,     .x = 26,  .y = 165, .w = 65,  .h = 23,  .fg = 0,  .bg = -1, .id = CTRL_BTN_OK,           .text = "OK" },
         { .type = CTRL_BUTTON,     .x = 98,  .y = 165, .w = 65,  .h = 23,  .fg = 0,  .bg = -1, .id = CTRL_BTN_CANCEL,       .text = "Cancel" },
@@ -176,20 +176,20 @@ static int cpl_boot_init(prog_instance_t *inst) {
     
     /* Shell type radio buttons */
     g = sys_win_get_control(state->form, CTRL_RADIO_SHELL_GUI);
-    if (g) g->checked = (state->shell_type == 0) ? 1 : 0;
+    if (g) g->radiobutton.checked = (state->shell_type == 0) ? 1 : 0;
     
     g = sys_win_get_control(state->form, CTRL_RADIO_SHELL_TEXT);
-    if (g) g->checked = (state->shell_type == 1) ? 1 : 0;
+    if (g) g->radiobutton.checked = (state->shell_type == 1) ? 1 : 0;
 
     /* Load custom shell path into textbox */
     ctrl_set_text(state->form, CTRL_TXT_OTHER, state->shell_path);
 
     /* Boot screen radio buttons */
     g = sys_win_get_control(state->form, CTRL_RADIO_BOOTSCR_EN);
-    if (g) g->checked = (state->boot_screen == 1) ? 1 : 0;
+    if (g) g->radiobutton.checked = (state->boot_screen == 1) ? 1 : 0;
     
     g = sys_win_get_control(state->form, CTRL_RADIO_BOOTSCR_DIS);
-    if (g) g->checked = (state->boot_screen == 0) ? 1 : 0;
+    if (g) g->radiobutton.checked = (state->boot_screen == 0) ? 1 : 0;
 
     sys_win_draw(state->form);
     prog_register_window(inst, state->form);
@@ -201,11 +201,11 @@ static void read_current_values(cpl_boot_state_t *state) {
 
     /* Determine shell type from radio buttons */
     g = sys_win_get_control(state->form, CTRL_RADIO_SHELL_GUI);
-    if (g && g->checked) {
+    if (g && g->radiobutton.checked) {
         state->shell_type = 0;
     } else {
         g = sys_win_get_control(state->form, CTRL_RADIO_SHELL_TEXT);
-        if (g && g->checked) {
+        if (g && g->radiobutton.checked) {
             state->shell_type = 1;
         } else {
             /* Neither checked - assume "other" */
@@ -222,7 +222,7 @@ static void read_current_values(cpl_boot_state_t *state) {
 
     /* Determine boot screen from radio buttons */
     g = sys_win_get_control(state->form, CTRL_RADIO_BOOTSCR_EN);
-    if (g && g->checked) {
+    if (g && g->radiobutton.checked) {
         state->boot_screen = 1;
     } else {
         state->boot_screen = 0;
