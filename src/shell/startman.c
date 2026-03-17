@@ -423,7 +423,6 @@ static int startman_init(prog_instance_t *inst) {
         back.fg = 0;
         back.bg = 15;
         back.id = CTRL_BACK_BUTTON;
-        back.checked = 0;
         strcpy(back.text, "..");
         sys_win_add_control(state->form, &back);
         ctrl_set_image(state->form, back.id, "C:/ICONS/BACK.ICO");
@@ -446,7 +445,6 @@ static int startman_init(prog_instance_t *inst) {
         icon.fg = 0;
         icon.bg = 15;
         icon.id = CTRL_APP_BASE + i;
-        icon.checked = 0;
 
         strncpy(icon.text, state->apps[i].name, sizeof(icon.text) - 1);
         sys_win_add_control(state->form, &icon);

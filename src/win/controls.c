@@ -144,12 +144,12 @@ void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
     uint8_t btn_color = (control->bg == -1) ? theme->button_color : control->bg;
 
     /* Check if button has an icon AND text (like Start button) */
-    int has_icon = (control->cached_bitmap_orig != NULL);
+    int has_icon = (control->button.cached_bitmap_orig != NULL);
     int has_text = (control->text[0] != '\0');
     
     /* Draw button border and background */
     /* Don't pass text to win_draw_button if we have an icon - we'll draw it ourselves */
-    if (control->pressed) {
+    if (control->button.pressed) {
         win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, has_icon ? "" : control->text, 1);
     } else {
         win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, has_icon ? "" : control->text, 0);
@@ -157,8 +157,8 @@ void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
     
     /* Handle icon drawing */
     if (has_icon) {
-        bitmap_t *bmp = control->cached_bitmap_orig;
-        int offset = control->pressed ? 1 : 0;
+        bitmap_t *bmp = control->button.cached_bitmap_orig;
+        int offset = control->button.pressed ? 1 : 0;
         
         if (has_text) {
             /* Button has both icon and text (like Start button) - icon on left, text on right */
@@ -287,51 +287,51 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
 
     if (control->text[0]) {
         /* Load original bitmap to cache if not already loaded and not previously failed */
-        if (!control->cached_bitmap_orig && !control->load_failed) {
-            control->cached_bitmap_orig = bitmap_load_from_file(control->text);
+        if (!control->picturebox.cached_bitmap_orig && !control->picturebox.load_failed) {
+            control->picturebox.cached_bitmap_orig = bitmap_load_from_file(control->text);
             /* When loading a new image, drop any previous scaled cache */
-            if (control->cached_bitmap_scaled) {
-                bitmap_free(control->cached_bitmap_scaled);
-                control->cached_bitmap_scaled = NULL;
+            if (control->picturebox.cached_bitmap_scaled) {
+                bitmap_free(control->picturebox.cached_bitmap_scaled);
+                control->picturebox.cached_bitmap_scaled = NULL;
             }
 
             /* Validate loaded bitmap to avoid processing malformed images */
-            if (control->cached_bitmap_orig) {
-                bitmap_t *orig = control->cached_bitmap_orig;
+            if (control->picturebox.cached_bitmap_orig) {
+                bitmap_t *orig = control->picturebox.cached_bitmap_orig;
                 if (orig->width <= 0 || orig->height <= 0 || orig->width > 4096 || orig->height > 4096) {
                     /* Unreasonable dimensions - reject */
-                    bitmap_free(control->cached_bitmap_orig);
-                    control->cached_bitmap_orig = NULL;
-                    control->load_failed = 1;
+                    bitmap_free(control->picturebox.cached_bitmap_orig);
+                    control->picturebox.cached_bitmap_orig = NULL;
+                    control->picturebox.load_failed = 1;
                 }
             } else {
                 /* Loading failed - mark to avoid retrying every draw */
-                control->load_failed = 1;
+                control->picturebox.load_failed = 1;
             }
         }
 
         /* Draw from cached bitmap. support optional stretch mode or preserve aspect ratio */
-        if (control->cached_bitmap_orig) {
-            bitmap_t *orig = control->cached_bitmap_orig;
+        if (control->picturebox.cached_bitmap_orig) {
+            bitmap_t *orig = control->picturebox.cached_bitmap_orig;
             int bw = orig->width;
             int bh = orig->height;
 
             /* Stretch mode: scale image to exactly fill the control (may change aspect) */
-            if (control->image_mode == 1) {
-                if (!control->cached_bitmap_scaled ||
-                    control->cached_bitmap_scaled->width != control->w ||
-                    control->cached_bitmap_scaled->height != control->h) {
-                    if (control->cached_bitmap_scaled) {
-                        bitmap_free(control->cached_bitmap_scaled);
-                        control->cached_bitmap_scaled = NULL;
+            if (control->picturebox.image_mode == 1) {
+                if (!control->picturebox.cached_bitmap_scaled ||
+                    control->picturebox.cached_bitmap_scaled->width != control->w ||
+                    control->picturebox.cached_bitmap_scaled->height != control->h) {
+                    if (control->picturebox.cached_bitmap_scaled) {
+                        bitmap_free(control->picturebox.cached_bitmap_scaled);
+                        control->picturebox.cached_bitmap_scaled = NULL;
                     }
                     /* Scale to exact control dimensions */
-                    control->cached_bitmap_scaled = bitmap_scale_nearest(orig, control->w, control->h);
+                    control->picturebox.cached_bitmap_scaled = bitmap_scale_nearest(orig, control->w, control->h);
                 }
 
-                if (control->cached_bitmap_scaled) {
-                    if (control->bg == -1) bitmap_draw(control->cached_bitmap_scaled, abs_x, abs_y);
-                    else bitmap_draw_opaque(control->cached_bitmap_scaled, abs_x, abs_y);
+                if (control->picturebox.cached_bitmap_scaled) {
+                    if (control->bg == -1) bitmap_draw(control->picturebox.cached_bitmap_scaled, abs_x, abs_y);
+                    else bitmap_draw_opaque(control->picturebox.cached_bitmap_scaled, abs_x, abs_y);
                 }
 
             } else {
@@ -339,9 +339,9 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
                 /* Exact match: if bitmap size equals control size, draw without scaling */
                 if (bw == control->w && bh == control->h) {
                     /* Draw original at control origin with no scaling and clear any scaled cache */
-                    if (control->cached_bitmap_scaled) {
-                        bitmap_free(control->cached_bitmap_scaled);
-                        control->cached_bitmap_scaled = NULL;
+                    if (control->picturebox.cached_bitmap_scaled) {
+                        bitmap_free(control->picturebox.cached_bitmap_scaled);
+                        control->picturebox.cached_bitmap_scaled = NULL;
                     }
                     /* If bg == -1 treat PictureBox as transparent: use transparent draw path */
                     if (control->bg == -1) bitmap_draw(orig, abs_x, abs_y);
@@ -362,22 +362,22 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
                     }
 
                     /* Create or update scaled cache if size changed */
-                    if (!control->cached_bitmap_scaled ||
-                        control->cached_bitmap_scaled->width != new_w ||
-                        control->cached_bitmap_scaled->height != new_h) {
-                        if (control->cached_bitmap_scaled) {
-                            bitmap_free(control->cached_bitmap_scaled);
-                            control->cached_bitmap_scaled = NULL;
+                    if (!control->picturebox.cached_bitmap_scaled ||
+                        control->picturebox.cached_bitmap_scaled->width != new_w ||
+                        control->picturebox.cached_bitmap_scaled->height != new_h) {
+                        if (control->picturebox.cached_bitmap_scaled) {
+                            bitmap_free(control->picturebox.cached_bitmap_scaled);
+                            control->picturebox.cached_bitmap_scaled = NULL;
                         }
-                        control->cached_bitmap_scaled = bitmap_scale_nearest(orig, new_w, new_h);
+                        control->picturebox.cached_bitmap_scaled = bitmap_scale_nearest(orig, new_w, new_h);
                     }
 
-                    if (control->cached_bitmap_scaled) {
-                        int dx = abs_x + (control->w - control->cached_bitmap_scaled->width) / 2;
-                        int dy = abs_y + (control->h - control->cached_bitmap_scaled->height) / 2;
+                    if (control->picturebox.cached_bitmap_scaled) {
+                        int dx = abs_x + (control->w - control->picturebox.cached_bitmap_scaled->width) / 2;
+                        int dy = abs_y + (control->h - control->picturebox.cached_bitmap_scaled->height) / 2;
                         /* Draw scaled bitmap; respect bg==-1 for transparency */
-                        if (control->bg == -1) bitmap_draw(control->cached_bitmap_scaled, dx, dy);
-                        else bitmap_draw_opaque(control->cached_bitmap_scaled, dx, dy);
+                        if (control->bg == -1) bitmap_draw(control->picturebox.cached_bitmap_scaled, dx, dy);
+                        else bitmap_draw_opaque(control->picturebox.cached_bitmap_scaled, dx, dy);
                     }
                 } else {
                     /* Bitmap smaller - center without scaling */
@@ -416,7 +416,7 @@ void ctrl_draw_checkbox(gui_control_t *control, int abs_x, int abs_y) {
     gfx_vline(abs_x + 1, abs_y + 1, box_size - 2, COLOR_DARK_GRAY);
 
     // Draw checkmark if checked
-    if (control->checked) {
+    if (control->checkbox.checked) {
         // Simple X checkmark
         for (int i = 0; i < 7; i++) {
             gfx_putpixel(abs_x + 3 + i, abs_y + 3 + i, control->fg);
@@ -455,7 +455,7 @@ void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y) {
     gfx_circle(center_x, center_y, radius - 1, theme->frame_dark);
 
     // Draw selected dot if checked (filled circle)
-    if (control->checked) {
+    if (control->radiobutton.checked) {
         for (int dy = -3; dy <= 3; dy++) {
             for (int dx = -3; dx <= 3; dx++) {
                 if (dx * dx + dy * dy <= 9) {
@@ -534,10 +534,10 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
     if (!font->data) return;
 
     // Calculate cursor position in pixels (before scroll adjustment)
-    int cursor_pixel_x = textbox_measure_to_pos(font, size, control->text, control->cursor_pos);
+    int cursor_pixel_x = textbox_measure_to_pos(font, size, control->text, control->textbox.cursor_pos);
 
     // Auto-scroll to keep cursor visible
-    int scroll = control->scroll_offset;
+    int scroll = control->textbox.scroll_offset;
     if (cursor_pixel_x - scroll > text_area_w - 2) {
         // Cursor past right edge - scroll right
         scroll = cursor_pixel_x - text_area_w + 10;
@@ -546,12 +546,12 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
         scroll = cursor_pixel_x - 10;
         if (scroll < 0) scroll = 0;
     }
-    control->scroll_offset = scroll;
+    control->textbox.scroll_offset = scroll;
 
     // Draw selection highlight if there's a selection
-    if (control->sel_start >= 0 && control->sel_start != control->sel_end) {
-        int sel_min = control->sel_start < control->sel_end ? control->sel_start : control->sel_end;
-        int sel_max = control->sel_start > control->sel_end ? control->sel_start : control->sel_end;
+    if (control->textbox.sel_start >= 0 && control->textbox.sel_start != control->textbox.sel_end) {
+        int sel_min = control->textbox.sel_start < control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
+        int sel_max = control->textbox.sel_start > control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
 
         int sel_x1 = text_x + textbox_measure_to_pos(font, size, control->text, sel_min) - scroll;
         int sel_x2 = text_x + textbox_measure_to_pos(font, size, control->text, sel_max) - scroll;
@@ -587,9 +587,9 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
             if (g && x >= text_area_x - g->width) {
                 // Determine text color (white on selection, normal otherwise)
                 int in_selection = 0;
-                if (control->sel_start >= 0 && control->sel_start != control->sel_end) {
-                    int sel_min = control->sel_start < control->sel_end ? control->sel_start : control->sel_end;
-                    int sel_max = control->sel_start > control->sel_end ? control->sel_start : control->sel_end;
+                if (control->textbox.sel_start >= 0 && control->textbox.sel_start != control->textbox.sel_end) {
+                    int sel_min = control->textbox.sel_start < control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
+                    int sel_max = control->textbox.sel_start > control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
                     in_selection = (i >= sel_min && i < sel_max);
                 }
                 uint8_t color = in_selection ? COLOR_WHITE : control->fg;
@@ -601,7 +601,7 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
     }
 
     // Draw cursor if focused (and no selection, or at selection edge)
-    if (control->is_focused) {
+    if (control->textbox.is_focused) {
         int cursor_x = text_x + cursor_pixel_x - scroll;
 
         // Only draw cursor if within visible area
@@ -634,8 +634,8 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
     int icon_y = abs_y;
 
     /* Draw icon bitmap or default */
-    if (control->cached_bitmap_orig) {
-        bitmap_draw(control->cached_bitmap_orig, icon_x, icon_y);
+    if (control->icon.cached_bitmap_orig) {
+        bitmap_draw(control->icon.cached_bitmap_orig, icon_x, icon_y);
     } else {
         /* Draw default icon rectangle */
         gfx_fillrect(icon_x, icon_y, icon_size, icon_size, theme->button_color);
@@ -656,7 +656,7 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
     }
 
     /* Draw selection highlight */
-    if (control->checked) {
+    if (control->icon.checked) {
         /* Dither pattern over entire icon area (using dynamic height) */
         for (int py = 0; py < total_h; py++) {
             for (int px = 0; px < total_w; px++) {
@@ -669,7 +669,7 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
 
     /* Draw label below icon using shared function */
     if (control->text[0]) {
-        uint8_t text_color = control->checked ? 15 : control->fg;
+        uint8_t text_color = control->icon.checked ? 15 : control->fg;
         int text_y = abs_y + icon_size + 4;
         icon_draw_label_wrapped(control->text, abs_x, text_y, total_w, max_line_width, text_color);
     }
@@ -734,7 +734,7 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
     /* Button 3D border */
     gfx_rect(btn_x, abs_y, btn_w, control->h, COLOR_BLACK);
     /* Consider dropdown open as pressed for visual feedback */
-    int btn_pressed = control->pressed || control->dropdown_open;
+    int btn_pressed = control->dropdown.pressed || control->dropdown.dropdown_open;
     if (btn_pressed) {
         gfx_hline(btn_x + 1, abs_y + 1, btn_w - 2, theme->frame_dark);
         gfx_vline(btn_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
@@ -750,7 +750,7 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
     /* Draw arrow in button (flip when dropdown is open) */
     int arrow_x = btn_x + btn_w / 2;
     int arrow_y = abs_y + control->h / 2;
-    if (control->dropdown_open) {
+    if (control->dropdown.dropdown_open) {
         /* Pointing up */
         for (int i = 0; i < 4; i++) {
             gfx_hline(arrow_x - 3 + i, arrow_y - i, 7 - i * 2, COLOR_BLACK);
@@ -768,7 +768,7 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
     /* Draw selected item text */
     if (font->data) {
         char item_text[64];
-        int selected = control->cursor_pos;  /* cursor_pos used as selected_index */
+        int selected = control->dropdown.cursor_pos;  /* cursor_pos used as selected_index */
         dropdown_get_item(control->text, selected, item_text, sizeof(item_text));
 
         int text_x = abs_x + 4;
@@ -780,7 +780,7 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
 
 /* Draw only the dropdown list (called after all controls for z-order) */
 void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
-    if (!control->dropdown_open) return;
+    if (!control->dropdown.dropdown_open) return;
 
     window_theme_t *theme = theme_get_current();
     bmf_font_t *font = &font_n;
@@ -814,23 +814,23 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
 
     /* Clamp dropdown_scroll into valid range */
     int max_scroll = item_count > visible_count ? (item_count - visible_count) : 0;
-    if (control->dropdown_scroll > (uint16_t)max_scroll) control->dropdown_scroll = max_scroll;
+    if (control->dropdown.dropdown_scroll > (uint16_t)max_scroll) control->dropdown.dropdown_scroll = max_scroll;
 
     /* Ensure background for the list is saved so it can be correctly restored when closed.
        This is required because dropdown lists may extend outside their parent window. */
-    if (!control->dropdown_saved_bg) {
-        control->dropdown_saved_w = control->w;
-        control->dropdown_saved_h = list_h;
-        control->dropdown_saved_x = abs_x;
-        control->dropdown_saved_y = list_y;
-        int row_bytes = (control->dropdown_saved_w + 1) / 2;
-        control->dropdown_saved_bg = kmalloc(row_bytes * control->dropdown_saved_h);
-        if (control->dropdown_saved_bg) {
-            gfx_read_screen_region_packed(control->dropdown_saved_bg,
-                                          control->dropdown_saved_w,
-                                          control->dropdown_saved_h,
-                                          control->dropdown_saved_x,
-                                          control->dropdown_saved_y);
+    if (!control->dropdown.dropdown_saved_bg) {
+        control->dropdown.dropdown_saved_w = control->w;
+        control->dropdown.dropdown_saved_h = list_h;
+        control->dropdown.dropdown_saved_x = abs_x;
+        control->dropdown.dropdown_saved_y = list_y;
+        int row_bytes = (control->dropdown.dropdown_saved_w + 1) / 2;
+        control->dropdown.dropdown_saved_bg = kmalloc(row_bytes * control->dropdown.dropdown_saved_h);
+        if (control->dropdown.dropdown_saved_bg) {
+            gfx_read_screen_region_packed(control->dropdown.dropdown_saved_bg,
+                                          control->dropdown.dropdown_saved_w,
+                                          control->dropdown.dropdown_saved_h,
+                                          control->dropdown.dropdown_saved_x,
+                                          control->dropdown.dropdown_saved_y);
         }
     }
 
@@ -840,7 +840,7 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
 
     /* Draw visible items only (respect dropdown_scroll) */
     for (int vi = 0; vi < visible_count; vi++) {
-        int i = control->dropdown_scroll + vi; /* absolute item index */
+        int i = control->dropdown.dropdown_scroll + vi; /* absolute item index */
         if (i >= item_count) break;
 
         char item_text[64];
@@ -850,10 +850,10 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
         int content_w = control->w - sb_w;
 
         /* Highlight selected item in blue, hovered item in gray */
-        if (i == control->cursor_pos) {
+        if (i == control->dropdown.cursor_pos) {
             gfx_fillrect(abs_x + 1, item_y, content_w - 2, item_h, COLOR_BLUE);
             if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, COLOR_WHITE, "%s", item_text);
-        } else if (i == control->hovered_item) {
+        } else if (i == control->dropdown.hovered_item) {
             gfx_fillrect(abs_x + 1, item_y, content_w - 2, item_h, 7);  /* Light gray hover color */
             if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
         } else {
@@ -867,9 +867,9 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
         sb.type = CTRL_SCROLLBAR; /* temporary control for rendering */
         sb.w = sb_w;
         sb.h = list_h;
-        sb.checked = 0; /* vertical */
-        sb.cursor_pos = control->dropdown_scroll;
-        sb.max_length = max_scroll > 0 ? max_scroll : 1;
+        sb.scrollbar.checked = 0; /* vertical */
+        sb.scrollbar.cursor_pos = control->dropdown.dropdown_scroll;
+        sb.scrollbar.max_length = max_scroll > 0 ? max_scroll : 1;
 
         /* Derive hover/pressed state for the inline scrollbar from global mouse + control state */
         int mx = mouse_get_x();
@@ -879,25 +879,25 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control) {
         int thumb_size = 20;
         if (thumb_size > track_len) thumb_size = track_len;
         int thumb_pos = 0;
-        if (sb.max_length > 0 && track_len > thumb_size) {
-            thumb_pos = ((track_len - thumb_size) * sb.cursor_pos) / sb.max_length;
+        if (sb.scrollbar.max_length > 0 && track_len > thumb_size) {
+            thumb_pos = ((track_len - thumb_size) * sb.scrollbar.cursor_pos) / sb.scrollbar.max_length;
         }
 
         /* Default: no hovered part */
-        sb.hovered_item = -1;
+        sb.scrollbar.hovered_item = -1;
         if (mx >= abs_x + control->w - sb_w && mx < abs_x + control->w && my >= list_y && my < list_y + list_h) {
             int rel = my - list_y;
-            if (rel < arrow_size) sb.hovered_item = 0;            /* up arrow */
-            else if (rel >= list_h - arrow_size) sb.hovered_item = 2; /* down arrow */
+            if (rel < arrow_size) sb.scrollbar.hovered_item = 0;            /* up arrow */
+            else if (rel >= list_h - arrow_size) sb.scrollbar.hovered_item = 2; /* down arrow */
             else {
                 int thumb_y = arrow_size + thumb_pos;
-                if (rel >= thumb_y && rel < thumb_y + thumb_size) sb.hovered_item = 1; /* thumb */
-                else sb.hovered_item = -1; /* track */
+                if (rel >= thumb_y && rel < thumb_y + thumb_size) sb.scrollbar.hovered_item = 1; /* thumb */
+                else sb.scrollbar.hovered_item = -1; /* track */
             }
         }
 
         /* Pressed state when dropdown control is pressed and pointer is over scrollbar */
-        if (control->pressed && control->hovered_item == -2) sb.pressed = 1;
+        if (control->dropdown.pressed && control->dropdown.hovered_item == -2) sb.scrollbar.pressed = 1;
 
         /* Draw using existing scrollbar renderer */
         ctrl_draw_scrollbar(&sb, abs_x + control->w - sb_w, list_y);
@@ -911,21 +911,21 @@ void ctrl_hide_dropdown_list(window_t *win, gui_control_t *control) {
     (void)win; /* unused: kept for API consistency */
     if (!control) return;
 
-    if (control->dropdown_saved_bg) {
-        gfx_write_screen_region_packed(control->dropdown_saved_bg,
-                                       control->dropdown_saved_w,
-                                       control->dropdown_saved_h,
-                                       control->dropdown_saved_x,
-                                       control->dropdown_saved_y);
-        kfree(control->dropdown_saved_bg);
-        control->dropdown_saved_bg = NULL;
-        control->dropdown_saved_w = 0;
-        control->dropdown_saved_h = 0;
-        control->dropdown_saved_x = 0;
-        control->dropdown_saved_y = 0;
+    if (control->dropdown.dropdown_saved_bg) {
+        gfx_write_screen_region_packed(control->dropdown.dropdown_saved_bg,
+                                       control->dropdown.dropdown_saved_w,
+                                       control->dropdown.dropdown_saved_h,
+                                       control->dropdown.dropdown_saved_x,
+                                       control->dropdown.dropdown_saved_y);
+        kfree(control->dropdown.dropdown_saved_bg);
+        control->dropdown.dropdown_saved_bg = NULL;
+        control->dropdown.dropdown_saved_w = 0;
+        control->dropdown.dropdown_saved_h = 0;
+        control->dropdown.dropdown_saved_x = 0;
+        control->dropdown.dropdown_saved_y = 0;
     }
 
-    control->dropdown_open = 0;
+    control->dropdown.dropdown_open = 0;
     mouse_invalidate_buffer();
 }
 
@@ -989,24 +989,24 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
     window_theme_t *theme = theme_get_current();
     
     /* Reusing fields: checked=orientation (0=vert, 1=horiz), cursor_pos=value, max_length=max_value */
-    int vertical = !control->checked;
+    int vertical = !control->scrollbar.checked;
     int arrow_size = vertical ? control->w : control->h;
     int track_len = vertical ? (control->h - 2 * arrow_size) : (control->w - 2 * arrow_size);
     
     /* Calculate thumb size and position */
     int thumb_size = vertical ? 20 : 20;
     if (thumb_size > track_len) thumb_size = track_len;
-    int max_val = control->max_length > 0 ? control->max_length : 100;
+    int max_val = control->scrollbar.max_length > 0 ? control->scrollbar.max_length : 100;
     int thumb_pos = 0;
     if (max_val > 0 && track_len > thumb_size) {
         /* Thumb position ranges from 0 to (track_len - thumb_size) */
-        thumb_pos = ((track_len - thumb_size) * control->cursor_pos) / max_val;
+        thumb_pos = ((track_len - thumb_size) * control->scrollbar.cursor_pos) / max_val;
     }
     
     /* Draw arrow buttons */
     if (vertical) {
         /* Up arrow button */
-        int up_pressed = (control->hovered_item == 0 && control->pressed);
+        int up_pressed = (control->scrollbar.hovered_item == 0 && control->scrollbar.pressed);
         gfx_fillrect(abs_x, abs_y, control->w, arrow_size, theme->button_color);
         gfx_rect(abs_x, abs_y, control->w, arrow_size, COLOR_BLACK);
         if (up_pressed) {
@@ -1029,7 +1029,7 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
         
         /* Down arrow button */
         int down_y = abs_y + control->h - arrow_size;
-        int down_pressed = (control->hovered_item == 2 && control->pressed);
+        int down_pressed = (control->dropdown.hovered_item == 2 && control->dropdown.pressed);
         gfx_fillrect(abs_x, down_y, control->w, arrow_size, theme->button_color);
         gfx_rect(abs_x, down_y, control->w, arrow_size, COLOR_BLACK);
         if (down_pressed) {
@@ -1060,7 +1060,7 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
         
         /* Draw thumb (looks like empty button) */
         int thumb_y = track_y + thumb_pos;
-        int thumb_pressed = (control->hovered_item == 1 && control->pressed);
+        int thumb_pressed = (control->scrollbar.hovered_item == 1 && control->scrollbar.pressed);
         gfx_fillrect(abs_x, thumb_y, control->w, thumb_size, theme->button_color);
         gfx_rect(abs_x, thumb_y, control->w, thumb_size, COLOR_BLACK);
         if (thumb_pressed) {
@@ -1076,7 +1076,7 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
     } else {
         /* Horizontal scrollbar */
         /* Left arrow button */
-        int left_pressed = (control->hovered_item == 0 && control->pressed);
+        int left_pressed = (control->scrollbar.hovered_item == 0 && control->scrollbar.pressed);
         gfx_fillrect(abs_x, abs_y, arrow_size, control->h, theme->button_color);
         gfx_rect(abs_x, abs_y, arrow_size, control->h, COLOR_BLACK);
         if (left_pressed) {
@@ -1099,7 +1099,7 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
         
         /* Right arrow button */
         int right_x = abs_x + control->w - arrow_size;
-        int right_pressed = (control->hovered_item == 2 && control->pressed);
+        int right_pressed = (control->dropdown.hovered_item == 2 && control->dropdown.pressed);
         gfx_fillrect(right_x, abs_y, arrow_size, control->h, theme->button_color);
         gfx_rect(right_x, abs_y, arrow_size, control->h, COLOR_BLACK);
         if (right_pressed) {
@@ -1130,7 +1130,7 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
         
         /* Draw thumb */
         int thumb_x = track_x + thumb_pos;
-        int thumb_pressed = (control->hovered_item == 1 && control->pressed);
+        int thumb_pressed = (control->scrollbar.hovered_item == 1 && control->scrollbar.pressed);
         gfx_fillrect(thumb_x, abs_y, thumb_size, control->h, theme->button_color);
         gfx_rect(thumb_x, abs_y, thumb_size, control->h, COLOR_BLACK);
         if (thumb_pressed) {

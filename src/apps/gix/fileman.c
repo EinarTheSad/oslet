@@ -100,7 +100,7 @@ static char* show_prompt_dialog(const char *title, const char *label, const char
     gui_control_t textbox = {0};
     textbox.type = CTRL_TEXTBOX;
     textbox.x = 80; textbox.y = 5; textbox.w = 210; textbox.h = 20;
-    textbox.id = 2; textbox.font_size = 12; textbox.max_length = 255;
+    textbox.id = 2; textbox.font_size = 12; textbox.textbox.max_length = 255;
     if (default_value && default_value[0])
         strncpy(textbox.text, default_value, sizeof(textbox.text) - 1);
     sys_win_add_control(dlg, &textbox);
@@ -444,10 +444,10 @@ static void refresh_display(void) {
         ctrl_set_visible(state.form, ID_TREE_SCROLLBAR, 1);
         gui_control_t *scrollbar = sys_win_get_control(state.form, ID_TREE_SCROLLBAR);
         if (scrollbar) {
-            scrollbar->max_length = state.tree_count - state.tree_visible;
-            if (state.tree_scroll_offset > scrollbar->max_length)
-                state.tree_scroll_offset = scrollbar->max_length;
-            scrollbar->cursor_pos = state.tree_scroll_offset;
+            scrollbar->scrollbar.max_length = state.tree_count - state.tree_visible;
+            if (state.tree_scroll_offset > scrollbar->scrollbar.max_length)
+                state.tree_scroll_offset = scrollbar->scrollbar.max_length;
+            scrollbar->scrollbar.cursor_pos = state.tree_scroll_offset;
         }
     } else {
         ctrl_set_visible(state.form, ID_TREE_SCROLLBAR, 0);
@@ -491,10 +491,10 @@ static void refresh_display(void) {
         ctrl_set_visible(state.form, ID_FILE_SCROLLBAR, 1);
         gui_control_t *scrollbar = sys_win_get_control(state.form, ID_FILE_SCROLLBAR);
         if (scrollbar) {
-            scrollbar->max_length = file_rows_total - state.file_rows;
-            if (state.file_scroll_offset > scrollbar->max_length)
-                state.file_scroll_offset = scrollbar->max_length;
-            scrollbar->cursor_pos = state.file_scroll_offset;
+            scrollbar->scrollbar.max_length = file_rows_total - state.file_rows;
+            if (state.file_scroll_offset > scrollbar->scrollbar.max_length)
+                state.file_scroll_offset = scrollbar->scrollbar.max_length;
+            scrollbar->scrollbar.cursor_pos = state.file_scroll_offset;
         }
     } else {
         ctrl_set_visible(state.form, ID_FILE_SCROLLBAR, 0);
@@ -555,7 +555,7 @@ static int find_checked_file_index(void) {
     int visible_file_count = state.file_rows * state.file_cols;
     for (int i = 0; i < visible_file_count; i++) {
         gui_control_t *ctrl = sys_win_get_control(state.form, ID_FILE_BASE + i);
-        if (ctrl && ctrl->checked) {
+        if (ctrl && ctrl->icon.checked) {
             int actual_idx = (state.file_scroll_offset * state.file_cols) + i;
             if (actual_idx >= 0 && actual_idx < state.file_count)
                 return actual_idx;
@@ -775,7 +775,7 @@ static int handle_event(int event) {
     if (event == ID_TREE_SCROLLBAR) {
         gui_control_t *scrollbar = sys_win_get_control(state.form, ID_TREE_SCROLLBAR);
         if (scrollbar) {
-            state.tree_scroll_offset = scrollbar->cursor_pos;
+            state.tree_scroll_offset = scrollbar->scrollbar.cursor_pos;
             refresh_display();
         }
         return 0;
@@ -785,7 +785,7 @@ static int handle_event(int event) {
     if (event == ID_FILE_SCROLLBAR) {
         gui_control_t *scrollbar = sys_win_get_control(state.form, ID_FILE_SCROLLBAR);
         if (scrollbar) {
-            state.file_scroll_offset = scrollbar->cursor_pos;
+            state.file_scroll_offset = scrollbar->scrollbar.cursor_pos;
             refresh_display();
         }
         return 0;
@@ -917,7 +917,7 @@ void _start(void) {
     path_textbox.bg = 15;
     path_textbox.id = ID_PATH_TEXTBOX; path_textbox.font_size = 12;
     path_textbox.border = 1; path_textbox.border_color = 8;
-    path_textbox.max_length = 255;
+    path_textbox.textbox.max_length = 255;
     char upper_path[256];
     strcpy(upper_path, state.current_path);
     str_toupper(upper_path);
@@ -956,7 +956,7 @@ void _start(void) {
         tb.x = btn_x_start + i * btn_spacing; tb.y = btn_y;
         tb.w = btn_size; tb.h = btn_size;
         tb.id = tb_defs[i].id; tb.font_size = 12;
-        tb.image_mode = 1; tb.bg = -1;
+        tb.bg = -1;
         sys_win_add_control(state.form, &tb);
         ctrl_set_image(state.form, tb_defs[i].id, tb_defs[i].icon);
     }

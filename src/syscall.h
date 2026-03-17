@@ -195,33 +195,45 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define FONT_ITALIC 2
 #define FONT_BOLD_ITALIC 3
 
-// Forward declaration
 typedef struct bitmap_s bitmap_t;
 
+// Control-specific field structures
 typedef struct {
-    uint8_t type;
-    uint16_t x, y, w, h;
-    int fg, bg;
-    char text[256];
-    uint16_t id;
-    uint8_t font_type;
-    uint8_t font_size;
-    uint8_t border;
-    uint8_t border_color;
+    bitmap_t *cached_bitmap_orig;
+    uint8_t pressed;
+} control_button_t;
+
+typedef struct {
+    /* No specific fields needed */
+} control_label_t;
+
+typedef struct {
     bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
     bitmap_t *cached_bitmap_scaled;  /* Scaled bitmap cached for current control size */
     uint8_t image_mode;              /* 0=center (default), 1=stretch */
-    uint8_t pressed;
+    uint8_t load_failed;             /* set when image loading failed to avoid retry storm */
+} control_picturebox_t;
+
+typedef struct {
     uint8_t checked;
-    uint16_t group_id;
-    /* Textbox-specific fields */
+    uint8_t group_id;
+} control_checkbox_t;
+
+typedef struct {
+    uint8_t checked;
+    uint8_t group_id;
+} control_radiobutton_t;
+
+typedef struct {
     uint16_t cursor_pos;
     uint16_t max_length;
     uint16_t scroll_offset;
     uint8_t is_focused;
     int16_t sel_start;
     int16_t sel_end;
-    /* Dropdown-specific fields (cursor_pos used as selected_index) */
+} control_textbox_t;
+
+typedef struct {
     uint8_t dropdown_open;
     uint8_t item_count;
     int8_t hovered_item;
@@ -232,7 +244,59 @@ typedef struct {
     int16_t dropdown_saved_x;
     int16_t dropdown_saved_y;
     uint16_t dropdown_scroll; /* first visible item index when dropdown list is scrolled */
-    uint8_t load_failed; /* set when image loading failed to avoid retry storm */
+    uint8_t pressed;
+    int16_t scroll_offset;    /* drag offset for inline scrollbar */
+    uint16_t cursor_pos;      /* selected index */
+} control_dropdown_t;
+
+typedef struct {
+    /* No specific fields needed */
+} control_frame_t;
+
+typedef struct {
+    bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
+    uint8_t checked;
+} control_icon_t;
+
+typedef struct {
+    /* No specific fields needed */
+} control_clock_t;
+
+typedef struct {
+    uint16_t cursor_pos;     /* Value */
+    uint16_t max_length;     /* Max value */
+    int8_t hovered_item;
+    uint8_t pressed;
+    uint8_t checked;         /* Orientation (0 = horizontal, 1 = vertical) */
+    int16_t scroll_offset;
+} control_scrollbar_t;
+
+// Main control structure
+typedef struct {
+    uint16_t id;
+    uint8_t type;
+    uint8_t font_type;
+    uint8_t font_size;
+    int16_t x, y;
+    uint16_t w, h;
+    int fg, bg;
+    uint8_t border;
+    uint8_t border_color;
+    uint8_t _reserved[8];  /* Padding to align union to 8-byte boundary for bitmap_t* */
+    union {
+        control_button_t button;
+        control_label_t label;
+        control_picturebox_t picturebox;
+        control_checkbox_t checkbox;
+        control_radiobutton_t radiobutton;
+        control_textbox_t textbox;
+        control_frame_t frame;
+        control_icon_t icon;
+        control_clock_t clock;
+        control_dropdown_t dropdown;
+        control_scrollbar_t scrollbar;
+    };
+    char text[256];
 } gui_control_t;
 
 typedef struct {

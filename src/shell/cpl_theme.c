@@ -194,28 +194,28 @@ static int cpl_theme_init(prog_instance_t *inst) {
 
         /* Windows */
         { .type = CTRL_LABEL,      .x = 12,  .y = 25,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_WINBG,     .text = "Windows:" },
-        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 25,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_WINBG,    .cursor_pos = 0, .item_count = 16, .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 25,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_WINBG,    .dropdown = { .cursor_pos = 0, .item_count = 16 }, .text = "" },
 
         /* Title bar */
         { .type = CTRL_LABEL,      .x = 12,  .y = 47,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_TITLEBAR,  .text = "Title bar:" },
-        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 47,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TITLEBAR, .cursor_pos = 0, .item_count = 16, .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 47,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TITLEBAR, .dropdown = { .cursor_pos = 0, .item_count = 16 }, .text = "" },
 
         /* Buttons */
         { .type = CTRL_LABEL,      .x = 12,  .y = 69,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_TITLEBTN,  .text = "Buttons:" },
-        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 69,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TITLEBTN, .cursor_pos = 0, .item_count = 16, .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 69,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TITLEBTN, .dropdown = { .cursor_pos = 0, .item_count = 16 }, .text = "" },
 
         /* Taskbar */
         { .type = CTRL_LABEL,      .x = 12,  .y = 91,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_TASKBAR,   .text = "Taskbar:" },
-        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 91,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TASKBAR,  .cursor_pos = 0, .item_count = 16, .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 91,  .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_TASKBAR,  .dropdown = { .cursor_pos = 0, .item_count = 16 }, .text = "" },
 
         /* Start button */
         { .type = CTRL_LABEL,      .x = 12,  .y = 113,                    .fg = 0,  .bg = -1, .id = CTRL_LBL_STARTBTN,  .text = "Start button:" },
-        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 113, .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_STARTBTN, .cursor_pos = 0, .item_count = 16, .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 113, .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_STARTBTN, .dropdown = { .cursor_pos = 0, .item_count = 16 }, .text = "" },
 
         /* Desktop icons frame + icon-text dropdown */
         { .type = CTRL_FRAME,      .x = 6,   .y = 147, .w = 262, .h = 45,  .fg = 0,  .bg = -1, .id = CTRL_FRAME_DESKTOP,  .text = "Desktop icons" },
         { .type = CTRL_LABEL,      .x = 12,  .y = 167,                    .fg = 0,  .bg = -1, .id = CTRL_LBL_ICON_TEXT, .text = "Icon text:" },
-        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 167, .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_ICON_TEXT, .cursor_pos = 0, .item_count = 2,  .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 95,  .y = 167, .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_ICON_TEXT, .dropdown = { .cursor_pos = 0, .item_count = 2 }, .text = "" },
 
         /* Buttons */
         { .type = CTRL_BUTTON,     .x = 30,  .y = 198, .w = 65,  .h = 22,  .fg = 0,  .bg = -1, .id = CTRL_BTN_APPLY,      .text = "Apply" },
@@ -235,15 +235,15 @@ static int cpl_theme_init(prog_instance_t *inst) {
     ctrl_set_text(state->form, CTRL_DROP_TASKBAR, color_options);
     ctrl_set_text(state->form, CTRL_DROP_STARTBTN, color_options);
 
-    gui_control_t *g = sys_win_get_control(state->form, CTRL_DROP_WINBG); if (g) { g->cursor_pos = state->theme_winbg; g->item_count = 16; }
-    g = sys_win_get_control(state->form, CTRL_DROP_TITLEBAR); if (g) { g->cursor_pos = state->theme_titlebar; g->item_count = 16; }
-    g = sys_win_get_control(state->form, CTRL_DROP_TITLEBTN); if (g) { g->cursor_pos = state->theme_titlebtn; g->item_count = 16; }
-    g = sys_win_get_control(state->form, CTRL_DROP_TASKBAR); if (g) { g->cursor_pos = state->theme_taskbar; g->item_count = 16; }
-    g = sys_win_get_control(state->form, CTRL_DROP_STARTBTN); if (g) { g->cursor_pos = state->theme_startbtn; g->item_count = 16; }
+    gui_control_t *g = sys_win_get_control(state->form, CTRL_DROP_WINBG); if (g) { g->dropdown.cursor_pos = state->theme_winbg; g->dropdown.item_count = 16; }
+    g = sys_win_get_control(state->form, CTRL_DROP_TITLEBAR); if (g) { g->dropdown.cursor_pos = state->theme_titlebar; g->dropdown.item_count = 16; }
+    g = sys_win_get_control(state->form, CTRL_DROP_TITLEBTN); if (g) { g->dropdown.cursor_pos = state->theme_titlebtn; g->dropdown.item_count = 16; }
+    g = sys_win_get_control(state->form, CTRL_DROP_TASKBAR); if (g) { g->dropdown.cursor_pos = state->theme_taskbar; g->dropdown.item_count = 16; }
+    g = sys_win_get_control(state->form, CTRL_DROP_STARTBTN); if (g) { g->dropdown.cursor_pos = state->theme_startbtn; g->dropdown.item_count = 16; }
 
     /* icon text dropdown */
     ctrl_set_text(state->form, CTRL_DROP_ICON_TEXT, icon_text_options);
-    g = sys_win_get_control(state->form, CTRL_DROP_ICON_TEXT); if (g) { g->cursor_pos = (state->theme_text_color == 15) ? 1 : 0; g->item_count = 2; }
+    g = sys_win_get_control(state->form, CTRL_DROP_ICON_TEXT); if (g) { g->dropdown.cursor_pos = (state->theme_text_color == 15) ? 1 : 0; g->dropdown.item_count = 2; }
 
     sys_win_draw(state->form);
     prog_register_window(inst, state->form);
@@ -254,7 +254,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
 static uint8_t get_dropdown_value(void *form, int ctrl_id) {
     gui_control_t *ctrl = sys_win_get_control(form, ctrl_id);
     if (ctrl) {
-        return (uint8_t)ctrl->cursor_pos;
+        return (uint8_t)ctrl->dropdown.cursor_pos;
     }
     return 0;
 }
