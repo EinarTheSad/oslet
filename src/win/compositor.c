@@ -8,6 +8,7 @@
 #include "wm_config.h"
 #include "wm.h"
 #include "../drivers/mouse.h"
+#include "../mem/heap.h"
 
 static void compositor_draw_controls(gui_form_t *form) {
     if (!form || form->win.is_minimized || !form->controls) return;
@@ -81,15 +82,24 @@ void compositor_draw_all(window_manager_t *wm) {
             if (!form || !form->win.is_visible) continue;
 
             if (form->win.is_minimized) {
-                if (form->win.minimized_icon) {
-                    int ix = form->win.minimized_icon->x;
-                    int iy = form->win.minimized_icon->y;
-                    int iw = WM_ICON_TOTAL_WIDTH;
-                    int ih = icon_get_height(form->win.minimized_icon);
-                    if (rects_intersect(dx, dy, dw, dh, ix, iy, iw, ih)) {
-                        /* icon touches dirty rect - mark this index */
-                        if (i < min_index_to_draw) min_index_to_draw = i;
+                int ix = 0, iy = 0, iw = 0, ih = 0;
+                int has_icon = 0;
+                if (form->win.minimized_icon_id != -1 && form->controls) {
+                    for (int j = 0; j < form->ctrl_count; j++) {
+                        gui_control_t *ctrl = &form->controls[j];
+                        if (ctrl->type == CTRL_ICON && ctrl->id == form->win.minimized_icon_id) {
+                            ix = ctrl->x;
+                            iy = ctrl->y;
+                            iw = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
+                            int label_lines = icon_count_label_lines(ctrl->text, 49);
+                            ih = icon_calc_total_height(32, label_lines);
+                            has_icon = 1;
+                            break;
+                        }
                     }
+                }
+                if (has_icon && rects_intersect(dx, dy, dw, dh, ix, iy, iw, ih)) {
+                    if (i < min_index_to_draw) min_index_to_draw = i;
                 }
             } else {
                 if (rects_intersect(dx, dy, dw, dh,
@@ -110,13 +120,20 @@ void compositor_draw_all(window_manager_t *wm) {
                 if (!form || !form->win.is_visible) continue;
 
                 if (form->win.is_minimized) {
-                    if (form->win.minimized_icon) {
-                        int ix = form->win.minimized_icon->x;
-                        int iy = form->win.minimized_icon->y;
-                        int iw = WM_ICON_TOTAL_WIDTH;
-                        int ih = icon_get_height(form->win.minimized_icon);
-                        if (rects_intersect(dx, dy, dw, dh, ix, iy, iw, ih)) {
-                            icon_draw(form->win.minimized_icon);
+                    if (form->win.minimized_icon_id != -1 && form->controls) {
+                        for (int j = 0; j < form->ctrl_count; j++) {
+                            gui_control_t *ctrl = &form->controls[j];
+                            if (ctrl->type == CTRL_ICON && ctrl->id == form->win.minimized_icon_id) {
+                                int ix = ctrl->x;
+                                int iy = ctrl->y;
+                                int iw = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
+                                int label_lines = icon_count_label_lines(ctrl->text, 49);
+                                int ih = icon_calc_total_height(32, label_lines);
+                                if (rects_intersect(dx, dy, dw, dh, ix, iy, iw, ih)) {
+                                    ctrl_draw_icon(ctrl, ctrl->x, ctrl->y, 0);
+                                }
+                                break;
+                            }
                         }
                     }
                 } else {
@@ -193,14 +210,22 @@ void compositor_draw_all(window_manager_t *wm) {
 
     /* Full redraw path (or when needs_full_redraw was set)
        1) Draw all minimized icons first so they appear underneath windows.
-       2) Then draw windows/front-to-back normally. */
+        2) Then draw windows/front-to-back normally. */
 
     /* Draw all minimized icons (underneath everything) */
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *form = wm->windows[i];
         if (!form || !form->win.is_visible) continue;
-        if (form->win.is_minimized && form->win.minimized_icon) {
-            icon_draw(form->win.minimized_icon);
+        if (form->win.is_minimized) {
+            if (form->win.minimized_icon_id != -1 && form->controls) {
+                for (int j = 0; j < form->ctrl_count; j++) {
+                    gui_control_t *ctrl = &form->controls[j];
+                    if (ctrl->type == CTRL_ICON && ctrl->id == form->win.minimized_icon_id) {
+                        ctrl_draw_icon(ctrl, ctrl->x, ctrl->y, 0);
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -267,8 +292,14 @@ void compositor_draw_single(window_manager_t *wm, gui_form_t *form) {
     /* If the single form is minimized, draw its icon only (icons are
        treated underneath normal windows). Otherwise draw the full form. */
     if (form->win.is_minimized) {
-        if (form->win.minimized_icon) {
-            icon_draw(form->win.minimized_icon);
+        if (form->win.minimized_icon_id != -1 && form->controls) {
+            for (int j = 0; j < form->ctrl_count; j++) {
+                gui_control_t *ctrl = &form->controls[j];
+                if (ctrl->type == CTRL_ICON && ctrl->id == form->win.minimized_icon_id) {
+                    ctrl_draw_icon(ctrl, ctrl->x, ctrl->y, 0);
+                    break;
+                }
+            }
         }
         mouse_invalidate_buffer();
         return;
@@ -394,8 +425,19 @@ void compositor_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, 
 void compositor_invalidate_icon_backgrounds(window_manager_t *wm) {
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *form = wm->windows[i];
-        if (form && form->win.is_minimized && form->win.minimized_icon) {
-            icon_invalidate_bg(form->win.minimized_icon);
+        if (form && form->win.is_minimized) {
+            if (form->win.minimized_icon_id != -1 && form->controls) {
+                for (int j = 0; j < form->ctrl_count; j++) {
+                    gui_control_t *ctrl = &form->controls[j];
+                    if (ctrl->type == CTRL_ICON && ctrl->id == form->win.minimized_icon_id) {
+                        if (ctrl->icon.saved_bg) {
+                            kfree(ctrl->icon.saved_bg);
+                            ctrl->icon.saved_bg = NULL;
+                        }
+                        break;
+                    }
+                }
+            }
         }
     }
 }

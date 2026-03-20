@@ -254,8 +254,15 @@ typedef struct {
 } control_frame_t;
 
 typedef struct {
-    bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
+    int height;
     uint8_t checked;
+    int dragging;                /* 1 if icon is being dragged */
+    int drag_offset_x;           /* Mouse offset from icon origin when drag started */
+    int drag_offset_y;
+    int original_x, original_y;  /* Position before drag (for cancel/snap-back) */
+    int click_start_x, click_start_y;  /* Mouse position at click (for drag threshold detection) */
+    bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
+    uint8_t *saved_bg;
 } control_icon_t;
 
 typedef struct {
@@ -272,7 +279,7 @@ typedef struct {
 } control_scrollbar_t;
 
 // Main control structure
-typedef struct {
+typedef struct gui_control_s {
     uint16_t id;
     uint8_t type;
     uint8_t font_type;
@@ -299,7 +306,7 @@ typedef struct {
     char text[256];
 } gui_control_t;
 
-typedef struct {
+typedef struct gui_form_s {
     window_t win;
     gui_control_t *controls;
     uint8_t ctrl_count;

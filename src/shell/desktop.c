@@ -496,9 +496,14 @@ static void pump_all_program_events(int mx, int my) {
             /* Only process events for the topmost window, or windows that are currently dragging/resizing
                (they need to receive mouse move events even if another window is on top) */
             gui_form_t *gform = (gui_form_t*)form;
-            int should_process = (topmost == form) || gform->dragging || gform->resizing || 
-                                 (gform->win.is_minimized && gform->win.minimized_icon && 
-                                  gform->win.minimized_icon->dragging);
+            int icon_dragging = 0;
+            if (gform->win.is_minimized) {
+                if (gform->win.minimized_icon_id != -1 && gform->controls) {
+                    gui_control_t *ctrl = sys_win_get_control(gform, gform->win.minimized_icon_id);
+                    if (ctrl && ctrl->icon.dragging) icon_dragging = 1;
+                }
+            }
+            int should_process = (topmost == form) || gform->dragging || gform->resizing || icon_dragging;
             
             if (!should_process) continue;
 
