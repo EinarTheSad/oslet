@@ -13,7 +13,7 @@ typedef struct {
     gui_form_t *windows[WM_MAX_WINDOWS];  // Array of window pointers
     int count;                             // Number of active windows
     int focused_index;                     // Index of focused window (-1 if none)
-    int next_icon_y;                       // Y position for next minimized icon (vertical layout)
+    int next_icon_row;                     // Row for next minimized icon (top-to-bottom)
     int next_icon_column;                  // Current column for icon placement
     uint32_t last_icon_click_time;         // For double-click detection
     gui_form_t *last_icon_click_form;      // Which form's icon was clicked

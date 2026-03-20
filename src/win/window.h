@@ -1,7 +1,10 @@
 #pragma once
 #include <stdint.h>
 #include "../fonts/bmf.h"
-#include "icon.h"
+
+/* Forward declarations - actual definitions are in syscall.h */
+struct gui_form_s;
+struct gui_control_s;
 
 typedef struct bitmap_s bitmap_t;
 
@@ -12,7 +15,7 @@ typedef struct {
     int dirty;
     uint8_t *saved_bg;
     int is_minimized;
-    icon_t *minimized_icon;
+    int16_t minimized_icon_id;  /* Control ID for minimized window icon */
     int resizable;
     uint8_t is_taskbar;  /* 1=taskbar window (always on top, non-movable, no titlebar) */
 } window_t;
@@ -40,9 +43,9 @@ void win_destroy(window_t *win);
 int win_is_titlebar(window_t *win, int mx, int my);
 int win_is_minimize_button(window_t *win, int mx, int my);
 int win_is_resize_corner(window_t *win, int mx, int my);
-void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path);
-void win_restore(window_t *win);
-int win_is_icon_clicked(window_t *win, int mx, int my);
+void win_minimize(struct gui_form_s *form, int icon_x, int icon_y, const char *icon_path);
+void win_restore(struct gui_form_s *form);
+int win_is_icon_clicked(struct gui_form_s *form, int mx, int my);
 void win_move(window_t *win, int dx, int dy);
 void win_resize(window_t *win, int new_w, int new_h);
 void win_save_background(window_t *win);

@@ -1,13 +1,12 @@
 #include "wm.h"
 #include "window.h"
-#include "icon.h"
 #include "menu.h"
 #include "../drivers/mouse.h"
 
 void wm_init(window_manager_t *wm) {
     wm->count = 0;
     wm->focused_index = -1;
-    wm->next_icon_y = WM_ICON_MARGIN;
+    wm->next_icon_row = 0;
     wm->next_icon_column = 0;
     wm->last_icon_click_time = 0;
     wm->last_icon_click_form = NULL;
@@ -104,7 +103,7 @@ gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
 
         // Check if minimized - check icon area
         if (form->win.is_minimized) {
-            if (win_is_icon_clicked(&form->win, x, y)) {
+            if (win_is_icon_clicked(form, x, y)) {
                 return form;
             }
         } else {
@@ -159,46 +158,55 @@ gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
 }
 
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
-    // First check if there are any free slots to reuse
+    // Pop from beginning of free list (top-leftmost slot)
     if (wm->free_slot_count > 0) {
+        *out_x = wm->free_slots[0].x;
+        *out_y = wm->free_slots[0].y;
+        // Shift remaining slots down
+        for (int i = 0; i < wm->free_slot_count - 1; i++) {
+            wm->free_slots[i] = wm->free_slots[i + 1];
+        }
         wm->free_slot_count--;
-        *out_x = wm->free_slots[wm->free_slot_count].x;
-        *out_y = wm->free_slots[wm->free_slot_count].y;
         return;
     }
 
-    // No free slots - allocate a new position
-    // Calculate X based on column (vertical stacking from left side)
+    // No free slots - allocate a new position (top-left first, go down then right)
     *out_x = WM_ICON_MARGIN + (wm->next_icon_column * WM_ICON_SLOT_WIDTH);
-    *out_y = wm->next_icon_y;
+    *out_y = WM_ICON_MARGIN + (wm->next_icon_row * WM_ICON_SLOT_HEIGHT);
 
-    // Advance position for next icon (vertical layout)
-    wm->next_icon_y += WM_ICON_SLOT_HEIGHT;
-
-    // Check if we need to wrap to next column (accounting for taskbar at bottom)
-    // Leave space for taskbar plus margin
-    if (wm->next_icon_y + WM_ICON_TOTAL_HEIGHT > WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_MARGIN) {
-        wm->next_icon_y = WM_ICON_MARGIN;  // Reset to top
-        wm->next_icon_column++;  // Move to next column
+    // Advance to next position
+    wm->next_icon_row++;
+    if (wm->next_icon_row * WM_ICON_SLOT_HEIGHT + WM_ICON_TOTAL_HEIGHT > WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_MARGIN) {
+        wm->next_icon_row = 0;
+        wm->next_icon_column++;
     }
 }
 
 void wm_release_icon_slot(window_manager_t *wm, int x, int y) {
-    // Add slot to free list if there's room
-    if (wm->free_slot_count < WM_MAX_FREE_SLOTS) {
-        wm->free_slots[wm->free_slot_count].x = x;
-        wm->free_slots[wm->free_slot_count].y = y;
-        wm->free_slot_count++;
+    // Insert in sorted order (top-to-bottom, left-to-right)
+    if (wm->free_slot_count >= WM_MAX_FREE_SLOTS) return;
+
+    int insert_pos = wm->free_slot_count;
+    for (int i = 0; i < wm->free_slot_count; i++) {
+        // Sort by y first, then x (top to bottom, left to right)
+        if (y < wm->free_slots[i].y || (y == wm->free_slots[i].y && x < wm->free_slots[i].x)) {
+            insert_pos = i;
+            break;
+        }
     }
+    // Shift slots up to make room
+    for (int i = wm->free_slot_count; i > insert_pos; i--) {
+        wm->free_slots[i] = wm->free_slots[i - 1];
+    }
+    wm->free_slots[insert_pos].x = x;
+    wm->free_slots[insert_pos].y = y;
+    wm->free_slot_count++;
 }
 
 void wm_claim_icon_slot(window_manager_t *wm, int x, int y) {
-    /* Remove a matching free slot entry so the slot is considered used/claimed.
-       This prevents a new minimized window from being placed on a slot that
-       an icon was just moved into. */
+    // Remove slot from free list (it's now occupied)
     for (int i = 0; i < wm->free_slot_count; i++) {
         if (wm->free_slots[i].x == x && wm->free_slots[i].y == y) {
-            /* Shift remaining slots down */
             for (int j = i; j < wm->free_slot_count - 1; j++) {
                 wm->free_slots[j] = wm->free_slots[j + 1];
             }

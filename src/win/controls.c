@@ -626,8 +626,64 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
     int label_lines = icon_count_label_lines(control->text, max_line_width);
     int total_h = icon_calc_total_height(icon_size, label_lines);
 
-    /* Clear background to remove previous selection state */
-    gfx_fillrect(abs_x, abs_y, total_w, total_h, win_bg);
+    /* Save/restore background */
+    int bg_width = total_w + 2;
+    int bg_height = total_h + 2;
+    int bg_start_x = abs_x - 1;
+    int bg_start_y = abs_y - 1;
+    int row_bytes = (bg_width + 1) / 2;
+
+    if (!control->icon.saved_bg) {
+        /* First draw - save background */
+        control->icon.saved_bg = (uint8_t*)kmalloc(row_bytes * bg_height);
+        if (control->icon.saved_bg) {
+            if (bg_start_x >= 0 && bg_start_y >= 0 && 
+                bg_start_x + bg_width <= WM_SCREEN_WIDTH && 
+                bg_start_y + bg_height <= WM_SCREEN_HEIGHT && (bg_start_x & 1) == 0) {
+                /* Fast path - aligned and on screen */
+                gfx_read_screen_region_packed(control->icon.saved_bg, bg_width, bg_height, bg_start_x, bg_start_y);
+            } else {
+                /* Slow path - pixel by pixel for misaligned/out-of-bounds */
+                for (int y = 0; y < bg_height; y++) {
+                    uint8_t *dst_row = control->icon.saved_bg + y * row_bytes;
+                    for (int b = 0; b < row_bytes; b++) dst_row[b] = 0;
+                    for (int x = 0; x < bg_width; x++) {
+                        if (bg_start_y + y >= 0 && bg_start_y + y < WM_SCREEN_HEIGHT && 
+                            bg_start_x + x >= 0 && bg_start_x + x < WM_SCREEN_WIDTH) {
+                            uint8_t pix = gfx_getpixel(bg_start_x + x, bg_start_y + y);
+                            int byte_idx = x / 2;
+                            if (x & 1) dst_row[byte_idx] = (dst_row[byte_idx] & 0xF0) | (pix & 0x0F);
+                            else dst_row[byte_idx] = (dst_row[byte_idx] & 0x0F) | (pix << 4);
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        /* Subsequent draws - restore background */
+        if (bg_start_x >= 0 && bg_start_y >= 0 && 
+            bg_start_x + bg_width <= WM_SCREEN_WIDTH && 
+            bg_start_y + bg_height <= WM_SCREEN_HEIGHT && (bg_start_x & 1) == 0) {
+            gfx_write_screen_region_packed(control->icon.saved_bg, bg_width, bg_height, bg_start_x, bg_start_y);
+        } else {
+            /* Slow path - pixel by pixel */
+            for (int y = 0; y < bg_height; y++) {
+                uint8_t *src_row = control->icon.saved_bg + y * row_bytes;
+                for (int x = 0; x < bg_width; x++) {
+                    int sx = bg_start_x + x;
+                    int sy = bg_start_y + y;
+                    if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
+                        int byte_idx = x / 2;
+                        uint8_t packed = src_row[byte_idx];
+                        uint8_t pix = (x & 1) ? (packed & 0x0F) : (packed >> 4);
+                        gfx_putpixel(sx, sy, pix);
+                    }
+                }
+            }
+        }
+    }
+    
+    (void)win_bg;
 
     /* Calculate icon position (centered horizontally) */
     int icon_x = abs_x + (total_w - icon_size) / 2;

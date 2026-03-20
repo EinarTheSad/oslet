@@ -16,6 +16,7 @@
 #include "rtc.h"
 #include "win/window.h"
 #include "win/wm_config.h"
+#include "win/icon.h"
 #include "win/bitmap.h"
 #include "win/wm.h"
 #include "win/controls.h"
@@ -1270,18 +1271,28 @@ static void pump_set_icons_dirty_rect(window_manager_t *wm) {
     int found = 0;
 
     for (int i = 0; i < wm->count; i++) {
-        if (wm->windows[i] && wm->windows[i]->win.is_minimized && wm->windows[i]->win.minimized_icon) {
-            icon_t *icon = wm->windows[i]->win.minimized_icon;
-            int ix = icon->x - ICON_DIRTY_MARGIN;
-            int iy = icon->y - ICON_DIRTY_MARGIN;
-            int ix2 = icon->x + WM_ICON_TOTAL_WIDTH + ICON_DIRTY_MARGIN;
-            int iy2 = icon->y + icon_get_height(icon) + ICON_DIRTY_MARGIN;
-
-            if (ix < min_x) min_x = ix;
-            if (iy < min_y) min_y = iy;
-            if (ix2 > max_x) max_x = ix2;
-            if (iy2 > max_y) max_y = iy2;
-            found = 1;
+        gui_form_t *f = wm->windows[i];
+        if (!f || !f->win.is_minimized) continue;
+        
+        if (f->win.minimized_icon_id != -1 && f->controls) {
+            for (int j = 0; j < f->ctrl_count; j++) {
+                gui_control_t *ctrl = &f->controls[j];
+                if (ctrl->type == CTRL_ICON && ctrl->id == f->win.minimized_icon_id) {
+                    int ix = ctrl->x - ICON_DIRTY_MARGIN;
+                    int iy = ctrl->y - ICON_DIRTY_MARGIN;
+                    int iw = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
+                    int label_lines = icon_count_label_lines(ctrl->text, 49);
+                    int ih = icon_calc_total_height(32, label_lines);
+                    int ix2 = ctrl->x + iw + ICON_DIRTY_MARGIN;
+                    int iy2 = ctrl->y + ih + ICON_DIRTY_MARGIN;
+                    if (ix < min_x) min_x = ix;
+                    if (iy < min_y) min_y = iy;
+                    if (ix2 > max_x) max_x = ix2;
+                    if (iy2 > max_y) max_y = iy2;
+                    found = 1;
+                    break;
+                }
+            }
         }
     }
 
@@ -1294,8 +1305,17 @@ static void pump_set_icons_dirty_rect(window_manager_t *wm) {
 
 static void pump_deselect_all_icons(window_manager_t *wm) {
     for (int i = 0; i < wm->count; i++) {
-        if (wm->windows[i] && wm->windows[i]->win.is_minimized && wm->windows[i]->win.minimized_icon) {
-            icon_set_selected(wm->windows[i]->win.minimized_icon, 0);
+        gui_form_t *f = wm->windows[i];
+        if (!f || !f->win.is_minimized) continue;
+        
+        if (f->win.minimized_icon_id != -1 && f->controls) {
+            for (int j = 0; j < f->ctrl_count; j++) {
+                gui_control_t *ctrl = &f->controls[j];
+                if (ctrl->type == CTRL_ICON && ctrl->id == f->win.minimized_icon_id) {
+                    ctrl->icon.checked = 0;
+                    break;
+                }
+            }
         }
     }
     pump_set_icons_dirty_rect(wm);
@@ -1304,37 +1324,39 @@ static void pump_deselect_all_icons(window_manager_t *wm) {
 static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
     uint32_t current_time = timer_get_ticks();
 
-    if (win_is_icon_clicked(&form->win, mx, my)) {
+    if (win_is_icon_clicked(form, mx, my)) {
         if (wm_is_icon_doubleclick(&global_wm, current_time, form)) {
             /* Double-click - restore window */
-            /* Release icon slot for reuse before restoring */
-            if (form->win.minimized_icon) {
-                wm_release_icon_slot(&global_wm,
-                                     form->win.minimized_icon->x,
-                                     form->win.minimized_icon->y);
+            int icon_x = 0, icon_y = 0;
+            if (form->win.minimized_icon_id != -1 && form->controls) {
+                gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+                if (ctrl) {
+                    icon_x = ctrl->x;
+                    icon_y = ctrl->y;
+                }
             }
-            win_restore(&form->win);
-                    /* Bring restored window to front and give it focus */
-                    wm_bring_to_front(&global_wm, form);
-                    /* Ensure focused_index is explicitly set to this window (safety) */
-                    if (global_wm.count > 0) global_wm.focused_index = global_wm.count - 1;
-                    /* Ensure desktop updates immediately after restoring */
-                    global_wm.needs_full_redraw = 1;
-                    compositor_draw_all(&global_wm);
-            return 2;  /* Window restored */
+            if (icon_x || icon_y) {
+                wm_release_icon_slot(&global_wm, icon_x, icon_y);
+            }
+            win_restore(form);
+            wm_bring_to_front(&global_wm, form);
+            if (global_wm.count > 0) global_wm.focused_index = global_wm.count - 1;
+            global_wm.needs_full_redraw = 1;
+            compositor_draw_all(&global_wm);
+            return 2;
         } else {
-            /* Single click - select this icon, prepare for potential drag */
-            /* Invalidate cursor buffer to prevent artifacts */
             mouse_invalidate_buffer();
-
             pump_deselect_all_icons(&global_wm);
-            if (form->win.minimized_icon) {
-                icon_set_selected(form->win.minimized_icon, 1);
-                /* Record mouse position for drag threshold detection */
-                form->win.minimized_icon->click_start_x = mx;
-                form->win.minimized_icon->click_start_y = my;
-                form->win.minimized_icon->original_x = form->win.minimized_icon->x;
-                form->win.minimized_icon->original_y = form->win.minimized_icon->y;
+            
+            if (form->win.minimized_icon_id != -1 && form->controls) {
+                gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+                if (ctrl) {
+                    ctrl->icon.checked = 1;
+                    ctrl->icon.click_start_x = mx;
+                    ctrl->icon.click_start_y = my;
+                    ctrl->icon.original_x = ctrl->x;
+                    ctrl->icon.original_y = ctrl->y;
+                }
             }
             wm_set_icon_click(&global_wm, current_time, form);
             return 1;  /* Selection changed, needs redraw */
@@ -1370,13 +1392,19 @@ static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
 
 static int is_any_icon_selected(window_manager_t *wm) {
     for (int i = 0; i < wm->count; i++) {
-            if (wm->windows[i] &&
-                wm->windows[i]->win.is_minimized &&
-                wm->windows[i]->win.minimized_icon &&
-                wm->windows[i]->win.minimized_icon->selected) {
-                    return 1;
+        gui_form_t *f = wm->windows[i];
+        if (!f || !f->win.is_minimized) continue;
+        
+        if (f->win.minimized_icon_id != -1 && f->controls) {
+            for (int j = 0; j < f->ctrl_count; j++) {
+                gui_control_t *ctrl = &f->controls[j];
+                if (ctrl->type == CTRL_ICON && ctrl->id == f->win.minimized_icon_id) {
+                    if (ctrl->icon.checked) return 1;
+                    break;
+                }
             }
         }
+    }
     return 0;
 }
 
@@ -2249,7 +2277,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         int icon_x, icon_y;
                         wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
                         const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;
-                        win_minimize(&form->win, icon_x, icon_y, icon_path);
+                        win_minimize(form, icon_x, icon_y, icon_path);
+                        /* Claim the icon slot */
+                        wm_claim_icon_slot(&global_wm, icon_x, icon_y);
                         /* Let the desktop redraw run first to avoid compositing on stale wallpaper. */
                         global_wm.needs_full_redraw = 1;
                         return -2;  /* Window minimized (major state change) */
@@ -2357,14 +2387,19 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         needs_redraw = 1;
                     } else if (icon_result == 0) {
                         /* Click outside this icon - check if we need to deselect */
-                        if (form->win.minimized_icon && form->win.minimized_icon->selected) {
+                        int icon_selected = 0;
+                        if (form->win.minimized_icon_id != -1 && form->controls) {
+                            gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+                            if (ctrl && ctrl->icon.checked) icon_selected = 1;
+                        }
+                        if (icon_selected) {
                             /* Check if click was on ANY other icon */
                             int clicked_other_icon = 0;
                             for (int i = 0; i < global_wm.count; i++) {
                                 if (global_wm.windows[i] &&
                                     global_wm.windows[i] != form &&
                                     global_wm.windows[i]->win.is_minimized &&
-                                    win_is_icon_clicked(&global_wm.windows[i]->win, mx, my)) {
+                                    win_is_icon_clicked(global_wm.windows[i], mx, my)) {
                                     clicked_other_icon = 1;
                                     break;
                                 }
@@ -2509,22 +2544,55 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 /* End icon dragging - snap to slot */
                 int was_icon_dragging = 0;
-                if (form->win.is_minimized && form->win.minimized_icon &&
-                    form->win.minimized_icon->dragging) {
-                    was_icon_dragging = 1;
-                    icon_t *icon = form->win.minimized_icon;
-
-                    /* Calculate snapped position */
-                    int snap_x, snap_y;
-                    wm_snap_to_slot(icon->x, icon->y, &snap_x, &snap_y);
-
-                    /* Release the icon's previous slot and claim the new one to
-                       avoid race conditions where another minimized window
-                       could reuse a slot that is being occupied by this icon. */
-                    wm_release_icon_slot(&global_wm, icon->original_x, icon->original_y);
-                    wm_claim_icon_slot(&global_wm, snap_x, snap_y);
-                    /* End drag and move to snapped position */
-                    icon_end_drag(icon, snap_x, snap_y);
+                if (form->win.is_minimized) {
+                    if (form->win.minimized_icon_id != -1 && form->controls) {
+                        gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+                        if (ctrl && ctrl->icon.dragging) {
+                            was_icon_dragging = 1;
+                            /* Restore old position's background */
+                            if (ctrl->icon.saved_bg) {
+                                int old_bg_x = ctrl->x - 1;
+                                int old_bg_y = ctrl->y - 1;
+                                int old_bg_w = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
+                                int label_lines = icon_count_label_lines(ctrl->text, 49);
+                                int old_bg_h = icon_calc_total_height(32, label_lines);
+                                if (old_bg_x >= 0 && old_bg_y >= 0 && 
+                                    old_bg_x + old_bg_w + 2 <= WM_SCREEN_WIDTH && 
+                                    old_bg_y + old_bg_h + 2 <= WM_SCREEN_HEIGHT && (old_bg_x & 1) == 0) {
+                                    gfx_write_screen_region_packed(ctrl->icon.saved_bg, old_bg_w + 2, old_bg_h + 2, old_bg_x, old_bg_y);
+                                }
+                                kfree(ctrl->icon.saved_bg);
+                                ctrl->icon.saved_bg = NULL;
+                            }
+                            /* Snap to nearest slot (slot already claimed during drag) */
+                            int snap_x, snap_y;
+                            wm_snap_to_slot(ctrl->x, ctrl->y, &snap_x, &snap_y);
+                            /* If actually snapped to different position, update slot */
+                            if (snap_x != ctrl->x || snap_y != ctrl->y) {
+                                wm_release_icon_slot(&global_wm, ctrl->icon.original_x, ctrl->icon.original_y);
+                                wm_claim_icon_slot(&global_wm, snap_x, snap_y);
+                                ctrl->icon.original_x = snap_x;
+                                ctrl->icon.original_y = snap_y;
+                            }
+                            ctrl->icon.dragging = 0;
+                            ctrl_set_pos(form, ctrl->id, snap_x, snap_y);
+                            /* Save snapped position's background */
+                            int snap_bg_x = snap_x - 1;
+                            int snap_bg_y = snap_y - 1;
+                            int snap_bg_w = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
+                            int snap_label_lines = icon_count_label_lines(ctrl->text, 49);
+                            int snap_bg_h = icon_calc_total_height(32, snap_label_lines);
+                            int snap_row_bytes = (snap_bg_w + 3) / 2;
+                            ctrl->icon.saved_bg = (uint8_t*)kmalloc(snap_row_bytes * (snap_bg_h + 2));
+                            if (ctrl->icon.saved_bg) {
+                                if (snap_bg_x >= 0 && snap_bg_y >= 0 && 
+                                    snap_bg_x + snap_bg_w + 2 <= WM_SCREEN_WIDTH && 
+                                    snap_bg_y + snap_bg_h + 2 <= WM_SCREEN_HEIGHT && (snap_bg_x & 1) == 0) {
+                                    gfx_read_screen_region_packed(ctrl->icon.saved_bg, snap_bg_w + 2, snap_bg_h + 2, snap_bg_x, snap_bg_y);
+                                }
+                            }
+                        }
+                    }
                 }
 
                 /* Check if release is on the same control that was pressed */
@@ -2691,31 +2759,90 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             }
 
             /* Handle icon dragging (start drag after threshold, update during drag) */
-            if (form->win.is_minimized && form->win.minimized_icon &&
-                form->win.minimized_icon->selected && (mb & 1)) {
-                icon_t *icon = form->win.minimized_icon;
-
-                if (!icon->dragging) {
-                    /* Only start drag if the press originated within the icon or the mouse is currently over the icon area */
-                    if (win_is_icon_clicked(&form->win, icon->click_start_x, icon->click_start_y) ||
-                        win_is_icon_clicked(&form->win, mx, my)) {
-                        /* Check if mouse moved enough to start dragging */
-                        int dx = mx - icon->click_start_x;
-                        int dy = my - icon->click_start_y;
-                        int threshold = WM_ICON_SLOT_WIDTH / 4;
-                        if (dx * dx + dy * dy > threshold * threshold) {
-                            icon_start_drag(icon, mx, my);
+            if (form->win.is_minimized && (mb & 1)) {
+                if (form->win.minimized_icon_id != -1 && form->controls) {
+                    gui_control_t *icon_ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+                    if (icon_ctrl && icon_ctrl->icon.checked) {
+                        if (!icon_ctrl->icon.dragging) {
+                            if (win_is_icon_clicked(form, icon_ctrl->icon.click_start_x, icon_ctrl->icon.click_start_y) ||
+                                win_is_icon_clicked(form, mx, my)) {
+                                int dx = mx - icon_ctrl->icon.click_start_x;
+                                int dy = my - icon_ctrl->icon.click_start_y;
+                                int threshold = WM_ICON_SLOT_WIDTH / 4;
+                                if (dx * dx + dy * dy > threshold * threshold) {
+                                    icon_ctrl->icon.dragging = 1;
+                                    icon_ctrl->icon.drag_offset_x = mx - icon_ctrl->x;
+                                    icon_ctrl->icon.drag_offset_y = my - icon_ctrl->y;
+                                    mouse_restore();
+                                    compositor_draw_all(&global_wm);
+                                    needs_redraw = 0;
+                                }
+                            }
+                        } else {
+                            int new_x = mx - icon_ctrl->icon.drag_offset_x;
+                            int new_y = my - icon_ctrl->icon.drag_offset_y;
+                            if (new_x < 0) new_x = 0;
+                            if (new_y < 0) new_y = 0;
+                            if (new_x > WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH) new_x = WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH;
+                            if (new_y > WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - 48) new_y = WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - 48;
+                            if (new_x != icon_ctrl->x || new_y != icon_ctrl->y) {
+                                int old_x = icon_ctrl->x;
+                                int old_y = icon_ctrl->y;
+                                int bg_w = icon_ctrl->w > 0 ? icon_ctrl->w : WM_ICON_TOTAL_WIDTH;
+                                int label_lines = icon_count_label_lines(icon_ctrl->text, 49);
+                                int bg_h = icon_calc_total_height(32, label_lines);
+                                int row_bytes = (bg_w + 1) / 2;
+                                /* Allocate new saved_bg for NEW position's desktop */
+                                uint8_t *new_saved_bg = (uint8_t*)kmalloc(row_bytes * (bg_h + 2));
+                                if (new_saved_bg) {
+                                    /* Save desktop at NEW position (before icon moves there) */
+                                    int new_bg_x = new_x - 1;
+                                    int new_bg_y = new_y - 1;
+                                    for (int py = 0; py < bg_h + 2; py++) {
+                                        uint8_t *row = new_saved_bg + py * row_bytes;
+                                        for (int b = 0; b < row_bytes; b++) row[b] = 0;
+                                        for (int px = 0; px < bg_w + 2; px++) {
+                                            int sx = new_bg_x + px;
+                                            int sy = new_bg_y + py;
+                                            uint8_t pix = 0;
+                                            if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
+                                                pix = gfx_getpixel(sx, sy);
+                                            }
+                                            int byte_idx = px / 2;
+                                            if (px & 1) row[byte_idx] = (row[byte_idx] & 0xF0) | (pix & 0x0F);
+                                            else row[byte_idx] = (row[byte_idx] & 0x0F) | (pix << 4);
+                                        }
+                                    }
+                                }
+                                /* Restore OLD position using existing saved_bg (desktop at old pos) */
+                                if (icon_ctrl->icon.saved_bg) {
+                                    int old_bg_x = old_x - 1;
+                                    int old_bg_y = old_y - 1;
+                                    for (int py = 0; py < bg_h + 2; py++) {
+                                        uint8_t *row = icon_ctrl->icon.saved_bg + py * row_bytes;
+                                        for (int px = 0; px < bg_w + 2; px++) {
+                                            int sx = old_bg_x + px;
+                                            int sy = old_bg_y + py;
+                                            if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
+                                                int byte_idx = px / 2;
+                                                uint8_t packed = row[byte_idx];
+                                                uint8_t pix = (px & 1) ? (packed & 0x0F) : (packed >> 4);
+                                                gfx_putpixel(sx, sy, pix);
+                                            }
+                                        }
+                                    }
+                                    kfree(icon_ctrl->icon.saved_bg);
+                                }
+                                /* Move icon to new position */
+                                ctrl_set_pos(form, icon_ctrl->id, new_x, new_y);
+                                /* Use the new saved_bg we just saved */
+                                icon_ctrl->icon.saved_bg = new_saved_bg;
+                            }
                             mouse_restore();
                             compositor_draw_all(&global_wm);
                             needs_redraw = 0;
                         }
                     }
-                } else {
-                    /* Continue dragging */
-                    icon_update_drag(icon, mx, my);
-                    mouse_restore();
-                    compositor_draw_all(&global_wm);
-                    needs_redraw = 0;
                 }
             }
 
@@ -3039,7 +3166,15 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         break;
                     case CTRL_ICON:
                         dest->icon.cached_bitmap_orig = NULL;
+                        dest->icon.saved_bg = NULL;
                         dest->icon.checked = 0;
+                        dest->icon.dragging = 0;
+                        dest->icon.drag_offset_x = 0;
+                        dest->icon.drag_offset_y = 0;
+                        dest->icon.original_x = 0;
+                        dest->icon.original_y = 0;
+                        dest->icon.click_start_x = 0;
+                        dest->icon.click_start_y = 0;
                         break;
                     default:
                         /* No special initialization */
@@ -3071,10 +3206,18 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (!form) return 0;
 
             /* Release icon slot if window was minimized */
-            if (form->win.is_minimized && form->win.minimized_icon) {
-                wm_release_icon_slot(&global_wm,
-                                     form->win.minimized_icon->x,
-                                     form->win.minimized_icon->y);
+            if (form->win.is_minimized) {
+                int icon_x = 0, icon_y = 0;
+                if (form->win.minimized_icon_id != -1 && form->controls) {
+                    gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+                    if (ctrl) {
+                        icon_x = ctrl->x;
+                        icon_y = ctrl->y;
+                    }
+                }
+                if (icon_x || icon_y) {
+                    wm_release_icon_slot(&global_wm, icon_x, icon_y);
+                }
             }
 
             /* Unregister from window manager */
@@ -3150,6 +3293,42 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Store icon path for later use when minimizing */
             strcpy_s(form->icon_path, icon_path, 64);
+
+            /* Create a CTRL_ICON control on the form if not already created */
+            #define FORM_ICON_CONTROL_ID 5000
+            int existing_icon_id = -1;
+            if (form->controls) {
+                for (int i = 0; i < form->ctrl_count; i++) {
+                    /* Check for CTRL_ICON with or without hidden flag (0x80) */
+                    if ((form->controls[i].type & 0x7F) == CTRL_ICON && 
+                        form->controls[i].id == FORM_ICON_CONTROL_ID) {
+                        existing_icon_id = i;
+                        break;
+                    }
+                }
+            }
+
+            if (existing_icon_id == -1) {
+                /* Create new icon control - hidden (0x80 flag makes it invisible) */
+                gui_control_t icon_ctrl = {0};
+                icon_ctrl.type = CTRL_ICON | 0x80;  /* Hidden flag */
+                icon_ctrl.id = FORM_ICON_CONTROL_ID;
+                icon_ctrl.x = -100;  /* Off-screen */
+                icon_ctrl.y = -100;
+                icon_ctrl.w = 0;
+                icon_ctrl.h = 0;
+                icon_ctrl.fg = 0;
+                icon_ctrl.bg = 15;
+                strcpy_s(icon_ctrl.text, form->win.title, 256);
+                
+                sys_win_add_control(form, &icon_ctrl);
+                ctrl_set_image(form, FORM_ICON_CONTROL_ID, icon_path);
+            } else {
+                /* Update existing icon control */
+                gui_control_t *ctrl = &form->controls[existing_icon_id];
+                strcpy_s(ctrl->text, form->win.title, 256);
+                ctrl_set_image(form, FORM_ICON_CONTROL_ID, icon_path);
+            }
 
             return 0;
         }
@@ -3406,12 +3585,18 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             if (!form) return 0;
 
             if (form->win.is_minimized) {
-                if (form->win.minimized_icon) {
-                    wm_release_icon_slot(&global_wm,
-                                         form->win.minimized_icon->x,
-                                         form->win.minimized_icon->y);
+                int icon_x = 0, icon_y = 0;
+                if (form->win.minimized_icon_id != -1 && form->controls) {
+                    gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+                    if (ctrl) {
+                        icon_x = ctrl->x;
+                        icon_y = ctrl->y;
+                    }
                 }
-                win_restore(&form->win);
+                if (icon_x || icon_y) {
+                    wm_release_icon_slot(&global_wm, icon_x, icon_y);
+                }
+                win_restore(form);
             }
 
             wm_bring_to_front(&global_wm, form);
@@ -3842,10 +4027,18 @@ void wm_cleanup_task(uint32_t tid) {
         if (!form || form->owner_tid != tid) continue;
 
         /* Release icon slot if window was minimized */
-        if (form->win.is_minimized && form->win.minimized_icon) {
-            wm_release_icon_slot(&global_wm,
-                                 form->win.minimized_icon->x,
-                                 form->win.minimized_icon->y);
+        if (form->win.is_minimized) {
+            int icon_x = 0, icon_y = 0;
+            if (form->win.minimized_icon_id != -1 && form->controls) {
+                gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+                if (ctrl) {
+                    icon_x = ctrl->x;
+                    icon_y = ctrl->y;
+                }
+            }
+            if (icon_x || icon_y) {
+                wm_release_icon_slot(&global_wm, icon_x, icon_y);
+            }
         }
 
         /* Unregister from window manager */

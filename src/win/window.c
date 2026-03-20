@@ -3,6 +3,7 @@
 #include "wm_config.h"
 #include "theme.h"
 #include "bitmap.h"
+#include "icon.h"
 #include "controls.h"
 #include "../syscall.h"
 #include "../drivers/graphics.h"
@@ -29,7 +30,7 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
     win->dirty = 1;
     win->saved_bg = NULL;
     win->is_minimized = 0;
-    win->minimized_icon = NULL;
+    win->minimized_icon_id = -1;
     win->resizable = 1;
     win->is_taskbar = 0;
 
@@ -73,12 +74,6 @@ void win_destroy(window_t *win) {
     if (win->saved_bg) {
         kfree(win->saved_bg);
         win->saved_bg = NULL;
-    }
-    /* Destroy minimized icon if exists */
-    if (win->minimized_icon) {
-        icon_destroy(win->minimized_icon);
-        kfree(win->minimized_icon);
-        win->minimized_icon = NULL;
     }
     mouse_invalidate_buffer();
 }
@@ -678,7 +673,8 @@ int win_is_resize_corner(window_t *win, int mx, int my) {
     return 0;
 }
 
-void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path) {
+void win_minimize(struct gui_form_s *form, int icon_x, int icon_y, const char *icon_path) {
+    window_t *win = &form->win;
     if (win->is_minimized) return;
 
     mouse_invalidate_buffer();
@@ -691,32 +687,114 @@ void win_minimize(window_t *win, int icon_x, int icon_y, const char *icon_path) 
 
     win->is_minimized = 1;
 
-    /* Create icon if not exists, otherwise reuse existing */
-    if (!win->minimized_icon) {
-        win->minimized_icon = kmalloc(sizeof(icon_t));
-        if (win->minimized_icon) {
-            icon_create(win->minimized_icon, icon_x, icon_y, win->title, icon_path);
-            win->minimized_icon->user_data = win;  /* Link back to window */
+    /* Check if form already has an icon control from sys_win_set_icon */
+    #define FORM_ICON_CONTROL_ID 5000
+    gui_control_t *existing_icon = NULL;
+    if (form->controls) {
+        for (int i = 0; i < form->ctrl_count; i++) {
+            /* Check for CTRL_ICON with or without hidden flag (0x80) */
+            if ((form->controls[i].type & 0x7F) == CTRL_ICON && form->controls[i].id == FORM_ICON_CONTROL_ID) {
+                existing_icon = &form->controls[i];
+                break;
+            }
+        }
+    }
+
+    if (win->minimized_icon_id == -1) {
+        if (existing_icon) {
+            /* Use existing icon control from sys_win_set_icon - clear hidden flag */
+            existing_icon->type = CTRL_ICON;
+            win->minimized_icon_id = FORM_ICON_CONTROL_ID;
+            ctrl_set_pos(form, FORM_ICON_CONTROL_ID, icon_x, icon_y);
+            /* Use form's stored icon path */
+            if (form->icon_path[0]) {
+                ctrl_set_image(form, FORM_ICON_CONTROL_ID, form->icon_path);
+            }
+        } else {
+            /* Create new icon control */
+            gui_control_t icon_ctrl = {0};
+            icon_ctrl.type = CTRL_ICON;
+            icon_ctrl.id = form->ctrl_count;
+            icon_ctrl.x = icon_x;
+            icon_ctrl.y = icon_y;
+            icon_ctrl.w = WM_ICON_TOTAL_WIDTH;
+            icon_ctrl.h = 0;
+            icon_ctrl.fg = 0;
+            icon_ctrl.bg = 15;
+            for (size_t i = 0; i < sizeof(icon_ctrl.text) && win->title[i]; i++) {
+                icon_ctrl.text[i] = win->title[i];
+            }
+            icon_ctrl.text[sizeof(icon_ctrl.text) - 1] = '\0';
+            sys_win_add_control(form, &icon_ctrl);
+            win->minimized_icon_id = icon_ctrl.id;
+            if (icon_path) {
+                ctrl_set_image(form, icon_ctrl.id, icon_path);
+            }
         }
     } else {
-        /* Icon already exists (re-minimizing) - move to new slot position */
-        /* saved_bg is NULL after icon_hide(), will be recreated on next draw */
-        win->minimized_icon->x = icon_x;
-        win->minimized_icon->y = icon_y;
-        icon_set_selected(win->minimized_icon, 0);
+        /* Icon control already exists - move to new position */
+        gui_control_t *ctrl = sys_win_get_control(form, win->minimized_icon_id);
+        if (ctrl) {
+            /* Clear selection */
+            ctrl->icon.checked = 0;
+            /* Update position */
+            ctrl_set_pos(form, win->minimized_icon_id, icon_x, icon_y);
+            /* Just clear saved_bg - will be re-saved on next draw */
+            if (ctrl->icon.saved_bg) {
+                kfree(ctrl->icon.saved_bg);
+                ctrl->icon.saved_bg = NULL;
+            }
+        }
     }
 }
 
-void win_restore(window_t *win) {
+void win_restore(struct gui_form_s *form) {
+    window_t *win = &form->win;
     if (!win->is_minimized) return;
 
     /* Invalidate cursor buffer since window is appearing */
     mouse_invalidate_buffer();
 
-    /* Hide icon but keep icon structure for reuse */
-    if (win->minimized_icon) {
-        icon_hide(win->minimized_icon);
-        icon_set_selected(win->minimized_icon, 0);  /* Clear selection */
+    /* Clear the minimized state and reset position if it's a non-form icon */
+    #define FORM_ICON_CONTROL_ID 5000
+    if (win->minimized_icon_id != FORM_ICON_CONTROL_ID && win->minimized_icon_id != -1 && form->controls) {
+        /* Remove dynamically created minimized icon controls */
+        for (int i = 0; i < form->ctrl_count; i++) {
+            if (form->controls[i].id == win->minimized_icon_id) {
+                /* Free any allocated resources */
+                if (form->controls[i].icon.cached_bitmap_orig) {
+                    bitmap_free(form->controls[i].icon.cached_bitmap_orig);
+                    form->controls[i].icon.cached_bitmap_orig = NULL;
+                }
+                if (form->controls[i].icon.saved_bg) {
+                    kfree(form->controls[i].icon.saved_bg);
+                    form->controls[i].icon.saved_bg = NULL;
+                }
+                /* Shift remaining controls down */
+                for (int j = i; j < form->ctrl_count - 1; j++) {
+                    form->controls[j] = form->controls[j + 1];
+                }
+                form->ctrl_count--;
+                break;
+            }
+        }
+        win->minimized_icon_id = -1;
+    } else if (win->minimized_icon_id == FORM_ICON_CONTROL_ID) {
+        /* For form icon, just clear selection, keep control on form */
+        gui_control_t *ctrl = sys_win_get_control(form, FORM_ICON_CONTROL_ID);
+        if (ctrl) {
+            ctrl->icon.checked = 0;
+            /* Restore hidden flag so it's not visible in the window */
+            ctrl->type = CTRL_ICON | 0x80;
+            /* Invalidate saved_bg so next minimize saves new position */
+            if (ctrl->icon.saved_bg) {
+                kfree(ctrl->icon.saved_bg);
+                ctrl->icon.saved_bg = NULL;
+            }
+        }
+        /* Reset position to default for re-minimize */
+        ctrl_set_pos(form, FORM_ICON_CONTROL_ID, -100, -100);
+        win->minimized_icon_id = -1;
     }
 
     win->is_minimized = 0;
@@ -725,7 +803,21 @@ void win_restore(window_t *win) {
     win_save_background(win);
 }
 
-int win_is_icon_clicked(window_t *win, int mx, int my) {
-    if (!win->is_minimized || !win->minimized_icon) return 0;
-    return icon_is_clicked(win->minimized_icon, mx, my);
+int win_is_icon_clicked(struct gui_form_s *form, int mx, int my) {
+    window_t *win = &form->win;
+    if (!win->is_minimized) return 0;
+    
+    if (win->minimized_icon_id != -1 && form->controls) {
+        gui_control_t *ctrl = sys_win_get_control(form, win->minimized_icon_id);
+        if (ctrl) {
+            int total_w = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
+            int label_lines = icon_count_label_lines(ctrl->text, 49);
+            int total_h = icon_calc_total_height(32, label_lines);
+            if (mx >= ctrl->x && mx < ctrl->x + total_w &&
+                my >= ctrl->y && my < ctrl->y + total_h) {
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
