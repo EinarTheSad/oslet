@@ -1140,9 +1140,14 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 src.bits_per_pixel = 4;
 
                 bitmap_t *scaled = bitmap_scale_nearest(&src, dest_w, dest_h);
-                kfree(bmp); /* free original raw buffer */
 
-                if (!scaled) return (uint32_t)-1;
+                if (!scaled) {
+                    /* Scaling failed - draw original as fallback */
+                    gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
+                    kfree(bmp);
+                    return (uint32_t)-1;
+                }
+                kfree(bmp); /* free original raw buffer */
                 gfx_draw_cached_bmp_ex(scaled->data, scaled->width, scaled->height, dest_x, dest_y, 0);
                 bitmap_free(scaled);
             } else {
@@ -3250,6 +3255,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             if (ctrl->icon.cached_bitmap_orig) {
                                 bitmap_free(ctrl->icon.cached_bitmap_orig);
                                 ctrl->icon.cached_bitmap_orig = NULL;
+                            }
+                            if (ctrl->icon.saved_bg) {
+                                kfree(ctrl->icon.saved_bg);
+                                ctrl->icon.saved_bg = NULL;
                             }
                             break;
 
