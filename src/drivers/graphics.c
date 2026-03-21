@@ -411,6 +411,58 @@ void gfx_vline(int x, int y, int h, uint8_t color) {
 }
 
 
+void gfx_filltriangle(int x1, int y1, int x2, int y2, int x3, int y3, uint8_t color) {
+    if (!backbuffer) return;
+
+    int min_x = x1 < x2 ? (x1 < x3 ? x1 : x3) : (x2 < x3 ? x2 : x3);
+    int max_x = x1 > x2 ? (x1 > x3 ? x1 : x3) : (x2 > x3 ? x2 : x3);
+    int min_y = y1 < y2 ? (y1 < y3 ? y1 : y3) : (y2 < y3 ? y2 : y3);
+    int max_y = y1 > y2 ? (y1 > y3 ? y1 : y3) : (y2 > y3 ? y2 : y3);
+
+    if (min_x < 0) min_x = 0;
+    if (max_x >= GFX_WIDTH) max_x = GFX_WIDTH - 1;
+    if (min_y < 0) min_y = 0;
+    if (max_y >= GFX_HEIGHT) max_y = GFX_HEIGHT - 1;
+
+    for (int y = min_y; y <= max_y; y++) {
+        int x_min = GFX_WIDTH;
+        int x_max = -1;
+
+        int dy12 = y2 - y1;
+        int dy23 = y3 - y2;
+        int dy31 = y1 - y3;
+
+        if (dy12 == 0) dy12 = 1;
+        if (dy23 == 0) dy23 = 1;
+        if (dy31 == 0) dy31 = 1;
+
+        if ((y1 <= y && y <= y2) || (y2 <= y && y <= y1)) {
+            int x_at = x1 + ((y - y1) * (x2 - x1)) / dy12;
+            if (x_at < x_min) x_min = x_at;
+            if (x_at > x_max) x_max = x_at;
+        }
+        if ((y2 <= y && y <= y3) || (y3 <= y && y <= y2)) {
+            int x_at = x2 + ((y - y2) * (x3 - x2)) / dy23;
+            if (x_at < x_min) x_min = x_at;
+            if (x_at > x_max) x_max = x_at;
+        }
+        if ((y3 <= y && y <= y1) || (y1 <= y && y <= y3)) {
+            int x_at = x3 + ((y - y3) * (x1 - x3)) / dy31;
+            if (x_at < x_min) x_min = x_at;
+            if (x_at > x_max) x_max = x_at;
+        }
+
+        if (x_min < 0) x_min = 0;
+        if (x_max > GFX_WIDTH) x_max = GFX_WIDTH;
+
+        for (int x = x_min; x <= x_max; x++) {
+            putpixel_raw(x, y, color);
+        }
+    }
+
+    mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+}
+
 void gfx_rect(int x, int y, int w, int h, uint8_t color) {
     if (w <= 0 || h <= 0) return;
     
@@ -598,6 +650,41 @@ void gfx_circle(int cx, int cy, int r, uint8_t color) {
     }
     
     mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+}
+
+void gfx_fillcircle(int cx, int cy, int r, uint8_t color) {
+    if (!backbuffer) return;
+    if (r < 0) return;
+
+    int min_x = cx - r;
+    int max_x = cx + r;
+    int min_y = cy - r;
+    int max_y = cy + r;
+
+    if (min_x < 0) min_x = 0;
+    if (max_x >= GFX_WIDTH) max_x = GFX_WIDTH - 1;
+    if (min_y < 0) min_y = 0;
+    if (max_y >= GFX_HEIGHT) max_y = GFX_HEIGHT - 1;
+
+    int r2 = r * r;
+    for (int y = min_y; y <= max_y; y++) {
+        int dy = y - cy;
+        int dx2 = r2 - dy * dy;
+        if (dx2 < 0) dx2 = 0;
+        int half_width = 0;
+        while ((half_width + 1) * (half_width + 1) <= dx2) half_width++;
+        for (int x = cx - half_width; x <= cx + half_width; x++) {
+            putpixel_raw(x, y, color);
+        }
+    }
+
+    mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
+}
+
+void gfx_triangle(int x1, int y1, int x2, int y2, int x3, int y3, uint8_t color) {
+    gfx_line(x1, y1, x2, y2, color);
+    gfx_line(x2, y2, x3, y3, color);
+    gfx_line(x3, y3, x1, y1, color);
 }
 
 uint8_t* gfx_get_backbuffer(void) {

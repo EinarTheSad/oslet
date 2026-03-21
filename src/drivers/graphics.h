@@ -78,10 +78,13 @@ void gfx_line(int x0, int y0, int x1, int y1, uint8_t color);
 void gfx_rect(int x, int y, int w, int h, uint8_t color);
 void gfx_fillrect(int x, int y, int w, int h, uint8_t color);
 void gfx_circle(int cx, int cy, int r, uint8_t color);
+void gfx_fillcircle(int cx, int cy, int r, uint8_t color);
+void gfx_triangle(int x1, int y1, int x2, int y2, int x3, int y3, uint8_t color);
 void gfx_load_palette(void);
 
 void gfx_hline(int x, int y, int w, uint8_t color);
 void gfx_vline(int x, int y, int h, uint8_t color);
+void gfx_filltriangle(int x1, int y1, int x2, int y2, int x3, int y3, uint8_t color);
 void gfx_floodfill(int x, int y, uint8_t new_color);
 void gfx_floodfill_gradient(int x, int y,
                             uint8_t c_start, uint8_t c_end,
