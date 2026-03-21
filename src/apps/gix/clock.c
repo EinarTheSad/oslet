@@ -24,7 +24,6 @@ static int clock_handle_event(void *form, int event, void *userdata) {
         /* Handle resize event */
         if (event == -4) {
             update_clock_size(form);
-            sys_win_mark_dirty(form);
             return 0;
         }
         
@@ -32,7 +31,7 @@ static int clock_handle_event(void *form, int event, void *userdata) {
         sys_get_time(&time);
         if (time.second != *last_second) {
             *last_second = time.second;
-            sys_win_mark_dirty(form);
+            sys_win_mark_dirty_rect(f->win.x, f->win.y, f->win.w, f->win.h);
         }
     }
     return 0;
@@ -58,11 +57,6 @@ void _start(void) {
     clock_ctrl.bg = -1;
     sys_win_add_control(form, &clock_ctrl);
 
-    sys_win_mark_dirty(form);
-
     int last_second = -1;
     sys_win_run_event_loop(form, clock_handle_event, &last_second);
-
-    sys_win_destroy_form(form);
-    sys_exit();
 }
