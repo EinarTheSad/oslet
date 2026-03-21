@@ -188,8 +188,8 @@ void wm_release_icon_slot(window_manager_t *wm, int x, int y) {
 
     int insert_pos = wm->free_slot_count;
     for (int i = 0; i < wm->free_slot_count; i++) {
-        // Sort by y first, then x (top to bottom, left to right)
-        if (y < wm->free_slots[i].y || (y == wm->free_slots[i].y && x < wm->free_slots[i].x)) {
+        // Sort by x first, then y (left to right, top to bottom - column-wise)
+        if (x < wm->free_slots[i].x || (x == wm->free_slots[i].x && y < wm->free_slots[i].y)) {
             insert_pos = i;
             break;
         }

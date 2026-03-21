@@ -2773,9 +2773,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     icon_ctrl->icon.dragging = 1;
                                     icon_ctrl->icon.drag_offset_x = mx - icon_ctrl->x;
                                     icon_ctrl->icon.drag_offset_y = my - icon_ctrl->y;
-                                    mouse_restore();
-                                    compositor_draw_all(&global_wm);
-                                    needs_redraw = 0;
                                 }
                             }
                         } else {
@@ -2792,10 +2789,31 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 int label_lines = icon_count_label_lines(icon_ctrl->text, 49);
                                 int bg_h = icon_calc_total_height(32, label_lines);
                                 int row_bytes = (bg_w + 1) / 2;
-                                /* Allocate new saved_bg for NEW position's desktop */
+                                uint8_t *old_saved_bg = icon_ctrl->icon.saved_bg;
+                                /* Restore OLD position using existing saved_bg */
+                                if (old_saved_bg) {
+                                    int old_bg_x = old_x - 1;
+                                    int old_bg_y = old_y - 1;
+                                    for (int py = 0; py < bg_h + 2; py++) {
+                                        uint8_t *row = old_saved_bg + py * row_bytes;
+                                        for (int px = 0; px < bg_w + 2; px++) {
+                                            int sx = old_bg_x + px;
+                                            int sy = old_bg_y + py;
+                                            if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
+                                                int byte_idx = px / 2;
+                                                uint8_t packed = row[byte_idx];
+                                                uint8_t pix = (px & 1) ? (packed & 0x0F) : (packed >> 4);
+                                                gfx_putpixel(sx, sy, pix);
+                                            }
+                                        }
+                                    }
+                                }
+                                /* Move icon to new position */
+                                ctrl_set_pos(form, icon_ctrl->id, new_x, new_y);
+                                /* Don't use compositor_draw_all - it would save bg WITH icon.
+                                   Instead, save bg at new position and draw icon directly. */
                                 uint8_t *new_saved_bg = (uint8_t*)kmalloc(row_bytes * (bg_h + 2));
                                 if (new_saved_bg) {
-                                    /* Save desktop at NEW position (before icon moves there) */
                                     int new_bg_x = new_x - 1;
                                     int new_bg_y = new_y - 1;
                                     for (int py = 0; py < bg_h + 2; py++) {
@@ -2814,33 +2832,14 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                         }
                                     }
                                 }
-                                /* Restore OLD position using existing saved_bg (desktop at old pos) */
-                                if (icon_ctrl->icon.saved_bg) {
-                                    int old_bg_x = old_x - 1;
-                                    int old_bg_y = old_y - 1;
-                                    for (int py = 0; py < bg_h + 2; py++) {
-                                        uint8_t *row = icon_ctrl->icon.saved_bg + py * row_bytes;
-                                        for (int px = 0; px < bg_w + 2; px++) {
-                                            int sx = old_bg_x + px;
-                                            int sy = old_bg_y + py;
-                                            if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
-                                                int byte_idx = px / 2;
-                                                uint8_t packed = row[byte_idx];
-                                                uint8_t pix = (px & 1) ? (packed & 0x0F) : (packed >> 4);
-                                                gfx_putpixel(sx, sy, pix);
-                                            }
-                                        }
-                                    }
-                                    kfree(icon_ctrl->icon.saved_bg);
-                                }
-                                /* Move icon to new position */
-                                ctrl_set_pos(form, icon_ctrl->id, new_x, new_y);
-                                /* Use the new saved_bg we just saved */
+                                /* Free old saved_bg and use new one */
+                                if (old_saved_bg) kfree(old_saved_bg);
                                 icon_ctrl->icon.saved_bg = new_saved_bg;
+                                /* Draw icon at new position directly */
+                                ctrl_draw_icon(icon_ctrl, new_x, new_y, 0);
+                                mouse_restore();
+                                needs_redraw = 0;
                             }
-                            mouse_restore();
-                            compositor_draw_all(&global_wm);
-                            needs_redraw = 0;
                         }
                     }
                 }
@@ -3115,8 +3114,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 dest->border_color = ctrl->border_color;
                 strcpy_s(dest->text, ctrl->text, 256);
                 
-                /* Initialize union based on control type */
-                switch (dest->type) {
+                /* Initialize union based on control type (mask off hidden flag 0x80) */
+                switch (dest->type & 0x7F) {
                     case CTRL_BUTTON:
                         dest->button.cached_bitmap_orig = NULL;
                         dest->button.pressed = 0;
