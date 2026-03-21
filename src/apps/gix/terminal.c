@@ -196,19 +196,21 @@ static int handle_event(void *form_arg, int event, void *userdata)
     if (!task_alive(shell_tid))
         return 1;
 
-    if (sys_vc_dirty(vc)) {
-        sys_vc_read(vc, &screen);
-        render();
-        redraw();
-    }
+    if (!f->win.is_minimized) {
+        if (sys_vc_dirty(vc)) {
+            sys_vc_read(vc, &screen);
+            render();
+            redraw();
+        }
 
-    uint32_t now = sys_uptime();
-    if (now - cursor_blink_tick >= CURSOR_BLINK_TICKS) {
-        cursor_visible = !cursor_visible;
-        cursor_blink_tick = now;
-        need_cursor = 1;
-        render();
-        redraw();
+        uint32_t now = sys_uptime();
+        if (now - cursor_blink_tick >= CURSOR_BLINK_TICKS) {
+            cursor_visible = !cursor_visible;
+            cursor_blink_tick = now;
+            need_cursor = 1;
+            render();
+            redraw();
+        }
     }
 
     if (need_cursor) {
@@ -269,6 +271,7 @@ void _start(void) {
     }
 
     form = sys_win_create_form("Terminal", win_x, win_y, win_w, win_h);
+    sys_win_set_icon(form, "C:/ICONS/TERMINAL.ICO");
     if (!form) {
         usr_bmf_free(&font);
         sys_exit();
