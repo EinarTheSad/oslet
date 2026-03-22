@@ -1371,9 +1371,14 @@ static int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
 }
 
 static void init_window_menu(gui_form_t *form) {
-    if (form->window_menu_initialized) return;
-
     menu_init(&form->window_menu);
+    if (form->win.resizable) {
+        if (form->win.is_maximized) {
+            menu_add_item(&form->window_menu, "Restore", MENU_ACTION_RESTORE, MENU_ITEM_ENABLED);
+        } else {
+            menu_add_item(&form->window_menu, "Maximise", MENU_ACTION_MAXIMIZE, MENU_ITEM_ENABLED);
+        }
+    }
     menu_add_item(&form->window_menu, "Minimise", MENU_ACTION_MINIMIZE, MENU_ITEM_ENABLED);
     menu_add_item(&form->window_menu, "Close", MENU_ACTION_CLOSE, MENU_ITEM_ENABLED);
     form->window_menu_initialized = 1;
@@ -1414,6 +1419,7 @@ static int is_any_icon_selected(window_manager_t *wm) {
 }
 
 static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
+    if (form->win.is_maximized) return 0;
     if (win_is_titlebar(&form->win, mx, my)) {
         if (is_any_icon_selected(&global_wm))
             pump_deselect_all_icons(&global_wm);
@@ -1429,6 +1435,7 @@ static int pump_handle_titlebar_click(gui_form_t *form, int mx, int my) {
 }
 
 static int pump_handle_resize_corner_click(gui_form_t *form, int mx, int my) {
+    if (form->win.is_maximized) return 0;
     if (win_is_resize_corner(&form->win, mx, my)) {
         if (is_any_icon_selected(&global_wm))
             pump_deselect_all_icons(&global_wm);
@@ -2278,7 +2285,19 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                                button_pressed, button_released);
                 if (action > 0) {
                     /* Menu action selected */
-                        if (action == MENU_ACTION_MINIMIZE) {
+                        if (action == MENU_ACTION_MAXIMIZE) {
+                        form->dragging = 0;
+                        form->resizing = 0;
+                        win_maximize(form);
+                        global_wm.needs_full_redraw = 1;
+                        return -4;  /* Window resized, needs layout update */
+                    } else if (action == MENU_ACTION_RESTORE) {
+                        form->dragging = 0;
+                        form->resizing = 0;
+                        win_restore_from_maximize(form);
+                        global_wm.needs_full_redraw = 1;
+                        return -4;  /* Window resized, needs layout update */
+                    } else if (action == MENU_ACTION_MINIMIZE) {
                         int icon_x, icon_y;
                         wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
                         const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;

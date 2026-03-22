@@ -33,6 +33,11 @@ void win_create(window_t *win, int x, int y, int w, int h, const char *title) {
     win->minimized_icon_id = -1;
     win->resizable = 1;
     win->is_taskbar = 0;
+    win->is_maximized = 0;
+    win->saved_x = 0;
+    win->saved_y = 0;
+    win->saved_w = 0;
+    win->saved_h = 0;
 
     strcpy_s(win->title, title, 64);
 }
@@ -579,10 +584,11 @@ void win_save_background(window_t *win) {
     int row_bytes = (w + 1) / 2; /* packed 2 pixels per byte */
     int buf_size = row_bytes * h;
 
-    if (!win->saved_bg) {
-        win->saved_bg = kmalloc(buf_size);
-        if (!win->saved_bg) return;
+    if (win->saved_bg) {
+        kfree(win->saved_bg);
     }
+    win->saved_bg = kmalloc(buf_size);
+    if (!win->saved_bg) return;
 
     /* Fast path: fully on-screen and byte-aligned (win->x - margin even) */
     int sx = win->x - margin;
@@ -801,6 +807,46 @@ void win_restore(struct gui_form_s *form) {
     win->dirty = 1;
 
     win_save_background(win);
+}
+
+void win_maximize(struct gui_form_s *form) {
+    window_t *win = &form->win;
+    if (!win->resizable || win->is_maximized) return;
+
+    win->saved_x = win->x;
+    win->saved_y = win->y;
+    win->saved_w = win->w;
+    win->saved_h = win->h;
+
+    if (win->saved_bg) {
+        kfree(win->saved_bg);
+        win->saved_bg = NULL;
+    }
+
+    win->x = 0;
+    win->y = 0;
+    win->w = WM_SCREEN_WIDTH;
+    win->h = WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT;
+
+    win->is_maximized = 1;
+    win->dirty = 1;
+
+    mouse_invalidate_buffer();
+}
+
+void win_restore_from_maximize(struct gui_form_s *form) {
+    window_t *win = &form->win;
+    if (!win->is_maximized) return;
+
+    win->x = win->saved_x;
+    win->y = win->saved_y;
+    win->w = win->saved_w;
+    win->h = win->saved_h;
+
+    win->is_maximized = 0;
+    win->dirty = 1;
+
+    mouse_invalidate_buffer();
 }
 
 int win_is_icon_clicked(struct gui_form_s *form, int mx, int my) {
