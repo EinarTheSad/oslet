@@ -926,6 +926,12 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     int height = info.height > 0 ? info.height : -info.height;
     int bottom_up = info.height > 0;
 
+    /* Reject negative or zero dimensions */
+    if (width <= 0 || height <= 0) {
+        fat32_close(f);
+        return NULL;
+    }
+
     /* Reject implausibly large bitmaps that would exhaust memory or CPU */
     const int MAX_DIM = 4096;
     if (width > MAX_DIM || height > MAX_DIM) {

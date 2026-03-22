@@ -763,7 +763,7 @@ void win_restore(struct gui_form_s *form) {
 
     /* Clear the minimized state and reset position if it's a non-form icon */
     #define FORM_ICON_CONTROL_ID 5000
-    if (win->minimized_icon_id != FORM_ICON_CONTROL_ID && win->minimized_icon_id != -1 && form->controls) {
+    if (win->minimized_icon_id != FORM_ICON_CONTROL_ID && win->minimized_icon_id != -1 && form->controls && form->ctrl_count > 0) {
         /* Remove dynamically created minimized icon controls */
         for (int i = 0; i < form->ctrl_count; i++) {
             if (form->controls[i].id == win->minimized_icon_id) {
@@ -777,8 +777,10 @@ void win_restore(struct gui_form_s *form) {
                     form->controls[i].icon.saved_bg = NULL;
                 }
                 /* Shift remaining controls down */
-                for (int j = i; j < form->ctrl_count - 1; j++) {
-                    form->controls[j] = form->controls[j + 1];
+                if (form->ctrl_count > 1) {
+                    for (int j = i; j < (int)form->ctrl_count - 1; j++) {
+                        form->controls[j] = form->controls[j + 1];
+                    }
                 }
                 form->ctrl_count--;
                 break;

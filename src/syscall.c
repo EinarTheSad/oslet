@@ -415,7 +415,8 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             
             if (count > 0) {
                 sys_dirent_t *sys_entries = (sys_dirent_t*)ecx;
-                for (int i = 0; i < count; i++) {
+                int max_copy = (count < (int)edx) ? count : (int)edx;
+                for (int i = 0; i < max_copy; i++) {
                     memcpy_s(sys_entries[i].name, fat_entries[i].name, sizeof(sys_entries[i].name));
                     sys_entries[i].size = fat_entries[i].size;
                     sys_entries[i].first_cluster = fat_entries[i].first_cluster;

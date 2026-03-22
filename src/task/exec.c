@@ -264,18 +264,25 @@ int exec_load(const char *path, exec_image_t *image) {
 int exec_run(exec_image_t *image) {
     if (!image || !image->entry_point) return -1;
     
-    if (image->file_data) {
-        kfree(image->file_data);
-        image->file_data = NULL;
-    }
-    
     uint32_t tid = task_create((void (*)(void))image->entry_point,
                                 "elf_proc",
                                 PRIORITY_NORMAL);
     if (!tid) {
         int slot = image->slot;
+        if (image->base_addr && image->end_addr > image->base_addr) {
+            unmap_region(image->base_addr, image->end_addr);
+        }
+        if (image->file_data) {
+            kfree(image->file_data);
+            image->file_data = NULL;
+        }
         free_slot(slot);
         return -1;
+    }
+    
+    if (image->file_data) {
+        kfree(image->file_data);
+        image->file_data = NULL;
     }
     
     task_yield();
