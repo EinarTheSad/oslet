@@ -262,7 +262,9 @@ static void free_cluster_chain(fat32_volume_t *vol, uint32_t start) {
         uint32_t next = get_next_cluster(vol, cluster);
         
         if (zero_buf) {
-            write_cluster(vol, cluster, zero_buf);
+            if (write_cluster(vol, cluster, zero_buf) != 0) {
+                printf("Failed to clear cluster %u\n", cluster);
+            }
         }
         
         set_next_cluster(vol, cluster, 0);
@@ -1084,7 +1086,9 @@ void fat32_close(fat32_file_t *file) {
                                 entries[idx].modified_date = fat_date;
                                 entries[idx].accessed_date = fat_date;
 
-                                write_cluster(vol, cluster, cluster_buf);
+                                if (write_cluster(vol, cluster, cluster_buf) != 0) {
+                                    printf("Failed to write directory entry\n");
+                                }
                             }
                             kfree(cluster_buf);
                         }

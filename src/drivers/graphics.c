@@ -507,7 +507,11 @@ void gfx_floodfill(int x, int y, uint8_t new_color) {
     }
 
     size_t max_pixels = (size_t)GFX_WIDTH * (size_t)GFX_HEIGHT;
-    uint32_t* stack = (uint32_t*)kmalloc(max_pixels * sizeof(uint32_t));
+    size_t alloc_size = max_pixels * sizeof(uint32_t);
+    if (alloc_size / sizeof(uint32_t) != max_pixels) {
+        return;
+    }
+    uint32_t* stack = (uint32_t*)kmalloc(alloc_size);
     if (!stack) {
         return;
     }
@@ -780,7 +784,11 @@ void gfx_floodfill_gradient(int x, int y,
     }
 
     size_t max_pixels = (size_t)GFX_WIDTH * (size_t)GFX_HEIGHT;
-    uint32_t *stack = (uint32_t*)kmalloc(max_pixels * sizeof(uint32_t));
+    size_t alloc_size = max_pixels * sizeof(uint32_t);
+    if (alloc_size / sizeof(uint32_t) != max_pixels) {
+        return;
+    }
+    uint32_t *stack = (uint32_t*)kmalloc(alloc_size);
     if (!stack) {
         return;
     }
