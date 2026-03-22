@@ -10,6 +10,7 @@ typedef struct bitmap_s bitmap_t;
 
 typedef struct {
     int x, y, w, h;
+    int saved_x, saved_y, saved_w, saved_h;
     char title[64];
     int is_visible;
     int dirty;
@@ -18,6 +19,7 @@ typedef struct {
     int16_t minimized_icon_id;  /* Control ID for minimized window icon */
     int resizable;
     uint8_t is_taskbar;  /* 1=taskbar window (always on top, non-movable, no titlebar) */
+    int is_maximized;
 } window_t;
 
 typedef enum { MB_ICON_NONE = 0, MB_ICON_INFO, MB_ICON_WARN, MB_ICON_ERROR } msgbox_icon_t;
@@ -45,6 +47,8 @@ int win_is_minimize_button(window_t *win, int mx, int my);
 int win_is_resize_corner(window_t *win, int mx, int my);
 void win_minimize(struct gui_form_s *form, int icon_x, int icon_y, const char *icon_path);
 void win_restore(struct gui_form_s *form);
+void win_maximize(struct gui_form_s *form);
+void win_restore_from_maximize(struct gui_form_s *form);
 int win_is_icon_clicked(struct gui_form_s *form, int mx, int my);
 void win_move(window_t *win, int dx, int dy);
 void win_resize(window_t *win, int new_w, int new_h);
