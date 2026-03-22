@@ -225,7 +225,7 @@ static task_t *pick_next_task(void) {
     schedule_counter++;
     
     task_priority_t try_priority;
-    uint32_t mod = schedule_counter % 16;
+    uint32_t mod = schedule_counter % 17;
    
     if (mod < 9) {
         try_priority = PRIORITY_HIGH;
