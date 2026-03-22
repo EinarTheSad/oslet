@@ -36,7 +36,7 @@ typedef struct {
 
 #define FD_CRITICAL_BEGIN \
     uint32_t _fd_eflags; \
-    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(_fd_eflags) :: "memory")
+    __asm__ volatile("pushfl\n\tmovl (%%esp), %0\n\taddl $4, %%esp\n\tcli" : "=r"(_fd_eflags) :: "memory")
 #define FD_CRITICAL_END \
     __asm__ volatile("pushl %0\n\tpopfl" :: "r"(_fd_eflags) : "cc", "memory")
 extern int buffer_valid;

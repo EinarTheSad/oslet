@@ -145,6 +145,7 @@ void kfree(void *ptr) {
     
     if (b->free) {
         printf("Double free heap detected at %p\n", ptr);
+        b->free = 0;
         heap_release();
         return;
     }
