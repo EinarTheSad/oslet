@@ -5,12 +5,6 @@
 #include "../task/timer.h"
 #include "../task/task.h"
 
-/* Waveform types */
-#define WAVE_SQUARE    0
-#define WAVE_TRIANGLE  1
-#define WAVE_SINE      2
-#define WAVE_SAWTOOTH  3
-
 #define SB_DSP_RESET     0x226
 #define SB_DSP_READ      0x22A
 #define SB_DSP_WRITE     0x22C
@@ -57,14 +51,6 @@ void sb16_release(void) {
 /* Remember last set mixer volumes (4-bit values 0..15). Default to 15 (max) */
 static uint8_t current_left_volume = 15;
 static uint8_t current_right_volume = 15;
-
-/* Sine wave lookup table (64 samples for one period) */
-static const int8_t sine_table[64] = {
-    0, 6, 12, 18, 24, 30, 36, 41, 45, 49, 53, 56, 59, 61, 63, 64,
-    64, 64, 63, 61, 59, 56, 53, 49, 45, 41, 36, 30, 24, 18, 12, 6,
-    0, -6, -12, -18, -24, -30, -36, -41, -45, -49, -53, -56, -59, -61, -63, -64,
-    -64, -64, -63, -61, -59, -56, -53, -49, -45, -41, -36, -30, -24, -18, -12, -6
-};
 
 static int dsp_reset(void) {
     outb(SB_DSP_RESET, 1);
@@ -211,152 +197,6 @@ uint16_t sb16_get_volume(void) {
     uint8_t r5 = mixer_read(0x31) >> 3;
     
     return ((uint16_t)l5 << 8) | r5;
-}
-
-void sb16_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) {
-    if (!sb16_present || dma_phys == 0) return;
-    
-    if (dma_phys >= 0x1000000) {
-        return;
-    }
-
-    sb16_acquire();
-    
-    uint32_t sample_rate = 44100;
-    uint32_t total_samples = (sample_rate * duration_ms) / 1000;
-    if (total_samples > DMA_BUFFER_SIZE) {
-        total_samples = DMA_BUFFER_SIZE;
-    }
-    if (total_samples < 1) total_samples = 1;
-    
-    /* Fill buffer with waveform or silence */
-    if (frequency == 0) {
-        /* Silence - use memset equivalent for speed */
-        uint32_t *buf32 = (uint32_t*)dma_buffer;
-        uint32_t fill = 0x80808080;
-        uint32_t count32 = total_samples >> 2;
-        for (uint32_t i = 0; i < count32; i++) {
-            buf32[i] = fill;
-        }
-        for (uint32_t i = count32 << 2; i < total_samples; i++) {
-            dma_buffer[i] = 128;
-        }
-    } else {
-        uint32_t samples_per_period = sample_rate / frequency;
-        if (samples_per_period < 4) samples_per_period = 4;
-        
-        /* Simple sample index approach: maintain a position within the period and
-           increment/wrap it each sample. The previous fixed-point phase logic
-           computed phase_inc incorrectly which produced garbled output. */
-        uint32_t sample_pos = 0;
-        uint32_t half_period = samples_per_period >> 1;
-
-        for (uint32_t i = 0; i < total_samples; i++) {
-            int value = 128;
-            uint32_t pos = sample_pos;
-
-            switch (waveform) {
-                case WAVE_SQUARE:
-                    value = (pos < half_period) ? 158 : 98;
-                    break;
-                    
-                case WAVE_TRIANGLE: {
-                    int amplitude;
-                    if (pos < half_period) {
-                        amplitude = (pos * 60) / half_period;
-                    } else {
-                        amplitude = 60 - ((pos - half_period) * 60) / half_period;
-                    }
-                    value = 98 + amplitude;
-                    break;
-                }
-                    
-                case WAVE_SAWTOOTH: {
-                    int amplitude = (pos * 60) / samples_per_period;
-                    value = 98 + amplitude;
-                    break;
-                }
-                    
-                case WAVE_SINE: {
-                    /* Direct lookup with proper amplitude */
-                    uint32_t idx = (pos << 6) / samples_per_period;
-                    if (idx >= 64) idx = 63;
-                    int sine_val = sine_table[idx];
-                    /* Scale by 30/64 efficiently: (x*30)>>6 */
-                    value = 128 + ((sine_val * 30) >> 6);
-                    break;
-                }
-            }
-            
-            dma_buffer[i] = (uint8_t)value;
-
-            /* Increment position and wrap to the start of the period */
-            sample_pos++;
-            if (sample_pos >= samples_per_period) sample_pos = 0;
-        }
-        
-        /* Fill remaining buffer with silence to prevent buzz */
-        for (uint32_t i = total_samples; i < DMA_BUFFER_SIZE; i++) {
-            dma_buffer[i] = 128;
-        }
-    }
-    
-    dsp_write(DSP_CMD_SPEAKER_OFF);
-    dma_stop_channel(DMA_CHANNEL);
-    
-    /* Clear completion flag before starting */
-    dma_complete = 0;
-    
-    /* 25ms pre-buffering delay for smoother playback */
-    timer_wait(3);
-    
-    /* Single-cycle DMA mode */
-    dma_setup_channel(DMA_CHANNEL, dma_phys, total_samples, 0x48);
-    
-    uint8_t time_constant = (uint8_t)(256 - (1000000 / sample_rate));
-    dsp_write(DSP_CMD_SET_TIME_CONSTANT);
-    dsp_write(time_constant);
-    
-    dsp_write(DSP_CMD_SPEAKER_ON);
-    dma_start_channel(DMA_CHANNEL);
-    
-    /* Single-cycle playback command */
-    dsp_write(DSP_CMD_DMA_8BIT_SINGLE);
-    uint16_t block_size = total_samples - 1;
-    dsp_write(block_size & 0xFF);
-    dsp_write((block_size >> 8) & 0xFF);
-    
-    /* Wait for DMA completion via IRQ */
-    uint32_t timeout = (duration_ms + 100) / 10;
-    for (uint32_t i = 0; i < timeout && !dma_complete; i++) {
-        timer_wait(1);
-    }
-    
-    /* Aggressive cleanup sequence to eliminate buzz and prevent blocking */
-    dsp_write(DSP_CMD_PAUSE_DMA);
-    for (volatile int i = 0; i < 50; i++);
-    
-    inb(SB_DSP_INT_ACK);
-    dma_stop_channel(DMA_CHANNEL);
-    
-    dsp_write(DSP_CMD_SPEAKER_OFF);
-    for (volatile int i = 0; i < 50; i++);
-    
-    /* Soft reset DSP to clear any lingering state */
-    outb(SB_DSP_RESET, 1);
-    for (volatile int i = 0; i < 50; i++);
-    outb(SB_DSP_RESET, 0);
-    for (volatile int i = 0; i < 100; i++);
-    
-    /* Wait for DSP ready */
-    for (int timeout_rst = 100; timeout_rst > 0; timeout_rst--) {
-        if (inb(SB_DSP_READ_STATUS) & 0x80) {
-            inb(SB_DSP_READ);
-            break;
-        }
-    }
-
-    sb16_release();
 }
 
 void sb16_stop(void) {

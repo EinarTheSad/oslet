@@ -229,7 +229,14 @@ run: $(CURDIR)/$(BUILD)/$(TARGET)
 		$(MAKE) disk; \
 	fi
 	@$(MAKE) install
-	qemu-system-i386 -drive file=$(DISK),format=raw -m 32M -net none -vga std -rtc base=localtime
+	qemu-system-i386 \
+	-drive file=$(DISK),format=raw \
+	-m 32M \
+	-net none \
+	-vga std \
+	-rtc base=localtime \
+	#-audiodev sdl,id=snd0 \
+    #-device sb16,audiodev=snd0
 
 clean:
 	@echo "Cleaning..."
