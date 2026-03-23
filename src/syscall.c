@@ -3855,13 +3855,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
     }
 }
 
-static uint32_t handle_sound(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+static uint32_t handle_sound(uint32_t al, uint32_t ebx, uint32_t ecx) {
     switch (al) {
         case 0x00:
             return (uint32_t)sb16_detected();
 
         case 0x01:
-            sb16_play_tone((uint16_t)ebx, ecx, (uint8_t)edx);
+            // Removed
             return 0;
 
         case 0x02:
@@ -4017,7 +4017,7 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
         case 0x0A: return handle_mouse(al, ebx, ecx, edx);
         case 0x0B: return handle_window(al, ebx, ecx, edx);
         case 0x0C: return handle_power(al, ebx, ecx, edx);
-        case 0x0E: return handle_sound(al, ebx, ecx, edx);
+        case 0x0E: return handle_sound(al, ebx, ecx);
         case 0x0F: return handle_vconsole(al, ebx, ecx, edx);
         case 0x0D: {
             /* Input namespace - subcodes in AL */

@@ -110,7 +110,6 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 
 /* AH = 0Eh - Sound */
 #define SYS_SOUND_DETECTED   0x0E00
-#define SYS_SOUND_PLAY_TONE  0x0E01
 #define SYS_SOUND_SET_VOLUME 0x0E02
 #define SYS_SOUND_STOP       0x0E03
 #define SYS_SOUND_PLAY_WAV   0x0E04
@@ -1115,10 +1114,6 @@ static inline int sys_sound_detected(void) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_SOUND_DETECTED));
     return ret;
-}
-
-static inline void sys_sound_play_tone(uint16_t frequency, uint32_t duration_ms, uint8_t waveform) {
-    __asm__ volatile("int $0x80" :: "a"(SYS_SOUND_PLAY_TONE), "b"(frequency), "c"(duration_ms), "d"(waveform));
 }
 
 static inline void sys_sound_set_volume(uint8_t left, uint8_t right) {
