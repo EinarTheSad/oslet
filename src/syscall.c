@@ -27,6 +27,7 @@
 #include "vconsole.h"
 
 #define MAX_OPEN_FILES 32
+#define TEXTBOX_MULTILINE_SIZE 8125
 
 typedef struct {
     void *data;
@@ -1527,6 +1528,14 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
     return needs_redraw;
 }
 
+/* Helper: get text pointer for textbox (multiline or regular) */
+static char* textbox_get_text(gui_control_t *ctrl) {
+    if (ctrl->type == CTRL_TEXTBOX && ctrl->textbox.is_multiline && ctrl->textbox.multiline_text) {
+        return ctrl->textbox.multiline_text;
+    }
+    return ctrl->text;
+}
+
 static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
     form->press_control_id = -1;
     int old_focus = form->focused_control_id;
@@ -1747,10 +1756,18 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     extern bmf_font_t font_n;
                     int size = ctrl->font_size > 0 ? ctrl->font_size : 12;
                     int text_area_x = abs_x + 4;
+                    int text_area_w = ctrl->w - 8;
                     int rel_x = mx - text_area_x;
+                    int rel_y = my - (abs_y + 6);
 
-                    int new_pos = textbox_pos_from_x(&font_n, size, ctrl->text,
+                    char *text = textbox_get_text(ctrl);
+                    int new_pos;
+                    if (ctrl->textbox.is_multiline) {
+                        new_pos = textbox_pos_from_xy(&font_n, size, text, 0, text_area_w, rel_x, rel_y);
+                    } else {
+                        new_pos = textbox_pos_from_x(&font_n, size, text,
                                                      ctrl->textbox.scroll_offset, rel_x);
+                    }
                     ctrl->textbox.cursor_pos = new_pos;
 
                     /* Start mouse selection */
@@ -1939,13 +1956,14 @@ static int textbox_delete_selection(gui_control_t *ctrl) {
     int sel_min = ctrl->textbox.sel_start < ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
     int sel_max = ctrl->textbox.sel_start > ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
 
+    char *text = textbox_get_text(ctrl);
     int text_len = 0;
-    while (ctrl->text[text_len]) text_len++;
+    while (text[text_len]) text_len++;
 
     /* Shift text left to remove selected portion */
     int del_count = sel_max - sel_min;
     for (int i = sel_min; i <= text_len - del_count; i++) {
-        ctrl->text[i] = ctrl->text[i + del_count];
+        text[i] = text[i + del_count];
     }
 
     ctrl->textbox.cursor_pos = sel_min;
@@ -1964,8 +1982,9 @@ static int pump_handle_keyboard(gui_form_t *form) {
     int key = kbd_getchar_nonblock();
     if (key == 0) return 0;  /* No key pressed */
 
+    char *text = textbox_get_text(ctrl);
     int text_len = 0;
-    while (ctrl->text[text_len]) text_len++;
+    while (text[text_len]) text_len++;
 
     int max_len = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
     int needs_redraw = 0;
@@ -1974,7 +1993,6 @@ static int pump_handle_keyboard(gui_form_t *form) {
     /* Handle special keys */
     if (key == KEY_LEFT) {
         if (has_selection) {
-            /* Move cursor to start of selection, clear selection */
             int sel_min = ctrl->textbox.sel_start < ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
             ctrl->textbox.cursor_pos = sel_min;
             ctrl->textbox.sel_start = -1;
@@ -1986,7 +2004,6 @@ static int pump_handle_keyboard(gui_form_t *form) {
     }
     else if (key == KEY_RIGHT) {
         if (has_selection) {
-            /* Move cursor to end of selection, clear selection */
             int sel_max = ctrl->textbox.sel_start > ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
             ctrl->textbox.cursor_pos = sel_max;
             ctrl->textbox.sel_start = -1;
@@ -2013,9 +2030,9 @@ static int pump_handle_keyboard(gui_form_t *form) {
             textbox_delete_selection(ctrl);
             needs_redraw = 1;
         } else if (ctrl->textbox.cursor_pos > 0) {
-            /* Shift text left from cursor position */
+            text = textbox_get_text(ctrl);
             for (int i = ctrl->textbox.cursor_pos - 1; i < text_len; i++) {
-                ctrl->text[i] = ctrl->text[i + 1];
+                text[i] = text[i + 1];
             }
             ctrl->textbox.cursor_pos--;
             needs_redraw = 1;
@@ -2026,9 +2043,9 @@ static int pump_handle_keyboard(gui_form_t *form) {
             textbox_delete_selection(ctrl);
             needs_redraw = 1;
         } else if (ctrl->textbox.cursor_pos < text_len) {
-            /* Shift text left from position after cursor */
+            text = textbox_get_text(ctrl);
             for (int i = ctrl->textbox.cursor_pos; i < text_len; i++) {
-                ctrl->text[i] = ctrl->text[i + 1];
+                text[i] = text[i + 1];
             }
             needs_redraw = 1;
         }
@@ -2037,12 +2054,20 @@ static int pump_handle_keyboard(gui_form_t *form) {
         /* Tab could be used to move focus to next control - for now skip */
     }
     else if (key == '\n' || key == '\r') {
-        /* Enter - generate event for the textbox */
-        form->clicked_id = ctrl->id;
-        needs_redraw = 1;
+        if (ctrl->textbox.is_multiline && text_len < max_len - 1) {
+            text = textbox_get_text(ctrl);
+            for (int i = text_len; i >= ctrl->textbox.cursor_pos; i--) {
+                text[i + 1] = text[i];
+            }
+            text[ctrl->textbox.cursor_pos] = '\n';
+            ctrl->textbox.cursor_pos++;
+            needs_redraw = 1;
+        } else {
+            form->clicked_id = ctrl->id;
+            needs_redraw = 1;
+        }
     }
     else if (key == KEY_ESC) {
-        /* Escape - clear selection and focus */
         ctrl->textbox.sel_start = -1;
         ctrl->textbox.sel_end = -1;
         form->focused_control_id = -1;
@@ -2050,25 +2075,23 @@ static int pump_handle_keyboard(gui_form_t *form) {
     }
     else if (key >= 0x20 && key < 0x80) {
         /* Printable ASCII character */
-        /* Delete selection first if any */
         if (has_selection) {
             textbox_delete_selection(ctrl);
-            /* Recalculate text length after deletion */
+            text = textbox_get_text(ctrl);
             text_len = 0;
-            while (ctrl->text[text_len]) text_len++;
+            while (text[text_len]) text_len++;
         }
 
         if (text_len < max_len - 1) {
-            /* Shift text right from cursor position */
+            text = textbox_get_text(ctrl);
             for (int i = text_len; i >= ctrl->textbox.cursor_pos; i--) {
-                ctrl->text[i + 1] = ctrl->text[i];
+                text[i + 1] = text[i];
             }
-            ctrl->text[ctrl->textbox.cursor_pos] = (char)key;
+            text[ctrl->textbox.cursor_pos] = (char)key;
             ctrl->textbox.cursor_pos++;
             needs_redraw = 1;
         }
     }
-    /* Ignore other special keys (function keys, alt combinations, etc.) */
 
     return needs_redraw;
 }
@@ -2905,15 +2928,23 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 gui_control_t *ctrl = find_control_by_id(form, form->focused_control_id);
                 if (ctrl && ctrl->type == CTRL_TEXTBOX) {
                     int abs_x = form->win.x + ctrl->x;
-                    //int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
+                    int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
 
                     extern bmf_font_t font_n;
                     int size = ctrl->font_size > 0 ? ctrl->font_size : 12;
                     int text_area_x = abs_x + 4;
+                    int text_area_w = ctrl->w - 8;
                     int rel_x = mx - text_area_x;
+                    int rel_y = my - (abs_y + 6);
 
-                    int new_pos = textbox_pos_from_x(&font_n, size, ctrl->text,
+                    char *text = textbox_get_text(ctrl);
+                    int new_pos;
+                    if (ctrl->textbox.is_multiline) {
+                        new_pos = textbox_pos_from_xy(&font_n, size, text, 0, text_area_w, rel_x, rel_y);
+                    } else {
+                        new_pos = textbox_pos_from_x(&font_n, size, text,
                                                      ctrl->textbox.scroll_offset, rel_x);
+                    }
 
                     /* Update selection end and cursor */
                     if (new_pos != ctrl->textbox.sel_end) {
@@ -3161,11 +3192,24 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         break;
                     case CTRL_TEXTBOX:
                         dest->textbox.cursor_pos = 0;
-                        dest->textbox.max_length = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
                         dest->textbox.scroll_offset = 0;
                         dest->textbox.is_focused = 0;
                         dest->textbox.sel_start = -1;
                         dest->textbox.sel_end = -1;
+                        dest->textbox.current_line = 0;
+                        if (ctrl->textbox.is_multiline) {
+                            dest->textbox.is_multiline = 1;
+                            dest->textbox.max_length = TEXTBOX_MULTILINE_SIZE;
+                            dest->textbox.multiline_text = (char*)kmalloc(TEXTBOX_MULTILINE_SIZE);
+                            if (dest->textbox.multiline_text) {
+                                memset_s(dest->textbox.multiline_text, 0, TEXTBOX_MULTILINE_SIZE);
+                                strcpy_s(dest->textbox.multiline_text, ctrl->text, TEXTBOX_MULTILINE_SIZE);
+                            }
+                        } else {
+                            dest->textbox.is_multiline = 0;
+                            dest->textbox.max_length = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
+                            dest->textbox.multiline_text = NULL;
+                        }
                         break;
                     case CTRL_DROPDOWN:
                         dest->dropdown.dropdown_open = 0;
@@ -3207,8 +3251,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 /* For textbox, update cursor to end of text */
                 if (dest->type == CTRL_TEXTBOX) {
+                    char *text_src = dest->textbox.is_multiline && dest->textbox.multiline_text
+                        ? dest->textbox.multiline_text : dest->text;
                     int len = 0;
-                    while (dest->text[len]) len++;
+                    while (text_src[len]) len++;
                     dest->textbox.cursor_pos = len;
                 }
 
@@ -3285,6 +3331,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         case CTRL_DROPDOWN:
                             if (ctrl->dropdown.dropdown_saved_bg) {
                                 ctrl_hide_dropdown_list(&form->win, ctrl);
+                            }
+                            break;
+
+                        case CTRL_TEXTBOX:
+                            if (ctrl->textbox.multiline_text) {
+                                kfree(ctrl->textbox.multiline_text);
+                                ctrl->textbox.multiline_text = NULL;
                             }
                             break;
 

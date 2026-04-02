@@ -23,3 +23,4 @@ int text_split_lines(const char *text, char lines[][256], int max_lines);
 int text_measure_height(const char *text, void *font, int size);
 
 int textbox_pos_from_x(bmf_font_t *font, int size, const char *text, int scroll_offset, int rel_x);
+int textbox_pos_from_xy(bmf_font_t *font, int size, const char *text, int text_area_x, int text_area_w, int rel_x, int rel_y);
