@@ -230,6 +230,9 @@ typedef struct {
     uint8_t is_focused;
     int16_t sel_start;
     int16_t sel_end;
+    uint8_t is_multiline;
+    uint16_t current_line;
+    char* multiline_text;
 } control_textbox_t;
 
 typedef struct {

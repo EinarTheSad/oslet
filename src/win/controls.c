@@ -459,31 +459,7 @@ int textbox_pos_from_x(bmf_font_t *font, int size, const char *text, int scroll_
     return pos;
 }
 
-void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
-    window_theme_t *theme = theme_get_current();
-    bmf_font_t *font = &font_n;
-    int size = control->font_size > 0 ? control->font_size : 12;
-
-    // Draw textbox background
-    gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
-
-    // Draw 3D sunken border effect
-    gfx_hline(abs_x, abs_y, control->w, theme->frame_dark);  // Top
-    gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);  // Left
-    gfx_hline(abs_x + 1, abs_y + control->h - 1, control->w - 1, theme->frame_light);  // Bottom
-    gfx_vline(abs_x + control->w - 1, abs_y, control->h, theme->frame_light);  // Right
-
-    // Inner shadow
-    gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_DARK_GRAY);
-    gfx_vline(abs_x + 1, abs_y + 1, control->h - 1, COLOR_DARK_GRAY);
-
-    // Text area dimensions (inside borders)
-    int text_area_x = abs_x + 3;
-    int text_area_w = control->w - 6;
-    int text_x = text_area_x + 1;
-    int text_y = abs_y + 6;
-
-    // Get font height for cursor
+int textbox_pos_from_xy(bmf_font_t *font, int size, const char *text, int text_area_x, int text_area_w, int rel_x, int rel_y) {
     int seq_idx = -1;
     for (int i = 0; i < font->size_count; i++) {
         if (font->sequences[i].point_size == size) {
@@ -492,85 +468,224 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
         }
     }
     int font_height = seq_idx >= 0 ? font->sequences[seq_idx].height : size;
+    int line_height = font_height + 2;
+
+    int line_x = text_area_x;
+    int line_y = 0;
+    int char_idx = 0;
+    int text_len = 0;
+    while (text[text_len]) text_len++;
+
+    while (char_idx < text_len) {
+        if (text[char_idx] == '\n') {
+            line_x = text_area_x;
+            line_y += line_height;
+            char_idx++;
+            continue;
+        }
+
+        const bmf_glyph_t *g = bmf_get_glyph(font, size, (uint8_t)text[char_idx]);
+        int char_w = g ? g->width : 6;
+
+        if (line_x + char_w > text_area_x + text_area_w) {
+            line_x = text_area_x;
+            line_y += line_height;
+        }
+
+        if (line_y + font_height >= rel_y && line_y <= rel_y) {
+            if (line_x + char_w / 2 >= rel_x) {
+                return char_idx;
+            }
+        }
+
+        line_x += char_w;
+        char_idx++;
+    }
+
+    if (line_y + font_height >= rel_y && line_y <= rel_y) {
+        return text_len;
+    }
+
+    return text_len;
+}
+
+void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    bmf_font_t *font = &font_n;
+    int size = control->font_size > 0 ? control->font_size : 12;
+
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
+
+    gfx_hline(abs_x, abs_y, control->w, theme->frame_dark);
+    gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);
+    gfx_hline(abs_x + 1, abs_y + control->h - 1, control->w - 1, theme->frame_light);
+    gfx_vline(abs_x + control->w - 1, abs_y, control->h, theme->frame_light);
+
+    gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_DARK_GRAY);
+    gfx_vline(abs_x + 1, abs_y + 1, control->h - 1, COLOR_DARK_GRAY);
+
+    int text_area_x = abs_x + 3;
+    int text_area_w = control->w - 6;
+    int text_x = text_area_x + 1;
+    int text_y = abs_y + 6;
+
+    int seq_idx = -1;
+    for (int i = 0; i < font->size_count; i++) {
+        if (font->sequences[i].point_size == size) {
+            seq_idx = i;
+            break;
+        }
+    }
+    int font_height = seq_idx >= 0 ? font->sequences[seq_idx].height : size;
+    int line_height = font_height + 2;
 
     if (!font->data) return;
 
-    // Calculate cursor position in pixels (before scroll adjustment)
-    int cursor_pixel_x = textbox_measure_to_pos(font, size, control->text, control->textbox.cursor_pos);
+    char *text = (control->textbox.is_multiline && control->textbox.multiline_text)
+        ? control->textbox.multiline_text : control->text;
 
-    // Auto-scroll to keep cursor visible
+    int cursor_char_pos = control->textbox.cursor_pos;
+    int text_len = 0;
+    while (text[text_len]) text_len++;
+
     int scroll = control->textbox.scroll_offset;
-    if (cursor_pixel_x - scroll > text_area_w - 2) {
-        // Cursor past right edge - scroll right
-        scroll = cursor_pixel_x - text_area_w + 10;
-    } else if (cursor_pixel_x - scroll < 0) {
-        // Cursor past left edge - scroll left
-        scroll = cursor_pixel_x - 10;
-        if (scroll < 0) scroll = 0;
-    }
-    control->textbox.scroll_offset = scroll;
+    int cursor_x = text_x;
+    int cursor_y = text_y;
 
-    // Draw selection highlight if there's a selection
-    if (control->textbox.sel_start >= 0 && control->textbox.sel_start != control->textbox.sel_end) {
-        int sel_min = control->textbox.sel_start < control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
-        int sel_max = control->textbox.sel_start > control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
-
-        int sel_x1 = text_x + textbox_measure_to_pos(font, size, control->text, sel_min) - scroll;
-        int sel_x2 = text_x + textbox_measure_to_pos(font, size, control->text, sel_max) - scroll;
-
-        // Clip selection to text area
-        if (sel_x1 < text_area_x) sel_x1 = text_area_x;
-        if (sel_x2 > text_area_x + text_area_w) sel_x2 = text_area_x + text_area_w;
-
-        if (sel_x2 > sel_x1) {
-            gfx_fillrect(sel_x1, abs_y + 3, sel_x2 - sel_x1, font_height + 2, COLOR_BLUE);
-        }
-    }
-
-    // Draw text with clipping (character by character)
-    if (control->text[0]) {
-        int x = text_x - scroll;
-        int i = 0;
-
-        // Skip characters that are completely scrolled off left
-        while (control->text[i]) {
-            const bmf_glyph_t *g = bmf_get_glyph(font, size, (uint8_t)control->text[i]);
-            int char_w = g ? g->width : 0;
-            if (x + char_w > text_area_x) break;
-            x += char_w;
-            i++;
+    if (control->textbox.is_multiline) {
+        int cursor_line = 0;
+        for (int i = 0; i < cursor_char_pos && i < text_len; i++) {
+            if (text[i] == '\n') cursor_line++;
         }
 
-        // Draw visible characters
-        while (control->text[i]) {
-            if (x >= text_area_x + text_area_w) break;  // Past right edge
-
-            const bmf_glyph_t *g = bmf_get_glyph(font, size, (uint8_t)control->text[i]);
-            if (g && x >= text_area_x - g->width) {
-                // Determine text color (white on selection, normal otherwise)
-                int in_selection = 0;
-                if (control->textbox.sel_start >= 0 && control->textbox.sel_start != control->textbox.sel_end) {
-                    int sel_min = control->textbox.sel_start < control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
-                    int sel_max = control->textbox.sel_start > control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
-                    in_selection = (i >= sel_min && i < sel_max);
-                }
-                uint8_t color = in_selection ? COLOR_WHITE : control->fg;
-                bmf_draw_char(x, text_y, font, size, (uint8_t)control->text[i], color);
+        int line_start = 0;
+        for (int i = cursor_char_pos - 1; i >= 0; i--) {
+            if (text[i] == '\n') {
+                line_start = i + 1;
+                break;
             }
-            x += g ? g->width : 0;
-            i++;
         }
-    }
 
-    // Draw cursor if focused (and no selection, or at selection edge)
-    if (control->textbox.is_focused) {
-        int cursor_x = text_x + cursor_pixel_x - scroll;
+        cursor_y = text_y + cursor_line * line_height;
 
-        // Only draw cursor if within visible area
-        if (cursor_x >= text_area_x && cursor_x < text_area_x + text_area_w) {
-            int cursor_y = text_y - 3;
-            int cursor_height = font_height + 1;
-            gfx_vline(cursor_x, cursor_y, cursor_height, control->fg);
+        cursor_x = text_x;
+        for (int i = line_start; i < cursor_char_pos && i < text_len; i++) {
+            if (text[i] == '\n') break;
+            const bmf_glyph_t *g = bmf_get_glyph(font, size, (uint8_t)text[i]);
+            int char_w = g ? g->width : 6;
+            if (cursor_x + char_w > text_area_x + text_area_w) break;
+            cursor_x += char_w;
+        }
+
+        int line_x = text_x;
+        int line_y = text_y;
+        int char_idx = 0;
+
+        int sel_min = -1, sel_max = -1;
+        if (control->textbox.sel_start >= 0 && control->textbox.sel_start != control->textbox.sel_end) {
+            sel_min = control->textbox.sel_start < control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
+            sel_max = control->textbox.sel_start > control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
+        }
+
+        while (char_idx < text_len) {
+            if (text[char_idx] == '\n') {
+                line_x = text_x;
+                line_y += line_height;
+                char_idx++;
+                continue;
+            }
+
+            const bmf_glyph_t *g = bmf_get_glyph(font, size, (uint8_t)text[char_idx]);
+            int char_w = g ? g->width : 6;
+
+            if (line_x + char_w > text_area_x + text_area_w) {
+                line_x = text_x;
+                line_y += line_height;
+            }
+
+            int in_selection = 0;
+            if (sel_min >= 0 && char_idx >= sel_min && char_idx < sel_max) {
+                in_selection = 1;
+                gfx_fillrect(line_x, line_y, char_w, font_height + 2, COLOR_BLUE);
+            }
+
+            if (line_y + font_height < abs_y + control->h - 3) {
+                uint8_t color = in_selection ? COLOR_WHITE : control->fg;
+                bmf_draw_char(line_x, line_y, font, size, (uint8_t)text[char_idx], color);
+            }
+
+            line_x += char_w;
+            char_idx++;
+        }
+
+        if (control->textbox.is_focused && cursor_y + font_height < abs_y + control->h - 3) {
+            gfx_vline(cursor_x, cursor_y - 3, font_height + 1, control->fg);
+        }
+    } else {
+        int cursor_pixel_x = textbox_measure_to_pos(font, size, text, cursor_char_pos);
+
+        if (cursor_pixel_x - scroll > text_area_w - 2) {
+            scroll = cursor_pixel_x - text_area_w + 10;
+        } else if (cursor_pixel_x - scroll < 0) {
+            scroll = cursor_pixel_x - 10;
+            if (scroll < 0) scroll = 0;
+        }
+        control->textbox.scroll_offset = scroll;
+
+        if (control->textbox.sel_start >= 0 && control->textbox.sel_start != control->textbox.sel_end) {
+            int sel_min = control->textbox.sel_start < control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
+            int sel_max = control->textbox.sel_start > control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
+
+            int sel_x1 = text_x + textbox_measure_to_pos(font, size, text, sel_min) - scroll;
+            int sel_x2 = text_x + textbox_measure_to_pos(font, size, text, sel_max) - scroll;
+
+            if (sel_x1 < text_area_x) sel_x1 = text_area_x;
+            if (sel_x2 > text_area_x + text_area_w) sel_x2 = text_area_x + text_area_w;
+
+            if (sel_x2 > sel_x1) {
+                gfx_fillrect(sel_x1, abs_y + 3, sel_x2 - sel_x1, font_height + 2, COLOR_BLUE);
+            }
+        }
+
+        if (text[0]) {
+            int x = text_x - scroll;
+            int i = 0;
+
+            while (text[i]) {
+                const bmf_glyph_t *g = bmf_get_glyph(font, size, (uint8_t)text[i]);
+                int char_w = g ? g->width : 0;
+                if (x + char_w > text_area_x) break;
+                x += char_w;
+                i++;
+            }
+
+            while (text[i]) {
+                if (x >= text_area_x + text_area_w) break;
+
+                const bmf_glyph_t *g = bmf_get_glyph(font, size, (uint8_t)text[i]);
+                if (g && x >= text_area_x - g->width) {
+                    int in_selection = 0;
+                    if (control->textbox.sel_start >= 0 && control->textbox.sel_start != control->textbox.sel_end) {
+                        int sel_min = control->textbox.sel_start < control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
+                        int sel_max = control->textbox.sel_start > control->textbox.sel_end ? control->textbox.sel_start : control->textbox.sel_end;
+                        in_selection = (i >= sel_min && i < sel_max);
+                    }
+                    uint8_t color = in_selection ? COLOR_WHITE : control->fg;
+                    bmf_draw_char(x, text_y, font, size, (uint8_t)text[i], color);
+                }
+                x += g ? g->width : 0;
+                i++;
+            }
+        }
+
+        if (control->textbox.is_focused) {
+            int cx = text_x + cursor_pixel_x - scroll;
+
+            if (cx >= text_area_x && cx < text_area_x + text_area_w) {
+                int cursor_y = text_y - 3;
+                int cursor_height = font_height + 1;
+                gfx_vline(cx, cursor_y, cursor_height, control->fg);
+            }
         }
     }
 }
