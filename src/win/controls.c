@@ -606,7 +606,7 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
             int in_selection = 0;
             if (sel_min >= 0 && char_idx >= sel_min && char_idx < sel_max) {
                 in_selection = 1;
-                gfx_fillrect(line_x, line_y, char_w, font_height + 2, COLOR_BLUE);
+                gfx_fillrect(line_x, line_y - 3, char_w, font_height + 2, COLOR_BLUE);
             }
 
             if (line_y + font_height < abs_y + control->h - 3) {
