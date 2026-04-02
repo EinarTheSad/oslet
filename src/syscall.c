@@ -3453,7 +3453,16 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             switch (prop_id) {
                 case 0: /* PROP_TEXT - universal */
-                    if (value) strcpy_s(ctrl->text, (const char*)value, 256);
+                    if (value) {
+                        if (ctrl->type == CTRL_TEXTBOX && ctrl->textbox.is_multiline && ctrl->textbox.multiline_text) {
+                            strcpy_s(ctrl->textbox.multiline_text, (const char*)value, ctrl->textbox.max_length);
+                            ctrl->textbox.cursor_pos = 0;
+                            ctrl->textbox.sel_start = -1;
+                            ctrl->textbox.sel_end = -1;
+                        } else {
+                            strcpy_s(ctrl->text, (const char*)value, 256);
+                        }
+                    }
                     break;
                 case 1: /* PROP_CHECKED */
                     switch (ctrl->type) {
