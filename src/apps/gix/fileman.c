@@ -604,9 +604,8 @@ static void open_selected_file(int idx) {
         } else {
             sys_spawn_async(state.file_items[idx].full_path);
         }
-    } else if (strcasecmp(dot, ".txt") == 0 || strcasecmp(dot, ".ini") == 0 ||
-               strcasecmp(dot, ".grp") == 0) {
-        /* TODO: create graphical text editor */
+    } else if (strcasecmp(dot, ".txt") == 0 || strcasecmp(dot, ".ini") == 0) {
+        sys_spawn_async_args("C:/OSLET/START/NOTEPAD.ELF", state.file_items[idx].full_path);
     } else if (strcasecmp(dot, ".bmp") == 0 || strcasecmp(dot, ".ico") == 0) {
         sys_spawn_async_args("C:/OSLET/START/IMGVIEW.ELF", state.file_items[idx].full_path);
     }
