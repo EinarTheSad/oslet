@@ -1,6 +1,5 @@
 .vscode/
-.claude/
 .github/
 build/
 *.img
-agents.md
+AGENTS.md
