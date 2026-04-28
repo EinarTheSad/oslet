@@ -1962,7 +1962,7 @@ static int textbox_delete_selection(gui_control_t *ctrl) {
 
     /* Shift text left to remove selected portion */
     int del_count = sel_max - sel_min;
-    for (int i = sel_min; i <= text_len - del_count; i++) {
+    for (int i = sel_min; i < text_len - del_count; i++) {
         text[i] = text[i + del_count];
     }
 
