@@ -470,14 +470,22 @@ int textbox_pos_from_xy(bmf_font_t *font, int size, const char *text, int text_a
     int font_height = seq_idx >= 0 ? font->sequences[seq_idx].height : size;
     int line_height = font_height + 2;
 
+    int target_line = rel_y / line_height;
+    if (target_line < 0) target_line = 0;
+
     int line_x = text_area_x;
     int line_y = 0;
     int char_idx = 0;
     int text_len = 0;
     while (text[text_len]) text_len++;
 
+    int current_line = 0;
     while (char_idx < text_len) {
         if (text[char_idx] == '\n') {
+            if (current_line == target_line) {
+                return char_idx;
+            }
+            current_line++;
             line_x = text_area_x;
             line_y += line_height;
             char_idx++;
@@ -488,11 +496,15 @@ int textbox_pos_from_xy(bmf_font_t *font, int size, const char *text, int text_a
         int char_w = g ? g->width : 6;
 
         if (line_x + char_w > text_area_x + text_area_w) {
+            if (current_line == target_line) {
+                return char_idx;
+            }
+            current_line++;
             line_x = text_area_x;
             line_y += line_height;
         }
 
-        if (line_y + font_height >= rel_y && line_y <= rel_y) {
+        if (current_line == target_line) {
             if (line_x + char_w / 2 >= rel_x) {
                 return char_idx;
             }
@@ -502,7 +514,7 @@ int textbox_pos_from_xy(bmf_font_t *font, int size, const char *text, int text_a
         char_idx++;
     }
 
-    if (line_y + font_height >= rel_y && line_y <= rel_y) {
+    if (current_line == target_line) {
         return text_len;
     }
 
