@@ -148,9 +148,9 @@ void win_draw_control(window_t *win, void *ctrl) {
     ctrl_draw(win, control);
 }
 
-void win_draw_dropdown_list(window_t *win, void *ctrl) {
+void win_draw_dropdown_list(window_t *win, void *ctrl, int y_offset) {
     gui_control_t *control = (gui_control_t*)ctrl;
-    ctrl_draw_dropdown_list(win, control);
+    ctrl_draw_dropdown_list(win, control, y_offset);
 }
 
 static int contains_any(const char *s, const char *chars) {

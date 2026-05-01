@@ -1755,15 +1755,95 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     /* Calculate cursor position from mouse click */
                     extern bmf_font_t font_n;
                     int size = ctrl->font_size > 0 ? ctrl->font_size : 12;
-                    int text_area_x = abs_x + 4;
-                    int text_area_w = ctrl->w - 8;
+                    int text_area_x = abs_x + 3;
+                    int text_area_w = ctrl->w - 6;
                     int rel_x = mx - text_area_x;
                     int rel_y = my - (abs_y + 6);
 
                     char *text = textbox_get_text(ctrl);
                     int new_pos;
+
                     if (ctrl->textbox.is_multiline) {
-                        new_pos = textbox_pos_from_xy(&font_n, size, text, 0, text_area_w, rel_x, rel_y);
+                        int text_area_h = ctrl->h - 9;
+                        int font_height = 0;
+                        int seq_idx = -1;
+                        for (int j = 0; j < font_n.size_count; j++) {
+                            if (font_n.sequences[j].point_size == size) {
+                                seq_idx = j;
+                                break;
+                            }
+                        }
+                        font_height = seq_idx >= 0 ? font_n.sequences[seq_idx].height : size;
+                        int line_height = font_height + 2;
+                        int visible_lines = text_area_h / line_height;
+                        if (visible_lines < 1) visible_lines = 1;
+
+                        int total_lines = textbox_wrap_line_count(&font_n, size, text, text_area_w);
+                        int needs_scrollbar = total_lines > visible_lines;
+                        int max_scroll = total_lines > visible_lines ? total_lines - visible_lines : 0;
+                        int content_width = text_area_w;
+                        if (needs_scrollbar) {
+                            content_width -= 18;
+                            if (content_width < 10) content_width = 10;
+                        }
+
+                        if (needs_scrollbar && mx >= abs_x + ctrl->w - 18 && mx < abs_x + ctrl->w &&
+                            my >= abs_y + 6 && my < abs_y + 6 + text_area_h) {
+                            int arrow_size = 18;
+                            int track_len = text_area_h - arrow_size * 2;
+                            int thumb_size = 20;
+                            if (thumb_size > track_len) thumb_size = track_len;
+                            int thumb_pos = 0;
+                            if (max_scroll > 0 && track_len > thumb_size) {
+                                thumb_pos = ((track_len - thumb_size) * ctrl->textbox.current_line) / max_scroll;
+                            }
+                            int rel_sb_y = my - (abs_y + 6);
+
+                            if (rel_sb_y < arrow_size) {
+                                if (ctrl->textbox.current_line > 0) ctrl->textbox.current_line--;
+                                ctrl->textbox.scrollbar_hovered_item = 0;
+                                ctrl->textbox.scrollbar_pressed = 1;
+                                form->press_control_id = ctrl->id;
+                                return 1;
+                            }
+                            if (rel_sb_y >= text_area_h - arrow_size) {
+                                if (ctrl->textbox.current_line < max_scroll) ctrl->textbox.current_line++;
+                                ctrl->textbox.scrollbar_hovered_item = 2;
+                                ctrl->textbox.scrollbar_pressed = 1;
+                                form->press_control_id = ctrl->id;
+                                return 1;
+                            }
+
+                            int thumb_y = arrow_size + thumb_pos;
+                            if (rel_sb_y >= thumb_y && rel_sb_y < thumb_y + thumb_size) {
+                                ctrl->textbox.scrollbar_hovered_item = 1;
+                                ctrl->textbox.scrollbar_pressed = 1;
+                                ctrl->textbox.scroll_offset = rel_sb_y - thumb_y;
+                                form->press_control_id = ctrl->id;
+                                return 1;
+                            }
+
+                            if (rel_sb_y >= arrow_size && rel_sb_y < text_area_h - arrow_size) {
+                                int rel_track = rel_sb_y - arrow_size - thumb_size / 2;
+                                if (rel_track < 0) rel_track = 0;
+                                if (rel_track > track_len - thumb_size) rel_track = track_len - thumb_size;
+                                int new_scroll = 0;
+                                if (track_len - thumb_size > 0) {
+                                    new_scroll = (rel_track * max_scroll) / (track_len - thumb_size);
+                                }
+                                if (new_scroll < 0) new_scroll = 0;
+                                if (new_scroll > max_scroll) new_scroll = max_scroll;
+                                ctrl->textbox.current_line = new_scroll;
+                                ctrl->textbox.scrollbar_hovered_item = 1;
+                                ctrl->textbox.scrollbar_pressed = 1;
+                                ctrl->textbox.scroll_offset = thumb_size / 2;
+                                form->press_control_id = ctrl->id;
+                                return 1;
+                            }
+                        }
+
+                        new_pos = textbox_pos_from_xy(&font_n, size, text, text_area_x, content_width,
+                                                      ctrl->textbox.current_line, rel_x, rel_y);
                     } else {
                         new_pos = textbox_pos_from_x(&font_n, size, text,
                                                      ctrl->textbox.scroll_offset, rel_x);
@@ -2783,6 +2863,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
+                        if (form->controls[i].type == CTRL_TEXTBOX && form->controls[i].textbox.scrollbar_pressed) {
+                            form->controls[i].textbox.scrollbar_pressed = 0;
+                            form->controls[i].textbox.scrollbar_hovered_item = -1;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
+                        }
                         /* Clear dropdown inline scrollbar pressed state */
                         if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown.pressed) {
                             form->controls[i].dropdown.pressed = 0;
@@ -2932,15 +3018,37 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                     extern bmf_font_t font_n;
                     int size = ctrl->font_size > 0 ? ctrl->font_size : 12;
-                    int text_area_x = abs_x + 4;
-                    int text_area_w = ctrl->w - 8;
+                    int text_area_x = abs_x + 3;
+                    int text_area_w = ctrl->w - 6;
                     int rel_x = mx - text_area_x;
                     int rel_y = my - (abs_y + 6);
 
                     char *text = textbox_get_text(ctrl);
                     int new_pos;
                     if (ctrl->textbox.is_multiline) {
-                        new_pos = textbox_pos_from_xy(&font_n, size, text, 0, text_area_w, rel_x, rel_y);
+                        int text_area_h = ctrl->h - 9;
+                        int font_height = 0;
+                        int seq_idx = -1;
+                        for (int j = 0; j < font_n.size_count; j++) {
+                            if (font_n.sequences[j].point_size == size) {
+                                seq_idx = j;
+                                break;
+                            }
+                        }
+                        font_height = seq_idx >= 0 ? font_n.sequences[seq_idx].height : size;
+                        int line_height = font_height + 2;
+                        int visible_lines = text_area_h / line_height;
+                        if (visible_lines < 1) visible_lines = 1;
+
+                        int total_lines = textbox_wrap_line_count(&font_n, size, text, text_area_w);
+                        int needs_scrollbar = total_lines > visible_lines;
+                        if (needs_scrollbar) {
+                            text_area_w -= 18;
+                            if (text_area_w < 10) text_area_w = 10;
+                        }
+
+                        new_pos = textbox_pos_from_xy(&font_n, size, text, text_area_x, text_area_w,
+                                                      ctrl->textbox.current_line, rel_x, rel_y);
                     } else {
                         new_pos = textbox_pos_from_x(&font_n, size, text,
                                                      ctrl->textbox.scroll_offset, rel_x);
@@ -3010,6 +3118,51 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             ctrl->scrollbar.cursor_pos = new_val;
                             form->clicked_id = ctrl->id;
                             event_count = 1; /* Generate event during drag */
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                        }
+                    }
+                }
+
+                /* Textbox inline scrollbar dragging */
+                if (ctrl && ctrl->type == CTRL_TEXTBOX && ctrl->textbox.scrollbar_pressed && ctrl->textbox.scrollbar_hovered_item == 1) {
+                    extern bmf_font_t font_n;
+                    int abs_x = form->win.x + ctrl->x;
+                    int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
+                    int text_area_w = ctrl->w - 6;
+                    int text_area_h = ctrl->h - 9;
+                    int seq_idx = -1;
+                    for (int j = 0; j < font_n.size_count; j++) {
+                        if (font_n.sequences[j].point_size == (ctrl->font_size > 0 ? ctrl->font_size : 12)) {
+                            seq_idx = j;
+                            break;
+                        }
+                    }
+                    int font_height = seq_idx >= 0 ? font_n.sequences[seq_idx].height : (ctrl->font_size > 0 ? ctrl->font_size : 12);
+                    int line_height = font_height + 2;
+                    int visible_lines = text_area_h / line_height;
+                    if (visible_lines < 1) visible_lines = 1;
+                    int total_lines = textbox_wrap_line_count(&font_n, (ctrl->font_size > 0 ? ctrl->font_size : 12), textbox_get_text(ctrl), text_area_w);
+                    int max_scroll = total_lines > visible_lines ? total_lines - visible_lines : 0;
+
+                    if (total_lines > visible_lines && max_scroll > 0) {
+                        int arrow_size = 18;
+                        int track_len = text_area_h - arrow_size * 2;
+                        int thumb_size = 20;
+                        if (thumb_size > track_len) thumb_size = track_len;
+                        int track_y = abs_y + 6 + arrow_size;
+
+                        int rel_y = my - track_y - ctrl->textbox.scroll_offset;
+                        if (rel_y < 0) rel_y = 0;
+                        if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
+                        int new_line = 0;
+                        if (track_len - thumb_size > 0) {
+                            new_line = (rel_y * max_scroll) / (track_len - thumb_size);
+                        }
+                        if (new_line > max_scroll) new_line = max_scroll;
+                        if (new_line < 0) new_line = 0;
+                        if (new_line != ctrl->textbox.current_line) {
+                            ctrl->textbox.current_line = new_line;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                         }
