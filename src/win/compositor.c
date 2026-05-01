@@ -31,9 +31,13 @@ static void compositor_draw_controls(gui_form_t *form) {
 
 static void compositor_draw_dropdowns(gui_form_t *form) {
     if (!form || form->win.is_minimized || !form->controls) return;
+    int y_offset = 20;
+    if (form->menubar_enabled) {
+        y_offset += menubar_get_height(&form->menubar);
+    }
     for (int j = 0; j < form->ctrl_count; j++) {
         if (form->controls[j].type == CTRL_DROPDOWN && form->controls[j].dropdown.dropdown_open) {
-            win_draw_dropdown_list(&form->win, &form->controls[j]);
+            win_draw_dropdown_list(&form->win, &form->controls[j], y_offset);
         }
     }
 }
@@ -195,7 +199,11 @@ void compositor_draw_all(window_manager_t *wm) {
                     }
                     
                     if (rects_intersect(dx, dy, dw, dh, abs_x, list_y, ctrl->w, list_h)) {
-                        win_draw_dropdown_list(&form->win, ctrl);
+                        int ctrl_y_offset = 20;
+                        if (form->menubar_enabled) {
+                            ctrl_y_offset += menubar_get_height(&form->menubar);
+                        }
+                        win_draw_dropdown_list(&form->win, ctrl, ctrl_y_offset);
                     }
                 }
             }
@@ -355,10 +363,16 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
     if (ctrl) {
         /* Set focus state before drawing */
         ctrl->textbox.is_focused = (ctrl->id == form->focused_control_id) ? 1 : 0;
-        win_draw_control(&form->win, ctrl);
+
+        int ctrl_y_offset = 20;
+        if (form->menubar_enabled) {
+            ctrl_y_offset += menubar_get_height(&form->menubar);
+        }
+
+        ctrl_draw_with_offset(&form->win, ctrl, ctrl_y_offset);
         /* If it's a dropdown with an open list, redraw that too */
         if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
-            win_draw_dropdown_list(&form->win, ctrl);
+            win_draw_dropdown_list(&form->win, ctrl, ctrl_y_offset);
         }
     }
 
@@ -396,7 +410,11 @@ void compositor_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, 
     /* Find and redraw only the dropdown list */
     gui_control_t *ctrl = compositor_get_control_by_id(form, ctrl_id);
     if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
-        win_draw_dropdown_list(&form->win, ctrl);
+        int ctrl_y_offset = 20;
+        if (form->menubar_enabled) {
+            ctrl_y_offset += menubar_get_height(&form->menubar);
+        }
+        win_draw_dropdown_list(&form->win, ctrl, ctrl_y_offset);
     }
 
     /* Draw ALL popup menus on top of everything */

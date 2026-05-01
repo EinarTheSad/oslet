@@ -233,6 +233,9 @@ typedef struct {
     uint8_t is_multiline;
     uint16_t current_line;
     char* multiline_text;
+    int8_t scrollbar_hovered_item;
+    uint8_t scrollbar_pressed;
+    int16_t scrollbar_drag_offset;
 } control_textbox_t;
 
 typedef struct {

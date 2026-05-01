@@ -11,7 +11,7 @@ void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y);
-void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control);
+void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control, int y_offset);
 void ctrl_draw_clock(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg);
@@ -23,4 +23,6 @@ int text_split_lines(const char *text, char lines[][256], int max_lines);
 int text_measure_height(const char *text, void *font, int size);
 
 int textbox_pos_from_x(bmf_font_t *font, int size, const char *text, int scroll_offset, int rel_x);
-int textbox_pos_from_xy(bmf_font_t *font, int size, const char *text, int text_area_x, int text_area_w, int rel_x, int rel_y);
+int textbox_pos_from_xy(bmf_font_t *font, int size, const char *text, int text_area_x, int text_area_w, int start_line, int rel_x, int rel_y);
+int textbox_wrap_line_count(bmf_font_t *font, int size, const char *text, int text_area_w);
+void textbox_wrapped_cursor_position(bmf_font_t *font, int size, const char *text, int pos, int text_area_w, int *out_line, int *out_x);
