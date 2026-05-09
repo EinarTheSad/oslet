@@ -11,13 +11,20 @@
 #define ICON_H 58
 #define PADDING_X 12
 #define PADDING_Y 8
-#define COLS 5
+#define COLS 2
 #define COLS_CHILD 4
 
-#define WIN_WIDTH 330
-#define WIN_HEIGHT 200
-#define WIN_X 65
-#define WIN_Y 80
+#define MAIN_WIDTH 131
+#define MAIN_HEIGHT 348
+#define WIN_X 17
+#define WIN_Y 89
+
+#define SUBWIN_MAX_WIDTH 330
+#define SUBWIN_MAX_HEIGHT 200
+#define SUBWIN_X 150
+#define SUBWIN_Y 89
+#define CASCADE_OFFSET_X 40
+#define CASCADE_OFFSET_Y 40
 
 #define MAIN_GRP_PATH "C:/OSLET/START/MAIN.GRP"
 #define MAX_APPS 32
@@ -310,6 +317,9 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
 
 static char g_pending_grp_icon[64] = {0};
 static char g_pending_grp_name[64] = {0};
+static int g_pending_win_x = 0;
+static int g_pending_win_y = 0;
+static void rebuild_layout(startman_state_t *state);
 static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path, const char *display_name);
 
 static int startman_init(prog_instance_t *inst) {
@@ -367,16 +377,16 @@ static int startman_init(prog_instance_t *inst) {
     /* Calculate window position and size */
     int win_x = WIN_X;
     int win_y = WIN_Y;
-    int win_w = WIN_WIDTH;
-    int win_h = WIN_HEIGHT;
+    int win_w = MAIN_WIDTH;
+    int win_h = MAIN_HEIGHT;
 
     int icon_offset = 0;
     int cols = state->is_main_window ? COLS : COLS_CHILD;
 
     if (!state->is_main_window) {
-        /* Subgroup windows: offset position and calculate dynamic size */
-        win_x += 40;
-        win_y += 40;
+        /* Subgroup windows: use cascade position */
+        win_x = g_pending_win_x;
+        win_y = g_pending_win_y;
 
         /* +1 for ".." back button */
         int total_icons = state->app_count + 1;
@@ -389,14 +399,14 @@ static int startman_init(prog_instance_t *inst) {
         /* Dynamic height based on content */
         win_h = PADDING_Y + rows * (ICON_H + PADDING_Y) + 30;  /* +30 for title bar */
         if (win_h < 100) win_h = 100;
-        if (win_h > WIN_HEIGHT) win_h = WIN_HEIGHT;
+        if (win_h > SUBWIN_MAX_HEIGHT) win_h = SUBWIN_MAX_HEIGHT;
 
         /* Dynamic width if few icons */
         int cols_needed = (total_icons < cols) ? total_icons : cols;
         if (cols_needed < 1) cols_needed = 1;
         win_w = PADDING_X + cols_needed * (ICON_W + PADDING_X) + PADDING_X;
         if (win_w < 120) win_w = 120;
-        if (win_w > WIN_WIDTH) win_w = WIN_WIDTH;
+        if (win_w > SUBWIN_MAX_WIDTH) win_w = SUBWIN_MAX_WIDTH;
     }
 
     state->form = sys_win_create_form(title, win_x, win_y, win_w, win_h);
@@ -453,6 +463,7 @@ static int startman_init(prog_instance_t *inst) {
         ctrl_set_image(state->form, icon.id, state->apps[i].icon_path);
     }
 
+    //rebuild_layout(state);
     sys_win_draw(state->form);
     prog_register_window(inst, state->form);
     return 0;
@@ -614,6 +625,14 @@ static void open_group_window(const char *grp_path, const char *parent_grp, cons
     } else {
         g_pending_grp_name[0] = '\0';
     }
+    /* Calculate cascade position for this new subwindow */
+    static int next_cascade_x = SUBWIN_X;
+    static int next_cascade_y = SUBWIN_Y;
+    g_pending_win_x = next_cascade_x;
+    g_pending_win_y = next_cascade_y;
+    next_cascade_x += CASCADE_OFFSET_X;
+    next_cascade_y += CASCADE_OFFSET_Y;
+
     /* Launch new startman instance */
     progman_launch("Start Manager");
 }
