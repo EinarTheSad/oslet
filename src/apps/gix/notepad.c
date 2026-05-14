@@ -1,12 +1,9 @@
 #include "../../syscall.h"
 #include "../../lib/string.h"
+#include "../../lib/pathdlg.h"
 
 #define ID_TEXT         1
 
-#define ID_PATH_TEXT  10
-#define ID_OK         2
-#define ID_CANCEL     3
-#define ID_LABEL_PATH 11
 #define MENU_FILE_NEW      101
 #define MENU_FILE_OPEN    102
 #define MENU_FILE_SAVE    103
@@ -17,30 +14,35 @@
 
 #define MAX_FILE_CONTENT 8192
 
-static char current_file_path[256] = "";
+#define NOTEPAD_X      100
+#define NOTEPAD_Y       50
+#define NOTEPAD_W      360
+#define NOTEPAD_H      255
+#define TEXTBOX_MARGIN   5
+#define TEXTBOX_BOTTOM  52
+
+typedef struct {
+    void *form;
+    char current_file_path[256];
+} notepad_state_t;
 
 static gui_control_t Form1_controls[] = {
     { .type = CTRL_TEXTBOX, .x = 5, .y = 5, .w = 10, .h = 10, .fg = 0, .bg = -1, .text = "", .id = ID_TEXT, .font_type = 0, .font_size = 12, .border = 1, .border_color = 0, .textbox = { .is_multiline = 1 } },
-};
-
-static gui_control_t Form2_controls[] = {
-    { .type = CTRL_TEXTBOX, .x = 46, .y = 5, .w = 198, .h = 20, .fg = 0, .bg = -1, .text = "", .id = ID_PATH_TEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .textbox = { .max_length = 255 } },
-    { .type = CTRL_LABEL, .x = 9, .y = 6, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "Path:", .id = ID_LABEL_PATH, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_BUTTON, .x = 56, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "OK", .id = ID_OK, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_BUTTON, .x = 130, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Cancel", .id = ID_CANCEL, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
 };
 
 static inline int is_valid_text_char(uint8_t c) {
     return (c >= 0x20 || c == '\t' || c == '\n' || c == '\r') && c < 0x80;
 }
 
-static void set_current_file_path(const char *path) {
+static void set_current_file_path(notepad_state_t *state, const char *path) {
+    if (!state) return;
+
     if (!path) {
-        current_file_path[0] = '\0';
+        state->current_file_path[0] = '\0';
         return;
     }
-    strncpy(current_file_path, path, sizeof(current_file_path) - 1);
-    current_file_path[sizeof(current_file_path) - 1] = '\0';
+    strncpy(state->current_file_path, path, sizeof(state->current_file_path) - 1);
+    state->current_file_path[sizeof(state->current_file_path) - 1] = '\0';
 }
 
 static int load_text_file(void *form, int textbox_id, const char *path) {
@@ -69,51 +71,6 @@ static int load_text_file(void *form, int textbox_id, const char *path) {
     content[content_len] = '\0';
     ctrl_set_text(form, textbox_id, content);
     return 0;
-}
-
-static int show_path_dialog(const char *title, char *out_path, int out_len) {
-    if (!out_path || out_len <= 0) return 0;
-
-    void *dlg = sys_win_create_form(title, 193, 199, 255, 82);
-    if (!dlg) return 0;
-
-    for (int i = 0; i < (int)(sizeof(Form2_controls) / sizeof(Form2_controls[0])); i++) {
-        sys_win_add_control(dlg, &Form2_controls[i]);
-    }
-
-    if (current_file_path[0]) {
-        ctrl_set_text(dlg, ID_PATH_TEXT, current_file_path);
-    }
-
-    sys_win_draw(dlg);
-    sys_win_redraw_all();
-    sys_mouse_invalidate();
-
-    int confirmed = 0;
-    int dlg_running = 1;
-
-    while (dlg_running) {
-        int ev = sys_win_pump_events(dlg);
-        if (ev == -3 || ev == ID_CANCEL) {
-            dlg_running = 0;
-        } else if (ev == ID_OK) {
-            const char *value = ctrl_get_text(dlg, ID_PATH_TEXT);
-            if (value && value[0]) {
-                strncpy(out_path, value, out_len - 1);
-                out_path[out_len - 1] = '\0';
-                confirmed = 1;
-            }
-            dlg_running = 0;
-        } else if (ev == -1 || ev == -2) {
-            sys_win_draw(dlg);
-            sys_win_redraw_all();
-        }
-        sys_yield();
-    }
-
-    sys_win_destroy_form(dlg);
-    sys_win_redraw_all();
-    return confirmed;
 }
 
 static int save_text_to_file(const char *path, const char *text) {
@@ -159,8 +116,8 @@ static void update_layout(void *form) {
     int win_w = f->win.w;
     int win_h = f->win.h;
 
-    int txt_w = win_w - 10;
-    int txt_h = win_h - 52;
+    int txt_w = win_w - (TEXTBOX_MARGIN * 2);
+    int txt_h = win_h - TEXTBOX_BOTTOM;
     if (txt_w < 32) txt_w = 32;
     if (txt_h < 16) txt_h = 16;
 
@@ -168,68 +125,86 @@ static void update_layout(void *form) {
     sys_ctrl_set_prop(form, ID_TEXT, PROP_H, txt_h);
 }
 
+static int prompt_for_path(notepad_state_t *state, const char *title, char *out_path, int out_len) {
+    const char *initial_path = "";
+    if (state && state->current_file_path[0]) {
+        initial_path = state->current_file_path;
+    }
+
+    return gui_show_path_dialog(title, initial_path, out_path, out_len);
+}
+
+static int notepad_new(notepad_state_t *state) {
+    ctrl_set_text(state->form, ID_TEXT, "");
+
+    gui_control_t *ctrl = sys_win_get_control(state->form, ID_TEXT);
+    if (ctrl && ctrl->type == CTRL_TEXTBOX) {
+        ctrl->textbox.cursor_pos = 0;
+        ctrl->textbox.sel_start = -1;
+        ctrl->textbox.sel_end = -1;
+    }
+
+    set_current_file_path(state, NULL);
+    sys_win_draw(state->form);
+    return 0;
+}
+
+static int notepad_open(notepad_state_t *state) {
+    char path[sizeof(state->current_file_path)] = "";
+
+    if (!prompt_for_path(state, "Open", path, sizeof(path))) return 0;
+
+    if (load_text_file(state->form, ID_TEXT, path) == 0) {
+        set_current_file_path(state, path);
+        sys_win_draw(state->form);
+    } else {
+        sys_win_msgbox("Cannot read file", "OK", "Error");
+    }
+
+    return 0;
+}
+
+static int notepad_save_to_path(notepad_state_t *state, const char *path, const char *title) {
+    if (save_text_to_file(path, ctrl_get_text(state->form, ID_TEXT)) == 0) {
+        set_current_file_path(state, path);
+        sys_win_msgbox("File saved.", "OK", title);
+        return 0;
+    }
+
+    sys_win_msgbox("Failed to save file.", "OK", title);
+    return 0;
+}
+
+static int notepad_save(notepad_state_t *state, int save_as) {
+    char path[sizeof(state->current_file_path)] = "";
+    const char *title = save_as ? "Save As" : "Save";
+
+    if (!save_as && state->current_file_path[0]) {
+        return notepad_save_to_path(state, state->current_file_path, title);
+    }
+
+    if (!prompt_for_path(state, "Save As", path, sizeof(path))) return 0;
+    return notepad_save_to_path(state, path, "Save As");
+}
+
 static int handle_events(void *form, int event, void *userdata) {
-    (void)userdata;
+    notepad_state_t *state = userdata;
+    (void)form;
 
     if (event > 0) {
         switch (event) {
-            case MENU_FILE_OPEN: {
-                char path[sizeof(current_file_path)] = "";
-                if (!show_path_dialog("Open", path, sizeof(path))) break;
-                if (load_text_file(form, ID_TEXT, path) == 0) {
-                    set_current_file_path(path);
-                    sys_win_draw(form);
-                } else {
-                    sys_win_msgbox("Cannot read file", "OK", "Error");
-                }
-                return 0;
-            }
-            case MENU_FILE_NEW: {
-                ctrl_set_text(form, ID_TEXT, "");
-                gui_control_t *ctrl = sys_win_get_control(form, ID_TEXT);
-                if (ctrl && ctrl->type == CTRL_TEXTBOX) {
-                    ctrl->textbox.cursor_pos = 0;
-                    ctrl->textbox.sel_start = -1;
-                    ctrl->textbox.sel_end = -1;
-                }
-                set_current_file_path(NULL);
-                sys_win_draw(form);
-                return 0;
-            }
-            case MENU_FILE_SAVE: {
-                if (!current_file_path[0]) {
-                    char path[sizeof(current_file_path)] = "";
-                    if (!show_path_dialog("Save As", path, sizeof(path))) break;
-                    if (save_text_to_file(path, ctrl_get_text(form, ID_TEXT)) == 0) {
-                        set_current_file_path(path);
-                        sys_win_msgbox("File saved.", "OK", "Save As");
-                    } else {
-                        sys_win_msgbox("Failed to save file.", "OK", "Save As");
-                    }
-                    return 0;
-                }
-                if (save_text_to_file(current_file_path, ctrl_get_text(form, ID_TEXT)) == 0) {
-                    sys_win_msgbox("File saved.", "OK", "Save");
-                } else {
-                    sys_win_msgbox("Failed to save file.", "OK", "Save");
-                }
-                return 0;
-            }
-            case MENU_FILE_SAVE_AS: {
-                char path[sizeof(current_file_path)] = "";
-                if (!show_path_dialog("Save As", path, sizeof(path))) break;
-                if (save_text_to_file(path, ctrl_get_text(form, ID_TEXT)) == 0) {
-                    set_current_file_path(path);
-                    sys_win_msgbox("File saved.", "OK", "Save As");
-                } else {
-                    sys_win_msgbox("Failed to save file.", "OK", "Save As");
-                }
-                return 0;
-            }
+            case MENU_FILE_OPEN:
+                return notepad_open(state);
+            case MENU_FILE_NEW:
+                return notepad_new(state);
+            case MENU_FILE_SAVE:
+                return notepad_save(state, 0);
+            case MENU_FILE_SAVE_AS:
+                return notepad_save(state, 1);
             case MENU_FILE_EXIT:
                 return 1;
             case MENU_EDIT_SELECT_ALL:
-                perform_select_all(form);
+                perform_select_all(state->form);
                 return 0;
             case MENU_HELP_ABOUT:
                 sys_win_msgbox("osLET Notepad 0.2, EinarTheSad 2026", "OK", "About");
@@ -238,7 +213,9 @@ static int handle_events(void *form, int event, void *userdata) {
     }
 
     if (event == -4) {
-        update_layout(form);
+        update_layout(state->form);
+        sys_win_draw(state->form);
+        sys_win_force_full_redraw();
     }
 
     return 0;
@@ -264,30 +241,35 @@ static void setup_menus(void *form) {
 
 __attribute__((section(".entry"), used))
 void _start(void) {
-    void *form = sys_win_create_form("Notepad", 100, 50, 360, 255);
-    if (!form) {
+    notepad_state_t state;
+    state.form = sys_win_create_form("Notepad", NOTEPAD_X, NOTEPAD_Y, NOTEPAD_W, NOTEPAD_H);
+    state.current_file_path[0] = '\0';
+
+    if (!state.form) {
         sys_exit();
         return;
     }
 
     for (int i = 0; i < (int)(sizeof(Form1_controls) / sizeof(Form1_controls[0])); i++) {
-        sys_win_add_control(form, &Form1_controls[i]);
+        sys_win_add_control(state.form, &Form1_controls[i]);
     }
 
-    sys_win_set_icon(form, "C:/ICONS/TEXT.ICO");
+    sys_win_set_icon(state.form, "C:/ICONS/TEXT.ICO");
 
-    setup_menus(form);
+    setup_menus(state.form);
 
-    update_layout(form);
+    update_layout(state.form);
+    sys_win_draw(state.form);
+    sys_win_force_full_redraw();
 
     /* Load text from launch arguments if provided */
     char args[256];
     if (sys_getargs(args, sizeof(args)) && args[0]) {
-        if (load_text_file(form, ID_TEXT, args) == 0) {
-            set_current_file_path(args);
-            sys_win_draw(form);
+        if (load_text_file(state.form, ID_TEXT, args) == 0) {
+            set_current_file_path(&state, args);
+            sys_win_draw(state.form);
         }
     }
 
-    sys_win_run_event_loop(form, handle_events, NULL);
+    sys_win_run_event_loop(state.form, handle_events, &state);
 }
