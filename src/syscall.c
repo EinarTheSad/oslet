@@ -29,6 +29,8 @@
 #define MAX_OPEN_FILES 32
 #define TEXTBOX_MULTILINE_SIZE 8125
 
+static char textbox_clipboard[TEXTBOX_MULTILINE_SIZE];
+
 typedef struct {
     void *data;
     int width;
@@ -1536,6 +1538,51 @@ static char* textbox_get_text(gui_control_t *ctrl) {
     return ctrl->text;
 }
 
+static int textbox_text_len(gui_control_t *ctrl) {
+    char *text = textbox_get_text(ctrl);
+    int len = 0;
+    while (text && text[len]) len++;
+    return len;
+}
+
+static int textbox_selection_bounds(gui_control_t *ctrl, int text_len, int *sel_min, int *sel_max) {
+    if (ctrl->textbox.sel_start < 0 || ctrl->textbox.sel_start == ctrl->textbox.sel_end) return 0;
+
+    int start = ctrl->textbox.sel_start;
+    int end = ctrl->textbox.sel_end;
+    if (start > end) {
+        int tmp = start;
+        start = end;
+        end = tmp;
+    }
+
+    if (start < 0) start = 0;
+    if (end < 0) end = 0;
+    if (start > text_len) start = text_len;
+    if (end > text_len) end = text_len;
+    if (start == end) return 0;
+
+    *sel_min = start;
+    *sel_max = end;
+    return 1;
+}
+
+static int textbox_copy_selection(gui_control_t *ctrl) {
+    int text_len = textbox_text_len(ctrl);
+    int sel_min, sel_max;
+    if (!textbox_selection_bounds(ctrl, text_len, &sel_min, &sel_max)) return 0;
+
+    char *text = textbox_get_text(ctrl);
+    int copy_len = sel_max - sel_min;
+    if (copy_len >= TEXTBOX_MULTILINE_SIZE) copy_len = TEXTBOX_MULTILINE_SIZE - 1;
+
+    for (int i = 0; i < copy_len; i++) {
+        textbox_clipboard[i] = text[sel_min + i];
+    }
+    textbox_clipboard[copy_len] = '\0';
+    return copy_len > 0;
+}
+
 static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
     form->press_control_id = -1;
     int old_focus = form->focused_control_id;
@@ -2031,25 +2078,93 @@ static gui_control_t* find_control_by_id(gui_form_t *form, int16_t id) {
 
 /* Helper: delete selected text in textbox, return 1 if deleted */
 static int textbox_delete_selection(gui_control_t *ctrl) {
-    if (ctrl->textbox.sel_start < 0 || ctrl->textbox.sel_start == ctrl->textbox.sel_end) return 0;
-
-    int sel_min = ctrl->textbox.sel_start < ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
-    int sel_max = ctrl->textbox.sel_start > ctrl->textbox.sel_end ? ctrl->textbox.sel_start : ctrl->textbox.sel_end;
-
-    char *text = textbox_get_text(ctrl);
-    int text_len = 0;
-    while (text[text_len]) text_len++;
+    int text_len = textbox_text_len(ctrl);
+    int sel_min, sel_max;
+    if (!textbox_selection_bounds(ctrl, text_len, &sel_min, &sel_max)) return 0;
 
     /* Shift text left to remove selected portion */
+    char *text = textbox_get_text(ctrl);
     int del_count = sel_max - sel_min;
     for (int i = sel_min; i < text_len - del_count; i++) {
         text[i] = text[i + del_count];
     }
+    text[text_len - del_count] = '\0';
 
     ctrl->textbox.cursor_pos = sel_min;
     ctrl->textbox.sel_start = -1;
     ctrl->textbox.sel_end = -1;
     return 1;
+}
+
+static int textbox_insert_text(gui_control_t *ctrl, const char *insert_text) {
+    if (!insert_text || !insert_text[0]) return 0;
+
+    int max_len = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
+    if (max_len < 2) return 0;
+
+    if (textbox_delete_selection(ctrl)) {
+        /* cursor and text length are recalculated below */
+    }
+
+    char *text = textbox_get_text(ctrl);
+    int text_len = textbox_text_len(ctrl);
+    int cursor = ctrl->textbox.cursor_pos;
+    if (cursor < 0) cursor = 0;
+    if (cursor > text_len) cursor = text_len;
+
+    int room = (max_len - 1) - text_len;
+    if (room <= 0) return 0;
+
+    int insert_len = 0;
+    while (insert_text[insert_len] && insert_len < room) insert_len++;
+    if (insert_len <= 0) return 0;
+
+    for (int i = text_len; i >= cursor; i--) {
+        text[i + insert_len] = text[i];
+    }
+
+    for (int i = 0; i < insert_len; i++) {
+        text[cursor + i] = insert_text[i];
+    }
+
+    ctrl->textbox.cursor_pos = cursor + insert_len;
+    ctrl->textbox.sel_start = -1;
+    ctrl->textbox.sel_end = -1;
+    return 1;
+}
+
+static int textbox_select_all(gui_control_t *ctrl) {
+    int text_len = textbox_text_len(ctrl);
+    if (text_len <= 0) {
+        ctrl->textbox.sel_start = -1;
+        ctrl->textbox.sel_end = -1;
+        ctrl->textbox.cursor_pos = 0;
+        return 1;
+    }
+
+    ctrl->textbox.sel_start = 0;
+    ctrl->textbox.sel_end = text_len;
+    ctrl->textbox.cursor_pos = text_len;
+    return 1;
+}
+
+static int textbox_run_edit_command(gui_control_t *ctrl, int command) {
+    if (!ctrl || ctrl->type != CTRL_TEXTBOX) return 0;
+
+    switch (command) {
+        case TEXTBOX_EDIT_COPY:
+            textbox_copy_selection(ctrl);
+            return 0;
+        case TEXTBOX_EDIT_CUT:
+            if (!textbox_copy_selection(ctrl)) return 0;
+            return textbox_delete_selection(ctrl);
+        case TEXTBOX_EDIT_PASTE:
+            return textbox_insert_text(ctrl, textbox_clipboard);
+        case TEXTBOX_EDIT_SELECT_ALL:
+            return textbox_select_all(ctrl);
+        default:
+            return 0;
+    }
 }
 
 /* Handle keyboard input for focused textbox */
@@ -2069,6 +2184,24 @@ static int pump_handle_keyboard(gui_form_t *form) {
     int max_len = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
     int needs_redraw = 0;
     int has_selection = (ctrl->textbox.sel_start >= 0 && ctrl->textbox.sel_start != ctrl->textbox.sel_end);
+
+    if (key == 14 || key == 19) {
+        form->clicked_id = SYS_EVENT_CTRL_KEY(key);
+        return 2;
+    }
+
+    if (key == 1 || key == 3 || key == 22 || key == 24) {
+        if (key == 1) {              /* Ctrl+A */
+            needs_redraw = textbox_run_edit_command(ctrl, TEXTBOX_EDIT_SELECT_ALL);
+        } else if (key == 3) {       /* Ctrl+C */
+            needs_redraw = textbox_run_edit_command(ctrl, TEXTBOX_EDIT_COPY);
+        } else if (key == 22) {      /* Ctrl+V */
+            needs_redraw = textbox_run_edit_command(ctrl, TEXTBOX_EDIT_PASTE);
+        } else if (key == 24) {      /* Ctrl+X */
+            needs_redraw = textbox_run_edit_command(ctrl, TEXTBOX_EDIT_CUT);
+        }
+        return needs_redraw;
+    }
 
     /* Handle special keys */
     if (key == KEY_LEFT) {
@@ -2434,6 +2567,16 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             /* Handle menubar if enabled */
             if (form->menubar_enabled && form->menubar.visible) {
+                int bar_y = form->win.y + WM_TITLEBAR_HEIGHT + 2;
+                int in_menubar = (mx >= form->win.x + 2 && mx < form->win.x + form->win.w - 2 &&
+                                  my >= bar_y && my < bar_y + MENUBAR_HEIGHT);
+                int in_open_menu = 0;
+                if (form->menubar.active_menu >= 0 &&
+                    form->menubar.active_menu < form->menubar.menu_count) {
+                    menu_t *active = &form->menubar.menus[form->menubar.active_menu].menu;
+                    in_open_menu = menu_contains_point(active, mx, my);
+                }
+
                 int action = menubar_handle_mouse(&form->menubar, form->win.x, form->win.y,
                                                   mx, my, button_pressed, button_released);
                 if (action > 0) {
@@ -2444,6 +2587,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     needs_redraw = 1;
                 } else if (action == -1) {
                     /* Menu closed without selection */
+                    needs_redraw = 1;
+                } else if ((in_menubar || in_open_menu) && (button_pressed || button_released)) {
                     needs_redraw = 1;
                 }
                 /* Redraw if needed */
@@ -3230,7 +3375,10 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                should receive keyboard events (prevents background windows from consuming keys) */
             if (!form->win.is_minimized && form->focused_control_id >= 0 &&
                 global_wm.focused_index >= 0 && global_wm.windows[global_wm.focused_index] == form) {
-                if (pump_handle_keyboard(form)) {
+                int keyboard_result = pump_handle_keyboard(form);
+                if (keyboard_result == 2) {
+                    event_count = 1;
+                } else if (keyboard_result) {
                     needs_redraw = 1;
                     if (changed_count < 32) changed_controls[changed_count++] = form->focused_control_id;
                 }
@@ -3616,6 +3764,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             strcpy_s(ctrl->text, (const char*)value, 256);
                         }
                     }
+                    break;
+                case PROP_TEXTBOX_EDIT:
+                    textbox_run_edit_command(ctrl, (int)value);
                     break;
                 case 1: /* PROP_CHECKED */
                     switch (ctrl->type) {

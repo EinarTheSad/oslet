@@ -172,6 +172,15 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define PROP_BG         8   /* int - background color */
 #define PROP_IMAGE      9   /* char* - image path (picturebox) */
 #define PROP_ENABLED   10   /* int - enabled state (unused / repurposed for picturebox image-mode) */
+#define PROP_TEXTBOX_EDIT 11 /* int - textbox edit command */
+
+#define TEXTBOX_EDIT_COPY       1
+#define TEXTBOX_EDIT_CUT        2
+#define TEXTBOX_EDIT_PASTE      3
+#define TEXTBOX_EDIT_SELECT_ALL 4
+
+#define SYS_EVENT_CTRL_KEY_BASE 0x7000
+#define SYS_EVENT_CTRL_KEY(key) (SYS_EVENT_CTRL_KEY_BASE + (key))
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -1085,6 +1094,10 @@ static inline void ctrl_set_enabled(void *form, int16_t id, int enabled) {
 }
 static inline int ctrl_get_enabled(void *form, int16_t id) {
     return (int)sys_ctrl_get_prop(form, id, PROP_ENABLED);
+}
+
+static inline void ctrl_textbox_edit(void *form, int16_t id, int command) {
+    sys_ctrl_set_prop(form, id, PROP_TEXTBOX_EDIT, command);
 }
 
 static inline void sys_win_invalidate_icons(void) {
