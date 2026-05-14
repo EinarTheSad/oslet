@@ -9,6 +9,9 @@
 #define MENU_FILE_SAVE    103
 #define MENU_FILE_SAVE_AS 104
 #define MENU_FILE_EXIT    100
+#define MENU_EDIT_CUT        201
+#define MENU_EDIT_COPY       202
+#define MENU_EDIT_PASTE      203
 #define MENU_EDIT_SELECT_ALL 204
 #define MENU_HELP_ABOUT 500
 
@@ -24,6 +27,7 @@
 typedef struct {
     void *form;
     char current_file_path[256];
+    char clipboard[MAX_FILE_CONTENT + 1];
 } notepad_state_t;
 
 static gui_control_t Form1_controls[] = {
@@ -93,22 +97,138 @@ static int save_text_to_file(const char *path, const char *text) {
     return 0;
 }
 
-static void perform_select_all(void *form) {
-    gui_control_t *ctrl = sys_win_get_control(form, ID_TEXT);
+static char *get_textbox_buffer(gui_control_t *ctrl) {
+    if (!ctrl || ctrl->type != CTRL_TEXTBOX) return NULL;
+    if (ctrl->textbox.is_multiline && ctrl->textbox.multiline_text) {
+        return ctrl->textbox.multiline_text;
+    }
+    return ctrl->text;
+}
+
+static int text_len(const char *text) {
+    int len = 0;
+    if (text) {
+        while (text[len]) len++;
+    }
+    return len;
+}
+
+static int get_selection(gui_control_t *ctrl, int len, int *sel_min, int *sel_max) {
+    if (!ctrl || ctrl->textbox.sel_start < 0 || ctrl->textbox.sel_start == ctrl->textbox.sel_end) {
+        return 0;
+    }
+
+    int start = ctrl->textbox.sel_start;
+    int end = ctrl->textbox.sel_end;
+    if (start > end) {
+        int tmp = start;
+        start = end;
+        end = tmp;
+    }
+
+    if (start < 0) start = 0;
+    if (end < 0) end = 0;
+    if (start > len) start = len;
+    if (end > len) end = len;
+    if (start == end) return 0;
+
+    *sel_min = start;
+    *sel_max = end;
+    return 1;
+}
+
+static int copy_selection(notepad_state_t *state, gui_control_t *ctrl) {
+    char *text = get_textbox_buffer(ctrl);
+    int len = text_len(text);
+    int sel_min, sel_max;
+
+    if (!text || !get_selection(ctrl, len, &sel_min, &sel_max)) return 0;
+
+    int copy_len = sel_max - sel_min;
+    if (copy_len > MAX_FILE_CONTENT) copy_len = MAX_FILE_CONTENT;
+
+    for (int i = 0; i < copy_len; i++) {
+        state->clipboard[i] = text[sel_min + i];
+    }
+    state->clipboard[copy_len] = '\0';
+    return copy_len > 0;
+}
+
+static int delete_selection(gui_control_t *ctrl) {
+    char *text = get_textbox_buffer(ctrl);
+    int len = text_len(text);
+    int sel_min, sel_max;
+
+    if (!text || !get_selection(ctrl, len, &sel_min, &sel_max)) return 0;
+
+    int del_len = sel_max - sel_min;
+    for (int i = sel_min; i <= len - del_len; i++) {
+        text[i] = text[i + del_len];
+    }
+
+    ctrl->textbox.cursor_pos = sel_min;
+    ctrl->textbox.sel_start = -1;
+    ctrl->textbox.sel_end = -1;
+    return 1;
+}
+
+static int paste_clipboard(notepad_state_t *state, gui_control_t *ctrl) {
+    char *text = get_textbox_buffer(ctrl);
+    if (!text || !state->clipboard[0]) return 0;
+
+    delete_selection(ctrl);
+
+    int len = text_len(text);
+    int cursor = ctrl->textbox.cursor_pos;
+    int max_len = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
+
+    if (cursor < 0) cursor = 0;
+    if (cursor > len) cursor = len;
+    if (max_len < 2 || len >= max_len - 1) return 0;
+
+    int room = (max_len - 1) - len;
+    int paste_len = 0;
+    while (state->clipboard[paste_len] && paste_len < room) paste_len++;
+    if (paste_len <= 0) return 0;
+
+    for (int i = len; i >= cursor; i--) {
+        text[i + paste_len] = text[i];
+    }
+    for (int i = 0; i < paste_len; i++) {
+        text[cursor + i] = state->clipboard[i];
+    }
+
+    ctrl->textbox.cursor_pos = cursor + paste_len;
+    ctrl->textbox.sel_start = -1;
+    ctrl->textbox.sel_end = -1;
+    return 1;
+}
+
+static void perform_text_edit(notepad_state_t *state, int command) {
+    gui_control_t *ctrl = sys_win_get_control(state->form, ID_TEXT);
     if (!ctrl || ctrl->type != CTRL_TEXTBOX) return;
 
-    char *text = ctrl->textbox.multiline_text;
-    if (!text) text = ctrl->text;
-    if (!text) return;
+    int changed = 0;
+    if (command == TEXTBOX_EDIT_COPY) {
+        copy_selection(state, ctrl);
+    } else if (command == TEXTBOX_EDIT_CUT) {
+        if (copy_selection(state, ctrl)) {
+            changed = delete_selection(ctrl);
+        }
+    } else if (command == TEXTBOX_EDIT_PASTE) {
+        changed = paste_clipboard(state, ctrl);
+    } else if (command == TEXTBOX_EDIT_SELECT_ALL) {
+        char *text = get_textbox_buffer(ctrl);
+        int len = text_len(text);
+        ctrl->textbox.sel_start = len > 0 ? 0 : -1;
+        ctrl->textbox.sel_end = len > 0 ? len : -1;
+        ctrl->textbox.cursor_pos = len;
+        changed = 1;
+    }
 
-    int len = 0;
-    while (text[len]) len++;
-    if (len == 0) return;
-
-    ctrl->textbox.sel_start = 0;
-    ctrl->textbox.sel_end = len;
-    ctrl->textbox.cursor_pos = len;
-    sys_win_draw(form);
+    if (changed) {
+        sys_win_draw(state->form);
+    }
 }
 
 static void update_layout(void *form) {
@@ -187,9 +307,24 @@ static int notepad_save(notepad_state_t *state, int save_as) {
     return notepad_save_to_path(state, path, "Save As");
 }
 
+static int handle_shortcut(notepad_state_t *state, int key) {
+    switch (key) {
+        case 14: /* Ctrl+N */
+            return notepad_new(state);
+        case 19: /* Ctrl+S */
+            return notepad_save(state, 0);
+        default:
+            return 0;
+    }
+}
+
 static int handle_events(void *form, int event, void *userdata) {
     notepad_state_t *state = userdata;
     (void)form;
+
+    if (event >= SYS_EVENT_CTRL_KEY_BASE && event < SYS_EVENT_CTRL_KEY_BASE + 32) {
+        return handle_shortcut(state, event - SYS_EVENT_CTRL_KEY_BASE);
+    }
 
     if (event > 0) {
         switch (event) {
@@ -203,11 +338,20 @@ static int handle_events(void *form, int event, void *userdata) {
                 return notepad_save(state, 1);
             case MENU_FILE_EXIT:
                 return 1;
+            case MENU_EDIT_CUT:
+                perform_text_edit(state, TEXTBOX_EDIT_CUT);
+                return 0;
+            case MENU_EDIT_COPY:
+                perform_text_edit(state, TEXTBOX_EDIT_COPY);
+                return 0;
+            case MENU_EDIT_PASTE:
+                perform_text_edit(state, TEXTBOX_EDIT_PASTE);
+                return 0;
             case MENU_EDIT_SELECT_ALL:
-                perform_select_all(state->form);
+                perform_text_edit(state, TEXTBOX_EDIT_SELECT_ALL);
                 return 0;
             case MENU_HELP_ABOUT:
-                sys_win_msgbox("osLET Notepad 0.2, EinarTheSad 2026", "OK", "About");
+                sys_win_msgbox("osLET Notepad 0.4, EinarTheSad 2026", "OK", "About");
                 return 0;
         }
     }
@@ -228,22 +372,26 @@ static void setup_menus(void *form) {
     int menu_edit = sys_win_menubar_add_menu(form, "Edit");
     int menu_help = sys_win_menubar_add_menu(form, "Help");
 
-    sys_win_menubar_add_item(form, menu_file, "New", MENU_FILE_NEW);
+    sys_win_menubar_add_item(form, menu_file, "New  Ctrl+N", MENU_FILE_NEW);
     sys_win_menubar_add_item(form, menu_file, "Open", MENU_FILE_OPEN);
-    sys_win_menubar_add_item(form, menu_file, "Save", MENU_FILE_SAVE);
-    sys_win_menubar_add_item(form, menu_file, "Save As", MENU_FILE_SAVE_AS);
+    sys_win_menubar_add_item(form, menu_file, "Save  Ctrl+S", MENU_FILE_SAVE);
+    sys_win_menubar_add_item(form, menu_file, "Save As...", MENU_FILE_SAVE_AS);
     sys_win_menubar_add_item(form, menu_file, "Exit", MENU_FILE_EXIT);
 
-    sys_win_menubar_add_item(form, menu_edit, "Select all", MENU_EDIT_SELECT_ALL);
+    sys_win_menubar_add_item(form, menu_edit, "Cut  Ctrl+X", MENU_EDIT_CUT);
+    sys_win_menubar_add_item(form, menu_edit, "Copy  Ctrl+C", MENU_EDIT_COPY);
+    sys_win_menubar_add_item(form, menu_edit, "Paste  Ctrl+V", MENU_EDIT_PASTE);
+    sys_win_menubar_add_item(form, menu_edit, "Select All  Ctrl+A", MENU_EDIT_SELECT_ALL);
 
     sys_win_menubar_add_item(form, menu_help, "About", MENU_HELP_ABOUT);
 }
 
 __attribute__((section(".entry"), used))
 void _start(void) {
-    notepad_state_t state;
+    static notepad_state_t state;
     state.form = sys_win_create_form("Notepad", NOTEPAD_X, NOTEPAD_Y, NOTEPAD_W, NOTEPAD_H);
     state.current_file_path[0] = '\0';
+    state.clipboard[0] = '\0';
 
     if (!state.form) {
         sys_exit();

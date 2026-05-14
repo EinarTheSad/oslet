@@ -116,13 +116,13 @@ $(BUILD_BIN)/shell.elf: $(SHELL_OBJ_DIR)/shell.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.
 GIX_TARGETS_NOEXT := $(patsubst $(SRC)/apps/gix/%.c,%,$(GIX_SRCS))
 AGIX_TARGETS_NOEXT := $(patsubst $(SRC)/apps/agix/%.c,%,$(AGIX_SRCS))
 
-$(GIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
+$(GIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(SRC)/apps/gix/%.c $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
 	@mkdir -p $(APPS_GIX_OBJ_DIR)
 	$(CC) $(BINCFLAGS) -DGIX_BUILD -c $(SRC)/apps/gix/$*.c -o $(APPS_GIX_OBJ_DIR)/$*.o
 	@mkdir -p $(BUILD_BIN)
 	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $(APPS_GIX_OBJ_DIR)/$*.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
 
-$(AGIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
+$(AGIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(SRC)/apps/agix/%.c $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
 	@mkdir -p $(APPS_AGIX_OBJ_DIR)
 	$(CC) $(BINCFLAGS) -DAGIX_BUILD -c $(SRC)/apps/agix/$*.c -o $(APPS_AGIX_OBJ_DIR)/$*.o
 	@mkdir -p $(BUILD_BIN)
