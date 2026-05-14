@@ -1,6 +1,7 @@
 #include "../../syscall.h"
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
+#include "../../lib/pathdlg.h"
 #include "../../drivers/keyboard.h"
 #include "../../win/wm_config.h"
 
@@ -10,25 +11,12 @@
 #define ID_NEXT       7
 #define ID_FULLSCREEN 8
 
-/* Form2 IDs */
-#define ID_PATH_TEXT  1
-#define ID_OK         3
-#define ID_CANCEL     4
-
 /* Controls for Form1 */
 static gui_control_t Form1_controls[] = {
     { .type = CTRL_PICTUREBOX, .x = 8, .y = 5, .w = 467, .h = 350, .fg = 0, .bg = 7, .text = "", .id = ID_PICTURE, .font_type = 0, .font_size = 12, .border = 1, .border_color = 0 },
     { .type = CTRL_BUTTON, .x = 174, .y = 370, .w = 22, .h = 22, .fg = 0, .bg = -1, .text = "", .id = ID_PREV, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
     { .type = CTRL_BUTTON, .x = 244, .y = 370, .w = 22, .h = 22, .fg = 0, .bg = -1, .text = "", .id = ID_NEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
     { .type = CTRL_BUTTON, .x = 224, .y = 360, .w = 40, .h = 40, .fg = 0, .bg = -1, .text = "", .id = ID_FULLSCREEN, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
-};
-
-/* Controls for Form2 */
-static gui_control_t Form2_controls[] = {
-    { .type = CTRL_TEXTBOX, .x = 46, .y = 5, .w = 198, .h = 20, .fg = 0, .bg = -1, .text = "", .id = ID_PATH_TEXT, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .textbox = { .max_length = 255 } },
-    { .type = CTRL_LABEL, .x = 9, .y = 6, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "Path:", .id = 2, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_BUTTON, .x = 56, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "OK", .id = ID_OK, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_BUTTON, .x = 130, .y = 33, .w = 70, .h = 23, .fg = 0, .bg = -1, .text = "Cancel", .id = ID_CANCEL, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
 };
 
 static int gather_bmps(const char *dir, sys_dirent_t *entries, int max_entries) {
@@ -248,51 +236,11 @@ void _start(void) {
 
         if (ev > 0) {
             if (ev == ID_PICTURE) {
-                /* Open small dialog to enter path */
-                void *dlg = sys_win_create_form("Open", 193, 199, 255, 82);
-                if (!dlg) continue;
-                for (int i = 0; i < (int)(sizeof(Form2_controls) / sizeof(Form2_controls[0])); i++) {
-                    sys_win_add_control(dlg, &Form2_controls[i]);
-                }
-
-                /* Prefill textbox with current image path */
+                char newpath[256];
                 const char *cur = ctrl_get_text(form, ID_PICTURE);
-                if (cur && cur[0]) {
-                    ctrl_set_text(dlg, ID_PATH_TEXT, cur);
-                }
-                sys_win_draw(dlg);
-                sys_win_redraw_all();
-                sys_mouse_invalidate();
-
-                int dlg_running = 1;
-                while (dlg_running) {
-                    int ev2 = sys_win_pump_events(dlg);
-                    if (ev2 == -3) {
-                        sys_win_destroy_form(dlg);
-                        dlg_running = 0;
-                        break;
-                    }
-                    if (ev2 == -1 || ev2 == -2) {
-                        sys_win_draw(dlg);
-                        sys_win_redraw_all();
-                    }
-                    if (ev2 > 0) {
-                        if (ev2 == ID_OK) {
-                            const char *newpath = ctrl_get_text(dlg, ID_PATH_TEXT);
-                            if (newpath && newpath[0]) {
-                                ctrl_set_image(form, ID_PICTURE, newpath);
-                                sys_win_draw(form);
-                            }
-                            sys_win_destroy_form(dlg);
-                            dlg_running = 0;
-                            break;
-                        } else if (ev2 == ID_CANCEL) {
-                            sys_win_destroy_form(dlg);
-                            dlg_running = 0;
-                            break;
-                        }
-                    }
-                    sys_yield();
+                if (gui_show_path_dialog("Open", cur, newpath, sizeof(newpath))) {
+                    ctrl_set_image(form, ID_PICTURE, newpath);
+                    sys_win_draw(form);
                 }
             } else if (ev == ID_NEXT || ev == ID_PREV) {
                 navigate_dir(form, (ev == ID_NEXT) ? 1 : -1, fullscreen, fs_form);
