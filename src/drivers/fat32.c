@@ -77,6 +77,7 @@ static fat32_volume_t volumes[FAT32_MAX_VOLUMES];
 static fat32_file_t open_files[FAT32_MAX_OPEN_FILES];
 static char current_dir[FAT32_MAX_PATH] = "C:/";
 static volatile int fat32_lock = 0;
+extern uint32_t boot_device;
 
 static void fat32_acquire(void) {
     while (__sync_lock_test_and_set(&fat32_lock, 1)) {
@@ -1632,14 +1633,8 @@ static int find_fat32_start_lba(uint32_t *out_start_lba) {
 
     if (boot_device != 0xFFFFFFFF) {
         uint32_t boot_drive = (boot_device >> 24) & 0xFF;
-        boot_part = (boot_device >> 16) & 0xFF;
-
-        // Accept any BIOS hard drive (0x80-0xFF)
-        // We only support primary ATA anyway, so just verify it's a hard drive
-        if (boot_drive < 0x80) {
-            kfree(sector);
-            return -1;
-        }
+        if (boot_drive >= 0x80)
+            boot_part = (boot_device >> 16) & 0xFF;
     }
 
     // Try reading the MBR/boot sector

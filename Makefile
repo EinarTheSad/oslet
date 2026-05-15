@@ -49,7 +49,7 @@ GIX_TARGETS      := $(patsubst $(SRC)/apps/gix/%.c,%.elf,$(GIX_SRCS))
 
 PROGRAM_NAMES    := $(foreach t,$(SHELL_TARGETS) $(AGIX_TARGETS) $(GIX_TARGETS),$(basename $(t)))
 
-.PHONY: all run clean clean-all disk install binstall binaries full kernel-build programs $(PROGRAM_NAMES)
+.PHONY: all run run-usb clean clean-all disk install binstall binaries full kernel-build programs $(PROGRAM_NAMES)
 
 all: kernel-build $(CURDIR)/$(BUILD)/$(TARGET)
 
@@ -237,6 +237,21 @@ run: $(CURDIR)/$(BUILD)/$(TARGET)
 	-rtc base=localtime \
 	#-audiodev sdl,id=snd0 \
     #-device sb16,audiodev=snd0
+
+run-usb: $(CURDIR)/$(BUILD)/$(TARGET)
+	@if [ ! -f "$(DISK)" ]; then \
+		$(MAKE) disk; \
+	fi
+	@$(MAKE) install
+	qemu-system-i386 \
+	-m 32M \
+	-net none \
+	-vga std \
+	-rtc base=localtime \
+	-boot menu=on \
+	-drive if=none,id=usbstick,file=$(DISK),format=raw \
+	-device usb-ehci,id=usb \
+	-device usb-storage,bus=usb.0,drive=usbstick,bootindex=1,removable=on
 
 clean:
 	@echo "Cleaning..."
