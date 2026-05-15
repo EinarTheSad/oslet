@@ -250,7 +250,7 @@ run-usb: $(CURDIR)/$(BUILD)/$(TARGET)
 	-rtc base=localtime \
 	-boot menu=on \
 	-drive if=none,id=usbstick,file=$(DISK),format=raw \
-	-device usb-ehci,id=usb \
+	-device qemu-xhci,id=usb \
 	-device usb-storage,bus=usb.0,drive=usbstick,bootindex=1,removable=on
 
 clean:
