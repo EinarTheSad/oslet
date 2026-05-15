@@ -1,7 +1,9 @@
 #include "ata.h"
+#include "usb.h"
 #include "../irq/io.h"
 #include "../console.h"
 #include "../task/task.h"
+#include "../task/timer.h"
 
 #define ATA_PRIMARY_IO      0x1F0
 #define ATA_PRIMARY_CONTROL 0x3F6
@@ -32,6 +34,7 @@ static inline void ata_400ns_delay(void);
  * though data was written. We detect that and disable flush at runtime
  * to avoid constant ERR loops. */
 static int ata_flush_supported = 1;
+static int ata_usb_mode = 0;
 
 static volatile int ata_driver_lock = 0;
 
@@ -75,12 +78,44 @@ static int ata_wait_drq_timeout(uint32_t timeout_ms) {
     return -1;
 }
 
+static int ata_time_before(uint32_t a, uint32_t b) {
+    return (int32_t)(a - b) < 0;
+}
+
+static int ata_wait_bsy_deadline(uint32_t deadline) {
+    while (ata_time_before(timer_get_ticks(), deadline)) {
+        uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+        if (status == 0 || status == 0xFF)
+            return -1;
+        if (!(status & ATA_SR_BSY) && (status & ATA_SR_DRDY))
+            return 0;
+        for (volatile int i = 0; i < 10; i++);
+    }
+    return -1;
+}
+
+static int ata_wait_drq_deadline(uint32_t deadline) {
+    while (ata_time_before(timer_get_ticks(), deadline)) {
+        uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
+        if (status == 0 || status == 0xFF)
+            return -1;
+        if (status & ATA_SR_ERR)
+            return -1;
+        if (status & ATA_SR_DRQ)
+            return 0;
+        for (volatile int i = 0; i < 10; i++);
+    }
+    return -1;
+}
+
 static inline void ata_400ns_delay(void) {
     for (int i = 0; i < 4; i++)
         inb(ATA_PRIMARY_CONTROL);
 }
 
 void ata_init(void) {
+    ata_usb_mode = 0;
+
     // Disable interrupts (bit 1 = nIEN)
     outb(ATA_PRIMARY_CONTROL, 0x02);
     ata_400ns_delay();
@@ -101,7 +136,29 @@ void ata_init(void) {
     for (volatile int i = 0; i < 100000; i++);
 }
 
+void ata_use_usb(int enable) {
+    ata_usb_mode = enable ? 1 : 0;
+}
+
+int ata_using_usb(void) {
+    return ata_usb_mode;
+}
+
 int ata_identify(void) {
+    if (ata_usb_mode)
+        return usb_ready() ? 0 : -1;
+
+    uint32_t freq = timer_get_frequency();
+    uint32_t deadline = timer_get_ticks() + (freq ? freq : 100) * 5;
+    uint32_t flags;
+    int restore_cli = 0;
+
+    __asm__ volatile ("pushfl; popl %0" : "=r"(flags));
+    if (!(flags & 0x200)) {
+        __asm__ volatile ("sti");
+        restore_cli = 1;
+    }
+
     // Select master drive
     ata_acquire();
     outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
@@ -111,9 +168,10 @@ int ata_identify(void) {
     for (volatile int i = 0; i < 10000; i++);
 
     // Wait for BSY to clear and DRDY to set before sending command
-    if (ata_wait_bsy_timeout(5000) != 0) {
+    if (ata_wait_bsy_deadline(deadline) != 0) {
         // Timeout waiting for drive to be ready
         ata_release();
+        if (restore_cli) __asm__ volatile ("cli");
         return -1;
     }
 
@@ -131,12 +189,14 @@ int ata_identify(void) {
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
     if (status == 0 || status == 0xFF) {
         ata_release();
+        if (restore_cli) __asm__ volatile ("cli");
         return -1; // No drive
     }
 
     // Wait for BSY to clear
-    if (ata_wait_bsy_timeout(30000) != 0) {
+    if (ata_wait_bsy_deadline(deadline) != 0) {
         ata_release();
+        if (restore_cli) __asm__ volatile ("cli");
         return -1;
     }
 
@@ -146,22 +206,24 @@ int ata_identify(void) {
 
     if (lbamid != 0 || lbahi != 0) {
         ata_release();
+        if (restore_cli) __asm__ volatile ("cli");
         return -1; // Not an ATA device
     }
 
     // Wait for DRQ or ERR
-    if (ata_wait_drq_timeout(30000) != 0) {
+    if (ata_wait_drq_deadline(deadline) != 0) {
         ata_release();
+        if (restore_cli) __asm__ volatile ("cli");
         return -1;
     }
 
-    // Read identification data
-    uint16_t identify[256];
+    // Drain identification data
     for (int i = 0; i < 256; i++) {
-        identify[i] = inw(ATA_PRIMARY_IO + ATA_REG_DATA);
+        (void)inw(ATA_PRIMARY_IO + ATA_REG_DATA);
     }
 
     ata_release();
+    if (restore_cli) __asm__ volatile ("cli");
     return 0;
 }
 
@@ -169,6 +231,13 @@ int ata_identify(void) {
 int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
     if (!buffer || sector_count == 0) {
         return -1;
+    }
+
+    if (ata_usb_mode) {
+        ata_acquire();
+        int result = usb_read_sectors(lba, sector_count, buffer);
+        ata_release();
+        return result;
     }
 
     // Basic sanity check - reject obviously invalid LBAs
@@ -229,6 +298,13 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
 
 int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     if (!buffer || sector_count == 0) return -1;
+
+    if (ata_usb_mode) {
+        ata_acquire();
+        int result = usb_write_sectors(lba, sector_count, buffer);
+        ata_release();
+        return result;
+    }
 
     ata_acquire();
 
@@ -340,6 +416,9 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
 }
 
 int ata_is_available(void) {
+    if (ata_usb_mode)
+        return usb_ready();
+
     ata_acquire();
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
     ata_release();

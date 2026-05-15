@@ -14,6 +14,7 @@
 #include "rtc.h"
 #include "syscall.h"
 #include "drivers/ata.h"
+#include "drivers/usb.h"
 #include "drivers/fat32.h"
 #include "arch/gdt.h"
 #include "win/window.h"
@@ -115,6 +116,18 @@ static void boot_sequence(void) {
     vga_set_color(0, 7);
     printf(" ] Paging\n");
 
+    usb_init();
+    printf("[");
+    if (usb_ready()) {
+        vga_set_color(0, 10);
+        printf(" OK ");
+    } else {
+        vga_set_color(0, 8);
+        printf("NONE");
+    }
+    vga_set_color(0, 7);
+    printf("] USB mass storage\n");
+
     gdt_init();
     printf("[ ");
     vga_set_color(0, 10);
@@ -142,6 +155,7 @@ static void boot_sequence(void) {
     printf("OK");
     vga_set_color(0, 7);
     printf(" ] ATA driver\n");
+
     fat32_init();
        
     tasking_init();
@@ -153,35 +167,70 @@ static void boot_sequence(void) {
     vga_set_color(0, 7);
     printf(" ] Multitasking\n");
 
-    vga_set_color(0, 8);
-    printf("[ .. ] Attempting to identify drive C...");
-    
-    if (ata_identify() == 0) {
-        // Give drive time to settle after IDENTIFY
-        for (volatile int i = 0; i < 1000; i++);
+    int mounted_c = 0;
+
+    if (usb_ready()) {
         vga_set_color(0, 8);
-        printf("\r[ .. ] Attempting to auto-mount drive C...");
+        printf("[ .. ] Attempting to mount USB drive C...");
         vga_set_color(0, 7);
+
+        ata_use_usb(1);
         if (fat32_mount_auto('C') == 0) {
+            mounted_c = 1;
             printf("\r[");
             vga_set_color(0, 10);
             printf(" OK");
             vga_set_color(0, 7);
-            printf(" ] Mounted drive C                       \n");
+            printf(" ] Mounted drive C from USB storage         \n");
+        } else {
+            ata_use_usb(0);
+            printf("\r[");
+            vga_set_color(0, 8);
+            printf("SKIP");
+            vga_set_color(0, 7);
+            printf("] USB filesystem mount failed, trying ATA...\n");
+        }
+    }
+
+    if (!mounted_c) {
+        ata_use_usb(0);
+        vga_set_color(0, 8);
+        printf("[ .. ] Attempting to identify ATA drive C...");
+
+        if (ata_identify() == 0) {
+            for (volatile int i = 0; i < 1000; i++);
+            printf("\r[ .. ] Attempting to auto-mount ATA drive C...");
+            vga_set_color(0, 7);
+
+            if (fat32_mount_auto('C') == 0) {
+                mounted_c = 1;
+                printf("\r[");
+                vga_set_color(0, 10);
+                printf(" OK");
+                vga_set_color(0, 7);
+                printf(" ] Mounted drive C from ATA                  \n");
+            } else {
+                printf("\r[");
+                vga_set_color(0, 8);
+                printf("SKIP");
+                vga_set_color(0, 7);
+                printf("] ATA filesystem mount failed                \n");
+            }
         } else {
             printf("\r[");
-            vga_set_color(0, 12);
-            printf("FAIL");
+            vga_set_color(0, 8);
+            printf("SKIP");
             vga_set_color(0, 7);
-            printf("] No filesystem!                         \n");
-            for (;;) __asm__ volatile ("hlt");
+            printf("] No ATA drive detected                      \n");
         }
-    } else {
+    }
+
+    if (!mounted_c) {
         printf("\r[");
         vga_set_color(0, 12);
         printf("FAIL");
         vga_set_color(0, 7);
-        printf("] No ATA drive detected                      \n");
+        printf("] Could not mount drive C                    \n");
         for (;;) __asm__ volatile ("hlt");
     }
 

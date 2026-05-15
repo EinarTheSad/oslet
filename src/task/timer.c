@@ -49,7 +49,7 @@ void timer_wait(uint32_t ticks) {
         /* Scheduler off, busy-wait */
         uint32_t target = timer_ticks + ticks;
         while (timer_ticks < target) {
-            __asm__ volatile ("hlt");
+            __asm__ volatile ("sti; hlt");
         }
         return;
     }
@@ -60,7 +60,7 @@ void timer_wait(uint32_t ticks) {
         /* Fallback to busy-wait */
         uint32_t target = timer_ticks + ticks;
         while (timer_ticks < target) {
-            __asm__ volatile ("hlt");
+            __asm__ volatile ("sti; hlt");
         }
         return;
     }
@@ -87,7 +87,7 @@ void timer_wait(uint32_t ticks) {
     } else {
         uint32_t target = timer_ticks + ticks;
         while (timer_ticks < target) {
-            __asm__ volatile ("hlt");
+            __asm__ volatile ("sti; hlt");
         }
     }
 }
