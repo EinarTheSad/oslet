@@ -48,6 +48,24 @@ extern int buffer_valid;
 static window_manager_t global_wm;
 static int wm_initialized = 0;
 
+static int current_task_owns_focused_window(void) {
+    if (!wm_initialized || global_wm.count <= 0)
+        return 1;
+
+    if (global_wm.focused_index < 0 || global_wm.focused_index >= global_wm.count)
+        return 0;
+
+    gui_form_t *focused = global_wm.windows[global_wm.focused_index];
+    if (!focused || focused->win.is_minimized || !focused->win.is_visible)
+        return 0;
+
+    task_t *current = task_get_current();
+    if (!current)
+        return focused->owner_tid == 0;
+
+    return focused->owner_tid == current->tid;
+}
+
 typedef struct {
     fat32_file_t *file;
     int in_use;
@@ -1906,6 +1924,10 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 }
                 /* For icon, just record the press (selection happens on release) */
                 else if (ctrl->type == CTRL_ICON) {
+                    if (old_focus != -1) {
+                        form->focused_control_id = -1;
+                        return 1;
+                    }
                     return 0;  /* Press recorded, no visual change yet */
                 }
                 /* For dropdown - open it (closing/selection handled in priority check above) */
@@ -4389,6 +4411,8 @@ uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx)
             /* Input namespace - subcodes in AL */
             switch (al) {
                 case 0x00: /* SYS_GET_KEY_NONBLOCK */
+                    if (!current_task_owns_focused_window())
+                        return 0;
                     return (uint32_t)kbd_getchar_nonblock();
                 case 0x01: { /* SYS_GET_ALT_KEY - peek+consume only Alt+Tab / AltRelease */
                     int k = kbd_peek_nonblock();
