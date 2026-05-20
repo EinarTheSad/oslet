@@ -2,10 +2,16 @@
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
 #include "../../lib/elf.h"
+#include "../../drivers/keyboard.h"
 
 #define MENU_FILE_NEW_FOLDER 101
 #define MENU_FILE_NEW_FILE   102
 #define MENU_FILE_EXIT       104
+#define MENU_EDIT_CUT        201
+#define MENU_EDIT_COPY       202
+#define MENU_EDIT_PASTE      203
+#define MENU_EDIT_RENAME     204
+#define MENU_EDIT_DELETE     205
 #define MENU_GO_BACK         301
 #define MENU_GO_HOME         302
 #define MENU_VIEW_REFRESH    401
@@ -199,6 +205,54 @@ static void build_path(char *dest, size_t dest_size, const char *base, const cha
 static int path_exists(const char *path) {
     sys_dirent_t tmp[1];
     return sys_readdir(path, tmp, 1) >= 0;
+}
+
+static int file_or_dir_exists(const char *path) {
+    if (path_exists(path))
+        return 1;
+
+    int fd = sys_open(path, "r");
+    if (fd >= 0) {
+        sys_close(fd);
+        return 1;
+    }
+    return 0;
+}
+
+static int build_unique_paste_path(char *dest, size_t dest_size, const char *folder, const char *filename) {
+    build_path(dest, dest_size, folder, filename);
+    if (!file_or_dir_exists(dest))
+        return 1;
+
+    char base[128];
+    char ext[64];
+    size_t base_len = 0;
+    const char *dot = strrchr(filename, '.');
+
+    if (dot && dot != filename) {
+        base_len = dot - filename;
+        if (base_len >= sizeof(base))
+            base_len = sizeof(base) - 1;
+        for (size_t i = 0; i < base_len; i++)
+            base[i] = filename[i];
+        base[base_len] = '\0';
+        strncpy(ext, dot, sizeof(ext) - 1);
+        ext[sizeof(ext) - 1] = '\0';
+    } else {
+        strncpy(base, filename, sizeof(base) - 1);
+        base[sizeof(base) - 1] = '\0';
+        ext[0] = '\0';
+    }
+
+    for (int n = 1; n < 1000; n++) {
+        char candidate[192];
+        snprintf(candidate, sizeof(candidate), "%s (%d)%s", base, n, ext);
+        build_path(dest, dest_size, folder, candidate);
+        if (!file_or_dir_exists(dest))
+            return 1;
+    }
+    dest[0] = '\0';
+    return 0;
 }
 
 static int set_current_path(const char *path, int show_error) {
@@ -647,7 +701,11 @@ static void do_paste_action(void) {
     else filename = state.clipboard_path;
 
     char dest_path[256];
-    build_path(dest_path, sizeof(dest_path), state.current_path, filename);
+    if (!build_unique_paste_path(dest_path, sizeof(dest_path), state.current_path, filename)) {
+        sys_win_msgbox("Could not find a free filename", "OK", "Paste");
+        sys_win_redraw_all();
+        return;
+    }
 
     if (copy_file_data(state.clipboard_path, dest_path) != 0) {
         sys_win_msgbox("Failed to paste file", "OK", "Paste");
@@ -655,7 +713,7 @@ static void do_paste_action(void) {
         return;
     }
 
-    if (state.clipboard_is_cut) {
+    if (state.clipboard_is_cut && strcasecmp(state.clipboard_path, dest_path) != 0) {
         sys_unlink(state.clipboard_path);
         state.clipboard_path[0] = '\0';
     }
@@ -716,8 +774,30 @@ static void do_delete_action(void) {
     }
 }
 
+static void handle_shortcut(int key) {
+    switch (key) {
+        case 3:  /* Ctrl+C */
+            do_copy_action();
+            break;
+        case 22: /* Ctrl+V */
+            do_paste_action();
+            break;
+        case 24: /* Ctrl+X */
+            do_cut_action();
+            break;
+        case KEY_DELETE:
+            do_delete_action();
+            break;
+    }
+}
+
 /* Event handling — returns 1 to exit */
 static int handle_event(int event) {
+    if (event >= SYS_EVENT_CTRL_KEY_BASE && event < SYS_EVENT_CTRL_KEY_BASE + 32) {
+        handle_shortcut(event - SYS_EVENT_CTRL_KEY_BASE);
+        return 0;
+    }
+
     if (event == MENU_FILE_EXIT)
         return 1;
     
@@ -811,12 +891,12 @@ static int handle_event(int event) {
         return 0;
     }
     
-    /* Toolbar buttons */
-    if (event == ID_TB_CUT)    { do_cut_action();    return 0; }
-    if (event == ID_TB_COPY)   { do_copy_action();   return 0; }
-    if (event == ID_TB_PASTE)  { do_paste_action();  return 0; }
-    if (event == ID_TB_RENAME) { do_rename_action();  return 0; }
-    if (event == ID_TB_DELETE) { do_delete_action();  return 0; }
+    /* Toolbar and edit menu */
+    if (event == ID_TB_CUT || event == MENU_EDIT_CUT)       { do_cut_action();    return 0; }
+    if (event == ID_TB_COPY || event == MENU_EDIT_COPY)     { do_copy_action();   return 0; }
+    if (event == ID_TB_PASTE || event == MENU_EDIT_PASTE)   { do_paste_action();  return 0; }
+    if (event == ID_TB_RENAME || event == MENU_EDIT_RENAME) { do_rename_action(); return 0; }
+    if (event == ID_TB_DELETE || event == MENU_EDIT_DELETE) { do_delete_action(); return 0; }
     
     /* New Folder (toolbar + menu) */
     if (event == ID_TB_NEW_FOLDER || event == MENU_FILE_NEW_FOLDER) {
@@ -898,6 +978,13 @@ void _start(void) {
     sys_win_menubar_add_item(state.form, file_menu, "New File", MENU_FILE_NEW_FILE);
     /* open menu item removed - users double-click files instead */
     sys_win_menubar_add_item(state.form, file_menu, "Exit", MENU_FILE_EXIT);
+    
+    int edit_menu = sys_win_menubar_add_menu(state.form, "Edit");
+    sys_win_menubar_add_item(state.form, edit_menu, "Cut  Ctrl+X", MENU_EDIT_CUT);
+    sys_win_menubar_add_item(state.form, edit_menu, "Copy  Ctrl+C", MENU_EDIT_COPY);
+    sys_win_menubar_add_item(state.form, edit_menu, "Paste  Ctrl+V", MENU_EDIT_PASTE);
+    sys_win_menubar_add_item(state.form, edit_menu, "Rename", MENU_EDIT_RENAME);
+    sys_win_menubar_add_item(state.form, edit_menu, "Delete  Del", MENU_EDIT_DELETE);
     
     int go_menu = sys_win_menubar_add_menu(state.form, "Go");
     sys_win_menubar_add_item(state.form, go_menu, "Back", MENU_GO_BACK);
@@ -1031,6 +1118,14 @@ void _start(void) {
         if (ev == -4) { relayout(); refresh_display(); }
         if (ev == -1 || ev == -2) { sys_win_mark_dirty(state.form); }
         if (ev > 0 && handle_event(ev)) { running = 0; break; }
+        if (sys_win_is_focused(state.form)) {
+            gui_form_t *form = (gui_form_t*)state.form;
+            if (form && form->focused_control_id < 0) {
+                int key = sys_get_key_nonblock();
+                if (key == 3 || key == 22 || key == 24 || key == KEY_DELETE)
+                    handle_shortcut(key);
+            }
+        }
         sys_yield();
     }
     
