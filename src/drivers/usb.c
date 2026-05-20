@@ -6,6 +6,9 @@
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC
 
+#define PCI_VENDOR_AMD   0x1022
+#define PCI_VENDOR_INTEL 0x8086
+
 #define USB_HOST_NONE 0
 #define USB_HOST_UHCI 1
 #define USB_HOST_EHCI 2
@@ -114,6 +117,7 @@
 #define XHCI_PORT_RESET     0x00000010
 #define XHCI_PORT_POWER     0x00000200
 #define XHCI_PORT_CHANGE    0x00FE0000
+#define XHCI_PORT_WARM_RESET 0x80000000
 
 #define XHCI_TRB_NORMAL       1
 #define XHCI_TRB_SETUP_STAGE  2
@@ -207,6 +211,8 @@ typedef struct {
 
 static uint8_t usb_host = USB_HOST_NONE;
 static uint8_t usb_available = 0;
+static const char *usb_status_msg = "not started";
+static char usb_status_buf[96];
 static uint8_t dev_addr = 1;
 static uint8_t ep0_max = 8;
 static uint8_t bulk_in_ep = 0;
@@ -241,6 +247,7 @@ static uint8_t xhci_root_port = 0;
 static uint8_t xhci_port_speed = 0;
 static uint8_t xhci_bulk_in_dci = 0;
 static uint8_t xhci_bulk_out_dci = 0;
+static uint8_t xhci_port_proto[32];
 static xhci_ring_t xhci_cmd_ring __attribute__((aligned(64)));
 static xhci_ring_t xhci_ep0_ring __attribute__((aligned(64)));
 static xhci_ring_t xhci_bulk_in_ring __attribute__((aligned(64)));
@@ -271,6 +278,17 @@ static inline void usb_dma_barrier(void) {
     __asm__ volatile ("" ::: "memory");
 }
 
+static void usb_set_status(const char *msg) {
+    usb_status_msg = msg;
+}
+
+static void usb_set_status_pci(const char *msg, uint32_t id,
+                               uint8_t bus, uint8_t dev, uint8_t fn) {
+    snprintf(usb_status_buf, sizeof(usb_status_buf), "%s %x:%x @ %x:%x.%x",
+             msg, id & 0xFFFF, (id >> 16) & 0xFFFF, bus, dev, fn);
+    usb_status_msg = usb_status_buf;
+}
+
 static uint32_t pci_addr(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg) {
     return 0x80000000u | ((uint32_t)bus << 16) | ((uint32_t)dev << 11) |
            ((uint32_t)fn << 8) | (reg & 0xFC);
@@ -284,6 +302,42 @@ static uint32_t pci_read32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg) {
 static void pci_write32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint32_t value) {
     outl(PCI_CONFIG_ADDR, pci_addr(bus, dev, fn, reg));
     outl(PCI_CONFIG_DATA, value);
+}
+
+static void pci_power_d0(uint8_t bus, uint8_t dev, uint8_t fn) {
+    uint32_t status = pci_read32(bus, dev, fn, 0x04);
+    if (!(status & (1u << 20)))
+        return;
+
+    uint8_t cap = pci_read32(bus, dev, fn, 0x34) & 0xFF;
+    for (int i = 0; cap >= 0x40 && i < 32; i++) {
+        uint32_t hdr = pci_read32(bus, dev, fn, cap);
+        uint8_t id = hdr & 0xFF;
+        uint8_t next = (hdr >> 8) & 0xFF;
+
+        if (id == 1) {
+            uint32_t pmcsr = pci_read32(bus, dev, fn, cap + 4);
+            pci_write32(bus, dev, fn, cap + 4, pmcsr & ~0x03u);
+            delay_loop(20);
+            return;
+        }
+
+        cap = next;
+    }
+}
+
+static void intel_xhci_route_ports(uint8_t bus, uint8_t dev, uint8_t fn) {
+    uint32_t id = pci_read32(bus, dev, fn, 0x00);
+    if ((id & 0xFFFF) != PCI_VENDOR_INTEL)
+        return;
+
+    uint32_t usb2_mask = pci_read32(bus, dev, fn, 0xD4);
+    uint32_t usb3_mask = pci_read32(bus, dev, fn, 0xDC);
+
+    if (usb2_mask)
+        pci_write32(bus, dev, fn, 0xD0, pci_read32(bus, dev, fn, 0xD0) | usb2_mask);
+    if (usb3_mask)
+        pci_write32(bus, dev, fn, 0xD8, pci_read32(bus, dev, fn, 0xD8) | usb3_mask);
 }
 
 static int find_usb_controller(uint8_t prog_if, int wanted, uint32_t *base,
@@ -311,15 +365,27 @@ static int find_usb_controller(uint8_t prog_if, int wanted, uint32_t *base,
                 uint8_t bar = (prog_if == 0x00) ? 0x20 : 0x10;
                 uint32_t raw = pci_read32((uint8_t)bus, dev, fn, bar);
                 if (prog_if == 0x00) {
-                    if (!(raw & 1))
-                        continue;
+                    if (!(raw & 1)) {
+                        usb_set_status("UHCI I/O BAR missing");
+                        return -2;
+                    }
                     *base = raw & ~0x1Fu;
                 } else {
-                    if (raw & 1)
-                        continue;
-                    if ((raw & 0x6) == 0x4 && pci_read32((uint8_t)bus, dev, fn, bar + 4) != 0)
-                        continue;
+                    if (raw & 1) {
+                        usb_set_status(prog_if == 0x30 ? "xHCI MMIO BAR missing" : "EHCI MMIO BAR missing");
+                        return -2;
+                    }
+                    if ((raw & 0x6) == 0x4 && pci_read32((uint8_t)bus, dev, fn, bar + 4) != 0) {
+                        usb_set_status(prog_if == 0x30 ? "xHCI BAR above 4G" : "EHCI BAR above 4G");
+                        return -2;
+                    }
                     *base = raw & ~0x0Fu;
+                }
+
+                if (!*base) {
+                    usb_set_status(prog_if == 0x30 ? "xHCI BAR is zero" :
+                                   (prog_if == 0x20 ? "EHCI BAR is zero" : "UHCI BAR is zero"));
+                    return -2;
                 }
 
                 *out_bus = (uint8_t)bus;
@@ -377,6 +443,34 @@ static void xhci_intr_write32(uint32_t off, uint32_t value) {
 static void xhci_intr_write64(uint32_t off, uint32_t lo, uint32_t hi) {
     *(volatile uint32_t *)(xhci_runtime + 0x20 + off) = lo;
     *(volatile uint32_t *)(xhci_runtime + 0x20 + off + 4) = hi;
+}
+
+static void xhci_scan_protocol_ports(uint32_t hccparams1) {
+    memset_s(xhci_port_proto, 0, sizeof(xhci_port_proto));
+
+    uint32_t off = (hccparams1 >> 16) & 0xFFFF;
+    for (int i = 0; off && i < 32; i++) {
+        uint32_t cap = xhci_cap_read32(off << 2);
+        uint8_t id = cap & 0xFF;
+        uint8_t next = (cap >> 8) & 0xFF;
+
+        if (id == 2) {
+            uint32_t name = xhci_cap_read32((off << 2) + 4);
+            uint32_t ports = xhci_cap_read32((off << 2) + 8);
+            uint8_t major = (cap >> 24) & 0xFF;
+            uint8_t first = ports & 0xFF;
+            uint8_t count = (ports >> 8) & 0xFF;
+
+            if (name == 0x20425355 && first && count) {
+                for (uint8_t p = first; p < first + count && p <= xhci_port_count; p++)
+                    xhci_port_proto[p - 1] = major;
+            }
+        }
+
+        if (!next)
+            break;
+        off += next;
+    }
 }
 
 static uint32_t *xhci_input_ctrl(void) {
@@ -879,33 +973,62 @@ static int xhci_port_reset(int port_index) {
     uint32_t reg = XHCI_OP_PORTSC + (uint32_t)port_index * 0x10;
     uint32_t st = xhci_read32(reg);
 
-    if (!(st & XHCI_PORT_CCS))
-        return -1;
-
     if (!(st & XHCI_PORT_POWER)) {
         xhci_write32(reg, (st & ~XHCI_PORT_CHANGE) | XHCI_PORT_POWER);
-        delay_loop(20);
+        delay_loop(80);
         st = xhci_read32(reg);
     }
 
+    for (int wait = 0; wait < 200; wait++) {
+        if (st & XHCI_PORT_CCS)
+            break;
+        delay_loop(10);
+        st = xhci_read32(reg);
+    }
+    if (!(st & XHCI_PORT_CCS))
+        return -1;
+
     if (!(st & XHCI_PORT_PED)) {
-        xhci_write32(reg, (st & ~XHCI_PORT_CHANGE) | XHCI_PORT_POWER | XHCI_PORT_RESET);
-        for (int i = 0; i < 100000; i++) {
+        uint8_t speed = (st >> 10) & 0x0F;
+        uint32_t reset_bit = (speed >= 4) ? XHCI_PORT_WARM_RESET : XHCI_PORT_RESET;
+
+        xhci_write32(reg, (st & ~XHCI_PORT_CHANGE) | XHCI_PORT_POWER | reset_bit);
+        int done = 0;
+        for (int i = 0; i < 500000; i++) {
             st = xhci_read32(reg);
-            if ((st & XHCI_PORT_RESET) == 0)
+            if ((st & reset_bit) == 0) {
+                done = 1;
                 break;
+            }
         }
-        delay_loop(20);
+        if (!done) {
+            usb_set_status((reset_bit == XHCI_PORT_WARM_RESET) ?
+                           "xHCI warm reset stuck" : "xHCI port reset stuck");
+            return -1;
+        }
+        delay_loop(80);
     }
 
     st = xhci_read32(reg);
     xhci_write32(reg, (st & ~XHCI_PORT_CHANGE) | XHCI_PORT_CHANGE);
-    if (!(st & XHCI_PORT_PED))
+    for (int wait = 0; wait < 200; wait++) {
+        st = xhci_read32(reg);
+        if (st & XHCI_PORT_PED)
+            break;
+        delay_loop(10);
+    }
+    if (!(st & XHCI_PORT_PED)) {
+        usb_set_status("xHCI port enable failed");
         return -1;
+    }
 
     xhci_port_speed = (st >> 10) & 0x0F;
     xhci_root_port = (uint8_t)(port_index + 1);
-    return xhci_address_device((uint8_t)(port_index + 1), xhci_port_speed);
+    if (xhci_address_device((uint8_t)(port_index + 1), xhci_port_speed) != 0) {
+        usb_set_status("xHCI address failed");
+        return -1;
+    }
+    return 0;
 }
 
 static int xhci_control_msg(uint8_t addr, uint8_t request_type, uint8_t request,
@@ -1146,10 +1269,14 @@ static int enumerate_device(int port_index) {
     bulk_in_toggle = 0;
     bulk_out_toggle = 0;
 
-    if (host_port_reset(port_index) != 0)
+    if (host_port_reset(port_index) != 0) {
+        if (usb_host != USB_HOST_XHCI)
+            usb_set_status("port reset failed");
         return -1;
+    }
 
     memset_s(desc, 0, sizeof(desc));
+    usb_set_status("device descriptor failed");
     if (host_control_msg(0, 0x80, USB_REQ_GET_DESCRIPTOR,
                          (USB_DT_DEVICE << 8), 0, desc, 8, 8) != 0)
         return -1;
@@ -1160,15 +1287,18 @@ static int enumerate_device(int port_index) {
         ep0_max = desc[7] ? desc[7] : 8;
 
     if (usb_host != USB_HOST_XHCI) {
+        usb_set_status("set address failed");
         if (host_control_msg(0, 0x00, USB_REQ_SET_ADDRESS, dev_addr, 0, 0, 0, ep0_max) != 0)
             return -1;
         delay_loop(30);
     }
 
+    usb_set_status("full descriptor failed");
     if (host_control_msg(dev_addr, 0x80, USB_REQ_GET_DESCRIPTOR,
                          (USB_DT_DEVICE << 8), 0, desc, sizeof(desc), ep0_max) != 0)
         return -1;
 
+    usb_set_status("config descriptor failed");
     if (host_control_msg(dev_addr, 0x80, USB_REQ_GET_DESCRIPTOR,
                          (USB_DT_CONFIG << 8), 0, cfg9, sizeof(cfg9), ep0_max) != 0)
         return -1;
@@ -1180,13 +1310,16 @@ static int enumerate_device(int port_index) {
     if (host_control_msg(dev_addr, 0x80, USB_REQ_GET_DESCRIPTOR,
                          (USB_DT_CONFIG << 8), 0, ctrl_buf, total_len, ep0_max) != 0)
         return -1;
+    usb_set_status("not a bulk storage device");
     if (parse_config(ctrl_buf, total_len, &config_value) != 0)
         return -1;
 
+    usb_set_status("set config failed");
     if (host_control_msg(dev_addr, 0x00, USB_REQ_SET_CONFIG, config_value, 0, 0, 0, ep0_max) != 0)
         return -1;
     delay_loop(30);
 
+    usb_set_status("bulk endpoint setup failed");
     if (usb_host == USB_HOST_XHCI && xhci_configure_bulk_endpoints() != 0)
         return -1;
 
@@ -1197,11 +1330,14 @@ static int enumerate_device(int port_index) {
     uint8_t inq_cdb[6] = {0x12, 0, 0, 0, sizeof(inquiry), 0};
     (void)msd_command(inq_cdb, 6, inquiry, sizeof(inquiry), 1);
 
+    usb_set_status("storage not ready");
     if (msd_test_ready() != 0)
         return -1;
+    usb_set_status("read capacity failed");
     if (msd_read_capacity() != 0)
         return -1;
 
+    usb_set_status("mass storage ready");
     return 0;
 }
 
@@ -1230,12 +1366,72 @@ static void xhci_legacy_handoff(uint32_t hccparams1) {
     }
 }
 
+static int xhci_any_connected_port(void) {
+    for (uint8_t i = 0; i < xhci_port_count; i++) {
+        uint32_t reg = XHCI_OP_PORTSC + (uint32_t)i * 0x10;
+        if (xhci_read32(reg) & XHCI_PORT_CCS)
+            return 1;
+    }
+    return 0;
+}
+
+static void xhci_power_ports(void) {
+    for (uint8_t i = 0; i < xhci_port_count; i++) {
+        uint32_t reg = XHCI_OP_PORTSC + (uint32_t)i * 0x10;
+        uint32_t st = xhci_read32(reg);
+        xhci_write32(reg, (st & ~XHCI_PORT_CHANGE) | XHCI_PORT_POWER);
+    }
+}
+
+static int xhci_wait_for_connected_port(uint32_t pci_id,
+                                        uint8_t bus, uint8_t dev, uint8_t fn) {
+    usb_set_status_pci("xHCI no connected ports", pci_id, bus, dev, fn);
+    for (int wait = 0; wait < 1500; wait++) {
+        if (xhci_any_connected_port())
+            return 0;
+        delay_loop(40);
+        if (wait == 300 || wait == 900)
+            xhci_power_ports();
+    }
+    return -1;
+}
+
+static int xhci_enumerate_connected_ports(uint32_t pci_id,
+                                          uint8_t bus, uint8_t dev, uint8_t fn) {
+    usb_set_status_pci("no xHCI storage device", pci_id, bus, dev, fn);
+
+    for (uint8_t pass = 0; pass < 3; pass++) {
+        for (uint8_t i = 0; i < xhci_port_count; i++) {
+            uint32_t reg = XHCI_OP_PORTSC + (uint32_t)i * 0x10;
+            uint8_t proto = xhci_port_proto[i];
+
+            if (pass == 0 && proto != 2)
+                continue;
+            if (pass == 1 && proto != 3)
+                continue;
+            if (pass == 2 && proto)
+                continue;
+            if (!(xhci_read32(reg) & XHCI_PORT_CCS))
+                continue;
+            if (enumerate_device(i) == 0)
+                return 0;
+        }
+    }
+
+    return -1;
+}
+
 static int init_xhci_controller(uint8_t bus, uint8_t dev, uint8_t fn, uint32_t mmio_base) {
+    uint32_t pci_id = pci_read32(bus, dev, fn, 0x00);
+
+    usb_set_status("xHCI MMIO map failed");
     if (!mmio_base || map_mmio(mmio_base, 0x10000) != 0)
         return -1;
 
+    pci_power_d0(bus, dev, fn);
     uint32_t pci_cmd = pci_read32(bus, dev, fn, 0x04);
     pci_write32(bus, dev, fn, 0x04, pci_cmd | 0x00000006);
+    intel_xhci_route_ports(bus, dev, fn);
 
     xhci_caps = (volatile uint8_t*)mmio_base;
     uint8_t cap_len = xhci_caps[0];
@@ -1253,33 +1449,59 @@ static int init_xhci_controller(uint8_t bus, uint8_t dev, uint8_t fn, uint32_t m
     xhci_doorbells = (volatile uint32_t *)(xhci_caps + dboff);
     xhci_runtime = xhci_caps + rtsoff;
 
+    usb_set_status("xHCI bad capabilities");
     if (!max_slots || !xhci_port_count)
         return -1;
     if (max_slots > XHCI_MAX_SLOTS)
         max_slots = XHCI_MAX_SLOTS;
     if (xhci_port_count > 32)
         xhci_port_count = 32;
+    xhci_scan_protocol_ports(hcc1);
 
     uint32_t scratchpads = ((hcs2 >> 16) & 0x3E0) | ((hcs2 >> 27) & 0x1F);
+    usb_set_status("too many xHCI scratchpads");
     if (scratchpads > XHCI_MAX_SCRATCHPADS)
         return -1;
 
     xhci_legacy_handoff(hcc1);
+    xhci_power_ports();
+    int skip_controller_reset = ((pci_id & 0xFFFF) == PCI_VENDOR_AMD) && xhci_any_connected_port();
 
+    usb_set_status("xHCI halt failed");
     xhci_write32(XHCI_OP_USBCMD, xhci_read32(XHCI_OP_USBCMD) & ~XHCI_CMD_RUN);
+    int done = 0;
     for (int i = 0; i < 100000; i++) {
-        if (xhci_read32(XHCI_OP_USBSTS) & XHCI_STS_HCH)
+        if (xhci_read32(XHCI_OP_USBSTS) & XHCI_STS_HCH) {
+            done = 1;
             break;
+        }
     }
+    if (!done)
+        return -1;
 
-    xhci_write32(XHCI_OP_USBCMD, XHCI_CMD_RESET);
-    for (int i = 0; i < 100000; i++) {
-        if ((xhci_read32(XHCI_OP_USBCMD) & XHCI_CMD_RESET) == 0)
-            break;
-    }
-    for (int i = 0; i < 100000; i++) {
-        if ((xhci_read32(XHCI_OP_USBSTS) & XHCI_STS_CNR) == 0)
-            break;
+    if (!skip_controller_reset) {
+        usb_set_status("xHCI reset failed");
+        xhci_write32(XHCI_OP_USBCMD, XHCI_CMD_RESET);
+        done = 0;
+        for (int i = 0; i < 100000; i++) {
+            if ((xhci_read32(XHCI_OP_USBCMD) & XHCI_CMD_RESET) == 0) {
+                done = 1;
+                break;
+            }
+        }
+        if (!done)
+            return -1;
+
+        usb_set_status("xHCI not ready");
+        done = 0;
+        for (int i = 0; i < 100000; i++) {
+            if ((xhci_read32(XHCI_OP_USBSTS) & XHCI_STS_CNR) == 0) {
+                done = 1;
+                break;
+            }
+        }
+        if (!done)
+            return -1;
     }
 
     memset_s(xhci_dcbaa, 0, sizeof(xhci_dcbaa));
@@ -1314,32 +1536,51 @@ static int init_xhci_controller(uint8_t bus, uint8_t dev, uint8_t fn, uint32_t m
     xhci_intr_write64(0x18, (uint32_t)xhci_event_ring | (1 << 3), 0);
     xhci_intr_write32(0x00, 2);
 
+    usb_set_status("xHCI start failed");
     xhci_write32(XHCI_OP_USBCMD, XHCI_CMD_RUN);
+    done = 0;
     for (int i = 0; i < 100000; i++) {
-        if ((xhci_read32(XHCI_OP_USBSTS) & XHCI_STS_HCH) == 0)
+        if ((xhci_read32(XHCI_OP_USBSTS) & XHCI_STS_HCH) == 0) {
+            done = 1;
             break;
+        }
     }
+    if (!done)
+        return -1;
+
+    xhci_power_ports();
+    delay_loop(150);
+    xhci_power_ports();
 
     usb_host = USB_HOST_XHCI;
-    for (uint8_t i = 0; i < xhci_port_count; i++) {
-        if (enumerate_device(i) == 0)
-            return 0;
+    if (xhci_wait_for_connected_port(pci_id, bus, dev, fn) != 0) {
+        if (skip_controller_reset)
+            usb_set_status_pci("AMD xHCI lost BIOS ports", pci_id, bus, dev, fn);
+        return -1;
     }
 
-    return -1;
+    return xhci_enumerate_connected_ports(pci_id, bus, dev, fn);
 }
 
 static int init_xhci(void) {
+    int found = 0;
+
     for (int controller = 0; controller < 8; controller++) {
         uint8_t bus, dev, fn;
         uint32_t mmio_base;
 
-        if (find_usb_controller(0x30, controller, &mmio_base, &bus, &dev, &fn) != 0)
+        int found_controller = find_usb_controller(0x30, controller, &mmio_base, &bus, &dev, &fn);
+        if (found_controller == -1)
             break;
+        found = 1;
+        if (found_controller != 0)
+            continue;
         if (init_xhci_controller(bus, dev, fn, mmio_base) == 0)
             return 0;
     }
 
+    if (!found)
+        usb_set_status("no xHCI controller");
     return -1;
 }
 
@@ -1370,8 +1611,11 @@ static int init_ehci(void) {
         uint8_t bus, dev, fn;
         uint32_t mmio_base;
 
-        if (find_usb_controller(0x20, controller, &mmio_base, &bus, &dev, &fn) != 0)
+        int found_controller = find_usb_controller(0x20, controller, &mmio_base, &bus, &dev, &fn);
+        if (found_controller == -1)
             break;
+        if (found_controller != 0)
+            continue;
         if (!mmio_base || map_mmio(mmio_base, 0x4000) != 0)
             continue;
 
@@ -1426,6 +1670,7 @@ static int init_ehci(void) {
         delay_loop(20);
 
         usb_host = USB_HOST_EHCI;
+        usb_set_status("no EHCI storage device");
         for (uint8_t i = 0; i < ehci_port_count; i++) {
             if (enumerate_device(i) == 0)
                 return 0;
@@ -1440,8 +1685,11 @@ static int init_uhci(void) {
         uint8_t bus, dev, fn;
         uint32_t io_base;
 
-        if (find_usb_controller(0x00, controller, &io_base, &bus, &dev, &fn) != 0)
+        int found_controller = find_usb_controller(0x00, controller, &io_base, &bus, &dev, &fn);
+        if (found_controller == -1)
             break;
+        if (found_controller != 0)
+            continue;
 
         uhci_io = (uint16_t)io_base;
 
@@ -1465,6 +1713,7 @@ static int init_uhci(void) {
         delay_loop(20);
 
         usb_host = USB_HOST_UHCI;
+        usb_set_status("no UHCI storage device");
         for (int i = 0; i < 2; i++) {
             if (enumerate_device(i) == 0)
                 return 0;
@@ -1477,14 +1726,21 @@ static int init_uhci(void) {
 void usb_init(void) {
     usb_available = 0;
     usb_host = USB_HOST_NONE;
+    usb_set_status("probing");
     cbw_tag = 1;
 
-    if (init_xhci() == 0 || init_ehci() == 0 || init_uhci() == 0)
+    if (init_xhci() == 0 || init_ehci() == 0 || init_uhci() == 0) {
         usb_available = 1;
+        usb_set_status("mass storage ready");
+    }
 }
 
 int usb_ready(void) {
     return usb_available;
+}
+
+const char *usb_status(void) {
+    return usb_status_msg;
 }
 
 int usb_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
