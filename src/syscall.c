@@ -7,6 +7,7 @@
 #include "task/exec.h"
 #include "mem/pmm.h"
 #include "mem/heap.h"
+#include "mem/paging.h"
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
 #include "drivers/mouse.h"
@@ -30,6 +31,7 @@
 #define TEXTBOX_MULTILINE_SIZE 8125
 
 static char textbox_clipboard[TEXTBOX_MULTILINE_SIZE];
+static char shell_version_buf[64] = "";
 
 typedef struct {
     void *data;
@@ -43,6 +45,74 @@ typedef struct {
 #define FD_CRITICAL_END \
     __asm__ volatile("pushl %0\n\tpopfl" :: "r"(_fd_eflags) : "cc", "memory")
 extern int buffer_valid;
+
+static inline uint32_t sys_irq_save(void) {
+    uint32_t eflags;
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(eflags) :: "memory");
+    return eflags;
+}
+
+static inline void sys_irq_restore(uint32_t eflags) {
+    __asm__ volatile("pushl %0\n\tpopfl" :: "r"(eflags) : "cc", "memory");
+}
+
+static int sys_range_mapped(uint32_t addr, size_t size) {
+    if (size == 0) return 1;
+    if (!addr) return 0;
+
+    uint32_t end = addr + (uint32_t)size - 1;
+    if (end < addr) return 0;
+
+    uint32_t page = addr & ~(PAGE_SIZE - 1);
+    uint32_t last = end & ~(PAGE_SIZE - 1);
+    while (1) {
+        if (!paging_is_mapped(page)) return 0;
+        if (page == last) break;
+        if (page > 0xFFFFFFFFu - PAGE_SIZE) return 0;
+        page += PAGE_SIZE;
+    }
+    return 1;
+}
+
+static int sys_copy_string(char *dst, uint32_t src, size_t dst_size) {
+    if (!dst || !src || dst_size == 0) return -1;
+
+    for (size_t i = 0; i < dst_size - 1; i++) {
+        if (!sys_range_mapped(src + (uint32_t)i, 1)) {
+            dst[0] = '\0';
+            return -1;
+        }
+
+        char ch = *(const char*)(uintptr_t)(src + (uint32_t)i);
+        dst[i] = ch;
+        if (ch == '\0') return 0;
+    }
+
+    dst[dst_size - 1] = '\0';
+    return -1;
+}
+
+static int task_name_is(task_t *task, const char *name) {
+    if (!task || !name) return 0;
+
+    const char *a = task->name;
+    const char *b = name;
+    while (*a && *b) {
+        char ca = (*a >= 'a' && *a <= 'z') ? (char)(*a - 32) : *a;
+        char cb = (*b >= 'a' && *b <= 'z') ? (char)(*b - 32) : *b;
+        if (ca != cb) return 0;
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+static int current_task_can_manage_process(task_t *current) {
+    return task_name_is(current, "SHELL.ELF") ||
+           task_name_is(current, "DESKTOP.ELF") ||
+           task_name_is(current, "SHELL") ||
+           task_name_is(current, "DESKTOP");
+}
 
 /* Global window manager */
 static window_manager_t global_wm;
@@ -135,33 +205,41 @@ static void fd_free(int fd) {
 
 /* Cleanup all file descriptors owned by a task (called on task exit) */
 void fd_cleanup_task(uint32_t tid) {
-    __asm__ volatile ("cli");
+    fat32_file_t *to_close[MAX_OPEN_FILES];
+    int close_count = 0;
+
+    uint32_t eflags = sys_irq_save();
     for (int i = 0; i < MAX_OPEN_FILES; i++) {
         if (fd_table[i].in_use && fd_table[i].owner_tid == tid) {
             if (fd_table[i].file) {
-                fat32_close(fd_table[i].file);
+                to_close[close_count++] = fd_table[i].file;
             }
             fd_table[i].in_use = 0;
             fd_table[i].file = NULL;
             fd_table[i].owner_tid = 0;
         }
     }
-    __asm__ volatile ("sti");
+    sys_irq_restore(eflags);
+
+    for (int i = 0; i < close_count; i++) {
+        fat32_close(to_close[i]);
+    }
 }
 
 static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     (void)edx;
+    char text_buf[1024];
 
     task_t *cur = task_get_current();
     if (cur && cur->vconsole) {
         vconsole_t *vc = (vconsole_t *)cur->vconsole;
         switch (al) {
             case 0x00:
-                if (!ebx) return (uint32_t)-1;
-                vc_write(vc, (const char*)ebx);
+                if (sys_copy_string(text_buf, ebx, sizeof(text_buf)) != 0) return (uint32_t)-1;
+                vc_write(vc, text_buf);
                 return 0;
             case 0x01:
-                if (!ebx) return (uint32_t)-1;
+                if (!sys_range_mapped(ebx, ecx)) return (uint32_t)-1;
                 return (uint32_t)vc_getline(vc, (char*)ebx, ecx);
             case 0x02:
                 vc_set_color(vc, (uint8_t)ebx, (uint8_t)ecx);
@@ -175,11 +253,11 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
                 vc_set_cursor(vc, (int)ebx, (int)ecx);
                 return 0;
             case 0x06:
-                if (!ebx || !ecx) return (uint32_t)-1;
+                if (!sys_range_mapped(ebx, sizeof(int)) || !sys_range_mapped(ecx, sizeof(int))) return (uint32_t)-1;
                 vc_get_cursor(vc, (int*)ebx, (int*)ecx);
                 return 0;
             case 0x07:
-                if (!ebx || !ecx) return (uint32_t)-1;
+                if (!sys_range_mapped(ebx, VC_COLS * VC_ROWS) || !sys_range_mapped(ecx, VC_COLS * VC_ROWS)) return (uint32_t)-1;
                 memcpy_s(vc->chars, (const void*)ebx, VC_COLS * VC_ROWS);
                 memcpy_s(vc->attrs, (const void*)ecx, VC_COLS * VC_ROWS);
                 vc->dirty = 1;
@@ -191,15 +269,12 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
     
     switch (al) {
         case 0x00:
-            if (!ebx) return -1;
-            {
-                const char *s = (const char*)ebx;
-                while (*s) putchar(*s++);
-            }
+            if (sys_copy_string(text_buf, ebx, sizeof(text_buf)) != 0) return -1;
+            for (const char *s = text_buf; *s; s++) putchar(*s);
             return 0;
 
         case 0x01:
-            if (!ebx) return -1;
+            if (!sys_range_mapped(ebx, ecx)) return -1;
             return (uint32_t)kbd_getline((char*)ebx, ecx);
 
         case 0x02:
@@ -219,12 +294,12 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             return 0;
         
         case 0x06: /* Get cursor position */
-            if (!ebx || !ecx) return -1;
+            if (!sys_range_mapped(ebx, sizeof(int)) || !sys_range_mapped(ecx, sizeof(int))) return -1;
             vga_get_cursor((int*)ebx, (int*)ecx);
             return 0;
 
         case 0x07: { /* Blit screen buffer */
-            if (!ebx || !ecx) return -1;
+            if (!sys_range_mapped(ebx, 80 * 25) || !sys_range_mapped(ecx, 80 * 25)) return -1;
             volatile uint16_t *vmem = (volatile uint16_t*)0xB8000;
             const uint8_t *ch = (const uint8_t*)ebx;
             const uint8_t *at = (const uint8_t*)ecx;
@@ -240,6 +315,8 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
 
 static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     (void)edx;
+    char path[FAT32_MAX_PATH];
+    char args[256];
     
     switch (al) {
         case 0x00:
@@ -247,9 +324,9 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             return 0;
             
         case 0x01: {
-            if (!ebx) return -1;
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return -1;
             exec_image_t image;
-            if (exec_load((const char*)ebx, &image) != 0) return -1;
+            if (exec_load(path, &image) != 0) return -1;
             if (exec_run(&image) != 0) return -1;
             exec_free(&image);
             return 0;
@@ -269,18 +346,22 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             return 0;
         
         case 0x05:
-            if (!ebx) return -1;
-            return task_spawn_and_wait((const char*)ebx, (const char*)ecx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return -1;
+            if (ecx && sys_copy_string(args, ecx, sizeof(args)) != 0) return -1;
+            if (!ecx) args[0] = '\0';
+            return task_spawn_and_wait(path, args);
 
         case 0x06:  /* SYS_PROC_SPAWN_ASYNC - spawn without waiting */
-            if (!ebx) return -1;
-            return task_spawn((const char*)ebx, (const char*)ecx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return -1;
+            if (ecx && sys_copy_string(args, ecx, sizeof(args)) != 0) return -1;
+            if (!ecx) args[0] = '\0';
+            return task_spawn(path, args);
 
         case 0x07: { /* SYS_PROC_SET_ICON */
-            if (!ebx || !ecx) return (uint32_t)-1;
+            if (!ebx || sys_copy_string(path, ecx, sizeof(path)) != 0) return (uint32_t)-1;
             task_t *t = task_find_by_tid((uint32_t)ebx);
             if (!t) return (uint32_t)-1;
-            strcpy_s(t->icon_path, (const char*)ecx, 64);
+            strcpy_s(t->icon_path, path, 64);
             return 0;
         }
 
@@ -294,6 +375,9 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             /* Do not allow killing the caller via kill (caller should use sys_exit) */
             task_t *current = task_get_current();
             if (current && current->tid == tid) return (uint32_t)-1;
+            if (current && t->parent_tid != current->tid && !current_task_can_manage_process(current)) {
+                return (uint32_t)-1;
+            }
 
             /* If parent is blocked waiting for this child, wake it up */
             if (t->parent_tid) {
@@ -309,7 +393,6 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
         }
 
         case 0x09: { /* SYS_PROC_GETARGS */
-            if (!ebx) return (uint32_t)NULL;
             task_t *current = task_get_current();
             if (!current) return (uint32_t)NULL;
             
@@ -317,6 +400,8 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
             int len = (int)ecx;
             
             if (len > 0) {
+                size_t copy_len = (len > (int)sizeof(current->args)) ? sizeof(current->args) : (size_t)len;
+                if (!sys_range_mapped(ebx, copy_len)) return (uint32_t)NULL;
                 strcpy_s(buf, current->args, len);
                 return (uint32_t)buf;
             }
@@ -329,11 +414,16 @@ static uint32_t handle_process(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
 }
 
 static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    char path[FAT32_MAX_PATH];
+    char path2[FAT32_MAX_PATH];
+    char mode[8];
+
     switch (al) {
         case 0x00: {
-            if (!ebx || !ecx) return (uint32_t)-1;
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
+            if (sys_copy_string(mode, ecx, sizeof(mode)) != 0) return (uint32_t)-1;
             
-            fat32_file_t *file = fat32_open((const char*)ebx, (const char*)ecx);
+            fat32_file_t *file = fat32_open(path, mode);
             if (!file) {
                 return (uint32_t)-1;
             }
@@ -356,7 +446,7 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
         }
             
         case 0x02: {
-            if (!ecx) return (uint32_t)-1;
+            if (!sys_range_mapped(ecx, edx)) return (uint32_t)-1;
             
             fat32_file_t *file = fd_get((int)ebx);
             if (!file) return (uint32_t)-1;
@@ -366,7 +456,7 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
         }
             
         case 0x03: {
-            if (!ecx) return (uint32_t)-1;
+            if (!sys_range_mapped(ecx, edx)) return (uint32_t)-1;
             
             fat32_file_t *file = fd_get((int)ebx);
             if (!file) return (uint32_t)-1;
@@ -384,14 +474,15 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
         }
         
         case 0x05: {
-            if (!ebx) return (uint32_t)-1;
-            int result = fat32_unlink((const char*)ebx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
+            int result = fat32_unlink(path);
             return (uint32_t)result;
         }
         
         case 0x06: {
-            if (!ebx || !ecx) return (uint32_t)-1;
-            int result = fat32_rename((const char*)ebx, (const char*)ecx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
+            if (sys_copy_string(path2, ecx, sizeof(path2)) != 0) return (uint32_t)-1;
+            int result = fat32_rename(path, path2);
             return (uint32_t)result;
         }
             
@@ -401,13 +492,15 @@ static uint32_t handle_file(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
 }
 
 static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    char path[FAT32_MAX_PATH];
+
     switch (al) {
         case 0x00:
-            if (!ebx) return -1;
-            return fat32_chdir((const char*)ebx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return -1;
+            return fat32_chdir(path);
             
         case 0x01: {
-            if (!ebx) return -1;
+            if (ecx == 0 || !sys_range_mapped(ebx, ecx)) return -1;
             char *result = fat32_getcwd((char*)ebx, ecx);
             if (!result || ((char*)ebx)[0] == '\0') {
                 if (ecx >= 4) {
@@ -419,20 +512,21 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
         }
         
         case 0x02:
-            if (!ebx) return -1;
-            return fat32_mkdir((const char*)ebx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return -1;
+            return fat32_mkdir(path);
         
         case 0x03:
-            if (!ebx) return -1;
-            return fat32_rmdir((const char*)ebx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return -1;
+            return fat32_rmdir(path);
         
         case 0x04: {
-            if (!ebx || !ecx) return -1;
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return -1;
             if (edx > 256) edx = 256;
+            if (edx == 0 || !sys_range_mapped(ecx, sizeof(sys_dirent_t) * edx)) return -1;
             fat32_dirent_t *fat_entries = (fat32_dirent_t*)kmalloc(sizeof(fat32_dirent_t) * edx);
             if (!fat_entries) return -1;
             
-            int count = fat32_list_dir((const char*)ebx, fat_entries, (int)edx);
+            int count = fat32_list_dir(path, fat_entries, (int)edx);
             
             if (count > 0) {
                 sys_dirent_t *sys_entries = (sys_dirent_t*)ecx;
@@ -460,23 +554,32 @@ static uint32_t handle_dir(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
 static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     switch (al) {
         case 0x00: {
-            if (!ecx) return -2;
             if (edx > MSG_MAX_SIZE) return -1;
+            if (!sys_range_mapped(ecx, edx)) return -2;
             
             task_t *sender = task_get_current();
             if (!sender) return -3;
             
             task_t *receiver = task_find_by_tid(ebx);
             if (!receiver) return -4;
+
+            message_t local_msg;
+            local_msg.from_tid = sender->tid;
+            local_msg.to_tid = ebx;
+            local_msg.size = edx;
+            if (edx > 0) {
+                memcpy_s(local_msg.data, (const void*)ecx, edx);
+            }
             
+            uint32_t eflags = sys_irq_save();
             msg_queue_t *q = &receiver->msg_queue;
-            if (q->count >= MSG_QUEUE_SIZE) return -5;
+            if (q->count >= MSG_QUEUE_SIZE) {
+                sys_irq_restore(eflags);
+                return -5;
+            }
             
             message_t *msg = &q->msgs[q->head];
-            msg->from_tid = sender->tid;
-            msg->to_tid = ebx;
-            msg->size = edx;
-            memcpy_s(msg->data, (const void*)ecx, edx);
+            memcpy_s(msg, &local_msg, sizeof(message_t));
             
             q->head = (q->head + 1) % MSG_QUEUE_SIZE;
             q->count++;
@@ -484,27 +587,38 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             if (receiver->state == TASK_BLOCKED) {
                 receiver->state = TASK_READY;
             }
+            sys_irq_restore(eflags);
             return 0;
         }
             
         case 0x01: {
-            if (!ebx) return -1;
+            if (!sys_range_mapped(ebx, sizeof(message_t))) return -1;
             
             task_t *current = task_get_current();
             if (!current) return -2;
             
             msg_queue_t *q = &current->msg_queue;
+            uint32_t eflags = sys_irq_save();
             if (q->count == 0) {
                 current->state = TASK_BLOCKED;
+                sys_irq_restore(eflags);
                 task_yield();
-                if (q->count == 0) return -3;
+                eflags = sys_irq_save();
+                if (q->count == 0) {
+                    sys_irq_restore(eflags);
+                    return -3;
+                }
             }
             
+            message_t local_msg;
             message_t *msg = &q->msgs[q->tail];
-            memcpy_s((void*)ebx, msg, sizeof(message_t));
+            memcpy_s(&local_msg, msg, sizeof(message_t));
             
             q->tail = (q->tail + 1) % MSG_QUEUE_SIZE;
             q->count--;
+            sys_irq_restore(eflags);
+
+            memcpy_s((void*)ebx, &local_msg, sizeof(message_t));
             return 0;
         }
             
@@ -518,7 +632,7 @@ static uint32_t handle_time(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t ed
     
     switch (al) {
         case 0x00: {
-            if (!ebx) return -1;
+            if (!sys_range_mapped(ebx, sizeof(sys_time_t))) return -1;
             
             sys_time_t *time = (sys_time_t*)ebx;
             rtc_read_time(time);
@@ -537,7 +651,7 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
     
     switch (al) {
         case 0x00: {
-            if (!ebx) return -1;
+            if (!sys_range_mapped(ebx, sizeof(sys_meminfo_t))) return -1;
             
             sys_meminfo_t *info = (sys_meminfo_t*)ebx;
             size_t total = pmm_total_frames();
@@ -550,15 +664,18 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
         }
         
         case 0x01: {
-            if (!ebx) return -1;
+            int max = (int)ecx;
+            if (max <= 0) return 0;
+            if (max > 64) max = 64;
+            if (!sys_range_mapped(ebx, sizeof(sys_taskinfo_t) * (size_t)max)) return -1;
             
             sys_taskinfo_t *tasks = (sys_taskinfo_t*)ebx;
-            int max = (int)ecx;
             int count = 0;
             
             task_t *start = task_get_current();
             if (!start) return 0;
             
+            uint32_t eflags = sys_irq_save();
             task_t *t = start;
             do {
                 if (count >= max) break;
@@ -571,6 +688,7 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                 
                 t = t->next;
             } while (t != start && count < max);
+            sys_irq_restore(eflags);
             
             return count;
         }
@@ -579,7 +697,7 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
             return (uint32_t)(uintptr_t)kernel_version;
 
         case 0x03: {
-            if (!ebx) return -1;
+            if (!sys_range_mapped(ebx, sizeof(sys_heapinfo_t))) return -1;
             sys_heapinfo_t *info = (sys_heapinfo_t*)ebx;
             
             size_t free_blocks = 0;
@@ -611,14 +729,15 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
         }
 
         case 0x04:
-            return (uint32_t)(uintptr_t)shell_version;
+            return (uint32_t)(uintptr_t)shell_version_buf;
 
         case 0x05:
-            shell_version = (const char*)ebx;
+            if (sys_copy_string(shell_version_buf, ebx, sizeof(shell_version_buf)) != 0) return -1;
+            shell_version = shell_version_buf;
             return 0;
 
         case 0x06: { /* SYS_INFO_CPU */
-            if (!ebx) return -1;
+            if (!sys_range_mapped(ebx, sizeof(sys_cpuinfo_t))) return -1;
             sys_cpuinfo_t *out = (sys_cpuinfo_t*)ebx;
 
             /* Clear output */
@@ -1026,6 +1145,8 @@ static uint32_t handle_memory(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t 
 
 static uint32_t handle_graphics(uint32_t al, uint32_t ebx, 
                                 uint32_t ecx, uint32_t edx) {
+    char path[FAT32_MAX_PATH];
+
     switch (al) {
         case 0x00:
             gfx_enter_mode();
@@ -1085,8 +1206,8 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
         }
             
         case 0x0A:
-            if (!ebx) return (uint32_t)-1;
-            return gfx_load_bmp_4bit((const char*)ebx, (int)ecx, (int)edx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
+            return gfx_load_bmp_4bit(path, (int)ecx, (int)edx);
 
         case 0x0B: { /* Fillrect gradient */
             int x = (int)(ebx >> 16);
@@ -1102,17 +1223,18 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
         }
 
         case 0x0C: { /* Load BMP with transparency control */
-            if (!ebx) return (uint32_t)-1;
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
             int x = (int)(ecx >> 16);
             int y = (int)(ecx & 0xFFFF);
-            return gfx_load_bmp_4bit_ex((const char*)ebx, x, y, (int)edx);
+            return gfx_load_bmp_4bit_ex(path, x, y, (int)edx);
         }
 
         case 0x0D: { /* Cache BMP to memory */
-            if (!ebx || !ecx) return (uint32_t)-1;
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
+            if (!sys_range_mapped(ecx, sizeof(cached_bmp_t))) return (uint32_t)-1;
             cached_bmp_t *out = (cached_bmp_t*)ecx;
             int w, h;
-            uint8_t *data = gfx_load_bmp_to_buffer((const char*)ebx, &w, &h);
+            uint8_t *data = gfx_load_bmp_to_buffer(path, &w, &h);
             if (!data) return (uint32_t)-1;
             out->data = data;
             out->width = w;
@@ -1121,17 +1243,18 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
         }
 
         case 0x0E: { /* Draw cached BMP */
-            if (!ebx) return (uint32_t)-1;
-            cached_bmp_t *bmp = (cached_bmp_t*)ebx;
-            if (!bmp->data) return (uint32_t)-1;
+            if (!sys_range_mapped(ebx, sizeof(cached_bmp_t))) return (uint32_t)-1;
+            cached_bmp_t bmp;
+            memcpy_s(&bmp, (const void*)ebx, sizeof(bmp));
+            if (!bmp.data) return (uint32_t)-1;
             int x = (int)(ecx >> 16);
             int y = (int)(ecx & 0xFFFF);
-            gfx_draw_cached_bmp_ex(bmp->data, bmp->width, bmp->height, x, y, (int)edx);
+            gfx_draw_cached_bmp_ex(bmp.data, bmp.width, bmp.height, x, y, (int)edx);
             return 0;
         }
 
         case 0x0F: { /* Free cached BMP */
-            if (!ebx) return (uint32_t)-1;
+            if (!sys_range_mapped(ebx, sizeof(cached_bmp_t))) return (uint32_t)-1;
             cached_bmp_t *bmp = (cached_bmp_t*)ebx;
             if (bmp->data) {
                 kfree(bmp->data);
@@ -1143,14 +1266,14 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
         }
 
         case 0x11: { /* SYS_GFX_LOAD_BMP_SCALED - Load BMP and draw scaled (no transparency) */
-            if (!ebx) return (uint32_t)-1;
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
             int dest_x = (int)(ecx >> 16);
             int dest_y = (int)(ecx & 0xFFFF);
             int dest_w = (int)(edx >> 16);
             int dest_h = (int)(edx & 0xFFFF);
 
             int src_w, src_h;
-            uint8_t *bmp = gfx_load_bmp_to_buffer((const char*)ebx, &src_w, &src_h);
+            uint8_t *bmp = gfx_load_bmp_to_buffer(path, &src_w, &src_h);
             if (!bmp) return (uint32_t)-1;
 
             /* Always scale to exact target dimensions */
@@ -1181,13 +1304,14 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
         }
 
         case 0x12: { /* SYS_GFX_CACHE_BMP_SCALED - Load, scale, and cache BMP */
-            if (!ebx || !edx) return (uint32_t)-1;
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
+            if (!sys_range_mapped(edx, sizeof(cached_bmp_t))) return (uint32_t)-1;
             int target_w = (int)(ecx >> 16);
             int target_h = (int)(ecx & 0xFFFF);
             cached_bmp_t *out = (cached_bmp_t*)edx;
 
             int src_w, src_h;
-            uint8_t *bmp = gfx_load_bmp_to_buffer((const char*)ebx, &src_w, &src_h);
+            uint8_t *bmp = gfx_load_bmp_to_buffer(path, &src_w, &src_h);
             if (!bmp) return (uint32_t)-1;
 
             /* Scale if dimensions don't match */
@@ -1217,8 +1341,6 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
         }
 
         case 0x10: { /* Draw partial region of cached BMP */
-            if (!ebx) return (uint32_t)-1;
-
             /* Userland passes a pointer to this struct in EBX */
             typedef struct {
                 void *bmp;      /* gfx_cached_bmp_t* */
@@ -1231,28 +1353,32 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 int transparent;
             } draw_region_t;
 
-            draw_region_t *r = (draw_region_t*)ebx;
-            if (!r->bmp) return (uint32_t)-1;
+            if (!sys_range_mapped(ebx, sizeof(draw_region_t))) return (uint32_t)-1;
+            draw_region_t r;
+            memcpy_s(&r, (const void*)ebx, sizeof(r));
+            if (!r.bmp) return (uint32_t)-1;
 
-            cached_bmp_t *bmp = (cached_bmp_t*)r->bmp;
-            if (!bmp->data) return (uint32_t)-1;
+            if (!sys_range_mapped((uint32_t)(uintptr_t)r.bmp, sizeof(cached_bmp_t))) return (uint32_t)-1;
+            cached_bmp_t bmp;
+            memcpy_s(&bmp, r.bmp, sizeof(bmp));
+            if (!bmp.data) return (uint32_t)-1;
 
-            int sx = r->src_x;
-            int sy = r->src_y;
-            int sw = r->src_w;
-            int sh = r->src_h;
+            int sx = r.src_x;
+            int sy = r.src_y;
+            int sw = r.src_w;
+            int sh = r.src_h;
 
             /* Clip source to bitmap bounds */
             if (sx < 0) { sw += sx; sx = 0; }
             if (sy < 0) { sh += sy; sy = 0; }
-            if (sx >= bmp->width || sy >= bmp->height) return 0;
-            if (sx + sw > bmp->width) sw = bmp->width - sx;
-            if (sy + sh > bmp->height) sh = bmp->height - sy;
+            if (sx >= bmp.width || sy >= bmp.height) return 0;
+            if (sx + sw > bmp.width) sw = bmp.width - sx;
+            if (sy + sh > bmp.height) sh = bmp.height - sy;
             if (sw <= 0 || sh <= 0) return 0;
 
-            gfx_draw_cached_bmp_region((uint8_t*)bmp->data, bmp->width, bmp->height,
-                                       r->dest_x, r->dest_y,
-                                       sx, sy, sw, sh, r->transparent);
+            gfx_draw_cached_bmp_region((uint8_t*)bmp.data, bmp.width, bmp.height,
+                                       r.dest_x, r.dest_y,
+                                       sx, sy, sw, sh, r.transparent);
             return 0;
         }
 
@@ -1265,7 +1391,9 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
                                 uint32_t ecx, uint32_t edx) {
     switch (al) {
         case 0x00: {
-            if (!ebx || !ecx || !edx) return (uint32_t)-1;
+            if (!sys_range_mapped(ebx, sizeof(int)) ||
+                !sys_range_mapped(ecx, sizeof(int)) ||
+                !sys_range_mapped(edx, sizeof(uint8_t))) return (uint32_t)-1;
             *(int*)ebx = mouse_get_x();
             *(int*)ecx = mouse_get_y();
             *(uint8_t*)edx = mouse_get_buttons();
@@ -2335,9 +2463,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                uint32_t ecx, uint32_t edx) {
     switch (al) {
         case 0x00: { /* SYS_WIN_MSGBOX - Modal message box */
-            const char *msg = (const char*)ebx;
-            const char *btn = (const char*)ecx;
-            const char *title = (const char*)edx;
+            char msg[256];
+            char btn[64];
+            char title[64];
+            if (sys_copy_string(msg, ebx, sizeof(msg)) != 0) return (uint32_t)-1;
+            if (sys_copy_string(btn, ecx, sizeof(btn)) != 0) return (uint32_t)-1;
+            if (sys_copy_string(title, edx, sizeof(title)) != 0) return (uint32_t)-1;
 
             if (buffer_valid) {
                 mouse_restore();
@@ -2434,6 +2565,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
         }
 
         case 0x05: { /* SYS_WIN_CREATE_FORM */
+            char title[64];
+            if (sys_copy_string(title, ebx, sizeof(title)) != 0) return (uint32_t)NULL;
+
             /* Initialize window manager on first use */
             if (!wm_initialized) {
                 wm_init(&global_wm);
@@ -2448,7 +2582,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             int w = (int16_t)(edx >> 16);
             int h = (int16_t)(edx & 0xFFFF);
 
-            win_create(&form->win, x, y, w, h, (const char*)ebx);
+            win_create(&form->win, x, y, w, h, title);
             form->controls = NULL;
             form->ctrl_count = 0;
             form->clicked_id = -1;
@@ -3956,13 +4090,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
         }
 
         case 0x12: { /* SYS_WIN_GET_DIRTY_RECT - Get dirty rectangle */
+            if (!sys_range_mapped(ebx, sizeof(int) * 4)) return (uint32_t)-1;
             int *out = (int*)ebx;
-            if (out) {
-                out[0] = global_wm.dirty_x;
-                out[1] = global_wm.dirty_y;
-                out[2] = global_wm.dirty_w;
-                out[3] = global_wm.dirty_h;
-            }
+            out[0] = global_wm.dirty_x;
+            out[1] = global_wm.dirty_y;
+            out[2] = global_wm.dirty_w;
+            out[3] = global_wm.dirty_h;
             return 0;
         }
 
@@ -4244,6 +4377,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 }
 
 static uint32_t handle_sound(uint32_t al, uint32_t ebx, uint32_t ecx) {
+    char path[FAT32_MAX_PATH];
+
     switch (al) {
         case 0x00:
             return (uint32_t)sb16_detected();
@@ -4264,7 +4399,8 @@ static uint32_t handle_sound(uint32_t al, uint32_t ebx, uint32_t ecx) {
             return 0;
 
         case 0x04:
-            return (uint32_t)sound_play_wav((const char *)ebx);
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
+            return (uint32_t)sound_play_wav(path);
 
         default:
             return (uint32_t)-1;
