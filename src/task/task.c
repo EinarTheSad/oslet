@@ -19,6 +19,16 @@ static const uint32_t QUANTUM_NORMAL = 5;
 static const uint32_t QUANTUM_LOW    = 2;
 static const uint32_t QUANTUM_IDLE   = 1;
 
+static inline uint32_t irq_save(void) {
+    uint32_t eflags;
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(eflags) :: "memory");
+    return eflags;
+}
+
+static inline void irq_restore(uint32_t eflags) {
+    __asm__ volatile("pushl %0\n\tpopfl" :: "r"(eflags) : "cc", "memory");
+}
+
 void tasking_init(void) {
     current_task = (task_t*)kmalloc(sizeof(task_t));
     if (!current_task) {
@@ -97,7 +107,7 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
 
     task->esp = (uint32_t)sp;
     
-    __asm__ volatile ("cli");
+    uint32_t eflags = irq_save();
     if (!task_list) {
         task_list = task;
         task->next = task;
@@ -107,22 +117,22 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
         t->next = task;
         task->next = task_list;
     }
-    __asm__ volatile ("sti");
+    irq_restore(eflags);
     
     return task->tid;
 }
 
 void task_exit(void) {
-    __asm__ volatile ("cli");
+    uint32_t eflags = irq_save();
     
     if (!current_task) {
-        __asm__ volatile ("sti");
+        irq_restore(eflags);
         return;
     }
     
     if (current_task == task_list) {
         printf("Cannot exit kernel task\n");
-        __asm__ volatile ("sti");
+        irq_restore(eflags);
         for (;;) __asm__ volatile ("hlt");
     }
     
@@ -135,7 +145,7 @@ void task_exit(void) {
     }
     
     current_task->state = TASK_TERMINATED;
-    __asm__ volatile ("sti");
+    irq_restore(eflags);
     task_yield();
     for (;;) __asm__ volatile ("hlt");
 }
@@ -143,7 +153,7 @@ void task_exit(void) {
 void task_sleep(uint32_t milliseconds) {
     if (!tasking_enabled || !current_task) return;
 
-    __asm__ volatile ("cli");
+    uint32_t eflags = irq_save();
 
     uint32_t current_ticks = timer_get_ticks();
     uint32_t sleep_ticks = (milliseconds * 100) / 1000;
@@ -152,7 +162,7 @@ void task_sleep(uint32_t milliseconds) {
     current_task->state = TASK_SLEEPING;
     current_task->sleep_until_ticks = current_ticks + sleep_ticks;
 
-    __asm__ volatile ("sti");
+    irq_restore(eflags);
 
     /* Yield to other processes - keep yielding until we're woken */
     while (current_task->state == TASK_SLEEPING) {
@@ -181,9 +191,9 @@ static void wakeup_sleeping_tasks_locked(void) {
 
 /* Public version - manages interrupt protection */
 void wakeup_sleeping_tasks(void) {
-    __asm__ volatile ("cli");
+    uint32_t eflags = irq_save();
     wakeup_sleeping_tasks_locked();
-    __asm__ volatile ("sti");
+    irq_restore(eflags);
 }
 
 static void cleanup_terminated_tasks(void) {
@@ -356,10 +366,10 @@ task_t *task_get_current(void) {
 }
 
 task_t *task_find_by_tid(uint32_t tid) {
-    __asm__ volatile ("cli");
+    uint32_t eflags = irq_save();
 
     if (!task_list) {
-        __asm__ volatile ("sti");
+        irq_restore(eflags);
         return NULL;
     }
 
@@ -374,7 +384,7 @@ task_t *task_find_by_tid(uint32_t tid) {
         t = t->next;
     } while (t != task_list);
 
-    __asm__ volatile ("sti");
+    irq_restore(eflags);
     return result;
 }
 
@@ -432,9 +442,9 @@ int task_spawn_and_wait(const char *path, const char *args) {
     }
     
     /* Block parent and wait for child to finish */
-    __asm__ volatile ("cli");
+    uint32_t eflags = irq_save();
     current_task->state = TASK_BLOCKED;
-    __asm__ volatile ("sti");
+    irq_restore(eflags);
 
     /* Yield to child */
     task_yield();
@@ -485,6 +495,7 @@ int task_spawn(const char *path, const char *args) {
     child->exec_base = image.base_addr;
     child->exec_end = image.end_addr;
     child->exec_slot = image.slot;
+    child->parent_tid = current_task->tid;
     /* Inherit vconsole from parent, but if graphics mode is not active we want
        the child to write to the system VGA console */
     if (gfx_is_active()) {

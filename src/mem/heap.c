@@ -7,14 +7,18 @@
 
 static volatile int heap_lock = 0;
 
-static inline void heap_acquire(void) {
+static inline uint32_t heap_acquire(void) {
+    uint32_t eflags;
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(eflags) :: "memory");
     while (__sync_lock_test_and_set(&heap_lock, 1)) {
-        task_yield();
+        __asm__ volatile("pause");
     }
+    return eflags;
 }
 
-static inline void heap_release(void) {
+static inline void heap_release(uint32_t eflags) {
     __sync_lock_release(&heap_lock);
+    __asm__ volatile("pushl %0\n\tpopfl" :: "r"(eflags) : "cc", "memory");
 }
 
 block_t *heap_start = NULL;
@@ -98,7 +102,7 @@ static void merge_free_blocks(void) {
 
 void *kmalloc(size_t size) {
     if (size == 0) return NULL;
-    heap_acquire();
+    uint32_t eflags = heap_acquire();
     size = ALIGN_UP(size, 8);
     block_t *curr = heap_start;
     
@@ -107,14 +111,14 @@ void *kmalloc(size_t size) {
             split_block(curr, size);
             curr->free = 0;
             total_allocated += size;
-            heap_release();
+            heap_release(eflags);
             return (void*)((char*)curr + sizeof(block_t));
         }
         
         if (!curr->next) {
             size_t need = size + sizeof(block_t);
             if (expand_heap(need) != 0) {
-                heap_release();
+                heap_release(eflags);
                 return NULL;
             }
             
@@ -128,30 +132,29 @@ void *kmalloc(size_t size) {
         
         curr = curr->next;
     }
-    heap_release();
+    heap_release(eflags);
     return NULL;
 }
 
 void kfree(void *ptr) {
     if (!ptr) return;
-    heap_acquire();
+    uint32_t eflags = heap_acquire();
     block_t *b = (block_t*)((char*)ptr - sizeof(block_t));
     
     if ((uintptr_t)b < HEAP_START || (uintptr_t)b >= heap_end) {
         printf("Invalid free heap at %p\n", ptr);
-        heap_release();
+        heap_release(eflags);
         return;
     }
     
     if (b->free) {
         printf("Double free heap detected at %p\n", ptr);
-        b->free = 0;
-        heap_release();
+        heap_release(eflags);
         return;
     }
     
     total_freed += b->size;
     b->free = 1;
     merge_free_blocks();
-    heap_release();
+    heap_release(eflags);
 }

@@ -1103,7 +1103,7 @@ void fat32_close(fat32_file_t *file) {
     fat32_release();
 }
 
-int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries) {
+static int fat32_list_dir_unlocked(const char *path, fat32_dirent_t *entries, int max_entries) {
     if (!entries || max_entries <= 0) return -1;
 
     uint8_t drive;
@@ -1235,7 +1235,7 @@ int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries) {
     return count;
 }
 
-int fat32_mkdir(const char *path) {
+static int fat32_mkdir_unlocked(const char *path) {
     if (!path) return -1;
     
     uint8_t drive;
@@ -1298,7 +1298,7 @@ int fat32_mkdir(const char *path) {
     return 0;
 }
 
-int fat32_rmdir(const char *path) {
+static int fat32_rmdir_unlocked(const char *path) {
     if (!path) return -1;
     
     uint8_t drive;
@@ -1349,7 +1349,7 @@ int fat32_rmdir(const char *path) {
     return 0;
 }
 
-int fat32_unlink(const char *path) {
+static int fat32_unlink_unlocked(const char *path) {
     if (!path) return -1;
     
     uint8_t drive;
@@ -1379,7 +1379,7 @@ int fat32_unlink(const char *path) {
     return 0;
 }
 
-int fat32_rename(const char *oldpath, const char *newpath) {
+static int fat32_rename_unlocked(const char *oldpath, const char *newpath) {
     if (!oldpath || !newpath) return -1;
     
     uint8_t old_drive, new_drive;
@@ -1516,7 +1516,7 @@ int fat32_rename(const char *oldpath, const char *newpath) {
     return 0;
 }
 
-int fat32_stat(const char *path, fat32_dirent_t *entry) {
+static int fat32_stat_unlocked(const char *path, fat32_dirent_t *entry) {
     if (!path || !entry) return -1;
     
     uint8_t drive;
@@ -1554,13 +1554,13 @@ int fat32_stat(const char *path, fat32_dirent_t *entry) {
     return 0;
 }
 
-char* fat32_getcwd(char *buf, size_t size) {
+static char* fat32_getcwd_unlocked(char *buf, size_t size) {
     if (!buf || size == 0) return NULL;
     strcpy_s(buf, current_dir, size);
     return buf;
 }
 
-int fat32_chdir(const char *path) {
+static int fat32_chdir_unlocked(const char *path) {
     if (!path) return -1;
     
     uint8_t drive;
@@ -1598,6 +1598,62 @@ int fat32_chdir(const char *path) {
     }
     
     return 0;
+}
+
+int fat32_list_dir(const char *path, fat32_dirent_t *entries, int max_entries) {
+    fat32_acquire();
+    int ret = fat32_list_dir_unlocked(path, entries, max_entries);
+    fat32_release();
+    return ret;
+}
+
+int fat32_mkdir(const char *path) {
+    fat32_acquire();
+    int ret = fat32_mkdir_unlocked(path);
+    fat32_release();
+    return ret;
+}
+
+int fat32_rmdir(const char *path) {
+    fat32_acquire();
+    int ret = fat32_rmdir_unlocked(path);
+    fat32_release();
+    return ret;
+}
+
+int fat32_unlink(const char *path) {
+    fat32_acquire();
+    int ret = fat32_unlink_unlocked(path);
+    fat32_release();
+    return ret;
+}
+
+int fat32_rename(const char *oldpath, const char *newpath) {
+    fat32_acquire();
+    int ret = fat32_rename_unlocked(oldpath, newpath);
+    fat32_release();
+    return ret;
+}
+
+int fat32_stat(const char *path, fat32_dirent_t *entry) {
+    fat32_acquire();
+    int ret = fat32_stat_unlocked(path, entry);
+    fat32_release();
+    return ret;
+}
+
+char* fat32_getcwd(char *buf, size_t size) {
+    fat32_acquire();
+    char *ret = fat32_getcwd_unlocked(buf, size);
+    fat32_release();
+    return ret;
+}
+
+int fat32_chdir(const char *path) {
+    fat32_acquire();
+    int ret = fat32_chdir_unlocked(path);
+    fat32_release();
+    return ret;
 }
 
 static int is_valid_fat32_bpb(const uint8_t *sector) {
