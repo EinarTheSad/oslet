@@ -49,7 +49,7 @@ GIX_TARGETS      := $(patsubst $(SRC)/apps/gix/%.c,%.elf,$(GIX_SRCS))
 
 PROGRAM_NAMES    := $(foreach t,$(SHELL_TARGETS) $(AGIX_TARGETS) $(GIX_TARGETS),$(basename $(t)))
 
-.PHONY: all run run-usb clean clean-all disk install binstall binaries full kernel-build programs $(PROGRAM_NAMES)
+.PHONY: all run run-usb clean clean-all disk fresh-disk install binstall binaries update run-existing full kernel-build programs $(PROGRAM_NAMES)
 
 all: kernel-build $(CURDIR)/$(BUILD)/$(TARGET)
 
@@ -144,6 +144,7 @@ $(PROGRAM_NAMES): lib-build
 	@$(MAKE) $(BUILD_BIN)/$@.elf
 
 $(DISK):
+	@echo "WARNING: creating a fresh $(DISK); any existing image data will be replaced."
 	@echo "Creating $(DISK_SIZE)MB disk with MBR..."
 	dd if=/dev/zero of=$(DISK) bs=1M count=$(DISK_SIZE)
 	echo -e "o\nn\np\n1\n2048\n\nt\nc\na\nw\n" | fdisk $(DISK) || true
@@ -169,6 +170,11 @@ $(DISK):
 	echo "Disk ready!"
 
 disk: $(DISK)
+
+fresh-disk:
+	@echo "WARNING: removing and recreating $(DISK). Use 'make update' to preserve an existing image."
+	@rm -f $(DISK)
+	@$(MAKE) disk
 
 install: $(CURDIR)/$(BUILD)/$(TARGET)
 	@if [ ! -f "$(DISK)" ]; then \
@@ -222,7 +228,13 @@ binstall:
 	rmdir mnt; \
 	echo "Binaries installed!"
 
-full: disk binaries install binstall run
+update: kernel binaries install binstall
+
+run-existing: update run
+
+full:
+	@echo "WARNING: full rebuilds a fresh disk image before running."
+	@$(MAKE) fresh-disk binaries install binstall run
 
 run: $(CURDIR)/$(BUILD)/$(TARGET)
 	@if [ ! -f "$(DISK)" ]; then \
