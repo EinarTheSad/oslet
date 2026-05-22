@@ -1,5 +1,8 @@
 #include "../../syscall.h"
 #include "../../lib/stdio.h"
+#include "../../lib/app.h"
+
+OSLET_APP("Fetchlet", OSLET_KIND_AGIX, "C:/ICONS/AGIX.ICO", OSLET_APP_FLAG_NONE);
 
 const char *logo[] = {
     "▀▀▀▀▀▀▀█▀",

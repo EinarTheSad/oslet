@@ -2,8 +2,12 @@
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
 #include "../../lib/pathdlg.h"
+#include "../../lib/app.h"
+#include "../../lib/gix_app.h"
 #include "../../drivers/keyboard.h"
 #include "../../win/wm_config.h"
+
+OSLET_APP("Image Viewer", OSLET_KIND_GIX, "C:/ICONS/VIEWER.ICO", OSLET_APP_FLAG_NONE);
 
 /* Control IDs */
 #define ID_PICTURE    1
@@ -19,6 +23,16 @@ static gui_control_t Form1_controls[] = {
     { .type = CTRL_BUTTON, .x = 224, .y = 360, .w = 40, .h = 40, .fg = 0, .bg = -1, .text = "", .id = ID_FULLSCREEN, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
 };
 
+static gui_control_t fullscreen_controls[] = {
+    { .type = CTRL_PICTUREBOX, .x = 0, .y = 0, .w = WM_SCREEN_WIDTH, .h = WM_SCREEN_HEIGHT, .fg = 0, .bg = 7, .text = "", .id = ID_PICTURE, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
+};
+
+typedef struct {
+    void *form;
+    int fullscreen;
+    void *fs_form;
+} imgview_state_t;
+
 static int gather_bmps(const char *dir, sys_dirent_t *entries, int max_entries) {
     int n = sys_readdir(dir, entries, max_entries);
     if (n <= 0) return 0;
@@ -33,55 +47,49 @@ static int gather_bmps(const char *dir, sys_dirent_t *entries, int max_entries) 
     return out;
 }
 
-static void toggle_fullscreen(void *form, int *fullscreen_ptr, const char *cur_path, void **fs_form_ptr) {
+static void toggle_fullscreen(imgview_state_t *state, const char *cur_path) {
     if (!cur_path || !cur_path[0]) return;
 
-    if (!*fullscreen_ptr) {
-        *fullscreen_ptr = 1;
+    if (!state->fullscreen) {
+        state->fullscreen = 1;
         sys_mouse_invalidate();
 
-        /* Create a full-screen form positioned so its titlebar is off-screen to hide decorations. */
-        void *fs = sys_win_create_form("Image Viewer (full screen)", 0, -WM_TITLEBAR_HEIGHT-2, WM_SCREEN_WIDTH+2, WM_SCREEN_HEIGHT + WM_TITLEBAR_HEIGHT+4);
+        gix_app_window_desc_t fs_desc = {
+            .title = "Image Viewer (full screen)",
+            .icon_path = "C:/ICONS/VIEWER.ICO",
+            .x = 0,
+            .y = -WM_TITLEBAR_HEIGHT - 2,
+            .w = WM_SCREEN_WIDTH + 2,
+            .h = WM_SCREEN_HEIGHT + WM_TITLEBAR_HEIGHT + 4,
+            .resizable = 0,
+            .controls = fullscreen_controls,
+            .control_count = sizeof(fullscreen_controls) / sizeof(fullscreen_controls[0])
+        };
+
+        void *fs = gix_app_create_window(&fs_desc);
         if (fs) {
-            /* Add a picturebox control that fills the client area (client area height = WM_SCREEN_HEIGHT) */
-            gui_control_t pic = {0};
-            pic.type = CTRL_PICTUREBOX;
-            pic.x = 0;
-            pic.y = 0;
-            pic.w = WM_SCREEN_WIDTH;
-            pic.h = WM_SCREEN_HEIGHT;
-            pic.fg = 0;
-            pic.bg = 7;
-            pic.id = ID_PICTURE;
-            pic.border = 0;
-
-            sys_win_add_control(fs, &pic);
-            sys_win_set_icon(fs, "C:/ICONS/VIEWER.ICO");
-
             ctrl_set_image(fs, ID_PICTURE, cur_path);
-
             sys_win_draw(fs);
-            sys_win_redraw_all();
-
-            *fs_form_ptr = fs;
+            sys_win_force_full_redraw();
+            state->fs_form = fs;
         } else {
             /* fallback to direct draw */
             sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT, COLOR_DARK_GRAY);
             sys_gfx_load_bmp_scaled(cur_path, 0, 0, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT);
             sys_mouse_invalidate();
             sys_gfx_swap();
-            *fs_form_ptr = NULL;
+            state->fs_form = NULL;
         }
 
     } else {
-        *fullscreen_ptr = 0;
-        if (fs_form_ptr && *fs_form_ptr) {
-            sys_win_destroy_form(*fs_form_ptr);
-            *fs_form_ptr = NULL;
+        state->fullscreen = 0;
+        if (state->fs_form) {
+            gix_app_destroy_window(state->fs_form);
+            state->fs_form = NULL;
         }
 
-        sys_win_restore_form(form);
-        sys_win_draw(form);
+        sys_win_restore_form(state->form);
+        sys_win_draw(state->form);
         sys_win_force_full_redraw();
         sys_mouse_invalidate();
         sys_gfx_swap();
@@ -177,23 +185,16 @@ static void navigate_dir(void *form, int delta, int fullscreen, void *fs_form) {
     }
 }
 
-__attribute__((section(".entry"), used))
-void _start(void) {
-    void *form = sys_win_create_form("Image Viewer", 240, 87, 400, 366);
-    if (!form) {
-        sys_exit();
-        return;
-    }
-
-    for (int i = 0; i < (int)(sizeof(Form1_controls) / sizeof(Form1_controls[0])); i++) {
-        sys_win_add_control(form, &Form1_controls[i]);
-    }
-
+static void imgview_init(void *form, void *userdata) {
+    imgview_state_t *state = userdata;
+    state->form = form;
+    state->fullscreen = 0;
+    state->fs_form = NULL;
+    
     ctrl_set_image(form, ID_FULLSCREEN, "C:/ICONS/VIEWER.ICO");
     ctrl_set_image(form, ID_PREV, "C:/ICONS/ARL.ICO");
     ctrl_set_image(form, ID_NEXT, "C:/ICONS/ARR.ICO");
 
-    sys_win_set_icon(form, "C:/ICONS/VIEWER.ICO");
     update_layout(form);
 
     /* Load image from launch arguments if provided */
@@ -201,95 +202,101 @@ void _start(void) {
     if (sys_getargs(args, sizeof(args)) && args[0]) {
         ctrl_set_image(form, ID_PICTURE, args);
     }
+}
 
-    sys_win_draw(form);
-    sys_win_force_full_redraw();
+static void imgview_resize(void *form, void *userdata) {
+    (void)userdata;
+    update_layout(form);
+}
 
-    int running = 1;
-    int fullscreen = 0;
-    void *fs_form = NULL;
+static int imgview_event(void *form, int ev, void *userdata) {
+    imgview_state_t *state = userdata;
 
-    while (running) {
-        int ev = sys_win_pump_events(form);
-
-        if (fs_form) {
-            int ev_fs = sys_win_pump_events(fs_form);
-            if (ev_fs == -3) {
-                const char *cur = fs_form ? ctrl_get_text(fs_form, ID_PICTURE) : ctrl_get_text(form, ID_PICTURE);
-                toggle_fullscreen(form, &fullscreen, cur, &fs_form);
-            }
-        }
-        if (ev == -3) {
-            running = 0;
-            continue;
-        }
-        if (ev == -4) {
-            /* Window was resized */
-            update_layout(form);
-            sys_win_draw(form);
-            sys_win_force_full_redraw();
-        }
-        if (ev == -1 || ev == -2) {
-            sys_win_draw(form);
-            sys_win_force_full_redraw();
-        }
-
-        if (ev > 0) {
-            if (ev == ID_PICTURE) {
-                char newpath[256];
-                const char *cur = ctrl_get_text(form, ID_PICTURE);
-                if (gui_show_path_dialog("Open", cur, newpath, sizeof(newpath))) {
-                    ctrl_set_image(form, ID_PICTURE, newpath);
-                    sys_win_draw(form);
-                }
-            } else if (ev == ID_NEXT || ev == ID_PREV) {
-                navigate_dir(form, (ev == ID_NEXT) ? 1 : -1, fullscreen, fs_form);
-            } else if (ev == ID_FULLSCREEN) {
-                const char *cur = form ? ctrl_get_text(form, ID_PICTURE) : (fs_form ? ctrl_get_text(fs_form, ID_PICTURE) : "");
-                toggle_fullscreen(form, &fullscreen, cur, &fs_form);
-            }
-        }
-
-    /* Arrow-key navigation and fullscreen control: left = previous, right = next, Enter toggles, Esc exits */
-        {
-            int k = 0;
-            /* Only read/consume keys when our window is focused (nonblocking) */
-            if (fullscreen && fs_form) {
-                if (sys_win_is_focused(fs_form)) {
-                    k = sys_get_key_nonblock();
-                }
-            } else {
-                if (sys_win_is_focused(form)) {
-                    k = sys_get_key_nonblock();
-                }
-            }
-
-            if (k == KEY_LEFT) {
-                navigate_dir(form, -1, fullscreen, fs_form);
-            } else if (k == KEY_RIGHT) {
-                navigate_dir(form, 1, fullscreen, fs_form);
-            } else if (k == '\n' || k == '\r') {
-                const char *cur = form ? ctrl_get_text(form, ID_PICTURE) : (fs_form ? ctrl_get_text(fs_form, ID_PICTURE) : "");
-                toggle_fullscreen(form, &fullscreen, cur, &fs_form);
-            } else if (k == KEY_ESC) {
-                if (fullscreen) {
-                    const char *cur = form ? ctrl_get_text(form, ID_PICTURE) : (fs_form ? ctrl_get_text(fs_form, ID_PICTURE) : "");
-                    toggle_fullscreen(form, &fullscreen, cur, &fs_form);
-                }
-            }
-        }
-        sys_yield();
+    if (ev == -3 && form == state->fs_form) {
+        const char *cur = ctrl_get_text(state->fs_form, ID_PICTURE);
+        toggle_fullscreen(state, cur);
+        return 0;
     }
 
-    if (fs_form) {
-        sys_win_destroy_form(fs_form);
-        fs_form = NULL;
+    if (form != state->form || ev <= 0) return 0;
+
+    if (ev == ID_PICTURE) {
+        char newpath[256];
+        const char *cur = ctrl_get_text(state->form, ID_PICTURE);
+        if (gui_show_path_dialog("Open", cur, newpath, sizeof(newpath))) {
+            ctrl_set_image(state->form, ID_PICTURE, newpath);
+            sys_win_draw(state->form);
+        }
+    } else if (ev == ID_NEXT || ev == ID_PREV) {
+        navigate_dir(state->form, (ev == ID_NEXT) ? 1 : -1, state->fullscreen, state->fs_form);
+    } else if (ev == ID_FULLSCREEN) {
+        const char *cur = ctrl_get_text(state->form, ID_PICTURE);
+        toggle_fullscreen(state, cur);
     }
 
-    if (form) {
-        sys_win_destroy_form(form);
-        form = NULL;
+    return 0;
+}
+
+static void imgview_tick(void *form, void *userdata) {
+    imgview_state_t *state = userdata;
+    int k = 0;
+    (void)form;
+
+    if (state->fullscreen && state->fs_form) {
+        if (sys_win_is_focused(state->fs_form)) {
+            k = sys_get_key_nonblock();
+        }
+    } else if (state->form && sys_win_is_focused(state->form)) {
+        k = sys_get_key_nonblock();
     }
 
-    sys_exit();
+    if (k == KEY_LEFT) {
+        navigate_dir(state->form, -1, state->fullscreen, state->fs_form);
+    } else if (k == KEY_RIGHT) {
+        navigate_dir(state->form, 1, state->fullscreen, state->fs_form);
+    } else if (k == '\n' || k == '\r') {
+        const char *cur = state->form ? ctrl_get_text(state->form, ID_PICTURE) :
+                          (state->fs_form ? ctrl_get_text(state->fs_form, ID_PICTURE) : "");
+        toggle_fullscreen(state, cur);
+    } else if (k == KEY_ESC) {
+        if (state->fullscreen) {
+            const char *cur = state->form ? ctrl_get_text(state->form, ID_PICTURE) :
+                              (state->fs_form ? ctrl_get_text(state->fs_form, ID_PICTURE) : "");
+            toggle_fullscreen(state, cur);
+        }
+    }
+}
+
+static void imgview_cleanup(void *form, void *userdata) {
+    imgview_state_t *state = userdata;
+    (void)form;
+
+    if (state->fs_form) {
+        gix_app_destroy_window(state->fs_form);
+        state->fs_form = NULL;
+    }
+}
+
+__attribute__((section(".entry"), used))
+void _start(void) {
+    static imgview_state_t state;
+    static gix_app_desc_t app = {
+        .title = "Image Viewer",
+        .icon_path = "C:/ICONS/VIEWER.ICO",
+        .x = 240,
+        .y = 87,
+        .w = 400,
+        .h = 366,
+        .resizable = 1,
+        .controls = Form1_controls,
+        .control_count = sizeof(Form1_controls) / sizeof(Form1_controls[0]),
+        .on_init = imgview_init,
+        .on_resize = imgview_resize,
+        .on_event = imgview_event,
+        .on_tick = imgview_tick,
+        .on_cleanup = imgview_cleanup,
+        .userdata = &state
+    };
+
+    gix_app_run(&app);
 }

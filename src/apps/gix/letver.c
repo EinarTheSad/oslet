@@ -1,6 +1,10 @@
 #include "../../syscall.h"
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
+#include "../../lib/app.h"
+#include "../../lib/gix_app.h"
+
+OSLET_APP("System Information", OSLET_KIND_GIX, "C:/ICONS/METALET.ICO", OSLET_APP_FLAG_NONE);
 
 static void *Form1 = 0;
 
@@ -26,21 +30,12 @@ static int Form1_handle_event(void *form, int event, void *userdata) {
     return 0;
 }
 
-__attribute__((section(".entry"), used))
-void _start(void) {
-    Form1 = sys_win_create_form("About osLET", 222, 122, 300, 175);
-    if (!Form1) {
-        sys_exit();
-        return;
-    }
-    sys_win_set_icon(Form1, "C:/ICONS/METALET.ICO");
-    sys_win_set_resizable(Form1, 0);
-    
-    for (int i = 0; i < 5; i++) {
-        sys_win_add_control(Form1, &Form1_controls[i]);
-    }
+static void Form1_init(void *form, void *userdata) {
+    (void)userdata;
+    Form1 = form;
+
     /* Fill dynamic labels: kernel version and memory resources percentage */
-    sys_meminfo_t meminfo;
+    sys_meminfo_t meminfo = {0};
     sys_get_meminfo(&meminfo);
 
     int percent_free = 0;
@@ -55,11 +50,23 @@ void _start(void) {
     char buf2[64];
     snprintf(buf2, sizeof(buf2), "Memory: %d%% free", percent_free);
     ctrl_set_text(Form1, 5, buf2);
+}
 
-    sys_win_draw(Form1);
+__attribute__((section(".entry"), used))
+void _start(void) {
+    static gix_app_desc_t app = {
+        .title = "About osLET",
+        .icon_path = "C:/ICONS/METALET.ICO",
+        .x = 222,
+        .y = 122,
+        .w = 300,
+        .h = 175,
+        .resizable = 0,
+        .controls = Form1_controls,
+        .control_count = 5,
+        .on_init = Form1_init,
+        .on_event = Form1_handle_event
+    };
 
-    sys_win_run_event_loop(Form1, Form1_handle_event, NULL);
-
-    sys_win_destroy_form(Form1);
-    sys_exit();
+    gix_app_run(&app);
 }

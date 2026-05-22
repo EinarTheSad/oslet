@@ -2,7 +2,10 @@
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
 #include "../../lib/elf.h"
+#include "../../lib/app.h"
 #include "../../drivers/keyboard.h"
+
+OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG_NONE);
 
 #define MENU_FILE_NEW_FOLDER 101
 #define MENU_FILE_NEW_FILE   102
@@ -579,7 +582,13 @@ static void refresh_display(void) {
                 const char *dot = strrchr(state.file_items[idx].name, '.');
                 if (dot) {
                     if (strcasecmp(dot, ".elf") == 0) {
-                        ctrl_set_image(state.form, ctrl_id, "C:/ICONS/EXE.ICO");
+                        oslet_app_info_t info;
+                        oslet_app_info_init(&info);
+                        if (oslet_app_read_info(state.file_items[idx].full_path, &info) == 0 && info.icon_path[0]) {
+                            ctrl_set_image(state.form, ctrl_id, info.icon_path);
+                        } else {
+                            ctrl_set_image(state.form, ctrl_id, "C:/ICONS/EXE.ICO");
+                        }
                     } else if (strcasecmp(dot, ".txt") == 0 || (strcasecmp(dot, ".ini") == 0)) {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/TEXT.ICO");
                     } else if (strcasecmp(dot, ".bmp") == 0 || (strcasecmp(dot, ".ico") == 0)) {
@@ -651,17 +660,23 @@ static void open_selected_file(int idx) {
     if (!dot) return;
 
     if (strcasecmp(dot, ".elf") == 0) {
-        /* decide whether the ELF wants a text session */
-        if (elf_is_textmode(state.file_items[idx].full_path) == 0) {
-            /* launch in a terminal */
-            sys_spawn_async_args("C:/OSLET/GIX/TERMINAL.ELF", state.file_items[idx].full_path);
-        } else {
-            sys_spawn_async(state.file_items[idx].full_path);
-        }
+        oslet_launch_program(state.file_items[idx].full_path,
+                             "",
+                             OSLET_LAUNCH_FROM_GIX,
+                             NULL,
+                             NULL);
     } else if (strcasecmp(dot, ".txt") == 0 || strcasecmp(dot, ".ini") == 0) {
-        sys_spawn_async_args("C:/OSLET/START/NOTEPAD.ELF", state.file_items[idx].full_path);
+        oslet_launch_program("C:/OSLET/START/NOTEPAD.ELF",
+                             state.file_items[idx].full_path,
+                             OSLET_LAUNCH_FROM_GIX,
+                             NULL,
+                             NULL);
     } else if (strcasecmp(dot, ".bmp") == 0 || strcasecmp(dot, ".ico") == 0) {
-        sys_spawn_async_args("C:/OSLET/START/IMGVIEW.ELF", state.file_items[idx].full_path);
+        oslet_launch_program("C:/OSLET/START/IMGVIEW.ELF",
+                             state.file_items[idx].full_path,
+                             OSLET_LAUNCH_FROM_GIX,
+                             NULL,
+                             NULL);
     }
 }
 

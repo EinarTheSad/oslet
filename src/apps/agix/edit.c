@@ -1,8 +1,11 @@
 #include "../../syscall.h"
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
+#include "../../lib/app.h"
 #include "../../drivers/keyboard.h"
 #include <stdint.h>
+
+OSLET_APP("Edit", OSLET_KIND_AGIX, "C:/ICONS/TEXT.ICO", OSLET_APP_FLAG_NONE);
 
 #define MAX_LINES 200
 #define MAX_LINE_LEN 79

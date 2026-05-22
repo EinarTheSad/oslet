@@ -3,6 +3,7 @@
 #include "../syscall.h"
 #include "../lib/string.h"
 #include "../lib/elf.h"
+#include "../lib/app.h"
 
 #define CTRL_APP_BASE 100
 #define CTRL_BACK_BUTTON 99
@@ -274,9 +275,19 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
             char filename[32];
             extract_filename(filename, path_part, sizeof(filename));
 
-            /* Build display name (remove extension, apply title case) */
+            oslet_app_info_t app_info;
+            int have_app_info = 0;
+            oslet_app_info_init(&app_info);
+            if (!is_grp_file(filename) && oslet_app_read_info(path_part, &app_info) == 0) {
+                have_app_info = 1;
+            }
+
+            /* Build display name (metadata, explicit GRP name, or filename) */
             if (name_part[0]) {
                 strncpy(app->name, name_part, sizeof(app->name) - 1);
+                app->name[sizeof(app->name) - 1] = '\0';
+            } else if (have_app_info && app_info.name[0]) {
+                strncpy(app->name, app_info.name, sizeof(app->name) - 1);
                 app->name[sizeof(app->name) - 1] = '\0';
             } else {
                 char raw_name[32];
@@ -302,6 +313,8 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
                 app->type = ENTRY_ELF;
                 if (icon_part[0])
                     strcpy(app->icon_path, icon_part);
+                else if (have_app_info && app_info.icon_path[0])
+                    strcpy(app->icon_path, app_info.icon_path);
                 else
                     strcpy(app->icon_path, "C:/ICONS/EXE.ICO");
             }
@@ -556,37 +569,12 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
                 /* Launch internal module (propagate icon override) */
                 progman_launch_with_icon(app->path, app->icon_path);
             } else {
-                /* Launch ELF - use terminal if the executable is a text-mode program. */
-                int child_tid;
-                if (elf_is_textmode(app->path) == 0) {
-                    /* text-mode program: run inside a terminal window */
-                    char term_args[256];
-                    strncpy(term_args, app->path, sizeof(term_args) - 1);
-                    term_args[sizeof(term_args) - 1] = '\0';
-                    child_tid = sys_spawn_async_args("C:/OSLET/GIX/TERMINAL.ELF", term_args);
-                    if (child_tid <= 0) {
-                        /* If terminal spawn failed for some reason, try launching
-                           the program directly as a last resort */
-                        child_tid = sys_spawn_async(app->path);
-                    }
-                } else {
-                    /* graphical program can be executed directly */
-                    child_tid = sys_spawn_async(app->path);
-                    if (child_tid <= 0) {
-                        /* if direct launch failed but app looks like textmode,
-                           retry via terminal */
-                        if (elf_is_textmode(app->path) == 0) {
-                            char term_args[256];
-                            strncpy(term_args, app->path, sizeof(term_args) - 1);
-                            term_args[sizeof(term_args) - 1] = '\0';
-                            child_tid = sys_spawn_async_args("C:/OSLET/GIX/TERMINAL.ELF", term_args);
-                        }
-                    }
-                }
-                if (child_tid > 0) {
-                    /* Ask kernel to set default icon for the newly spawned task */
-                    sys_proc_set_icon(child_tid, app->icon_path);
-                }
+                int child_tid = 0;
+                oslet_launch_program(app->path,
+                                     "",
+                                     OSLET_LAUNCH_FROM_GIX,
+                                     app->icon_path,
+                                     &child_tid);
             }
         }
         return PROG_EVENT_HANDLED;

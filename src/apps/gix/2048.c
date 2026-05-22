@@ -1,7 +1,10 @@
 #include "../../syscall.h"
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
+#include "../../lib/app.h"
 #include "../../drivers/keyboard.h"
+
+OSLET_APP("2048", OSLET_KIND_GIX, "C:/ICONS/2048.ICO", OSLET_APP_FLAG_NONE);
 
 static void *Form1 = 0;
 static int board[4][4] = {0};

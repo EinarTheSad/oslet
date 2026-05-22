@@ -3,8 +3,11 @@
 #include "../../lib/string.h"
 #include "../../lib/stdlib.h"
 #include "../../lib/ini.h"
+#include "../../lib/app.h"
 #include "../../drivers/keyboard.h"
 #include "../../lib/elf.h"  /* needed for mode detection */
+
+OSLET_APP("Terminal", OSLET_KIND_GIX, "C:/ICONS/TERMINAL.ICO", OSLET_APP_FLAG_NONE);
 
 #define TERM_COLS  80
 #define TERM_ROWS  25

@@ -1,6 +1,10 @@
 #include "../../syscall.h"
 #include "../../lib/string.h"
 #include "../../lib/pathdlg.h"
+#include "../../lib/app.h"
+#include "../../lib/gix_app.h"
+
+OSLET_APP("Notepad", OSLET_KIND_GIX, "C:/ICONS/TEXT.ICO", OSLET_APP_FLAG_NONE);
 
 #define ID_TEXT         1
 
@@ -356,68 +360,78 @@ static int handle_events(void *form, int event, void *userdata) {
         }
     }
 
-    if (event == -4) {
-        update_layout(state->form);
-        sys_win_draw(state->form);
-        sys_win_force_full_redraw();
-    }
-
     return 0;
 }
 
-static void setup_menus(void *form) {
-    sys_win_menubar_enable(form);
+static const gix_app_menu_item_t file_items[] = {
+    { "New  Ctrl+N", MENU_FILE_NEW },
+    { "Open", MENU_FILE_OPEN },
+    { "Save  Ctrl+S", MENU_FILE_SAVE },
+    { "Save As...", MENU_FILE_SAVE_AS },
+    { "Exit", MENU_FILE_EXIT }
+};
 
-    int menu_file = sys_win_menubar_add_menu(form, "File");
-    int menu_edit = sys_win_menubar_add_menu(form, "Edit");
-    int menu_help = sys_win_menubar_add_menu(form, "Help");
+static const gix_app_menu_item_t edit_items[] = {
+    { "Cut  Ctrl+X", MENU_EDIT_CUT },
+    { "Copy  Ctrl+C", MENU_EDIT_COPY },
+    { "Paste  Ctrl+V", MENU_EDIT_PASTE },
+    { "Select All  Ctrl+A", MENU_EDIT_SELECT_ALL }
+};
 
-    sys_win_menubar_add_item(form, menu_file, "New  Ctrl+N", MENU_FILE_NEW);
-    sys_win_menubar_add_item(form, menu_file, "Open", MENU_FILE_OPEN);
-    sys_win_menubar_add_item(form, menu_file, "Save  Ctrl+S", MENU_FILE_SAVE);
-    sys_win_menubar_add_item(form, menu_file, "Save As...", MENU_FILE_SAVE_AS);
-    sys_win_menubar_add_item(form, menu_file, "Exit", MENU_FILE_EXIT);
+static const gix_app_menu_item_t help_items[] = {
+    { "About", MENU_HELP_ABOUT }
+};
 
-    sys_win_menubar_add_item(form, menu_edit, "Cut  Ctrl+X", MENU_EDIT_CUT);
-    sys_win_menubar_add_item(form, menu_edit, "Copy  Ctrl+C", MENU_EDIT_COPY);
-    sys_win_menubar_add_item(form, menu_edit, "Paste  Ctrl+V", MENU_EDIT_PASTE);
-    sys_win_menubar_add_item(form, menu_edit, "Select All  Ctrl+A", MENU_EDIT_SELECT_ALL);
+static const gix_app_menu_t menus[] = {
+    { "File", file_items, sizeof(file_items) / sizeof(file_items[0]) },
+    { "Edit", edit_items, sizeof(edit_items) / sizeof(edit_items[0]) },
+    { "Help", help_items, sizeof(help_items) / sizeof(help_items[0]) }
+};
 
-    sys_win_menubar_add_item(form, menu_help, "About", MENU_HELP_ABOUT);
+static void notepad_init(void *form, void *userdata) {
+    notepad_state_t *state = userdata;
+    state->form = form;
+    state->current_file_path[0] = '\0';
+    state->clipboard[0] = '\0';
+
+    update_layout(state->form);
+
+    /* Load text from launch arguments if provided */
+    char args[256];
+    if (sys_getargs(args, sizeof(args)) && args[0]) {
+        if (load_text_file(state->form, ID_TEXT, args) == 0) {
+            set_current_file_path(state, args);
+            sys_win_draw(state->form);
+        }
+    }
+}
+
+static void notepad_resize(void *form, void *userdata) {
+    (void)form;
+    notepad_state_t *state = userdata;
+    update_layout(state->form);
 }
 
 __attribute__((section(".entry"), used))
 void _start(void) {
     static notepad_state_t state;
-    state.form = sys_win_create_form("Notepad", NOTEPAD_X, NOTEPAD_Y, NOTEPAD_W, NOTEPAD_H);
-    state.current_file_path[0] = '\0';
-    state.clipboard[0] = '\0';
+    static gix_app_desc_t app = {
+        .title = "Notepad",
+        .icon_path = "C:/ICONS/TEXT.ICO",
+        .x = NOTEPAD_X,
+        .y = NOTEPAD_Y,
+        .w = NOTEPAD_W,
+        .h = NOTEPAD_H,
+        .resizable = 1,
+        .controls = Form1_controls,
+        .control_count = sizeof(Form1_controls) / sizeof(Form1_controls[0]),
+        .menus = menus,
+        .menu_count = sizeof(menus) / sizeof(menus[0]),
+        .on_init = notepad_init,
+        .on_resize = notepad_resize,
+        .on_event = handle_events,
+        .userdata = &state
+    };
 
-    if (!state.form) {
-        sys_exit();
-        return;
-    }
-
-    for (int i = 0; i < (int)(sizeof(Form1_controls) / sizeof(Form1_controls[0])); i++) {
-        sys_win_add_control(state.form, &Form1_controls[i]);
-    }
-
-    sys_win_set_icon(state.form, "C:/ICONS/TEXT.ICO");
-
-    setup_menus(state.form);
-
-    update_layout(state.form);
-    sys_win_draw(state.form);
-    sys_win_force_full_redraw();
-
-    /* Load text from launch arguments if provided */
-    char args[256];
-    if (sys_getargs(args, sizeof(args)) && args[0]) {
-        if (load_text_file(state.form, ID_TEXT, args) == 0) {
-            set_current_file_path(&state, args);
-            sys_win_draw(state.form);
-        }
-    }
-
-    sys_win_run_event_loop(state.form, handle_events, &state);
+    gix_app_run(&app);
 }

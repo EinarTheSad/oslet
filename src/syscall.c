@@ -32,6 +32,7 @@
 
 static char textbox_clipboard[TEXTBOX_MULTILINE_SIZE];
 static char shell_version_buf[64] = "";
+static int textmode_requested = 0;
 
 typedef struct {
     void *data;
@@ -1118,6 +1119,16 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
             }
 
             return 0;
+        }
+
+        case 0x07:
+            textmode_requested = 1;
+            return 0;
+
+        case 0x08: {
+            int pending = textmode_requested;
+            textmode_requested = 0;
+            return pending;
         }
 
         default:

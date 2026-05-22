@@ -7,7 +7,10 @@
 #include "../lib/string.h"
 #include "../lib/ini.h"
 #include "../lib/fonts.h"
+#include "../lib/app.h"
 #include "progman.h"
+
+OSLET_APP("Desktop", OSLET_KIND_DESKTOP, "C:/ICONS/OSLET.ICO", OSLET_APP_FLAG_NONE);
 #define TASKBAR_Y (WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT)
 #define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
 #define MAX_TASKBAR_BUTTONS 16
@@ -578,6 +581,11 @@ void _start(void) {
     int gk = 0;
 
     while (!exit_requested) {
+        if (sys_take_textmode_request()) {
+            progman_launch("Text Mode");
+            continue;
+        }
+
         clock_update();
         sys_get_mouse_state(&mx, &my, &mb);
 
