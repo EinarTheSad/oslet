@@ -2,6 +2,9 @@
 #include "../lib/stdio.h"
 #include "../lib/string.h"
 #include "../lib/elf.h"
+#include "../lib/app.h"
+
+OSLET_APP("Shell", OSLET_KIND_AGIX, "C:/ICONS/AGIX.ICO", OSLET_APP_FLAG_NONE);
 
 #define COLOR_PROMPT_BG    COLOR_BLACK
 #define COLOR_PROMPT_FG    COLOR_LIGHT_GREEN
@@ -170,6 +173,7 @@ static const Command commands[] = {
 };
 
 static char current_path[FAT32_MAX_PATH];
+static int return_to_desktop_on_exit = 0;
 static int parse_args(char *line, char *argv[], int max_args);
 static int is_desktop_running(void);
 
@@ -201,7 +205,14 @@ static void print_prompt(void) {
 
 __attribute__((section(".entry"), used))
 void _start(void) {
+    char start_args[256] = "";
+
     sys_shell_set(shell_version);
+    if (sys_getargs(start_args, sizeof(start_args)) &&
+        (!strcmp(start_args, "/d") || !strcmp(start_args, "/D"))) {
+        return_to_desktop_on_exit = 1;
+    }
+
     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
     char line[128];
     char *argv[MAX_ARGS];
@@ -328,10 +339,13 @@ void _start(void) {
                     args[pos] = '\0';
                 }
                 
-                /* warn if graphical program would run without desktop */
-                if (elf_is_textmode(bin_path) == 1 && !is_desktop_running()) {
-                    printf("This program cannot be run in text mode\n");
-                } else if (sys_spawn_args(bin_path, args) != 0) {
+                oslet_launch_context_t launch_context =
+                    is_desktop_running() ? OSLET_LAUNCH_FROM_TERMINAL : OSLET_LAUNCH_FROM_AGIX;
+                int launch_result = oslet_launch_program_wait(bin_path, args, launch_context, NULL);
+
+                if (launch_result == OSLET_LAUNCH_WRONG_MODE) {
+                    printf("This program cannot be run in AGIX mode\n");
+                } else if (launch_result != OSLET_LAUNCH_OK) {
                     sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
                     printf("Could not execute %s\n", bin_path);
                     sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
@@ -481,12 +495,23 @@ static void cmd_exit(int argc, char *argv[]) {
     printf("This action will result in exiting the shell program.\nMake sure you know what you are doing! Proceed? (Y/N) ");
     char conf[80];
     sys_readline(conf, sizeof(conf));
-    if (!strcmp(conf,"Y") || !strcmp(conf,"y")) sys_exit();
+    if (!strcmp(conf,"Y") || !strcmp(conf,"y")) {
+        if (return_to_desktop_on_exit) {
+            int tid = sys_spawn_async("C:/DESKTOP.ELF");
+            if (tid <= 0) {
+                sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
+                printf("\nCould not return to Desktop.\n");
+                sys_setcolor(COLOR_NORMAL_BG, COLOR_NORMAL_FG);
+                return;
+            }
+        }
+        sys_exit();
+    }
 }
 
 static void cmd_mem(int argc, char *argv[]) {
     (void)argc; (void)argv;
-    sys_meminfo_t meminfo;
+    sys_meminfo_t meminfo = {0};
     sys_get_meminfo(&meminfo);
     double total = (double)meminfo.total_kb;
     double free = (double)meminfo.free_kb;

@@ -1,6 +1,10 @@
 #include "../../syscall.h"
 #include "../../lib/stdio.h"
 #include "../../lib/string.h"
+#include "../../lib/app.h"
+#include "../../lib/gix_app.h"
+
+OSLET_APP("Calculator", OSLET_KIND_GIX, "C:/ICONS/CALC.ICO", OSLET_APP_FLAG_NONE);
 
 /* Calculator state */
 static double first_num = 0.0;
@@ -276,7 +280,8 @@ static int sqrt(void) {
 }
 
 static int handle_event(void *f, int event, void *userdata) {
-    (void)f; (void)userdata;
+    (void)userdata;
+    form = f;
     
     switch (event) {
         /* Digit buttons */
@@ -315,22 +320,18 @@ static int handle_event(void *f, int event, void *userdata) {
 
 __attribute__((section(".entry"), used))
 void _start(void) {
-    form = sys_win_create_form("Calculator", 330, 122, 159, 234);
-    if (!form) {
-        sys_exit();
-        return;
-    }
-    sys_win_set_icon(form, "C:/ICONS/CALC.ICO");
-    sys_win_set_resizable(form, 0);  /* Calculator should not be resizable */
+    static gix_app_desc_t app = {
+        .title = "Calculator",
+        .icon_path = "C:/ICONS/CALC.ICO",
+        .x = 330,
+        .y = 122,
+        .w = 159,
+        .h = 234,
+        .resizable = 0,
+        .controls = calc_controls,
+        .control_count = NUM_CONTROLS,
+        .on_event = handle_event
+    };
 
-    for (int i = 0; i < (int)NUM_CONTROLS; i++) {
-        sys_win_add_control(form, &calc_controls[i]);
-    }
-    sys_win_draw(form);
-    sys_win_redraw_all();
-
-    sys_win_run_event_loop(form, handle_event, NULL);
-
-    sys_win_destroy_form(form);
-    sys_exit();
+    gix_app_run(&app);
 }

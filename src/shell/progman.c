@@ -227,13 +227,12 @@ prog_instance_t* progman_get_instance(int index) {
 }
 
 int progman_kill_tasks(void) {
-    /* Terminate any running ELF tasks (except the shell and the process calling the function) */
+    /* Terminate any running ELF tasks except the process calling the function. */
     sys_taskinfo_t tasks[32];
     int tcount = sys_get_tasks(tasks, 32);
     uint32_t mypid = sys_getpid();
     for (int i = 0; i < tcount; i++) {
         if (tasks[i].tid == mypid) continue;
-        if (strcasecmp(tasks[i].name, "SHELL.ELF") == 0) continue;
         if (str_ends_with_icase(tasks[i].name, ".ELF")) {
             sys_kill(tasks[i].tid);
         }

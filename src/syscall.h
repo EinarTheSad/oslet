@@ -73,6 +73,8 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_INFO_SHELL      0x0804
 #define SYS_INFO_SET_SHELL  0x0805
 #define SYS_INFO_CPU        0x0806  /* Returns vendor, model and MHz */
+#define SYS_INFO_REQUEST_TEXTMODE 0x0807
+#define SYS_INFO_TAKE_TEXTMODE_REQUEST 0x0808
 
 /* AH = 09h - Graphics */
 #define SYS_GFX_ENTER       0x0900
@@ -622,7 +624,7 @@ static inline int sys_recv_msg(message_t *msg) {
 
 static inline int sys_get_meminfo(sys_meminfo_t *info) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_MEM), "b"(info));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_MEM), "b"(info) : "memory");
     return ret;
 }
 
@@ -634,13 +636,23 @@ static inline int sys_get_cpuinfo(sys_cpuinfo_t *info) {
 
 static inline int sys_get_heapinfo(sys_heapinfo_t *info) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_HEAP), "b"(info));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_HEAP), "b"(info) : "memory");
     return ret;
 }
 
 static inline int sys_get_tasks(sys_taskinfo_t *tasks, int max) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_TASKS), "b"(tasks), "c"(max));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_TASKS), "b"(tasks), "c"(max) : "memory");
+    return ret;
+}
+
+static inline void sys_request_textmode(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_INFO_REQUEST_TEXTMODE) : "memory");
+}
+
+static inline int sys_take_textmode_request(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_TAKE_TEXTMODE_REQUEST) : "memory");
     return ret;
 }
 
