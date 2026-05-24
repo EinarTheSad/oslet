@@ -1740,6 +1740,107 @@ static int textbox_copy_selection(gui_control_t *ctrl) {
     return copy_len > 0;
 }
 
+static int treeview_item_visible_sys(gui_control_t *ctrl, int idx) {
+    if (!ctrl || !ctrl->treeview.items || idx < 0 || idx >= ctrl->treeview.item_count)
+        return 0;
+
+    int level = ctrl->treeview.items[idx].level;
+    for (int i = idx - 1; i >= 0 && level > 0; i--) {
+        sys_tree_item_t *item = &ctrl->treeview.items[i];
+        if (item->level < level) {
+            if (!(item->flags & TREE_ITEM_EXPANDED))
+                return 0;
+            level = item->level;
+        }
+    }
+    return 1;
+}
+
+static int treeview_visible_count_sys(gui_control_t *ctrl) {
+    int count = 0;
+    if (!ctrl || !ctrl->treeview.items) return 0;
+    for (int i = 0; i < ctrl->treeview.item_count; i++) {
+        if (treeview_item_visible_sys(ctrl, i))
+            count++;
+    }
+    return count;
+}
+
+static int treeview_visible_to_item_sys(gui_control_t *ctrl, int visible_index) {
+    int visible = 0;
+    if (!ctrl || !ctrl->treeview.items || visible_index < 0) return -1;
+    for (int i = 0; i < ctrl->treeview.item_count; i++) {
+        if (!treeview_item_visible_sys(ctrl, i))
+            continue;
+        if (visible == visible_index)
+            return i;
+        visible++;
+    }
+    return -1;
+}
+
+static int treeview_max_item_width_sys(gui_control_t *ctrl) {
+    extern bmf_font_t font_n;
+    int max_w = 1;
+    if (!ctrl || !ctrl->treeview.items) return max_w;
+
+    for (int i = 0; i < ctrl->treeview.item_count; i++) {
+        if (!treeview_item_visible_sys(ctrl, i))
+            continue;
+        int text_w = font_n.data ? bmf_measure_text(&font_n, ctrl->font_size > 0 ? ctrl->font_size : 12,
+                                                    ctrl->treeview.items[i].text) : 64;
+        int row_w = 4 + (ctrl->treeview.items[i].level * 14) + 12 + 16 + 18 + text_w + 4;
+        if (row_w > max_w)
+            max_w = row_w;
+    }
+    return max_w;
+}
+
+static void treeview_layout_sys(gui_control_t *ctrl, int *out_content_w, int *out_row_area_h,
+                                int *out_visible_rows, int *out_need_v, int *out_need_h,
+                                int *out_max_v, int *out_max_h) {
+    int row_h = ctrl->treeview.row_height ? ctrl->treeview.row_height : 18;
+    int inner_w = ctrl->w > 4 ? ctrl->w - 4 : ctrl->w;
+    int inner_h = ctrl->h > 4 ? ctrl->h - 4 : ctrl->h;
+    int total_visible = treeview_visible_count_sys(ctrl);
+    int content_needed = treeview_max_item_width_sys(ctrl);
+    int need_v = 0;
+    int need_h = 0;
+    int content_w = inner_w;
+    int row_area_h = inner_h;
+    int visible_rows = 1;
+    int sb = 18;
+
+    for (int pass = 0; pass < 3; pass++) {
+        content_w = inner_w - (need_v ? sb : 0);
+        row_area_h = inner_h - (need_h ? sb : 0);
+        if (content_w < 1) content_w = 1;
+        if (row_area_h < row_h) row_area_h = row_h;
+        visible_rows = row_h > 0 ? row_area_h / row_h : 1;
+        if (visible_rows < 1) visible_rows = 1;
+        need_h = content_needed > content_w;
+        need_v = total_visible > visible_rows;
+    }
+
+    int max_v = total_visible > visible_rows ? total_visible - visible_rows : 0;
+    int max_h = content_needed > content_w ? content_needed - content_w : 0;
+
+    if (out_content_w) *out_content_w = content_w;
+    if (out_row_area_h) *out_row_area_h = row_area_h;
+    if (out_visible_rows) *out_visible_rows = visible_rows;
+    if (out_need_v) *out_need_v = need_v;
+    if (out_need_h) *out_need_h = need_h;
+    if (out_max_v) *out_max_v = max_v;
+    if (out_max_h) *out_max_h = max_h;
+    ctrl->treeview.content_width = content_needed;
+}
+
+static int treeview_max_scroll_sys(gui_control_t *ctrl) {
+    int max_v = 0;
+    treeview_layout_sys(ctrl, NULL, NULL, NULL, NULL, NULL, &max_v, NULL);
+    return max_v;
+}
+
 static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
     form->press_control_id = -1;
     int old_focus = form->focused_control_id;
@@ -1895,7 +1996,8 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 ctrl->type != CTRL_ICON &&
                 ctrl->type != CTRL_DROPDOWN &&
                 ctrl->type != CTRL_PICTUREBOX &&
-                ctrl->type != CTRL_SCROLLBAR) {
+                ctrl->type != CTRL_SCROLLBAR &&
+                ctrl->type != CTRL_TREEVIEW) {
                 continue;
             }
 
@@ -2194,6 +2296,145 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                             ctrl->scrollbar.hovered_item = 1;
                             ctrl->scrollbar.pressed = 1;
                             ctrl->scrollbar.scroll_offset = thumb_size / 2;
+                            return 1;
+                        }
+                    }
+                }
+                else if (ctrl->type == CTRL_TREEVIEW) {
+                    ctrl->treeview.last_action = TREE_ACTION_NONE;
+                    ctrl->treeview.action_index = -1;
+
+                    int row_h = ctrl->treeview.row_height ? ctrl->treeview.row_height : 18;
+                    int inner_x = abs_x + 2;
+                    int inner_y = abs_y + 2;
+                    int content_w = 1;
+                    int row_area_h = 1;
+                    int visible_rows = 1;
+                    int max_scroll = 0;
+                    int max_hscroll = 0;
+                    int needs_scrollbar = 0;
+                    int needs_hscrollbar = 0;
+                    int sb_w = 18;
+                    treeview_layout_sys(ctrl, &content_w, &row_area_h, &visible_rows,
+                                        &needs_scrollbar, &needs_hscrollbar,
+                                        &max_scroll, &max_hscroll);
+
+                    if (ctrl->treeview.scroll_offset > max_scroll)
+                        ctrl->treeview.scroll_offset = max_scroll;
+                    if (ctrl->treeview.hscroll_offset > max_hscroll)
+                        ctrl->treeview.hscroll_offset = max_hscroll;
+
+                    if (needs_scrollbar && row_area_h > sb_w * 2 &&
+                        mx >= abs_x + ctrl->w - sb_w - 1 && mx < abs_x + ctrl->w - 1 &&
+                        my >= inner_y && my < inner_y + row_area_h) {
+                        int arrow_size = sb_w;
+                        int track_len = row_area_h - 2 * arrow_size;
+                        int thumb_size = 20;
+                        if (thumb_size > track_len) thumb_size = track_len;
+                        if (thumb_size < 1) thumb_size = 1;
+                        int thumb_pos = 0;
+                        if (max_scroll > 0 && track_len > thumb_size)
+                            thumb_pos = ((track_len - thumb_size) * ctrl->treeview.scroll_offset) / max_scroll;
+
+                        int rel_y = my - inner_y;
+                        if (rel_y < arrow_size) {
+                            ctrl->treeview.scrollbar_hovered_item = 0;
+                            ctrl->treeview.scrollbar_pressed = 1;
+                            if (ctrl->treeview.scroll_offset > 0)
+                                ctrl->treeview.scroll_offset--;
+                            return 1;
+                        } else if (rel_y >= row_area_h - arrow_size) {
+                            ctrl->treeview.scrollbar_hovered_item = 2;
+                            ctrl->treeview.scrollbar_pressed = 1;
+                            if (ctrl->treeview.scroll_offset < max_scroll)
+                                ctrl->treeview.scroll_offset++;
+                            return 1;
+                        } else {
+                            int thumb_y = arrow_size + thumb_pos;
+                            if (rel_y >= thumb_y && rel_y < thumb_y + thumb_size) {
+                                ctrl->treeview.scrollbar_hovered_item = 1;
+                                ctrl->treeview.scrollbar_pressed = 1;
+                                ctrl->treeview.scrollbar_drag_offset = rel_y - thumb_y;
+                                return 1;
+                            }
+
+                            int rel_track = rel_y - arrow_size - thumb_size / 2;
+                            if (rel_track < 0) rel_track = 0;
+                            if (rel_track > track_len - thumb_size) rel_track = track_len - thumb_size;
+                            if (track_len > thumb_size && max_scroll > 0)
+                                ctrl->treeview.scroll_offset = (rel_track * max_scroll) / (track_len - thumb_size);
+                            ctrl->treeview.scrollbar_hovered_item = 1;
+                            ctrl->treeview.scrollbar_pressed = 1;
+                            ctrl->treeview.scrollbar_drag_offset = thumb_size / 2;
+                            return 1;
+                        }
+                    }
+
+                    if (needs_hscrollbar && content_w > sb_w * 2 &&
+                        mx >= inner_x && mx < inner_x + content_w &&
+                        my >= abs_y + ctrl->h - sb_w - 1 && my < abs_y + ctrl->h - 1) {
+                        int arrow_size = sb_w;
+                        int track_len = content_w - 2 * arrow_size;
+                        int thumb_size = 20;
+                        if (thumb_size > track_len) thumb_size = track_len;
+                        if (thumb_size < 1) thumb_size = 1;
+                        int thumb_pos = 0;
+                        if (max_hscroll > 0 && track_len > thumb_size)
+                            thumb_pos = ((track_len - thumb_size) * ctrl->treeview.hscroll_offset) / max_hscroll;
+
+                        int rel_x = mx - inner_x;
+                        if (rel_x < arrow_size) {
+                            ctrl->treeview.hscrollbar_hovered_item = 0;
+                            ctrl->treeview.hscrollbar_pressed = 1;
+                            if (ctrl->treeview.hscroll_offset > 0)
+                                ctrl->treeview.hscroll_offset--;
+                            return 1;
+                        } else if (rel_x >= content_w - arrow_size) {
+                            ctrl->treeview.hscrollbar_hovered_item = 2;
+                            ctrl->treeview.hscrollbar_pressed = 1;
+                            if (ctrl->treeview.hscroll_offset < max_hscroll)
+                                ctrl->treeview.hscroll_offset++;
+                            return 1;
+                        } else {
+                            int thumb_x = arrow_size + thumb_pos;
+                            if (rel_x >= thumb_x && rel_x < thumb_x + thumb_size) {
+                                ctrl->treeview.hscrollbar_hovered_item = 1;
+                                ctrl->treeview.hscrollbar_pressed = 1;
+                                ctrl->treeview.hscrollbar_drag_offset = rel_x - thumb_x;
+                                return 1;
+                            }
+
+                            int rel_track = rel_x - arrow_size - thumb_size / 2;
+                            if (rel_track < 0) rel_track = 0;
+                            if (rel_track > track_len - thumb_size) rel_track = track_len - thumb_size;
+                            if (track_len > thumb_size && max_hscroll > 0)
+                                ctrl->treeview.hscroll_offset = (rel_track * max_hscroll) / (track_len - thumb_size);
+                            ctrl->treeview.hscrollbar_hovered_item = 1;
+                            ctrl->treeview.hscrollbar_pressed = 1;
+                            ctrl->treeview.hscrollbar_drag_offset = thumb_size / 2;
+                            return 1;
+                        }
+                    }
+
+                    if (mx >= inner_x && mx < inner_x + content_w &&
+                        my >= inner_y && my < inner_y + visible_rows * row_h) {
+                        int visible_idx = ctrl->treeview.scroll_offset + ((my - inner_y) / row_h);
+                        int item_idx = treeview_visible_to_item_sys(ctrl, visible_idx);
+                        if (item_idx >= 0) {
+                            sys_tree_item_t *item = &ctrl->treeview.items[item_idx];
+                            int box_x = inner_x + 4 + item->level * 14 - ctrl->treeview.hscroll_offset;
+                            int box_y = inner_y + ((my - inner_y) / row_h) * row_h + (row_h - 9) / 2;
+                            if ((item->flags & TREE_ITEM_HAS_CHILDREN) &&
+                                mx >= box_x && mx < box_x + 9 &&
+                                my >= box_y && my < box_y + 9) {
+                                ctrl->treeview.last_action = TREE_ACTION_TOGGLE;
+                            } else {
+                                ctrl->treeview.selected_index = item_idx;
+                                ctrl->treeview.last_action = TREE_ACTION_SELECT;
+                            }
+                            ctrl->treeview.action_index = item_idx;
+                            form->clicked_id = ctrl->id;
+                            form->press_control_id = -1;
                             return 1;
                         }
                     }
@@ -3151,6 +3392,15 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                                 }
 
+                                else if (ctrl->type == CTRL_TREEVIEW) {
+                                    ctrl->treeview.scrollbar_pressed = 0;
+                                    ctrl->treeview.scrollbar_hovered_item = -1;
+                                    ctrl->treeview.hscrollbar_pressed = 0;
+                                    ctrl->treeview.hscrollbar_hovered_item = -1;
+                                    needs_redraw = 1;
+                                    if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                                }
+
                                 /* Valid click detected for buttons and other controls */
                                 else {
                                     form->clicked_id = ctrl->id;
@@ -3178,6 +3428,18 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (form->controls[i].type == CTRL_TEXTBOX && form->controls[i].textbox.scrollbar_pressed) {
                             form->controls[i].textbox.scrollbar_pressed = 0;
                             form->controls[i].textbox.scrollbar_hovered_item = -1;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
+                        }
+                        if (form->controls[i].type == CTRL_TREEVIEW && form->controls[i].treeview.scrollbar_pressed) {
+                            form->controls[i].treeview.scrollbar_pressed = 0;
+                            form->controls[i].treeview.scrollbar_hovered_item = -1;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
+                        }
+                        if (form->controls[i].type == CTRL_TREEVIEW && form->controls[i].treeview.hscrollbar_pressed) {
+                            form->controls[i].treeview.hscrollbar_pressed = 0;
+                            form->controls[i].treeview.hscrollbar_hovered_item = -1;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
@@ -3436,10 +3698,59 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     }
                 }
 
+                if (ctrl && ctrl->type == CTRL_TREEVIEW && ctrl->treeview.scrollbar_pressed &&
+                    ctrl->treeview.scrollbar_hovered_item == 1) {
+                    int row_area_h = 1, max_val = 0;
+                    treeview_layout_sys(ctrl, NULL, &row_area_h, NULL, NULL, NULL, &max_val, NULL);
+                    int arrow_size = 18;
+                    int track_len = row_area_h - 2 * arrow_size;
+                    int thumb_size = 20;
+                    if (thumb_size > track_len) thumb_size = track_len;
+                    if (thumb_size < 1) thumb_size = 1;
+
+                    if (max_val > 0 && track_len > thumb_size) {
+                        int track_y = form->win.y + ctrl->y + ctrl_y_offset + 2 + arrow_size;
+                        int rel_y = my - track_y - ctrl->treeview.scrollbar_drag_offset;
+                        if (rel_y < 0) rel_y = 0;
+                        if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
+                        int new_val = (rel_y * max_val) / (track_len - thumb_size);
+                        if (new_val > max_val) new_val = max_val;
+                        if (new_val != ctrl->treeview.scroll_offset) {
+                            ctrl->treeview.scroll_offset = new_val;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                        }
+                    }
+                }
+
+                if (ctrl && ctrl->type == CTRL_TREEVIEW && ctrl->treeview.hscrollbar_pressed &&
+                    ctrl->treeview.hscrollbar_hovered_item == 1) {
+                    int content_w = 1, row_area_h = 1, max_val = 0;
+                    treeview_layout_sys(ctrl, &content_w, &row_area_h, NULL, NULL, NULL, NULL, &max_val);
+                    int arrow_size = 18;
+                    int track_len = content_w - 2 * arrow_size;
+                    int thumb_size = 20;
+                    if (thumb_size > track_len) thumb_size = track_len;
+                    if (thumb_size < 1) thumb_size = 1;
+
+                    if (max_val > 0 && track_len > thumb_size) {
+                        int track_x = form->win.x + ctrl->x + 2 + arrow_size;
+                        int rel_x = mx - track_x - ctrl->treeview.hscrollbar_drag_offset;
+                        if (rel_x < 0) rel_x = 0;
+                        if (rel_x > track_len - thumb_size) rel_x = track_len - thumb_size;
+                        int new_val = (rel_x * max_val) / (track_len - thumb_size);
+                        if (new_val > max_val) new_val = max_val;
+                        if (new_val != ctrl->treeview.hscroll_offset) {
+                            ctrl->treeview.hscroll_offset = new_val;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                        }
+                    }
+                }
+
                 /* Textbox inline scrollbar dragging */
                 if (ctrl && ctrl->type == CTRL_TEXTBOX && ctrl->textbox.scrollbar_pressed && ctrl->textbox.scrollbar_hovered_item == 1) {
                     extern bmf_font_t font_n;
-                    int abs_x = form->win.x + ctrl->x;
                     int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
                     int text_area_w = ctrl->w - 6;
                     int text_area_h = ctrl->h - 9;
@@ -3700,6 +4011,30 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         dest->scrollbar.max_length = 100;
                         dest->scrollbar.checked = 0;
                         break;
+                    case CTRL_TREEVIEW:
+                        dest->treeview.items = (sys_tree_item_t*)kmalloc(sizeof(sys_tree_item_t) * TREEVIEW_MAX_ITEMS);
+                        dest->treeview.item_count = 0;
+                        dest->treeview.max_items = dest->treeview.items ? TREEVIEW_MAX_ITEMS : 0;
+                        dest->treeview.selected_index = -1;
+                        dest->treeview.scroll_offset = 0;
+                        dest->treeview.hscroll_offset = 0;
+                        dest->treeview.content_width = 0;
+                        dest->treeview.row_height = ctrl->treeview.row_height ? ctrl->treeview.row_height : 18;
+                        dest->treeview.scrollbar_hovered_item = -1;
+                        dest->treeview.scrollbar_pressed = 0;
+                        dest->treeview.scrollbar_drag_offset = 0;
+                        dest->treeview.hscrollbar_hovered_item = -1;
+                        dest->treeview.hscrollbar_pressed = 0;
+                        dest->treeview.hscrollbar_drag_offset = 0;
+                        dest->treeview.last_action = TREE_ACTION_NONE;
+                        dest->treeview.action_index = -1;
+                        dest->treeview.icon_closed = NULL;
+                        dest->treeview.icon_open = NULL;
+                        strcpy_s(dest->treeview.icon_closed_path, "C:/ICONS/FLD.ICO", sizeof(dest->treeview.icon_closed_path));
+                        strcpy_s(dest->treeview.icon_open_path, "C:/ICONS/FLO.ICO", sizeof(dest->treeview.icon_open_path));
+                        dest->treeview.icon_closed_failed = 0;
+                        dest->treeview.icon_open_failed = 0;
+                        break;
                     case CTRL_ICON:
                         dest->icon.cached_bitmap_orig = NULL;
                         dest->icon.saved_bg = NULL;
@@ -3766,7 +4101,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 for (int i = 0; i < form->ctrl_count; i++) {
                     gui_control_t *ctrl = &form->controls[i];
 
-                    switch (ctrl->type) {
+                    switch (ctrl->type & 0x7F) {
                         case CTRL_BUTTON:
                             if (ctrl->button.cached_bitmap_orig) {
                                 bitmap_free(ctrl->button.cached_bitmap_orig);
@@ -3806,6 +4141,21 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             if (ctrl->textbox.multiline_text) {
                                 kfree(ctrl->textbox.multiline_text);
                                 ctrl->textbox.multiline_text = NULL;
+                            }
+                            break;
+
+                        case CTRL_TREEVIEW:
+                            if (ctrl->treeview.items) {
+                                kfree(ctrl->treeview.items);
+                                ctrl->treeview.items = NULL;
+                            }
+                            if (ctrl->treeview.icon_closed) {
+                                bitmap_free(ctrl->treeview.icon_closed);
+                                ctrl->treeview.icon_closed = NULL;
+                            }
+                            if (ctrl->treeview.icon_open) {
+                                bitmap_free(ctrl->treeview.icon_open);
+                                ctrl->treeview.icon_open = NULL;
                             }
                             break;
 
@@ -3934,6 +4284,99 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     break;
                 case PROP_TEXTBOX_EDIT:
                     textbox_run_edit_command(ctrl, (int)value);
+                    break;
+                case PROP_TREE_ITEMS:
+                    if (ctrl->type == CTRL_TREEVIEW && ctrl->treeview.items && value) {
+                        if (!sys_range_mapped(value, sizeof(sys_tree_items_t)))
+                            break;
+                        sys_tree_items_t batch = *(sys_tree_items_t*)value;
+                        uint16_t count = batch.count;
+                        if (count > ctrl->treeview.max_items)
+                            count = ctrl->treeview.max_items;
+                        if (count > 0 && (!batch.items ||
+                            !sys_range_mapped((uint32_t)batch.items, sizeof(sys_tree_item_t) * count))) {
+                            break;
+                        }
+                        if (batch.items && count > 0) {
+                            for (uint16_t i = 0; i < count; i++)
+                                ctrl->treeview.items[i] = batch.items[i];
+                        }
+                        ctrl->treeview.item_count = count;
+                        if (ctrl->treeview.selected_index >= count)
+                            ctrl->treeview.selected_index = count ? 0 : -1;
+                        int max_scroll = treeview_max_scroll_sys(ctrl);
+                        if (ctrl->treeview.scroll_offset > max_scroll)
+                            ctrl->treeview.scroll_offset = max_scroll;
+                        int max_hscroll = 0;
+                        treeview_layout_sys(ctrl, NULL, NULL, NULL, NULL, NULL, NULL, &max_hscroll);
+                        if (ctrl->treeview.hscroll_offset > max_hscroll)
+                            ctrl->treeview.hscroll_offset = max_hscroll;
+                    }
+                    break;
+                case PROP_TREE_SELECTED:
+                    if (ctrl->type == CTRL_TREEVIEW) {
+                        int selected = (int)value;
+                        if (selected < -1) selected = -1;
+                        if (selected >= ctrl->treeview.item_count)
+                            selected = ctrl->treeview.item_count ? ctrl->treeview.item_count - 1 : -1;
+                        ctrl->treeview.selected_index = selected;
+                    }
+                    break;
+                case PROP_TREE_SCROLL:
+                    if (ctrl->type == CTRL_TREEVIEW) {
+                        int scroll = (int)value;
+                        int max_scroll = treeview_max_scroll_sys(ctrl);
+                        if (scroll < 0) scroll = 0;
+                        if (scroll > max_scroll) scroll = max_scroll;
+                        ctrl->treeview.scroll_offset = scroll;
+                    }
+                    break;
+                case PROP_TREE_HSCROLL:
+                    if (ctrl->type == CTRL_TREEVIEW) {
+                        int scroll = (int)value;
+                        int max_scroll = 0;
+                        treeview_layout_sys(ctrl, NULL, NULL, NULL, NULL, NULL, NULL, &max_scroll);
+                        if (scroll < 0) scroll = 0;
+                        if (scroll > max_scroll) scroll = max_scroll;
+                        ctrl->treeview.hscroll_offset = scroll;
+                    }
+                    break;
+                case PROP_TREE_ACTION:
+                    if (ctrl->type == CTRL_TREEVIEW) {
+                        ctrl->treeview.last_action = (uint8_t)value;
+                        if (value == TREE_ACTION_NONE)
+                            ctrl->treeview.action_index = -1;
+                    }
+                    break;
+                case PROP_TREE_ACTION_INDEX:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        ctrl->treeview.action_index = (int16_t)value;
+                    break;
+                case PROP_TREE_ICON_CLOSED:
+                    if (ctrl->type == CTRL_TREEVIEW && value) {
+                        char path[64];
+                        if (sys_copy_string(path, value, sizeof(path)) != 0)
+                            break;
+                        if (ctrl->treeview.icon_closed) {
+                            bitmap_free(ctrl->treeview.icon_closed);
+                            ctrl->treeview.icon_closed = NULL;
+                        }
+                        strcpy_s(ctrl->treeview.icon_closed_path, path, sizeof(ctrl->treeview.icon_closed_path));
+                        ctrl->treeview.icon_closed_failed = 0;
+                    }
+                    break;
+                case PROP_TREE_ICON_OPEN:
+                    if (ctrl->type == CTRL_TREEVIEW && value) {
+                        char path[64];
+                        if (sys_copy_string(path, value, sizeof(path)) != 0)
+                            break;
+                        if (ctrl->treeview.icon_open) {
+                            bitmap_free(ctrl->treeview.icon_open);
+                            ctrl->treeview.icon_open = NULL;
+                        }
+                        strcpy_s(ctrl->treeview.icon_open_path, path, sizeof(ctrl->treeview.icon_open_path));
+                        ctrl->treeview.icon_open_failed = 0;
+                    }
                     break;
                 case 1: /* PROP_CHECKED */
                     switch (ctrl->type) {
@@ -4074,6 +4517,38 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     if (ctrl->type == CTRL_PICTUREBOX) {
                         return ctrl->picturebox.image_mode;
                     }
+                    return 0;
+                case PROP_TREE_ITEMS:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        return (uint32_t)ctrl->treeview.items;
+                    return 0;
+                case PROP_TREE_SELECTED:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        return (uint32_t)ctrl->treeview.selected_index;
+                    return 0;
+                case PROP_TREE_SCROLL:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        return ctrl->treeview.scroll_offset;
+                    return 0;
+                case PROP_TREE_HSCROLL:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        return ctrl->treeview.hscroll_offset;
+                    return 0;
+                case PROP_TREE_ACTION:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        return ctrl->treeview.last_action;
+                    return 0;
+                case PROP_TREE_ACTION_INDEX:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        return (uint32_t)ctrl->treeview.action_index;
+                    return 0;
+                case PROP_TREE_ICON_CLOSED:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        return (uint32_t)ctrl->treeview.icon_closed_path;
+                    return 0;
+                case PROP_TREE_ICON_OPEN:
+                    if (ctrl->type == CTRL_TREEVIEW)
+                        return (uint32_t)ctrl->treeview.icon_open_path;
                     return 0;
                 default:
                     return 0;

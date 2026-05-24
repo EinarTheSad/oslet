@@ -23,8 +23,7 @@ OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG
 #define ID_PATH_TEXTBOX      50
 #define ID_BACK_BUTTON       51
 #define ID_TOOLBAR_FRAME     52
-#define ID_TREE_FRAME        53
-#define ID_TREE_SCROLLBAR    60
+#define ID_TREEVIEW          53
 #define ID_FILE_SCROLLBAR    61
 
 #define ID_TB_BACK           69
@@ -35,11 +34,11 @@ OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG
 #define ID_TB_DELETE         74
 #define ID_TB_NEW_FOLDER     75
 #define ID_TB_NEW_FILE       76
-#define ID_TREE_BASE         1000
 #define ID_FILE_BASE         2000
 
-#define MAX_TREE_ITEMS       32
+#define MAX_TREE_ITEMS       128
 #define MAX_FILE_ITEMS       64
+#define MAX_DIR_SCAN_ITEMS   128
 
 #define TOOLBAR_Y            30
 #define TOOLBAR_H            35
@@ -47,22 +46,20 @@ OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG
 #define TREE_X               11
 #define TREE_W               120
 #define TREE_ITEM_H          18
-#define TREE_SCROLLBAR_W     18
 #define FILE_ICON_W          48
 #define FILE_ICON_H          58
 #define FILE_PAD             8
 #define FILE_SCROLLBAR_W     18
 
-#define MAX_TREE_VISIBLE     20
 #define MAX_FILE_COLS        9
 #define MAX_FILE_ROWS        6
 
 typedef struct {
     char name[64];
     char full_path[256];
-    int is_directory;
-    int indent_level;
-} tree_item_t;
+    uint8_t level;
+    uint8_t flags;
+} tree_node_t;
 
 typedef struct {
     char name[64];
@@ -74,16 +71,19 @@ typedef struct {
 typedef struct {
     void *form;
     char current_path[256];
-    tree_item_t tree_items[MAX_TREE_ITEMS];
+    tree_node_t tree_items[MAX_TREE_ITEMS];
+    sys_tree_item_t tree_view_items[MAX_TREE_ITEMS];
+    sys_dirent_t tree_scan_entries[MAX_DIR_SCAN_ITEMS];
+    sys_dirent_t tree_probe_entries[MAX_DIR_SCAN_ITEMS];
+    sys_dirent_t file_scan_entries[MAX_DIR_SCAN_ITEMS];
     int tree_count;
+    int selected_tree_index;
     file_item_t file_items[MAX_FILE_ITEMS];
     int file_count;
-    int tree_scroll_offset;
     int file_scroll_offset;
     int selected_file_index;
     char clipboard_path[256];
     int clipboard_is_cut;
-    int tree_visible;
     int file_cols;
     int file_rows;
     int files_x;
@@ -222,6 +222,298 @@ static int file_or_dir_exists(const char *path) {
     return 0;
 }
 
+static int tree_name_matches(const char *name, const char *token, size_t token_len) {
+    size_t name_len = strlen(name);
+    if (name_len != token_len) return 0;
+    for (size_t i = 0; i < token_len; i++) {
+        char a = name[i];
+        char b = token[i];
+        if (a >= 'a' && a <= 'z') a -= 32;
+        if (b >= 'a' && b <= 'z') b -= 32;
+        if (a != b) return 0;
+    }
+    return 1;
+}
+
+static int tree_find_path(const char *path) {
+    for (int i = 0; i < state.tree_count; i++) {
+        if (strcasecmp(state.tree_items[i].full_path, path) == 0)
+            return i;
+    }
+    return -1;
+}
+
+static int tree_find_child_by_name(int parent_idx, const char *name, size_t name_len) {
+    if (parent_idx < 0 || parent_idx >= state.tree_count) return -1;
+    int child_level = state.tree_items[parent_idx].level + 1;
+
+    for (int i = parent_idx + 1; i < state.tree_count; i++) {
+        if (state.tree_items[i].level <= state.tree_items[parent_idx].level)
+            break;
+        if (state.tree_items[i].level == child_level &&
+            tree_name_matches(state.tree_items[i].name, name, name_len))
+            return i;
+    }
+    return -1;
+}
+
+static int tree_item_visible(int idx) {
+    if (idx < 0 || idx >= state.tree_count) return 0;
+
+    int level = state.tree_items[idx].level;
+    for (int i = idx - 1; i >= 0 && level > 0; i--) {
+        if (state.tree_items[i].level < level) {
+            if (!(state.tree_items[i].flags & TREE_ITEM_EXPANDED))
+                return 0;
+            level = state.tree_items[i].level;
+        }
+    }
+    return 1;
+}
+
+static int tree_nearest_visible_ancestor(int idx) {
+    if (idx < 0 || idx >= state.tree_count) return 0;
+    if (tree_item_visible(idx)) return idx;
+
+    int level = state.tree_items[idx].level;
+    for (int i = idx - 1; i >= 0 && level > 0; i--) {
+        if (state.tree_items[i].level < level) {
+            if (tree_item_visible(i))
+                return i;
+            level = state.tree_items[i].level;
+        }
+    }
+    return 0;
+}
+
+static int tree_visible_count(void) {
+    int visible = 0;
+    for (int i = 0; i < state.tree_count; i++) {
+        if (tree_item_visible(i))
+            visible++;
+    }
+    return visible;
+}
+
+static int tree_model_valid(void) {
+    if (state.tree_count <= 0 || state.tree_count > MAX_TREE_ITEMS)
+        return 0;
+    if (state.tree_items[0].level != 0 || strcmp(state.tree_items[0].full_path, "C:/") != 0)
+        return 0;
+
+    for (int i = 1; i < state.tree_count; i++) {
+        if (state.tree_items[i].level == 0)
+            return 0;
+        if (state.tree_items[i].level > state.tree_items[i - 1].level + 1)
+            return 0;
+    }
+
+    return tree_visible_count() > 0;
+}
+
+static void tree_remove_descendants(int idx) {
+    if (idx < 0 || idx >= state.tree_count) return;
+
+    int start = idx + 1;
+    int end = start;
+    while (end < state.tree_count && state.tree_items[end].level > state.tree_items[idx].level)
+        end++;
+
+    int remove_count = end - start;
+    if (remove_count <= 0) return;
+
+    for (int i = start; i + remove_count < state.tree_count; i++)
+        state.tree_items[i] = state.tree_items[i + remove_count];
+    state.tree_count -= remove_count;
+}
+
+static void tree_sort_dirents(sys_dirent_t *entries, int count) {
+    for (int i = 1; i < count; i++) {
+        sys_dirent_t tmp = entries[i];
+        int j = i - 1;
+        while (j >= 0 && strcasecmp(entries[j].name, tmp.name) > 0) {
+            entries[j + 1] = entries[j];
+            j--;
+        }
+        entries[j + 1] = tmp;
+    }
+}
+
+static int directory_has_subdirs(const char *path) {
+    int count = sys_readdir(path, state.tree_probe_entries, MAX_DIR_SCAN_ITEMS);
+    if (count < 0) return 0;
+
+    for (int i = 0; i < count; i++) {
+        if (!state.tree_probe_entries[i].is_directory) continue;
+        if (strcmp(state.tree_probe_entries[i].name, ".") == 0 || strcmp(state.tree_probe_entries[i].name, "..") == 0) continue;
+        return 1;
+    }
+    return 0;
+}
+
+static void tree_load_children(int idx) {
+    if (idx < 0 || idx >= state.tree_count) return;
+    if (state.tree_items[idx].flags & TREE_ITEM_LOADED) return;
+
+    sys_dirent_t *entries = state.tree_scan_entries;
+    int count = sys_readdir(state.tree_items[idx].full_path, entries, MAX_DIR_SCAN_ITEMS);
+    if (count < 0) {
+        state.tree_items[idx].flags |= TREE_ITEM_LOADED;
+        state.tree_items[idx].flags &= ~TREE_ITEM_HAS_CHILDREN;
+        return;
+    }
+
+    int dir_count = 0;
+    for (int i = 0; i < count && dir_count < MAX_DIR_SCAN_ITEMS; i++) {
+        if (!entries[i].is_directory) continue;
+        if (strcmp(entries[i].name, ".") == 0 || strcmp(entries[i].name, "..") == 0) continue;
+        if (dir_count != i)
+            entries[dir_count] = entries[i];
+        dir_count++;
+    }
+    tree_sort_dirents(entries, dir_count);
+
+    if (dir_count == 0) {
+        state.tree_items[idx].flags |= TREE_ITEM_LOADED;
+        state.tree_items[idx].flags &= ~(TREE_ITEM_HAS_CHILDREN | TREE_ITEM_EXPANDED);
+        return;
+    }
+
+    int insert_at = idx + 1;
+    while (insert_at < state.tree_count && state.tree_items[insert_at].level > state.tree_items[idx].level)
+        insert_at++;
+
+    for (int i = 0; i < dir_count && state.tree_count < MAX_TREE_ITEMS; i++) {
+        for (int j = state.tree_count; j > insert_at; j--)
+            state.tree_items[j] = state.tree_items[j - 1];
+
+        tree_node_t *child = &state.tree_items[insert_at];
+        strncpy(child->name, entries[i].name, sizeof(child->name) - 1);
+        child->name[sizeof(child->name) - 1] = '\0';
+        build_path(child->full_path, sizeof(child->full_path), state.tree_items[idx].full_path, entries[i].name);
+        normalize_path(child->full_path, sizeof(child->full_path));
+        child->level = state.tree_items[idx].level + 1;
+        child->flags = TREE_ITEM_FOLDER;
+        if (directory_has_subdirs(child->full_path))
+            child->flags |= TREE_ITEM_HAS_CHILDREN;
+        else
+            child->flags |= TREE_ITEM_LOADED;
+        state.tree_count++;
+        insert_at++;
+    }
+
+    state.tree_items[idx].flags |= TREE_ITEM_LOADED | TREE_ITEM_HAS_CHILDREN;
+}
+
+static void tree_reload_children_for_path(const char *path) {
+    int idx = tree_find_path(path);
+    if (idx < 0) return;
+
+    uint8_t was_expanded = state.tree_items[idx].flags & TREE_ITEM_EXPANDED;
+    tree_remove_descendants(idx);
+    state.tree_items[idx].flags &= ~(TREE_ITEM_LOADED | TREE_ITEM_HAS_CHILDREN);
+    tree_load_children(idx);
+    if (was_expanded && (state.tree_items[idx].flags & TREE_ITEM_HAS_CHILDREN))
+        state.tree_items[idx].flags |= TREE_ITEM_EXPANDED;
+}
+
+static void tree_init_model(void) {
+    state.tree_count = 1;
+    state.selected_tree_index = 0;
+    strcpy(state.tree_items[0].name, "C:/");
+    strcpy(state.tree_items[0].full_path, "C:/");
+    state.tree_items[0].level = 0;
+    state.tree_items[0].flags = TREE_ITEM_FOLDER | TREE_ITEM_HAS_CHILDREN | TREE_ITEM_EXPANDED;
+    tree_load_children(0);
+}
+
+static int tree_ensure_path(const char *path) {
+    if (state.tree_count <= 0)
+        tree_init_model();
+
+    char normalized[256];
+    strncpy(normalized, path, sizeof(normalized) - 1);
+    normalized[sizeof(normalized) - 1] = '\0';
+    normalize_path(normalized, sizeof(normalized));
+
+    int current = 0;
+    int found_path = 1;
+    state.tree_items[current].flags |= TREE_ITEM_EXPANDED;
+    tree_load_children(current);
+
+    if (strcmp(normalized, "C:/") != 0) {
+        char temp[256];
+        strcpy(temp, normalized);
+        int len = strlen(temp);
+        if (len > 3 && temp[len - 1] == '/')
+            temp[len - 1] = '\0';
+
+        char *token = temp + 3;
+        while (*token) {
+            char *slash = strchr(token, '/');
+            size_t token_len = slash ? (size_t)(slash - token) : strlen(token);
+            if (token_len > 0) {
+                int child = tree_find_child_by_name(current, token, token_len);
+                if (child < 0) {
+                    tree_reload_children_for_path(state.tree_items[current].full_path);
+                    child = tree_find_child_by_name(current, token, token_len);
+                }
+                if (child < 0) {
+                    found_path = 0;
+                    break;
+                }
+                current = child;
+                state.tree_items[current].flags |= TREE_ITEM_EXPANDED;
+                tree_load_children(current);
+            }
+            if (!slash) break;
+            token = slash + 1;
+        }
+    }
+
+    state.selected_tree_index = current;
+    return found_path;
+}
+
+static void tree_rebuild_for_path(const char *path) {
+    state.tree_count = 0;
+    state.selected_tree_index = 0;
+    tree_init_model();
+    if (!tree_ensure_path(path))
+        state.selected_tree_index = 0;
+
+    if (state.form) {
+        sys_ctrl_set_prop(state.form, ID_TREEVIEW, PROP_TREE_SCROLL, 0);
+        ctrl_tree_set_hscroll(state.form, ID_TREEVIEW, 0);
+        ctrl_tree_set_icons(state.form, ID_TREEVIEW, "C:/ICONS/FLD.ICO", "C:/ICONS/FLO.ICO");
+    }
+}
+
+static void sync_tree_control(void) {
+    if (!state.form) return;
+
+    if (!tree_model_valid())
+        tree_rebuild_for_path(state.current_path);
+    if (!tree_model_valid())
+        return;
+
+    if (state.selected_tree_index < 0 || state.selected_tree_index >= state.tree_count)
+        state.selected_tree_index = 0;
+    if (!tree_item_visible(state.selected_tree_index))
+        state.selected_tree_index = tree_nearest_visible_ancestor(state.selected_tree_index);
+
+    for (int i = 0; i < state.tree_count; i++) {
+        strncpy(state.tree_view_items[i].text, state.tree_items[i].name, sizeof(state.tree_view_items[i].text) - 1);
+        state.tree_view_items[i].text[sizeof(state.tree_view_items[i].text) - 1] = '\0';
+        state.tree_view_items[i].level = state.tree_items[i].level;
+        state.tree_view_items[i].flags = state.tree_items[i].flags;
+        state.tree_view_items[i].app_id = (uint16_t)i;
+    }
+
+    ctrl_tree_set_items(state.form, ID_TREEVIEW, state.tree_view_items, state.tree_count);
+    ctrl_tree_set_selected(state.form, ID_TREEVIEW, state.selected_tree_index);
+}
+
 static int build_unique_paste_path(char *dest, size_t dest_size, const char *folder, const char *filename) {
     build_path(dest, dest_size, folder, filename);
     if (!file_or_dir_exists(dest))
@@ -273,95 +565,20 @@ static int set_current_path(const char *path, int show_error) {
     }
 
     strcpy(state.current_path, new_path);
-    state.tree_scroll_offset = 0;
     state.file_scroll_offset = 0;
     state.selected_file_index = -1;
+    if (!tree_ensure_path(state.current_path))
+        tree_rebuild_for_path(state.current_path);
     return 1;
 }
 
 static void scan_directory(void) {
-    sys_dirent_t entries[128];
-    int count = sys_readdir(state.current_path, entries, 128);
+    sys_dirent_t *entries = state.file_scan_entries;
+    int count = sys_readdir(state.current_path, entries, MAX_DIR_SCAN_ITEMS);
     
-    state.tree_count = 0;
     state.file_count = 0;
     
     if (count < 0) return;
-    
-    /* Build hierarchical tree showing path breakdown */
-    
-    /* Always start with drive root */
-    if (state.tree_count < MAX_TREE_ITEMS) {
-        tree_item_t *item = &state.tree_items[state.tree_count++];
-        strcpy(item->name, "C:/");
-        strcpy(item->full_path, "C:/");
-        item->is_directory = 1;
-        item->indent_level = 0;
-    }
-    
-    /* Parse current path and add each level */
-    if (strcmp(state.current_path, "C:/") != 0) {
-        char temp_path[256];
-        strcpy(temp_path, state.current_path);
-        
-        /* Remove trailing slash if present */
-        int len = strlen(temp_path);
-        if (len > 3 && temp_path[len - 1] == '/')
-            temp_path[len - 1] = '\0';
-        
-        /* Skip the "C:/" prefix */
-        char *path_part = temp_path + 3;
-        char build_path_str[256] = "C:/";
-        int level = 1;
-        
-        /* Tokenize by '/' */
-        char *token = path_part;
-        while (*token && state.tree_count < MAX_TREE_ITEMS) {
-            char *slash = strchr(token, '/');
-            size_t token_len = slash ? (size_t)(slash - token) : strlen(token);
-            
-            if (token_len > 0) {
-                tree_item_t *item = &state.tree_items[state.tree_count++];
-                strncpy(item->name, token, token_len);
-                item->name[token_len] = '\0';
-                
-                /* Build full path up to this level */
-                strcat(build_path_str, item->name);
-                strcat(build_path_str, "/");
-                strcpy(item->full_path, build_path_str);
-                item->is_directory = 1;
-                item->indent_level = level++;
-            }
-            
-            if (!slash) break;
-            token = slash + 1;
-        }
-    }
-    
-    /* Add subdirectories of current directory */
-    int current_level = state.tree_count > 0 ? state.tree_items[state.tree_count - 1].indent_level + 1 : 1;
-    if (strcmp(state.current_path, "C:/") == 0) current_level = 1;
-    
-    int tree_sub_start = state.tree_count;
-    for (int i = 0; i < count && state.tree_count < MAX_TREE_ITEMS; i++) {
-        if (entries[i].is_directory && strcmp(entries[i].name, ".") != 0 && strcmp(entries[i].name, "..") != 0) {
-            tree_item_t *item = &state.tree_items[state.tree_count++];
-            strncpy(item->name, entries[i].name, sizeof(item->name) - 1);
-            item->name[sizeof(item->name) - 1] = '\0';
-            build_path(item->full_path, sizeof(item->full_path), state.current_path, entries[i].name);
-            item->is_directory = 1;
-            item->indent_level = current_level;
-        }
-    }
-    for (int i = tree_sub_start + 1; i < state.tree_count; i++) {
-        tree_item_t tmp = state.tree_items[i];
-        int j = i - 1;
-        while (j >= tree_sub_start && strcasecmp(state.tree_items[j].name, tmp.name) > 0) {
-            state.tree_items[j + 1] = state.tree_items[j];
-            j--;
-        }
-        state.tree_items[j + 1] = tmp;
-    }
     
     /* In subfolders, add ".." as the first file item */
     if (strcmp(state.current_path, "C:/") != 0) {
@@ -450,13 +667,7 @@ static void relayout(void) {
     sys_ctrl_set_prop(state.form, ID_TOOLBAR_FRAME, PROP_W, win_w - 16);
 
     /* Tree pane */
-    sys_ctrl_set_prop(state.form, ID_TREE_FRAME, PROP_H, avail_h + 4);
-
-    state.tree_visible = avail_h / TREE_ITEM_H;
-    if (state.tree_visible < 1) state.tree_visible = 1;
-    if (state.tree_visible > MAX_TREE_VISIBLE) state.tree_visible = MAX_TREE_VISIBLE;
-
-    sys_ctrl_set_prop(state.form, ID_TREE_SCROLLBAR, PROP_H, avail_h-9);
+    sys_ctrl_set_prop(state.form, ID_TREEVIEW, PROP_H, avail_h - 9);
 
     /* File pane */
     state.files_x = TREE_X + TREE_W + 12;
@@ -476,13 +687,6 @@ static void relayout(void) {
     sys_ctrl_set_prop(state.form, ID_FILE_SCROLLBAR, PROP_H, avail_h-9);
 }
 
-static void clear_tree_controls(void) {
-    for (int i = 0; i < MAX_TREE_VISIBLE; i++) {
-        gui_control_t *ctrl = sys_win_get_control(state.form, ID_TREE_BASE + i);
-        if (ctrl) ctrl_set_visible(state.form, ID_TREE_BASE + i, 0);
-    }
-}
-
 static void clear_file_controls(void) {
     int max_count = MAX_FILE_ROWS * MAX_FILE_COLS;
     for (int i = 0; i < max_count; i++) {
@@ -493,54 +697,14 @@ static void clear_file_controls(void) {
 
 static void refresh_display(void) {
     scan_directory();
-    clear_tree_controls();
     clear_file_controls();
-    
-    /* Update tree scrollbar */
-    if (state.tree_count > state.tree_visible) {
-        ctrl_set_visible(state.form, ID_TREE_SCROLLBAR, 1);
-        gui_control_t *scrollbar = sys_win_get_control(state.form, ID_TREE_SCROLLBAR);
-        if (scrollbar) {
-            scrollbar->scrollbar.max_length = state.tree_count - state.tree_visible;
-            if (state.tree_scroll_offset > scrollbar->scrollbar.max_length)
-                state.tree_scroll_offset = scrollbar->scrollbar.max_length;
-            scrollbar->scrollbar.cursor_pos = state.tree_scroll_offset;
-        }
-    } else {
-        ctrl_set_visible(state.form, ID_TREE_SCROLLBAR, 0);
-        state.tree_scroll_offset = 0;
-    }
     
     /* Update path textbox */
     char upper_path[256];
     strcpy(upper_path, state.current_path);
     str_toupper(upper_path);
     ctrl_set_text(state.form, ID_PATH_TEXTBOX, upper_path);
-    
-    /* Update tree items */
-    for (int i = 0; i < state.tree_visible && (i + state.tree_scroll_offset) < state.tree_count; i++) {
-        int idx = i + state.tree_scroll_offset;
-        gui_control_t *ctrl = sys_win_get_control(state.form, ID_TREE_BASE + i);
-        if (ctrl) {
-            char display_text[96];
-            char indent[32] = "";
-
-            if (!(idx == 0 && strcmp(state.tree_items[idx].full_path, "C:/") == 0)) {
-                for (int j = 0; j < state.tree_items[idx].indent_level && j < 8; j++) {
-                    strcat(indent, "  ");
-                }
-            }
-
-            if (idx == 0 && strcmp(state.tree_items[idx].full_path, "C:/") == 0) {
-                snprintf(display_text, sizeof(display_text), "\x8D %s", state.tree_items[idx].name);
-            } else {
-                snprintf(display_text, sizeof(display_text), "%s\x8D %s", indent, state.tree_items[idx].name);
-            }
-
-            ctrl_set_visible(state.form, ID_TREE_BASE + i, 1);
-            ctrl_set_text(state.form, ID_TREE_BASE + i, display_text);
-        }
-    }
+    sync_tree_control();
     
     /* Update file scrollbar */
     int file_rows_total = (state.file_count + state.file_cols - 1) / state.file_cols;
@@ -751,6 +915,10 @@ static void do_rename_action(void) {
         build_path(new_path, sizeof(new_path), state.current_path, new_name);
 
         if (sys_rename(state.file_items[sel].full_path, new_path) == 0) {
+            if (state.file_items[sel].is_directory) {
+                tree_reload_children_for_path(state.current_path);
+                tree_ensure_path(state.current_path);
+            }
             refresh_display();
         } else {
             sys_win_msgbox("Failed to rename", "OK", "Rename");
@@ -781,6 +949,10 @@ static void do_delete_action(void) {
         ok = sys_unlink(state.file_items[sel].full_path);
 
     if (ok == 0) {
+        if (state.file_items[sel].is_directory) {
+            tree_reload_children_for_path(state.current_path);
+            tree_ensure_path(state.current_path);
+        }
         state.selected_file_index = -1;
         refresh_display();
     } else {
@@ -865,12 +1037,29 @@ static int handle_event(int event) {
         return 0;
     }
     
-    /* Handle tree scrollbar */
-    if (event == ID_TREE_SCROLLBAR) {
-        gui_control_t *scrollbar = sys_win_get_control(state.form, ID_TREE_SCROLLBAR);
-        if (scrollbar) {
-            state.tree_scroll_offset = scrollbar->scrollbar.cursor_pos;
-            refresh_display();
+    /* Handle tree view */
+    if (event == ID_TREEVIEW) {
+        int action = ctrl_tree_get_action(state.form, ID_TREEVIEW);
+        int idx = ctrl_tree_get_action_index(state.form, ID_TREEVIEW);
+        ctrl_tree_clear_action(state.form, ID_TREEVIEW);
+
+        if (idx >= 0 && idx < state.tree_count) {
+            if (action == TREE_ACTION_TOGGLE) {
+                if (state.tree_items[idx].flags & TREE_ITEM_EXPANDED) {
+                    state.tree_items[idx].flags &= ~TREE_ITEM_EXPANDED;
+                    if (!tree_item_visible(state.selected_tree_index))
+                        state.selected_tree_index = tree_nearest_visible_ancestor(state.selected_tree_index);
+                } else {
+                    tree_load_children(idx);
+                    if (state.tree_items[idx].flags & TREE_ITEM_HAS_CHILDREN)
+                        state.tree_items[idx].flags |= TREE_ITEM_EXPANDED;
+                }
+                sync_tree_control();
+                sys_win_draw(state.form);
+            } else if (action == TREE_ACTION_SELECT) {
+                if (set_current_path(state.tree_items[idx].full_path, 0))
+                    refresh_display();
+            }
         }
         return 0;
     }
@@ -881,18 +1070,6 @@ static int handle_event(int event) {
         if (scrollbar) {
             state.file_scroll_offset = scrollbar->scrollbar.cursor_pos;
             refresh_display();
-        }
-        return 0;
-    }
-    
-    /* Handle tree clicks */
-    if (event >= ID_TREE_BASE && event < ID_TREE_BASE + MAX_TREE_VISIBLE) {
-        int visible_idx = event - ID_TREE_BASE;
-        int actual_idx = visible_idx + state.tree_scroll_offset;
-        if (actual_idx >= 0 && actual_idx < state.tree_count) {
-            if (set_current_path(state.tree_items[actual_idx].full_path, 0)) {
-                refresh_display();
-            }
         }
         return 0;
     }
@@ -921,6 +1098,8 @@ static int handle_event(int event) {
             build_path(folder_path, sizeof(folder_path), state.current_path, folder_name);
             
             if (sys_mkdir(folder_path) == 0) {
+                tree_reload_children_for_path(state.current_path);
+                tree_ensure_path(state.current_path);
                 refresh_display();
             } else {
                 sys_win_msgbox("Failed to create folder", "OK", "New Folder");
@@ -953,6 +1132,8 @@ static int handle_event(int event) {
     
     /* Menu: Refresh */
     if (event == MENU_VIEW_REFRESH) {
+        tree_reload_children_for_path(state.current_path);
+        tree_ensure_path(state.current_path);
         refresh_display();
         return 0;
     }
@@ -972,6 +1153,7 @@ __attribute__((section(".entry"), used))
 void _start(void) {
     memset(&state, 0, sizeof(state));
     state.selected_file_index = -1;
+    state.selected_tree_index = -1;
     state.clipboard_is_cut = 0;
     
     sys_getcwd(state.current_path, sizeof(state.current_path));
@@ -1062,25 +1244,16 @@ void _start(void) {
         ctrl_set_image(state.form, tb_defs[i].id, tb_defs[i].icon);
     }
 
-    /* Tree frame */
-    gui_control_t tree_frame = {0};
-    tree_frame.type = CTRL_FRAME;
-    tree_frame.x = TREE_X - 3; tree_frame.y = CONTENT_Y - 12;
-    tree_frame.w = TREE_W + 8; tree_frame.h = 204;
-    tree_frame.fg = 8; tree_frame.bg = 7;
-    tree_frame.id = ID_TREE_FRAME;
-    tree_frame.font_size = 12; tree_frame.border = 1; tree_frame.border_color = 8;
-    sys_win_add_control(state.form, &tree_frame);
-
-    /* Tree scrollbar */
-    gui_control_t tree_scrollbar = {0};
-    tree_scrollbar.type = CTRL_SCROLLBAR;
-    tree_scrollbar.x = TREE_X + TREE_W + 3 - TREE_SCROLLBAR_W; tree_scrollbar.y = CONTENT_Y - 1;
-    tree_scrollbar.w = TREE_SCROLLBAR_W; tree_scrollbar.h = 192;
-    tree_scrollbar.fg = 8; tree_scrollbar.bg = 7;
-    tree_scrollbar.id = ID_TREE_SCROLLBAR; tree_scrollbar.font_size = 12;
-    sys_win_add_control(state.form, &tree_scrollbar);
-    ctrl_set_visible(state.form, ID_TREE_SCROLLBAR, 0);
+    /* Folder tree */
+    gui_control_t treeview = {0};
+    treeview.type = CTRL_TREEVIEW;
+    treeview.x = TREE_X - 3; treeview.y = CONTENT_Y - 1;
+    treeview.w = TREE_W + 8; treeview.h = 192;
+    treeview.fg = 0; treeview.bg = 15;
+    treeview.id = ID_TREEVIEW; treeview.font_size = 12;
+    treeview.treeview.row_height = TREE_ITEM_H;
+    sys_win_add_control(state.form, &treeview);
+    ctrl_tree_set_icons(state.form, ID_TREEVIEW, "C:/ICONS/FLD.ICO", "C:/ICONS/FLO.ICO");
 
     /* File scrollbar */
     gui_control_t file_scrollbar = {0};
@@ -1093,18 +1266,6 @@ void _start(void) {
     file_scrollbar.id = ID_FILE_SCROLLBAR; file_scrollbar.font_size = 12;
     sys_win_add_control(state.form, &file_scrollbar);
     ctrl_set_visible(state.form, ID_FILE_SCROLLBAR, 0);
-
-    /* Pre-create tree item labels */
-    for (int i = 0; i < MAX_TREE_VISIBLE; i++) {
-        gui_control_t tree_label = {0};
-        tree_label.type = CTRL_LABEL;
-        tree_label.x = TREE_X; tree_label.y = CONTENT_Y + i * TREE_ITEM_H;
-        tree_label.w = TREE_W - 20; tree_label.h = TREE_ITEM_H - 2;
-        tree_label.id = ID_TREE_BASE + i; tree_label.font_size = 12;
-        tree_label.bg = -1;
-        sys_win_add_control(state.form, &tree_label);
-        ctrl_set_visible(state.form, ID_TREE_BASE + i, 0);
-    }
 
     /* Pre-create file icon controls */
     int max_file_count = MAX_FILE_ROWS * MAX_FILE_COLS;
@@ -1122,6 +1283,9 @@ void _start(void) {
         ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);
     }
     
+    tree_init_model();
+    tree_ensure_path(state.current_path);
+
     /* Compute initial layout and display */
     relayout();
     refresh_display();
