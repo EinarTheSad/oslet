@@ -149,7 +149,11 @@ $(DISK):
 	dd if=/dev/zero of=$(DISK) bs=1M count=$(DISK_SIZE)
 	echo -e "o\nn\np\n1\n2048\n\nt\nc\na\nw\n" | fdisk $(DISK) || true
 	@echo "Setting up loop device..."
-	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	@set -e; \
+	LOOP=""; \
+	cleanup() { status=$$?; sudo umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then sudo losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
+	trap cleanup EXIT; \
+	LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	echo "Loop: $$LOOP"; \
 	sleep 1; \
 	echo "Formatting partition..."; \
@@ -166,7 +170,9 @@ $(DISK):
 	echo "Unmounting..."; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
+	LOOP=""; \
 	rmdir mnt; \
+	trap - EXIT; \
 	echo "Disk ready!"
 
 disk: $(DISK)
@@ -182,7 +188,11 @@ install: $(CURDIR)/$(BUILD)/$(TARGET)
 		exit 1; \
 	fi
 	@echo "Installing kernel and resources..."
-	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	@set -e; \
+	LOOP=""; \
+	cleanup() { status=$$?; sudo umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then sudo losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
+	trap cleanup EXIT; \
+	LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
 	sudo cp $(CURDIR)/$(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
@@ -198,7 +208,9 @@ install: $(CURDIR)/$(BUILD)/$(TARGET)
 	sudo cp $(SRC)/assets/bmp/*.[bB][mM][pP] mnt/OSLET/ 2>/dev/null || true; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
+	LOOP=""; \
 	rmdir mnt; \
+	trap - EXIT; \
 	echo "Kernel and resources installed!"
 
 binstall:
@@ -207,7 +219,11 @@ binstall:
 		exit 1; \
 	fi
 	@echo "Installing binaries..."
-	@LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	@set -e; \
+	LOOP=""; \
+	cleanup() { status=$$?; sudo umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then sudo losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
+	trap cleanup EXIT; \
+	LOOP=$$(sudo losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
 	for f in $(SHELL_TARGETS); do \
@@ -225,36 +241,42 @@ binstall:
 	sudo cp $(SRC)/grp/*.[gG][rR][pP] mnt/OSLET/START/ 2>/dev/null || true; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
+	LOOP=""; \
 	rmdir mnt; \
+	trap - EXIT; \
 	echo "Binaries installed!"
 
-update: kernel binaries install binstall
-
-run-existing: update run
-
-full:
-	@echo "WARNING: full rebuilds a fresh disk image before running."
-	@$(MAKE) fresh-disk binaries install binstall run
-
-run: $(CURDIR)/$(BUILD)/$(TARGET)
-	@if [ ! -f "$(DISK)" ]; then \
-		$(MAKE) disk; \
-	fi
+update:
+	@$(MAKE) kernel
+	@$(MAKE) binaries
 	@$(MAKE) install
+	@$(MAKE) binstall
+
+run-existing: run
+
+run:
+	@if [ ! -f "$(DISK)" ]; then \
+		echo "Error: $(DISK) not found. Run 'make full' once to create it."; \
+		exit 1; \
+	fi
 	qemu-system-i386 \
 	-drive file=$(DISK),format=raw \
 	-m 32M \
 	-net none \
 	-vga std \
-	-rtc base=localtime \
-	#-audiodev sdl,id=snd0 \
-    #-device sb16,audiodev=snd0
+	-rtc base=localtime
 
-run-usb: $(CURDIR)/$(BUILD)/$(TARGET)
+full:
+	@echo "WARNING: full rebuilds a fresh disk image before running."
+	@$(MAKE) fresh-disk
+	@$(MAKE) update
+	@$(MAKE) run
+
+run-usb:
 	@if [ ! -f "$(DISK)" ]; then \
-		$(MAKE) disk; \
+		echo "Error: $(DISK) not found. Run 'make full' once to create it."; \
+		exit 1; \
 	fi
-	@$(MAKE) install
 	qemu-system-i386 \
 	-m 32M \
 	-net none \
