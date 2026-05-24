@@ -175,6 +175,14 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define PROP_IMAGE      9   /* char* - image path (picturebox) */
 #define PROP_ENABLED   10   /* int - enabled state (unused / repurposed for picturebox image-mode) */
 #define PROP_TEXTBOX_EDIT 11 /* int - textbox edit command */
+#define PROP_TREE_ITEMS 12  /* sys_tree_items_t* - replace tree item rows */
+#define PROP_TREE_SELECTED 13 /* int - selected tree item index */
+#define PROP_TREE_SCROLL 14 /* int - vertical tree scroll offset */
+#define PROP_TREE_ACTION 15 /* int - last tree action */
+#define PROP_TREE_ACTION_INDEX 16 /* int - last tree action item index */
+#define PROP_TREE_ICON_CLOSED 17 /* char* - closed folder icon path */
+#define PROP_TREE_ICON_OPEN 18 /* char* - open folder icon path */
+#define PROP_TREE_HSCROLL 19 /* int - horizontal tree scroll offset */
 
 #define TEXTBOX_EDIT_COPY       1
 #define TEXTBOX_EDIT_CUT        2
@@ -199,6 +207,18 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define CTRL_DROPDOWN 9
 #define CTRL_CLOCK 10
 #define CTRL_SCROLLBAR 11
+#define CTRL_TREEVIEW 12
+
+#define TREEVIEW_MAX_ITEMS 128
+
+#define TREE_ITEM_FOLDER       0x01
+#define TREE_ITEM_HAS_CHILDREN 0x02
+#define TREE_ITEM_EXPANDED     0x04
+#define TREE_ITEM_LOADED       0x08
+
+#define TREE_ACTION_NONE   0
+#define TREE_ACTION_SELECT 1
+#define TREE_ACTION_TOGGLE 2
 
 #define FONT_NORMAL 0
 #define FONT_BOLD 1
@@ -206,6 +226,18 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define FONT_BOLD_ITALIC 3
 
 typedef struct bitmap_s bitmap_t;
+
+typedef struct {
+    char text[64];
+    uint8_t level;
+    uint8_t flags;
+    uint16_t app_id;
+} sys_tree_item_t;
+
+typedef struct {
+    const sys_tree_item_t *items;
+    uint16_t count;
+} sys_tree_items_t;
 
 // Control-specific field structures
 typedef struct {
@@ -294,6 +326,31 @@ typedef struct {
     int16_t scroll_offset;
 } control_scrollbar_t;
 
+typedef struct {
+    sys_tree_item_t *items;
+    uint16_t item_count;
+    uint16_t max_items;
+    int16_t selected_index;
+    uint16_t scroll_offset;
+    uint16_t hscroll_offset;
+    uint16_t content_width;
+    uint8_t row_height;
+    int8_t scrollbar_hovered_item;
+    uint8_t scrollbar_pressed;
+    int16_t scrollbar_drag_offset;
+    int8_t hscrollbar_hovered_item;
+    uint8_t hscrollbar_pressed;
+    int16_t hscrollbar_drag_offset;
+    uint8_t last_action;
+    int16_t action_index;
+    bitmap_t *icon_closed;
+    bitmap_t *icon_open;
+    char icon_closed_path[64];
+    char icon_open_path[64];
+    uint8_t icon_closed_failed;
+    uint8_t icon_open_failed;
+} control_treeview_t;
+
 // Main control structure
 typedef struct gui_control_s {
     uint16_t id;
@@ -318,6 +375,7 @@ typedef struct gui_control_s {
         control_clock_t clock;
         control_dropdown_t dropdown;
         control_scrollbar_t scrollbar;
+        control_treeview_t treeview;
     };
     char text[256];
 } gui_control_t;
@@ -1076,6 +1134,42 @@ static inline int ctrl_get_checked(void *form, int16_t id) {
 
 static inline void ctrl_set_image(void *form, int16_t id, const char *path) {
     sys_ctrl_set_prop(form, id, PROP_IMAGE, (uint32_t)path);
+}
+
+static inline void ctrl_tree_set_items(void *form, int16_t id, const sys_tree_item_t *items, uint16_t count) {
+    sys_tree_items_t batch;
+    batch.items = items;
+    batch.count = count;
+    sys_ctrl_set_prop(form, id, PROP_TREE_ITEMS, (uint32_t)&batch);
+}
+
+static inline void ctrl_tree_set_icons(void *form, int16_t id, const char *closed_path, const char *open_path) {
+    if (closed_path) sys_ctrl_set_prop(form, id, PROP_TREE_ICON_CLOSED, (uint32_t)closed_path);
+    if (open_path) sys_ctrl_set_prop(form, id, PROP_TREE_ICON_OPEN, (uint32_t)open_path);
+}
+
+static inline void ctrl_tree_set_selected(void *form, int16_t id, int index) {
+    sys_ctrl_set_prop(form, id, PROP_TREE_SELECTED, (uint32_t)index);
+}
+
+static inline int ctrl_tree_get_selected(void *form, int16_t id) {
+    return (int)sys_ctrl_get_prop(form, id, PROP_TREE_SELECTED);
+}
+
+static inline int ctrl_tree_get_action(void *form, int16_t id) {
+    return (int)sys_ctrl_get_prop(form, id, PROP_TREE_ACTION);
+}
+
+static inline int ctrl_tree_get_action_index(void *form, int16_t id) {
+    return (int)sys_ctrl_get_prop(form, id, PROP_TREE_ACTION_INDEX);
+}
+
+static inline void ctrl_tree_clear_action(void *form, int16_t id) {
+    sys_ctrl_set_prop(form, id, PROP_TREE_ACTION, TREE_ACTION_NONE);
+}
+
+static inline void ctrl_tree_set_hscroll(void *form, int16_t id, int scroll) {
+    sys_ctrl_set_prop(form, id, PROP_TREE_HSCROLL, (uint32_t)scroll);
 }
 
 static inline void ctrl_set_pos(void *form, int16_t id, int x, int y) {
