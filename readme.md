@@ -12,13 +12,30 @@ Ensure the following dependencies are installed (built in Ubuntu 24.04 LTS, may 
 sudo apt install build-essential gcc-multilib binutils grub-pc grub-common dosfstools util-linux qemu-system-x86
 ```
 
-To compile the OS with all its programs and run it in QEMU (`sudo` is required):
+To create a fresh disk image, compile the OS with all its programs, install everything, and run it in QEMU (`sudo` is required):
 
 ``` bash
 make full
 ```
 
-You can compile each binary separately. Remember to then run ```make binstall``` to copy it to the virtual hard drive. For more specific information, please consult the Makefile.
+For development, update the existing disk and then boot it:
+
+``` bash
+make clean update run
+```
+
+`make update` builds the kernel and programs, then copies the kernel, resources, apps, INI files, and groups into the existing disk image. `make run` only starts QEMU with the current `disk.img`; it does not mount or modify the disk.
+
+For smaller updates:
+
+``` bash
+make kernel install      # kernel/resources only
+make binaries binstall   # user programs only
+make fileman binstall    # one program, then copy programs to disk
+make run                 # boot without writing to disk
+```
+
+Use the one-program form only when you changed that program and no shared ABI or kernel-side code. If you changed `src/syscall.h`, `src/syscall.c`, `src/win/`, or another shared interface, use `make update` so the kernel and all user programs are rebuilt together.
 
 Please note that while the system runs in **QEMU** and **PcEM**, it does not work in VirtualBox. VMware, Bochs, and actual hardware are yet to be tested.
 
