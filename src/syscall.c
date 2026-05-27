@@ -1779,6 +1779,8 @@ static int treeview_visible_to_item_sys(gui_control_t *ctrl, int visible_index) 
     return -1;
 }
 
+#define TREEVIEW_INDENT_W 10
+
 static int treeview_max_item_width_sys(gui_control_t *ctrl) {
     extern bmf_font_t font_n;
     int max_w = 1;
@@ -1789,7 +1791,7 @@ static int treeview_max_item_width_sys(gui_control_t *ctrl) {
             continue;
         int text_w = font_n.data ? bmf_measure_text(&font_n, ctrl->font_size > 0 ? ctrl->font_size : 12,
                                                     ctrl->treeview.items[i].text) : 64;
-        int row_w = 4 + (ctrl->treeview.items[i].level * 14) + 12 + 16 + 18 + text_w + 4;
+        int row_w = 36 + (ctrl->treeview.items[i].level * TREEVIEW_INDENT_W) + text_w;
         if (row_w > max_w)
             max_w = row_w;
     }
@@ -1841,10 +1843,72 @@ static int treeview_max_scroll_sys(gui_control_t *ctrl) {
     return max_v;
 }
 
+static int treeview_item_to_visible_index_sys(gui_control_t *ctrl, int item_idx) {
+    int visible = 0;
+    if (!ctrl || !ctrl->treeview.items || item_idx < 0 || item_idx >= ctrl->treeview.item_count)
+        return -1;
+
+    for (int i = 0; i < ctrl->treeview.item_count; i++) {
+        if (!treeview_item_visible_sys(ctrl, i))
+            continue;
+        if (i == item_idx)
+            return visible;
+        visible++;
+    }
+
+    return -1;
+}
+
+static void treeview_keep_selected_visible_sys(gui_control_t *ctrl) {
+    int visible_rows = 1;
+    int max_v = 0;
+    int max_h = 0;
+
+    if (!ctrl || ctrl->type != CTRL_TREEVIEW || !ctrl->treeview.items)
+        return;
+
+    treeview_layout_sys(ctrl, NULL, NULL, &visible_rows, NULL, NULL, &max_v, &max_h);
+
+    if (ctrl->treeview.scroll_offset > max_v)
+        ctrl->treeview.scroll_offset = max_v;
+    if (ctrl->treeview.hscroll_offset > max_h)
+        ctrl->treeview.hscroll_offset = max_h;
+
+    if (ctrl->treeview.selected_index < 0 ||
+        ctrl->treeview.selected_index >= ctrl->treeview.item_count)
+        return;
+
+    int visible_idx = treeview_item_to_visible_index_sys(ctrl, ctrl->treeview.selected_index);
+    if (visible_idx >= 0) {
+        if (visible_idx < ctrl->treeview.scroll_offset) {
+            ctrl->treeview.scroll_offset = visible_idx;
+        } else if (visible_idx >= ctrl->treeview.scroll_offset + visible_rows) {
+            ctrl->treeview.scroll_offset = visible_idx - visible_rows + 1;
+        }
+    }
+
+    int selected_left = 3 + ctrl->treeview.items[ctrl->treeview.selected_index].level * TREEVIEW_INDENT_W;
+    if (ctrl->treeview.hscroll_offset > selected_left)
+        ctrl->treeview.hscroll_offset = selected_left;
+}
+
+static int listbox_visible_rows_sys(gui_control_t *ctrl) {
+    int row_h = ctrl->listbox.row_height ? ctrl->listbox.row_height : 16;
+    int inner_h = ctrl->h > 4 ? ctrl->h - 4 : ctrl->h;
+    int visible_rows = row_h > 0 ? inner_h / row_h : 1;
+    return visible_rows < 1 ? 1 : visible_rows;
+}
+
+static int listbox_max_scroll_sys(gui_control_t *ctrl) {
+    int visible_rows = listbox_visible_rows_sys(ctrl);
+    return ctrl->listbox.item_count > visible_rows ? ctrl->listbox.item_count - visible_rows : 0;
+}
+
 static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
     form->press_control_id = -1;
     int old_focus = form->focused_control_id;
     int clicked_on_focusable = 0;
+    int focus_cleared = 0;
 
     if (form->controls) {
         /* FIRST: Check if click is on any open dropdown list (highest priority) */
@@ -1997,7 +2061,8 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 ctrl->type != CTRL_DROPDOWN &&
                 ctrl->type != CTRL_PICTUREBOX &&
                 ctrl->type != CTRL_SCROLLBAR &&
-                ctrl->type != CTRL_TREEVIEW) {
+                ctrl->type != CTRL_TREEVIEW &&
+                ctrl->type != CTRL_LISTBOX) {
                 continue;
             }
 
@@ -2040,6 +2105,10 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
             if (mx >= abs_x && mx < abs_x + hit_w &&
                 my >= hit_test_y && my < hit_test_y + hit_h) {
                 form->press_control_id = ctrl->id;
+                if (ctrl->type != CTRL_TEXTBOX && old_focus != -1) {
+                    form->focused_control_id = -1;
+                    focus_cleared = 1;
+                }
 
                 if (ctrl->type == CTRL_BUTTON) {
                     ctrl->button.pressed = 1;
@@ -2047,11 +2116,11 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 }
                 /* For label, just record the press */
                 else if (ctrl->type == CTRL_LABEL) {
-                    return 0;  /* Press recorded, no visual change */
+                    return focus_cleared;  /* Press recorded, redraw only for focus change */
                 }
                 /* For checkbox and radio, just record the press */
                 else if (ctrl->type == CTRL_CHECKBOX || ctrl->type == CTRL_RADIOBUTTON) {
-                    return 0;  /* Press recorded, no visual change yet */
+                    return focus_cleared;  /* Press recorded, redraw only for focus change */
                 }
                 /* For textbox, set keyboard focus and cursor position */
                 else if (ctrl->type == CTRL_TEXTBOX) {
@@ -2422,7 +2491,7 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                         int item_idx = treeview_visible_to_item_sys(ctrl, visible_idx);
                         if (item_idx >= 0) {
                             sys_tree_item_t *item = &ctrl->treeview.items[item_idx];
-                            int box_x = inner_x + 4 + item->level * 14 - ctrl->treeview.hscroll_offset;
+                            int box_x = inner_x + 3 + item->level * TREEVIEW_INDENT_W - ctrl->treeview.hscroll_offset;
                             int box_y = inner_y + ((my - inner_y) / row_h) * row_h + (row_h - 9) / 2;
                             if ((item->flags & TREE_ITEM_HAS_CHILDREN) &&
                                 mx >= box_x && mx < box_x + 9 &&
@@ -2433,6 +2502,84 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                                 ctrl->treeview.last_action = TREE_ACTION_SELECT;
                             }
                             ctrl->treeview.action_index = item_idx;
+                            form->clicked_id = ctrl->id;
+                            form->press_control_id = -1;
+                            return 1;
+                        }
+                    }
+                }
+                else if (ctrl->type == CTRL_LISTBOX) {
+                    ctrl->listbox.last_action = LIST_ACTION_NONE;
+                    ctrl->listbox.action_index = -1;
+
+                    int row_h = ctrl->listbox.row_height ? ctrl->listbox.row_height : 16;
+                    int inner_x = abs_x + 2;
+                    int inner_y = abs_y + 2;
+                    int inner_w = ctrl->w > 4 ? ctrl->w - 4 : ctrl->w;
+                    int inner_h = ctrl->h > 4 ? ctrl->h - 4 : ctrl->h;
+                    int visible_rows = listbox_visible_rows_sys(ctrl);
+                    int max_scroll = listbox_max_scroll_sys(ctrl);
+                    int sb_w = 18;
+                    int needs_scrollbar = ctrl->listbox.item_count > visible_rows;
+                    int content_w = inner_w - (needs_scrollbar ? sb_w : 0);
+                    if (content_w < 1) content_w = 1;
+
+                    if (ctrl->listbox.scroll_offset > max_scroll)
+                        ctrl->listbox.scroll_offset = max_scroll;
+
+                    if (needs_scrollbar && inner_h > sb_w * 2 &&
+                        mx >= abs_x + ctrl->w - sb_w - 1 && mx < abs_x + ctrl->w - 1 &&
+                        my >= inner_y && my < inner_y + inner_h) {
+                        int arrow_size = sb_w;
+                        int track_len = inner_h - 2 * arrow_size;
+                        int thumb_size = 20;
+                        if (thumb_size > track_len) thumb_size = track_len;
+                        if (thumb_size < 1) thumb_size = 1;
+                        int thumb_pos = 0;
+                        if (max_scroll > 0 && track_len > thumb_size)
+                            thumb_pos = ((track_len - thumb_size) * ctrl->listbox.scroll_offset) / max_scroll;
+
+                        int rel_y = my - inner_y;
+                        if (rel_y < arrow_size) {
+                            ctrl->listbox.scrollbar_hovered_item = 0;
+                            ctrl->listbox.scrollbar_pressed = 1;
+                            if (ctrl->listbox.scroll_offset > 0)
+                                ctrl->listbox.scroll_offset--;
+                            return 1;
+                        } else if (rel_y >= inner_h - arrow_size) {
+                            ctrl->listbox.scrollbar_hovered_item = 2;
+                            ctrl->listbox.scrollbar_pressed = 1;
+                            if (ctrl->listbox.scroll_offset < max_scroll)
+                                ctrl->listbox.scroll_offset++;
+                            return 1;
+                        } else {
+                            int thumb_y = arrow_size + thumb_pos;
+                            if (rel_y >= thumb_y && rel_y < thumb_y + thumb_size) {
+                                ctrl->listbox.scrollbar_hovered_item = 1;
+                                ctrl->listbox.scrollbar_pressed = 1;
+                                ctrl->listbox.scrollbar_drag_offset = rel_y - thumb_y;
+                                return 1;
+                            }
+
+                            int rel_track = rel_y - arrow_size - thumb_size / 2;
+                            if (rel_track < 0) rel_track = 0;
+                            if (rel_track > track_len - thumb_size) rel_track = track_len - thumb_size;
+                            if (track_len > thumb_size && max_scroll > 0)
+                                ctrl->listbox.scroll_offset = (rel_track * max_scroll) / (track_len - thumb_size);
+                            ctrl->listbox.scrollbar_hovered_item = 1;
+                            ctrl->listbox.scrollbar_pressed = 1;
+                            ctrl->listbox.scrollbar_drag_offset = thumb_size / 2;
+                            return 1;
+                        }
+                    }
+
+                    if (mx >= inner_x && mx < inner_x + content_w &&
+                        my >= inner_y && my < inner_y + visible_rows * row_h) {
+                        int item_idx = ctrl->listbox.scroll_offset + ((my - inner_y) / row_h);
+                        if (item_idx >= 0 && item_idx < ctrl->listbox.item_count) {
+                            ctrl->listbox.selected_index = item_idx;
+                            ctrl->listbox.last_action = LIST_ACTION_SELECT;
+                            ctrl->listbox.action_index = item_idx;
                             form->clicked_id = ctrl->id;
                             form->press_control_id = -1;
                             return 1;
@@ -3401,6 +3548,22 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                     if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                                 }
 
+                                else if (ctrl->type == CTRL_LISTBOX) {
+                                    ctrl->listbox.scrollbar_pressed = 0;
+                                    ctrl->listbox.scrollbar_hovered_item = -1;
+                                    needs_redraw = 1;
+                                    if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                                }
+
+                                else if (ctrl->type == CTRL_TEXTBOX) {
+                                    if (ctrl->textbox.scrollbar_pressed) {
+                                        ctrl->textbox.scrollbar_pressed = 0;
+                                        ctrl->textbox.scrollbar_hovered_item = -1;
+                                        needs_redraw = 1;
+                                        if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                                    }
+                                }
+
                                 /* Valid click detected for buttons and other controls */
                                 else {
                                     form->clicked_id = ctrl->id;
@@ -3440,6 +3603,12 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (form->controls[i].type == CTRL_TREEVIEW && form->controls[i].treeview.hscrollbar_pressed) {
                             form->controls[i].treeview.hscrollbar_pressed = 0;
                             form->controls[i].treeview.hscrollbar_hovered_item = -1;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
+                        }
+                        if (form->controls[i].type == CTRL_LISTBOX && form->controls[i].listbox.scrollbar_pressed) {
+                            form->controls[i].listbox.scrollbar_pressed = 0;
+                            form->controls[i].listbox.scrollbar_hovered_item = -1;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
@@ -3748,6 +3917,31 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     }
                 }
 
+                if (ctrl && ctrl->type == CTRL_LISTBOX && ctrl->listbox.scrollbar_pressed &&
+                    ctrl->listbox.scrollbar_hovered_item == 1) {
+                    int inner_h = ctrl->h > 4 ? ctrl->h - 4 : ctrl->h;
+                    int max_val = listbox_max_scroll_sys(ctrl);
+                    int arrow_size = 18;
+                    int track_len = inner_h - 2 * arrow_size;
+                    int thumb_size = 20;
+                    if (thumb_size > track_len) thumb_size = track_len;
+                    if (thumb_size < 1) thumb_size = 1;
+
+                    if (max_val > 0 && track_len > thumb_size) {
+                        int track_y = form->win.y + ctrl->y + ctrl_y_offset + 2 + arrow_size;
+                        int rel_y = my - track_y - ctrl->listbox.scrollbar_drag_offset;
+                        if (rel_y < 0) rel_y = 0;
+                        if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
+                        int new_val = (rel_y * max_val) / (track_len - thumb_size);
+                        if (new_val > max_val) new_val = max_val;
+                        if (new_val != ctrl->listbox.scroll_offset) {
+                            ctrl->listbox.scroll_offset = new_val;
+                            needs_redraw = 1;
+                            if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
+                        }
+                    }
+                }
+
                 /* Textbox inline scrollbar dragging */
                 if (ctrl && ctrl->type == CTRL_TEXTBOX && ctrl->textbox.scrollbar_pressed && ctrl->textbox.scrollbar_hovered_item == 1) {
                     extern bmf_font_t font_n;
@@ -4035,6 +4229,19 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         dest->treeview.icon_closed_failed = 0;
                         dest->treeview.icon_open_failed = 0;
                         break;
+                    case CTRL_LISTBOX:
+                        dest->listbox.items = (sys_list_item_t*)kmalloc(sizeof(sys_list_item_t) * LISTBOX_MAX_ITEMS);
+                        dest->listbox.item_count = 0;
+                        dest->listbox.max_items = dest->listbox.items ? LISTBOX_MAX_ITEMS : 0;
+                        dest->listbox.selected_index = -1;
+                        dest->listbox.scroll_offset = 0;
+                        dest->listbox.row_height = ctrl->listbox.row_height ? ctrl->listbox.row_height : 16;
+                        dest->listbox.scrollbar_hovered_item = -1;
+                        dest->listbox.scrollbar_pressed = 0;
+                        dest->listbox.scrollbar_drag_offset = 0;
+                        dest->listbox.last_action = LIST_ACTION_NONE;
+                        dest->listbox.action_index = -1;
+                        break;
                     case CTRL_ICON:
                         dest->icon.cached_bitmap_orig = NULL;
                         dest->icon.saved_bg = NULL;
@@ -4156,6 +4363,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             if (ctrl->treeview.icon_open) {
                                 bitmap_free(ctrl->treeview.icon_open);
                                 ctrl->treeview.icon_open = NULL;
+                            }
+                            break;
+
+                        case CTRL_LISTBOX:
+                            if (ctrl->listbox.items) {
+                                kfree(ctrl->listbox.items);
+                                ctrl->listbox.items = NULL;
                             }
                             break;
 
@@ -4304,13 +4518,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         ctrl->treeview.item_count = count;
                         if (ctrl->treeview.selected_index >= count)
                             ctrl->treeview.selected_index = count ? 0 : -1;
-                        int max_scroll = treeview_max_scroll_sys(ctrl);
-                        if (ctrl->treeview.scroll_offset > max_scroll)
-                            ctrl->treeview.scroll_offset = max_scroll;
-                        int max_hscroll = 0;
-                        treeview_layout_sys(ctrl, NULL, NULL, NULL, NULL, NULL, NULL, &max_hscroll);
-                        if (ctrl->treeview.hscroll_offset > max_hscroll)
-                            ctrl->treeview.hscroll_offset = max_hscroll;
+                        treeview_keep_selected_visible_sys(ctrl);
                     }
                     break;
                 case PROP_TREE_SELECTED:
@@ -4320,6 +4528,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (selected >= ctrl->treeview.item_count)
                             selected = ctrl->treeview.item_count ? ctrl->treeview.item_count - 1 : -1;
                         ctrl->treeview.selected_index = selected;
+                        treeview_keep_selected_visible_sys(ctrl);
                     }
                     break;
                 case PROP_TREE_SCROLL:
@@ -4377,6 +4586,59 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         strcpy_s(ctrl->treeview.icon_open_path, path, sizeof(ctrl->treeview.icon_open_path));
                         ctrl->treeview.icon_open_failed = 0;
                     }
+                    break;
+                case PROP_LIST_ITEMS:
+                    if (ctrl->type == CTRL_LISTBOX && ctrl->listbox.items && value) {
+                        if (!sys_range_mapped(value, sizeof(sys_list_items_t)))
+                            break;
+                        sys_list_items_t batch = *(sys_list_items_t*)value;
+                        uint16_t count = batch.count;
+                        if (count > ctrl->listbox.max_items)
+                            count = ctrl->listbox.max_items;
+                        if (count > 0 && (!batch.items ||
+                            !sys_range_mapped((uint32_t)batch.items, sizeof(sys_list_item_t) * count))) {
+                            break;
+                        }
+                        if (batch.items && count > 0) {
+                            for (uint16_t i = 0; i < count; i++)
+                                ctrl->listbox.items[i] = batch.items[i];
+                        }
+                        ctrl->listbox.item_count = count;
+                        if (ctrl->listbox.selected_index >= count)
+                            ctrl->listbox.selected_index = count ? 0 : -1;
+                        int max_scroll = listbox_max_scroll_sys(ctrl);
+                        if (ctrl->listbox.scroll_offset > max_scroll)
+                            ctrl->listbox.scroll_offset = max_scroll;
+                    }
+                    break;
+                case PROP_LIST_SELECTED:
+                    if (ctrl->type == CTRL_LISTBOX) {
+                        int selected = (int)value;
+                        if (selected < -1) selected = -1;
+                        if (selected >= ctrl->listbox.item_count)
+                            selected = ctrl->listbox.item_count ? ctrl->listbox.item_count - 1 : -1;
+                        ctrl->listbox.selected_index = selected;
+                    }
+                    break;
+                case PROP_LIST_SCROLL:
+                    if (ctrl->type == CTRL_LISTBOX) {
+                        int scroll = (int)value;
+                        int max_scroll = listbox_max_scroll_sys(ctrl);
+                        if (scroll < 0) scroll = 0;
+                        if (scroll > max_scroll) scroll = max_scroll;
+                        ctrl->listbox.scroll_offset = scroll;
+                    }
+                    break;
+                case PROP_LIST_ACTION:
+                    if (ctrl->type == CTRL_LISTBOX) {
+                        ctrl->listbox.last_action = (uint8_t)value;
+                        if (value == LIST_ACTION_NONE)
+                            ctrl->listbox.action_index = -1;
+                    }
+                    break;
+                case PROP_LIST_ACTION_INDEX:
+                    if (ctrl->type == CTRL_LISTBOX)
+                        ctrl->listbox.action_index = (int16_t)value;
                     break;
                 case 1: /* PROP_CHECKED */
                     switch (ctrl->type) {
@@ -4549,6 +4811,26 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 case PROP_TREE_ICON_OPEN:
                     if (ctrl->type == CTRL_TREEVIEW)
                         return (uint32_t)ctrl->treeview.icon_open_path;
+                    return 0;
+                case PROP_LIST_ITEMS:
+                    if (ctrl->type == CTRL_LISTBOX)
+                        return (uint32_t)ctrl->listbox.items;
+                    return 0;
+                case PROP_LIST_SELECTED:
+                    if (ctrl->type == CTRL_LISTBOX)
+                        return (uint32_t)ctrl->listbox.selected_index;
+                    return 0;
+                case PROP_LIST_SCROLL:
+                    if (ctrl->type == CTRL_LISTBOX)
+                        return ctrl->listbox.scroll_offset;
+                    return 0;
+                case PROP_LIST_ACTION:
+                    if (ctrl->type == CTRL_LISTBOX)
+                        return ctrl->listbox.last_action;
+                    return 0;
+                case PROP_LIST_ACTION_INDEX:
+                    if (ctrl->type == CTRL_LISTBOX)
+                        return (uint32_t)ctrl->listbox.action_index;
                     return 0;
                 default:
                     return 0;

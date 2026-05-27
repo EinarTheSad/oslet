@@ -36,7 +36,7 @@ OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG
 #define ID_TB_NEW_FILE       76
 #define ID_FILE_BASE         2000
 
-#define MAX_TREE_ITEMS       128
+#define MAX_TREE_ITEMS       256
 #define MAX_FILE_ITEMS       64
 #define MAX_DIR_SCAN_ITEMS   128
 
@@ -427,6 +427,69 @@ static void tree_init_model(void) {
     tree_load_children(0);
 }
 
+static void tree_build_path_fallback(const char *path) {
+    char normalized[256];
+    char current_path[256];
+
+    state.tree_count = 1;
+    state.selected_tree_index = 0;
+    strcpy(state.tree_items[0].name, "C:/");
+    strcpy(state.tree_items[0].full_path, "C:/");
+    state.tree_items[0].level = 0;
+    state.tree_items[0].flags = TREE_ITEM_FOLDER | TREE_ITEM_HAS_CHILDREN | TREE_ITEM_EXPANDED | TREE_ITEM_LOADED;
+
+    if (!path || !path[0])
+        return;
+
+    strncpy(normalized, path, sizeof(normalized) - 1);
+    normalized[sizeof(normalized) - 1] = '\0';
+    normalize_path(normalized, sizeof(normalized));
+    if (strcmp(normalized, "C:/") == 0)
+        return;
+
+    strcpy(current_path, "C:/");
+
+    char temp[256];
+    strcpy(temp, normalized);
+    int len = strlen(temp);
+    if (len > 3 && temp[len - 1] == '/')
+        temp[len - 1] = '\0';
+
+    char *token = temp + 3;
+    uint8_t level = 1;
+    while (*token && state.tree_count < MAX_TREE_ITEMS) {
+        char *slash = strchr(token, '/');
+        size_t token_len = slash ? (size_t)(slash - token) : strlen(token);
+
+        if (token_len > 0) {
+            tree_node_t *node = &state.tree_items[state.tree_count];
+            int copy_len = token_len < sizeof(node->name) - 1 ? (int)token_len : (int)sizeof(node->name) - 1;
+            strncpy(node->name, token, copy_len);
+            node->name[copy_len] = '\0';
+            char next_path[256];
+            build_path(next_path, sizeof(next_path), current_path, node->name);
+            normalize_path(next_path, sizeof(next_path));
+            strncpy(current_path, next_path, sizeof(current_path) - 1);
+            current_path[sizeof(current_path) - 1] = '\0';
+            strncpy(node->full_path, current_path, sizeof(node->full_path) - 1);
+            node->full_path[sizeof(node->full_path) - 1] = '\0';
+            node->level = level++;
+            node->flags = TREE_ITEM_FOLDER | TREE_ITEM_LOADED;
+            if (slash)
+                node->flags |= TREE_ITEM_HAS_CHILDREN | TREE_ITEM_EXPANDED;
+            else if (directory_has_subdirs(node->full_path))
+                node->flags |= TREE_ITEM_HAS_CHILDREN;
+
+            state.selected_tree_index = state.tree_count;
+            state.tree_count++;
+        }
+
+        if (!slash)
+            break;
+        token = slash + 1;
+    }
+}
+
 static int tree_ensure_path(const char *path) {
     if (state.tree_count <= 0)
         tree_init_model();
@@ -463,8 +526,10 @@ static int tree_ensure_path(const char *path) {
                     break;
                 }
                 current = child;
-                state.tree_items[current].flags |= TREE_ITEM_EXPANDED;
-                tree_load_children(current);
+                if (slash) {
+                    state.tree_items[current].flags |= TREE_ITEM_EXPANDED;
+                    tree_load_children(current);
+                }
             }
             if (!slash) break;
             token = slash + 1;
@@ -480,11 +545,9 @@ static void tree_rebuild_for_path(const char *path) {
     state.selected_tree_index = 0;
     tree_init_model();
     if (!tree_ensure_path(path))
-        state.selected_tree_index = 0;
+        tree_build_path_fallback(path);
 
     if (state.form) {
-        sys_ctrl_set_prop(state.form, ID_TREEVIEW, PROP_TREE_SCROLL, 0);
-        ctrl_tree_set_hscroll(state.form, ID_TREEVIEW, 0);
         ctrl_tree_set_icons(state.form, ID_TREEVIEW, "C:/ICONS/FLD.ICO", "C:/ICONS/FLO.ICO");
     }
 }
@@ -495,7 +558,9 @@ static void sync_tree_control(void) {
     if (!tree_model_valid())
         tree_rebuild_for_path(state.current_path);
     if (!tree_model_valid())
-        return;
+        tree_build_path_fallback(state.current_path);
+    if (!tree_model_valid())
+        tree_build_path_fallback("C:/");
 
     if (state.selected_tree_index < 0 || state.selected_tree_index >= state.tree_count)
         state.selected_tree_index = 0;

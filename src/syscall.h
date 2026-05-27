@@ -183,6 +183,11 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define PROP_TREE_ICON_CLOSED 17 /* char* - closed folder icon path */
 #define PROP_TREE_ICON_OPEN 18 /* char* - open folder icon path */
 #define PROP_TREE_HSCROLL 19 /* int - horizontal tree scroll offset */
+#define PROP_LIST_ITEMS 20  /* sys_list_items_t* - replace list item rows */
+#define PROP_LIST_SELECTED 21 /* int - selected list item index */
+#define PROP_LIST_SCROLL 22 /* int - vertical list scroll offset */
+#define PROP_LIST_ACTION 23 /* int - last list action */
+#define PROP_LIST_ACTION_INDEX 24 /* int - last list action item index */
 
 #define TEXTBOX_EDIT_COPY       1
 #define TEXTBOX_EDIT_CUT        2
@@ -208,8 +213,10 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define CTRL_CLOCK 10
 #define CTRL_SCROLLBAR 11
 #define CTRL_TREEVIEW 12
+#define CTRL_LISTBOX 13
 
-#define TREEVIEW_MAX_ITEMS 128
+#define TREEVIEW_MAX_ITEMS 256
+#define LISTBOX_MAX_ITEMS 128
 
 #define TREE_ITEM_FOLDER       0x01
 #define TREE_ITEM_HAS_CHILDREN 0x02
@@ -219,6 +226,11 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define TREE_ACTION_NONE   0
 #define TREE_ACTION_SELECT 1
 #define TREE_ACTION_TOGGLE 2
+
+#define LIST_ITEM_DIRECTORY 0x01
+
+#define LIST_ACTION_NONE   0
+#define LIST_ACTION_SELECT 1
 
 #define FONT_NORMAL 0
 #define FONT_BOLD 1
@@ -238,6 +250,18 @@ typedef struct {
     const sys_tree_item_t *items;
     uint16_t count;
 } sys_tree_items_t;
+
+typedef struct {
+    char text[64];
+    uint8_t flags;
+    uint8_t reserved;
+    uint16_t app_id;
+} sys_list_item_t;
+
+typedef struct {
+    const sys_list_item_t *items;
+    uint16_t count;
+} sys_list_items_t;
 
 // Control-specific field structures
 typedef struct {
@@ -351,6 +375,20 @@ typedef struct {
     uint8_t icon_open_failed;
 } control_treeview_t;
 
+typedef struct {
+    sys_list_item_t *items;
+    uint16_t item_count;
+    uint16_t max_items;
+    int16_t selected_index;
+    uint16_t scroll_offset;
+    uint8_t row_height;
+    int8_t scrollbar_hovered_item;
+    uint8_t scrollbar_pressed;
+    int16_t scrollbar_drag_offset;
+    uint8_t last_action;
+    int16_t action_index;
+} control_listbox_t;
+
 // Main control structure
 typedef struct gui_control_s {
     uint16_t id;
@@ -376,6 +414,7 @@ typedef struct gui_control_s {
         control_dropdown_t dropdown;
         control_scrollbar_t scrollbar;
         control_treeview_t treeview;
+        control_listbox_t listbox;
     };
     char text[256];
 } gui_control_t;
@@ -1170,6 +1209,33 @@ static inline void ctrl_tree_clear_action(void *form, int16_t id) {
 
 static inline void ctrl_tree_set_hscroll(void *form, int16_t id, int scroll) {
     sys_ctrl_set_prop(form, id, PROP_TREE_HSCROLL, (uint32_t)scroll);
+}
+
+static inline void ctrl_list_set_items(void *form, int16_t id, const sys_list_item_t *items, uint16_t count) {
+    sys_list_items_t batch;
+    batch.items = items;
+    batch.count = count;
+    sys_ctrl_set_prop(form, id, PROP_LIST_ITEMS, (uint32_t)&batch);
+}
+
+static inline void ctrl_list_set_selected(void *form, int16_t id, int index) {
+    sys_ctrl_set_prop(form, id, PROP_LIST_SELECTED, (uint32_t)index);
+}
+
+static inline int ctrl_list_get_selected(void *form, int16_t id) {
+    return (int)sys_ctrl_get_prop(form, id, PROP_LIST_SELECTED);
+}
+
+static inline int ctrl_list_get_action(void *form, int16_t id) {
+    return (int)sys_ctrl_get_prop(form, id, PROP_LIST_ACTION);
+}
+
+static inline int ctrl_list_get_action_index(void *form, int16_t id) {
+    return (int)sys_ctrl_get_prop(form, id, PROP_LIST_ACTION_INDEX);
+}
+
+static inline void ctrl_list_clear_action(void *form, int16_t id) {
+    sys_ctrl_set_prop(form, id, PROP_LIST_ACTION, LIST_ACTION_NONE);
 }
 
 static inline void ctrl_set_pos(void *form, int16_t id, int x, int y) {
