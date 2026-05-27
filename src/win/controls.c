@@ -1397,6 +1397,8 @@ static int treeview_visible_to_item(gui_control_t *control, int visible_index) {
     return -1;
 }
 
+#define TREEVIEW_INDENT_W 10
+
 static int treeview_max_item_width(gui_control_t *control, bmf_font_t *font, int size) {
     int max_w = 1;
     if (!control || !control->treeview.items) return max_w;
@@ -1405,7 +1407,7 @@ static int treeview_max_item_width(gui_control_t *control, bmf_font_t *font, int
         if (!treeview_item_visible(control, i))
             continue;
         int text_w = font && font->data ? bmf_measure_text(font, size, control->treeview.items[i].text) : 64;
-        int row_w = 4 + (control->treeview.items[i].level * 14) + 12 + 16 + 18 + text_w + 4;
+        int row_w = 36 + (control->treeview.items[i].level * TREEVIEW_INDENT_W) + text_w;
         if (row_w > max_w)
             max_w = row_w;
     }
@@ -1523,11 +1525,11 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
         int row_y = inner_y + row * row_h;
         int selected = (item_idx == control->treeview.selected_index);
 
-        if (selected && content_w > 2)
-            gfx_fillrect(inner_x + 1, row_y, content_w - 2, row_h, COLOR_BLUE);
+        if (selected && content_w > 0)
+            gfx_fillrect(inner_x, row_y, content_w + 1, row_h, COLOR_BLUE);
 
-        int indent = item->level * 14;
-        int box_x = inner_x + 4 + indent - control->treeview.hscroll_offset;
+        int indent = item->level * TREEVIEW_INDENT_W;
+        int box_x = inner_x + 3 + indent - control->treeview.hscroll_offset;
         int box_y = row_y + (row_h - 9) / 2;
 
         if ((item->flags & TREE_ITEM_HAS_CHILDREN) &&
@@ -1544,12 +1546,12 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
         if (icon_y < row_y) icon_y = row_y;
 
         if (item->flags & TREE_ITEM_FOLDER) {
-            bitmap_t *icon = (item->flags & TREE_ITEM_EXPANDED) ? control->treeview.icon_open
-                                                                : control->treeview.icon_closed;
+            int open_icon = selected;
+            bitmap_t *icon = open_icon ? control->treeview.icon_open : control->treeview.icon_closed;
             if (icon && icon_x >= inner_x && icon_x + icon->width <= inner_x + content_w)
                 bitmap_draw(icon, icon_x, icon_y);
             else if (icon_x >= inner_x && icon_x + 16 <= inner_x + content_w)
-                treeview_draw_fallback_folder(icon_x, icon_y, item->flags & TREE_ITEM_EXPANDED);
+                treeview_draw_fallback_folder(icon_x, icon_y, open_icon);
         }
 
         int text_x = icon_x + 18;
@@ -1586,6 +1588,72 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
         if (needs_scrollbar)
             gfx_fillrect(abs_x + control->w - sb_w - 1, abs_y + control->h - hsb_h - 1,
                          sb_w, hsb_h, theme->button_color);
+    }
+}
+
+void ctrl_draw_listbox(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
+    bmf_font_t *font = &font_n;
+    int size = control->font_size > 0 ? control->font_size : 12;
+    int row_h = control->listbox.row_height ? control->listbox.row_height : 16;
+    int sb_w = 18;
+
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
+    gfx_hline(abs_x, abs_y, control->w, theme->frame_dark);
+    gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);
+    gfx_hline(abs_x + 1, abs_y + control->h - 1, control->w - 1, theme->frame_light);
+    gfx_vline(abs_x + control->w - 1, abs_y, control->h, theme->frame_light);
+    gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_DARK_GRAY);
+    gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_DARK_GRAY);
+
+    if (!control->listbox.items || control->listbox.item_count == 0)
+        return;
+
+    int inner_x = abs_x + 2;
+    int inner_y = abs_y + 2;
+    int inner_w = control->w > 4 ? control->w - 4 : control->w;
+    int inner_h = control->h > 4 ? control->h - 4 : control->h;
+    int visible_rows = row_h > 0 ? inner_h / row_h : 1;
+    if (visible_rows < 1) visible_rows = 1;
+    int needs_scrollbar = control->listbox.item_count > visible_rows;
+    int content_w = inner_w - (needs_scrollbar ? sb_w : 0);
+    if (content_w < 1) content_w = 1;
+    int max_scroll = control->listbox.item_count > visible_rows
+                   ? control->listbox.item_count - visible_rows : 0;
+
+    if (control->listbox.scroll_offset > max_scroll)
+        control->listbox.scroll_offset = max_scroll;
+
+    for (int row = 0; row < visible_rows; row++) {
+        int item_idx = control->listbox.scroll_offset + row;
+        if (item_idx < 0 || item_idx >= control->listbox.item_count)
+            break;
+
+        sys_list_item_t *item = &control->listbox.items[item_idx];
+        int row_y = inner_y + row * row_h;
+        int selected = (item_idx == control->listbox.selected_index);
+
+        if (selected && content_w > 0)
+            gfx_fillrect(inner_x, row_y, content_w + 1, row_h, COLOR_BLUE);
+
+        int text_x = inner_x + 4;
+        int text_y = row_y + (row_h - 12) / 2 + 3;
+        uint8_t text_color = selected ? COLOR_WHITE : control->fg;
+        treeview_draw_text_clipped(text_x, text_y, font, size, item->text,
+                                   text_color, inner_x + 1, inner_x + content_w - 2);
+    }
+
+    if (needs_scrollbar && inner_h > sb_w * 2) {
+        gui_control_t sb = {0};
+        sb.type = CTRL_SCROLLBAR;
+        sb.w = sb_w;
+        sb.h = inner_h;
+        sb.scrollbar.checked = 0;
+        sb.scrollbar.cursor_pos = control->listbox.scroll_offset;
+        sb.scrollbar.max_length = max_scroll;
+        sb.scrollbar.hovered_item = control->listbox.scrollbar_hovered_item;
+        sb.scrollbar.pressed = control->listbox.scrollbar_pressed;
+        ctrl_draw_scrollbar(&sb, abs_x + control->w - sb_w - 1, inner_y);
     }
 }
 
@@ -1635,6 +1703,9 @@ void ctrl_draw_with_offset(window_t *win, gui_control_t *control, int y_offset) 
     }
     else if (ctrl_type == 12) { /* CTRL_TREEVIEW */
         ctrl_draw_treeview(control, abs_x, abs_y);
+    }
+    else if (ctrl_type == 13) { /* CTRL_LISTBOX */
+        ctrl_draw_listbox(control, abs_x, abs_y);
     }
 }
 

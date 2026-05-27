@@ -27,6 +27,7 @@ OSLET_APP("Notepad", OSLET_KIND_GIX, "C:/ICONS/TEXT.ICO", OSLET_APP_FLAG_NONE);
 #define NOTEPAD_H      255
 #define TEXTBOX_MARGIN   5
 #define TEXTBOX_BOTTOM  52
+#define NOTEPAD_FILE_FILTER "*.txt;*.grp;*.ini;*.cfg;*.md"
 
 typedef struct {
     void *form;
@@ -250,12 +251,32 @@ static void update_layout(void *form) {
 }
 
 static int prompt_for_path(notepad_state_t *state, const char *title, char *out_path, int out_len) {
-    const char *initial_path = "";
+    char initial_path[256] = "C:/untitled.txt";
+    int is_open = title && title[0] == 'O';
+
     if (state && state->current_file_path[0]) {
-        initial_path = state->current_file_path;
+        if (is_open) {
+            strncpy(initial_path, state->current_file_path, sizeof(initial_path) - 1);
+            initial_path[sizeof(initial_path) - 1] = '\0';
+
+            char *slash = strrchr(initial_path, '/');
+            if (slash && slash >= initial_path + 2) {
+                *(slash + 1) = '\0';
+                if (strlen(initial_path) + strlen(NOTEPAD_FILE_FILTER) < sizeof(initial_path))
+                    strcat(initial_path, NOTEPAD_FILE_FILTER);
+            } else {
+                strcpy(initial_path, "C:/" NOTEPAD_FILE_FILTER);
+            }
+        } else {
+            strncpy(initial_path, state->current_file_path, sizeof(initial_path) - 1);
+            initial_path[sizeof(initial_path) - 1] = '\0';
+        }
+    } else if (is_open) {
+        strcpy(initial_path, "C:/" NOTEPAD_FILE_FILTER);
     }
 
-    return gui_show_path_dialog(title, initial_path, out_path, out_len);
+    return gui_show_path_dialog_filtered(title, initial_path, NOTEPAD_FILE_FILTER,
+                                         out_path, out_len);
 }
 
 static int notepad_new(notepad_state_t *state) {

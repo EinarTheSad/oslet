@@ -15,6 +15,7 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control, int y_offset
 void ctrl_draw_clock(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y);
+void ctrl_draw_listbox(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg);
 void ctrl_hide_dropdown_list(window_t *win, gui_control_t *control);
 void ctrl_draw(window_t *win, gui_control_t *control);

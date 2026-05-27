@@ -14,6 +14,7 @@ OSLET_APP("Image Viewer", OSLET_KIND_GIX, "C:/ICONS/VIEWER.ICO", OSLET_APP_FLAG_
 #define ID_PREV       6
 #define ID_NEXT       7
 #define ID_FULLSCREEN 8
+#define IMGVIEW_FILE_FILTER "*.bmp;*.ico"
 
 /* Controls for Form1 */
 static gui_control_t Form1_controls[] = {
@@ -223,7 +224,21 @@ static int imgview_event(void *form, int ev, void *userdata) {
     if (ev == ID_PICTURE) {
         char newpath[256];
         const char *cur = ctrl_get_text(state->form, ID_PICTURE);
-        if (gui_show_path_dialog("Open", cur, newpath, sizeof(newpath))) {
+        char initial[256] = "C:/" IMGVIEW_FILE_FILTER;
+        if (cur && cur[0]) {
+            strncpy(initial, cur, sizeof(initial) - 1);
+            initial[sizeof(initial) - 1] = '\0';
+            char *slash = strrchr(initial, '/');
+            if (slash && slash >= initial + 2) {
+                *(slash + 1) = '\0';
+                if (strlen(initial) + strlen(IMGVIEW_FILE_FILTER) < sizeof(initial))
+                    strcat(initial, IMGVIEW_FILE_FILTER);
+            } else {
+                strcpy(initial, "C:/" IMGVIEW_FILE_FILTER);
+            }
+        }
+        if (gui_show_path_dialog_filtered("Open", initial, IMGVIEW_FILE_FILTER,
+                                          newpath, sizeof(newpath))) {
             ctrl_set_image(state->form, ID_PICTURE, newpath);
             sys_win_draw(state->form);
         }

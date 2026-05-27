@@ -90,7 +90,8 @@ static int find_value(const char *buf, int len, const char *key, char *out, int 
             out[out_pos++] = c;
         }
         out[out_pos] = '\0';
-        return out_pos > 0;
+        if (out_pos > 0)
+            return 1;
     }
     return 0;
 }
