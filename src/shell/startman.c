@@ -332,8 +332,68 @@ static char g_pending_grp_icon[64] = {0};
 static char g_pending_grp_name[64] = {0};
 static int g_pending_win_x = 0;
 static int g_pending_win_y = 0;
+static int g_main_geom_valid = 0;
+static int g_main_win_x = WIN_X;
+static int g_main_win_y = WIN_Y;
+static int g_main_win_w = MAIN_WIDTH;
+static int g_main_win_h = MAIN_HEIGHT;
 static void rebuild_layout(startman_state_t *state);
 static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path, const char *display_name);
+
+static void save_main_geometry(startman_state_t *state) {
+    if (!state || !state->is_main_window || !state->form)
+        return;
+
+    gui_form_t *form = (gui_form_t *)state->form;
+    window_t *win = &form->win;
+    if (win->is_maximized && win->saved_w > 0 && win->saved_h > 0) {
+        g_main_win_x = win->saved_x;
+        g_main_win_y = win->saved_y;
+        g_main_win_w = win->saved_w;
+        g_main_win_h = win->saved_h;
+    } else {
+        g_main_win_x = win->x;
+        g_main_win_y = win->y;
+        g_main_win_w = win->w;
+        g_main_win_h = win->h;
+    }
+    g_main_geom_valid = 1;
+}
+
+static int subwindow_slot_used(int slot) {
+    int x = SUBWIN_X + slot * CASCADE_OFFSET_X;
+    int y = SUBWIN_Y + slot * CASCADE_OFFSET_Y;
+
+    for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
+        prog_instance_t *other = progman_get_instance(i);
+        if (!other || other->state != PROG_STATE_RUNNING || !other->module ||
+            strcmp(other->module->name, "Start Manager") != 0 || !other->user_data)
+            continue;
+
+        startman_state_t *other_state = other->user_data;
+        if (other_state->is_main_window || !other_state->form)
+            continue;
+
+        gui_form_t *form = (gui_form_t *)other_state->form;
+        if (form->win.x == x && form->win.y == y)
+            return 1;
+    }
+
+    return 0;
+}
+
+static void set_next_subwindow_position(void) {
+    for (int slot = 0; slot < PROGMAN_INSTANCES_MAX; slot++) {
+        if (!subwindow_slot_used(slot)) {
+            g_pending_win_x = SUBWIN_X + slot * CASCADE_OFFSET_X;
+            g_pending_win_y = SUBWIN_Y + slot * CASCADE_OFFSET_Y;
+            return;
+        }
+    }
+
+    g_pending_win_x = SUBWIN_X + PROGMAN_INSTANCES_MAX * CASCADE_OFFSET_X;
+    g_pending_win_y = SUBWIN_Y + PROGMAN_INSTANCES_MAX * CASCADE_OFFSET_Y;
+}
 
 static int startman_init(prog_instance_t *inst) {
     startman_state_t *state = sys_malloc(sizeof(startman_state_t));
@@ -396,7 +456,14 @@ static int startman_init(prog_instance_t *inst) {
     int icon_offset = 0;
     int cols = state->is_main_window ? COLS : COLS_CHILD;
 
-    if (!state->is_main_window) {
+    if (state->is_main_window) {
+        if (g_main_geom_valid) {
+            win_x = g_main_win_x;
+            win_y = g_main_win_y;
+            win_w = g_main_win_w;
+            win_h = g_main_win_h;
+        }
+    } else {
         /* Subgroup windows: use cascade position */
         win_x = g_pending_win_x;
         win_y = g_pending_win_y;
@@ -476,7 +543,8 @@ static int startman_init(prog_instance_t *inst) {
         ctrl_set_image(state->form, icon.id, state->apps[i].icon_path);
     }
 
-    //rebuild_layout(state);
+    if (state->is_main_window && g_main_geom_valid)
+        rebuild_layout(state);
     sys_win_draw(state->form);
     prog_register_window(inst, state->form);
     return 0;
@@ -523,12 +591,16 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
     startman_state_t *state = inst->user_data;
 
     /* Handle window events */
-    if (event == -1 || event == -2)
+    if (event == -1 || event == -2) {
+        if (event == -2)
+            save_main_geometry(state);
         return PROG_EVENT_REDRAW;
+    }
     
     /* Handle resize event */
     if (event == -4) {
         rebuild_layout(state);
+        save_main_geometry(state);
         return PROG_EVENT_REDRAW;
     }
 
@@ -587,6 +659,7 @@ static void startman_cleanup(prog_instance_t *inst) {
     startman_state_t *state = inst->user_data;
     if (state) {
         if (state->form) {
+            save_main_geometry(state);
             prog_unregister_window(inst, state->form);
             sys_win_destroy_form(state->form);
         }
@@ -614,12 +687,7 @@ static void open_group_window(const char *grp_path, const char *parent_grp, cons
         g_pending_grp_name[0] = '\0';
     }
     /* Calculate cascade position for this new subwindow */
-    static int next_cascade_x = SUBWIN_X;
-    static int next_cascade_y = SUBWIN_Y;
-    g_pending_win_x = next_cascade_x;
-    g_pending_win_y = next_cascade_y;
-    next_cascade_x += CASCADE_OFFSET_X;
-    next_cascade_y += CASCADE_OFFSET_Y;
+    set_next_subwindow_position();
 
     /* Launch new startman instance */
     progman_launch("Start Manager");
