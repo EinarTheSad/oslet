@@ -48,32 +48,54 @@ static void ata_release(void) {
     __sync_lock_release(&ata_driver_lock);
 }
 
+static inline int ata_can_yield(void) {
+    uint32_t eflags;
+    __asm__ volatile("pushfl\n\tpopl %0" : "=r"(eflags));
+    return (eflags & (1 << 9)) != 0;
+}
+
+static inline void ata_poll_delay(uint32_t *spins) {
+    if (((*spins)++ & 0x3F) == 0 && ata_can_yield()) {
+        task_yield();
+    } else {
+        for (volatile int i = 0; i < 10; i++);
+    }
+}
+
 static inline void ata_wait_bsy(void) {
-    while (inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_BSY);
+    uint32_t spins = 0;
+    while (inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_BSY) {
+        ata_poll_delay(&spins);
+    }
 }
 
 static int ata_wait_bsy_timeout(uint32_t timeout_ms) {
     uint32_t ticks = timeout_ms * 10000; // ~100us per tick
+    uint32_t spins = 0;
     while (ticks-- > 0) {
         uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
         // Wait for BSY to clear and DRDY to be set for better compatibility with some controllers (e.g., PCem)
         if (!(status & ATA_SR_BSY) && (status & ATA_SR_DRDY)) return 0;
-        for (volatile int i = 0; i < 10; i++);
+        ata_poll_delay(&spins);
     }
     return -1;
 }
 
 static inline void ata_wait_drq(void) {
-    while (!(inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_DRQ));
+    uint32_t spins = 0;
+    while (!(inb(ATA_PRIMARY_IO + ATA_REG_STATUS) & ATA_SR_DRQ)) {
+        ata_poll_delay(&spins);
+    }
 }
 
 static int ata_wait_drq_timeout(uint32_t timeout_ms) {
     uint32_t ticks = timeout_ms * 10000;
+    uint32_t spins = 0;
     while (ticks-- > 0) {
         uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
         if (status & ATA_SR_ERR) return -2;
         if (status & ATA_SR_DRQ) return 0;
-        for (volatile int i = 0; i < 10; i++);
+        ata_poll_delay(&spins);
     }
     return -1;
 }
@@ -83,18 +105,20 @@ static int ata_time_before(uint32_t a, uint32_t b) {
 }
 
 static int ata_wait_bsy_deadline(uint32_t deadline) {
+    uint32_t spins = 0;
     while (ata_time_before(timer_get_ticks(), deadline)) {
         uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
         if (status == 0 || status == 0xFF)
             return -1;
         if (!(status & ATA_SR_BSY) && (status & ATA_SR_DRDY))
             return 0;
-        for (volatile int i = 0; i < 10; i++);
+        ata_poll_delay(&spins);
     }
     return -1;
 }
 
 static int ata_wait_drq_deadline(uint32_t deadline) {
+    uint32_t spins = 0;
     while (ata_time_before(timer_get_ticks(), deadline)) {
         uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
         if (status == 0 || status == 0xFF)
@@ -103,7 +127,7 @@ static int ata_wait_drq_deadline(uint32_t deadline) {
             return -1;
         if (status & ATA_SR_DRQ)
             return 0;
-        for (volatile int i = 0; i < 10; i++);
+        ata_poll_delay(&spins);
     }
     return -1;
 }

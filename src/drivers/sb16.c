@@ -2,14 +2,14 @@
 #include "dma.h"
 #include "../irq/io.h"
 #include "../irq/irq.h"
-#include "../task/timer.h"
 #include "../task/task.h"
 
 #define SB_DSP_RESET     0x226
 #define SB_DSP_READ      0x22A
 #define SB_DSP_WRITE     0x22C
 #define SB_DSP_READ_STATUS 0x22E
-#define SB_DSP_INT_ACK   0x22F
+#define SB_DSP_8BIT_ACK  0x22E
+#define SB_DSP_16BIT_ACK 0x22F
 
 #define SB_MIXER_ADDR    0x224
 #define SB_MIXER_DATA    0x225
@@ -35,8 +35,8 @@ static uint8_t dsp_major = 0;
 static uint8_t dsp_minor = 0;
 static uint8_t dma_buffer[DMA_BUFFER_SIZE] __attribute__((aligned(4096)));
 static uint32_t dma_phys = 0;
-static volatile int dma_complete = 0;
 static volatile int sb16_lock = 0;
+static sb16_irq_callback_t irq_callback = 0;
 
 void sb16_acquire(void) {
     while (__sync_lock_test_and_set(&sb16_lock, 1)) {
@@ -46,6 +46,10 @@ void sb16_acquire(void) {
 
 void sb16_release(void) {
     __sync_lock_release(&sb16_lock);
+}
+
+void sb16_set_irq_callback(sb16_irq_callback_t callback) {
+    irq_callback = callback;
 }
 
 /* Remember last set mixer volumes (4-bit values 0..15). Default to 15 (max) */
@@ -105,8 +109,11 @@ static uint8_t mixer_read(uint8_t reg) {
 }
 
 static void sb16_irq_handler(void) {
-    inb(SB_DSP_INT_ACK);
-    dma_complete = 1;
+    inb(SB_DSP_8BIT_ACK);
+    inb(SB_DSP_16BIT_ACK);
+    if (irq_callback) {
+        irq_callback();
+    }
 }
 
 void sb16_init(void) {
@@ -118,6 +125,8 @@ void sb16_init(void) {
 
     /* Reset mixer to defaults */
     mixer_write(0x00, 0x00);
+    mixer_write(0x80, 0x02); /* IRQ5 */
+    mixer_write(0x81, 0x02); /* 8-bit DMA channel 1 */
     
     if (dsp_write(DSP_CMD_GET_VERSION) != 0) {
         return;
@@ -206,12 +215,4 @@ void sb16_stop(void) {
     dsp_write(DSP_CMD_EXIT_AUTO_8BIT);
     dma_stop_channel(DMA_CHANNEL);
     dsp_write(DSP_CMD_SPEAKER_OFF);
-}
-
-void sb16_clear_irq_flag(void) {
-    dma_complete = 0;
-}
-
-int sb16_check_irq_flag(void) {
-    return dma_complete;
 }
