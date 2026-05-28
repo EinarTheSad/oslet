@@ -124,7 +124,6 @@ static void save_settings(cpl_theme_state_t *state) {
     char tmp1[4096];
     char theme_text[512];
 
-    /* Read existing INI to preserve other sections */
     int fd = sys_open(SETTINGS_PATH, "r");
     int bytes = 0;
     if (fd >= 0) {
@@ -134,7 +133,6 @@ static void save_settings(cpl_theme_state_t *state) {
     if (bytes > 0) read_buf[bytes] = '\0';
     else read_buf[0] = '\0';
 
-    /* Build theme section text */
     snprintf(theme_text, sizeof(theme_text),
         "[THEME]\r\n"
         "BG_COLOR=%d\r\n"
@@ -277,7 +275,6 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
 
     /* Apply button */
     if (event == CTRL_BTN_APPLY) {
-        /* Read values from dropdowns */
         state->theme_winbg = get_dropdown_value(state->form, CTRL_DROP_WINBG);
         state->theme_titlebar = get_dropdown_value(state->form, CTRL_DROP_TITLEBAR);
         state->theme_titlebtn = get_dropdown_value(state->form, CTRL_DROP_TITLEBTN);
@@ -285,31 +282,24 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_startbtn = get_dropdown_value(state->form, CTRL_DROP_STARTBTN);
         state->theme_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
 
-          apply_theme(state);
-          save_settings(state);
+        apply_theme(state);
+        save_settings(state);
 
-          state->orig_theme_winbg = state->theme_winbg;
-          state->orig_theme_titlebar = state->theme_titlebar;
-          state->orig_theme_titlebtn = state->theme_titlebtn;
-          state->orig_theme_text_color = state->theme_text_color;
-          state->orig_theme_taskbar = state->theme_taskbar;
-          state->orig_theme_startbtn = state->theme_startbtn;
+        state->orig_theme_winbg = state->theme_winbg;
+        state->orig_theme_titlebar = state->theme_titlebar;
+        state->orig_theme_titlebtn = state->theme_titlebtn;
+        state->orig_theme_text_color = state->theme_text_color;
+        state->orig_theme_taskbar = state->theme_taskbar;
+        state->orig_theme_startbtn = state->theme_startbtn;
 
-          /* Draw this form immediately, then request a full desktop redraw.
-              Avoid calling sys_win_redraw_all here because it would consume the
-              full-redraw flag before the desktop loop can perform its own
-              desktop/taskbar redraw. The desktop main loop will notice the
-              full redraw request and repaint wallpaper/taskbar/icons. */
-          sys_win_draw(state->form);
-          sys_win_invalidate_icons();
-          sys_win_force_full_redraw();
+        sys_win_draw(state->form);
+        sys_win_invalidate_icons();
+        sys_win_force_full_redraw();
 
-          return PROG_EVENT_HANDLED;
+        return PROG_EVENT_HANDLED;
     }
 
-    /* OK button */
     if (event == CTRL_BTN_OK) {
-        /* Read values from dropdowns */
         state->theme_winbg = get_dropdown_value(state->form, CTRL_DROP_WINBG);
         state->theme_titlebar = get_dropdown_value(state->form, CTRL_DROP_TITLEBAR);
         state->theme_titlebtn = get_dropdown_value(state->form, CTRL_DROP_TITLEBTN);
@@ -317,20 +307,16 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_startbtn = get_dropdown_value(state->form, CTRL_DROP_STARTBTN);
         state->theme_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
 
-          apply_theme(state);
-          save_settings(state);
+        apply_theme(state);
+        save_settings(state);
 
-          /* Draw this form and request desktop full redraw; let the desktop
-              main loop perform wallpaper/taskbar redrawing before final
-              window compositing. */
-          sys_win_draw(state->form);
-          sys_win_invalidate_icons();
-          sys_win_force_full_redraw();
+        sys_win_draw(state->form);
+        sys_win_invalidate_icons();
+        sys_win_force_full_redraw();
 
-          return PROG_EVENT_CLOSE;
+        return PROG_EVENT_CLOSE;
     }
 
-    /* Cancel button */
     if (event == CTRL_BTN_CANCEL) {
         state->theme_winbg = state->orig_theme_winbg;
         state->theme_titlebar = state->orig_theme_titlebar;

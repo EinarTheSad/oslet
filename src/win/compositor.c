@@ -188,7 +188,6 @@ void compositor_draw_all(window_manager_t *wm) {
                     int list_h = ctrl->dropdown.item_count * 16;
                     int list_y = abs_y + ctrl->h;
                     
-                    /* Auto-flip: if list extends past screen bottom, render above control */
                     if (list_y + list_h > WM_SCREEN_HEIGHT) {
                         list_y = abs_y - list_h;
                         if (list_y < 0) {

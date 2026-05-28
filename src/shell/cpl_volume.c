@@ -36,11 +36,9 @@ const progmod_t volume_module = {
 static void update_volume_display(volume_state_t *state) {
     char buf[16];
 
-    /* Middle marker shows effective volume */
     snprintf(buf, sizeof(buf), "%d", state->volume);
     ctrl_set_text(state->form, CTRL_LABEL_MID, buf);
 
-    /* Put scrollbar in inverted position */
     gui_control_t *sb = sys_win_get_control(state->form, CTRL_SCROLLBAR_ID);
     if (sb) sb->scrollbar.cursor_pos = 100 - state->volume;
 
@@ -51,18 +49,16 @@ static void apply_volume(volume_state_t *state) {
     uint8_t hw_vol;
 
     if (state->volume == 0) {
-        hw_vol = 0; /* muted */
+        hw_vol = 0;
     } else {
-        /* scale 1..100 -> 1..31 */
-        hw_vol = (state->volume * 31 + 50) / 100; /* rounded */
-        if (hw_vol == 0) hw_vol = 1; /* keep audible volumes >0 */
+        hw_vol = (state->volume * 31 + 50) / 100;
+        if (hw_vol == 0) hw_vol = 1;
     }
 
     sys_sound_set_volume(hw_vol, hw_vol);
 }
 
 static void load_volume(volume_state_t *state) {
-    /* default already set by caller */
     int fd = sys_open(SETTINGS_PATH, "r");
     if (fd < 0) return;
 
@@ -116,20 +112,16 @@ static int volume_init(prog_instance_t *inst) {
 
     inst->user_data = state;
 
-    /* default: 66; if SB16 present, read actual hardware volume */
     state->volume = 66;
     if (sys_sound_detected()) {
         uint32_t packed = sys_sound_get_volume();
         uint8_t left = (packed >> 8) & 0xFF;
         uint8_t right = packed & 0xFF;
-        /* clamp 5-bit values */
         left &= 0x1F; right &= 0x1F;
         uint8_t avg = (left + right + 1) / 2;
-        /* Map 0..31 -> 0..100 */
         state->volume = (avg * 100 + 15) / 31;
     }
 
-    /* override with saved preference if present */
     load_volume(state);
 
     state->form = sys_win_create_form("Sound", 555, 278, 85, 175);
@@ -153,7 +145,6 @@ static int volume_init(prog_instance_t *inst) {
         sys_win_add_control(state->form, &controls[i]);
     }
 
-    /* reflect initial state in UI and hardware */
     update_volume_display(state);
     apply_volume(state);
     sys_win_draw(state->form);
@@ -176,7 +167,6 @@ static int volume_event(prog_instance_t *inst, int win_idx, int event) {
         gui_control_t *sb = sys_win_get_control(state->form, CTRL_SCROLLBAR_ID);
         if (!sb) return PROG_EVENT_NONE;
 
-        /* inverted mapping: scrollbar=0 -> volume=100, scrollbar=100 -> volume=0 */
         int inv = 100 - sb->scrollbar.cursor_pos;
         if (inv < 0) inv = 0;
         if (inv > 100) inv = 100;
@@ -197,7 +187,6 @@ static void volume_cleanup(prog_instance_t *inst) {
     if (!inst || !inst->user_data) return;
 
     volume_state_t *state = (volume_state_t*)inst->user_data;
-    /* persist volume to INI before freeing */
     save_volume(state);
 
     free(state);

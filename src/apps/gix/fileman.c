@@ -764,14 +764,12 @@ static void refresh_display(void) {
     scan_directory();
     clear_file_controls();
     
-    /* Update path textbox */
     char upper_path[256];
     strcpy(upper_path, state.current_path);
     str_toupper(upper_path);
     ctrl_set_text(state.form, ID_PATH_TEXTBOX, upper_path);
     sync_tree_control();
     
-    /* Update file scrollbar */
     int file_rows_total = (state.file_count + state.file_cols - 1) / state.file_cols;
     if (file_rows_total > state.file_rows) {
         ctrl_set_visible(state.form, ID_FILE_SCROLLBAR, 1);
@@ -787,7 +785,6 @@ static void refresh_display(void) {
         state.file_scroll_offset = 0;
     }
     
-    /* Update file items with repositioning for dynamic layout */
     int visible_file_count = state.file_rows * state.file_cols;
     for (int i = 0; i < visible_file_count; i++) {
         int idx = (state.file_scroll_offset * state.file_cols) + i;

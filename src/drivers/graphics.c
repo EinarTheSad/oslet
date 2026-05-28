@@ -149,7 +149,6 @@ void gfx_enter_mode(void) {
     }
     graphics_active = 1;
     if (!backbuffer) gfx_init();
-    /* Ensure frontbuffer cache matches cleared VRAM */
     if (frontbuffer) memset_s(frontbuffer, 0, GFX_BUFFER_SIZE);
 }
 
@@ -926,20 +925,17 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     int height = info.height > 0 ? info.height : -info.height;
     int bottom_up = info.height > 0;
 
-    /* Reject negative or zero dimensions */
     if (width <= 0 || height <= 0) {
         fat32_close(f);
         return NULL;
     }
 
-    /* Reject implausibly large bitmaps that would exhaust memory or CPU */
     const int MAX_DIM = 4096;
     if (width > MAX_DIM || height > MAX_DIM) {
         fat32_close(f);
         return NULL;
     }
 
-    /* Allocate buffer for output (always 4-bit = 2 pixels per byte) */
     int out_row_bytes = (width + 1) / 2;
     size_t buffer_size = (size_t)out_row_bytes * (size_t)height;
     const size_t MAX_BUFFER = 1024 * 1024;
@@ -953,10 +949,9 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         fat32_close(f);
         return NULL;
     }
-    /* Zero the output buffer so preserved nibbles are clean when writing pixels */
     memset_s(bitmap, 0, buffer_size);
 
-    /* Read palette for indexed formats, capped to 16 colors for our 4-bit display */
+    /* The display is 4bpp, so indexed BMP palettes are capped to 16 colors. */
     uint8_t (*palette)[3] = NULL;
     int palette_entries = 0;
 
@@ -986,7 +981,6 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             palette[i][2] = bgr[0];
         }
         
-        /* Skip remaining palette entries if palette is larger than 16 */
         for (int i = load_entries; i < palette_entries; i++) {
             uint8_t bgr[4];
             fat32_read(f, bgr, 4);
@@ -995,10 +989,9 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         palette_entries = load_entries;
     }
 
-    /* Seek to pixel data */
     fat32_seek(f, header.offset);
 
-    /* Calculate source row size (DWORD-aligned) */
+    /* BMP rows are DWORD-aligned on disk. */
     int src_row_size;
     if (info.bpp == 24) {
         src_row_size = ((width * 3) + 3) & ~3;
@@ -1016,7 +1009,6 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         return NULL;
     }
 
-    /* Allocate error buffers for dithering (Floyd-Steinberg) */
     int16_t *err_r_curr = NULL, *err_g_curr = NULL, *err_b_curr = NULL;
     int16_t *err_r_next = NULL, *err_g_next = NULL, *err_b_next = NULL;
     
@@ -1051,7 +1043,6 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         }
     }
 
-    /* Read and convert bitmap data */
     for (int y = 0; y < height; y++) {
         if (fat32_read(f, row_buf, src_row_size) != src_row_size) {
             if (err_r_curr) kfree(err_r_curr);
@@ -1206,7 +1197,6 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
 void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int dest_x, int dest_y, int transparent) {
     if (!backbuffer || !cached_data) return;
 
-    /* Calculate actual dirty region */
     int dirty_x0 = dest_x < 0 ? 0 : dest_x;
     int dirty_y0 = dest_y < 0 ? 0 : dest_y;
     int dirty_x1 = dest_x + width - 1;
@@ -1312,13 +1302,13 @@ void gfx_draw_cached_bmp_region(uint8_t *cached_data, int width, int height, int
     }
 }
 
-/* Fast/robust helpers to read/write rectangular regions as packed 4bpp rows. */
+/* Packed 4bpp screen-region copy used by windows and popup controls. */
 void gfx_read_screen_region_packed(uint8_t *dst, int width, int height, int dest_x, int dest_y) {
     if (!backbuffer || !dst) return;
 
     int row_bytes = (width + 1) / 2;
 
-    /* Fast path: fully on-screen and byte-aligned (dest_x even) */
+    /* Byte-aligned rectangles can be copied a row at a time. */
     if (dest_x >= 0 && dest_y >= 0 && dest_x + width <= GFX_WIDTH && dest_y + height <= GFX_HEIGHT && (dest_x & 1) == 0) {
         int src_byte_x = dest_x / 2;
         int screen_row_bytes = GFX_WIDTH / 2;
@@ -1330,11 +1320,9 @@ void gfx_read_screen_region_packed(uint8_t *dst, int width, int height, int dest
         return;
     }
 
-    /* Fallback: safe per-pixel read and packing into dst */
     for (int y = 0; y < height; y++) {
         int dy = dest_y + y;
         uint8_t *dst_row = dst + y * row_bytes;
-        /* Initialize row to zero */
         for (int b = 0; b < row_bytes; b++) dst_row[b] = 0;
 
         for (int x = 0; x < width; x++) {
@@ -1358,7 +1346,7 @@ void gfx_write_screen_region_packed(uint8_t *src, int width, int height, int des
 
     int row_bytes = (width + 1) / 2;
 
-    /* Fast path: fully on-screen and aligned to byte boundary */
+    /* Byte-aligned rectangles can be copied a row at a time. */
     if (dest_x >= 0 && dest_y >= 0 && dest_x + width <= GFX_WIDTH && dest_y + height <= GFX_HEIGHT && (dest_x & 1) == 0) {
         int dest_byte_x = dest_x / 2;
         int screen_row_bytes = GFX_WIDTH / 2;
@@ -1371,7 +1359,6 @@ void gfx_write_screen_region_packed(uint8_t *src, int width, int height, int des
         return;
     }
 
-    /* Fallback: unpack pixels and write per-pixel */
     for (int y = 0; y < height; y++) {
         int sy = dest_y + y;
         uint8_t *src_row = src + y * row_bytes;

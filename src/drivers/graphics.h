@@ -104,12 +104,8 @@ void gfx_draw_cached_bmp_region(uint8_t *cached_data, int width, int height,
                                 int src_x, int src_y, int src_w, int src_h,
                                 int transparent);
 
-/* Read a rectangular region from the screen into a packed 4bpp buffer (2 pixels per byte).
-   dst must have at least ((width + 1) / 2) * height bytes available. If the area is fully
-   on-screen and dest_x is even, this will perform fast memcpy from the backbuffer. Otherwise
-   a safe pixel-by-pixel fallback is used. */
+/* Read a screen rectangle into packed 4bpp rows. dst needs ((width + 1) / 2) * height bytes. */
 void gfx_read_screen_region_packed(uint8_t *dst, int width, int height, int dest_x, int dest_y);
 
-/* Write a rectangular region from a packed 4bpp buffer to the screen. dst format is ((width+1)/2) bytes per row.
-   Fast memcpy is used when the region is fully on-screen and dest_x is even; otherwise a per-pixel fallback is used. */
+/* Write packed 4bpp rows back to a screen rectangle. */
 void gfx_write_screen_region_packed(uint8_t *src, int width, int height, int dest_x, int dest_y);
