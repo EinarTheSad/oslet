@@ -6,10 +6,7 @@
 #define PRINTF_BUF_SIZE 1024
 typedef long ssize_t;
 
-/* UTF-8 to CP437 conversion for box drawing and block characters.
- * UTF-8 box drawing: E2 94 xx (U+2500-U+257F) and E2 95 xx (U+2550-U+256C)
- * UTF-8 block elements: E2 96 xx (U+2580-U+259F)
- */
+/* Small UTF-8 to CP437 map for the shell's line and block glyphs. */
 static uint8_t utf8_to_cp437(uint8_t b2, uint8_t b3) {
     /* Box drawing light (U+2500-U+253F): E2 94 xx */
     if (b2 == 0x94) {
@@ -48,7 +45,6 @@ static uint8_t utf8_to_cp437(uint8_t b2, uint8_t b3) {
     return 0;  /* Unknown - return 0 to indicate no match */
 }
 
-/* Convert UTF-8 string to CP437 in-place, returns new length */
 size_t utf8_to_cp437_string(char *buf, size_t len) {
     size_t read_pos = 0;
     size_t write_pos = 0;
@@ -56,7 +52,6 @@ size_t utf8_to_cp437_string(char *buf, size_t len) {
     while (read_pos < len) {
         uint8_t c = (uint8_t)buf[read_pos];
 
-        /* Check for UTF-8 3-byte sequence starting with E2 (box drawing/blocks) */
         if (c == 0xE2 && read_pos + 3 <= len) {
             uint8_t b2 = (uint8_t)buf[read_pos + 1];
             uint8_t b3 = (uint8_t)buf[read_pos + 2];
@@ -69,7 +64,6 @@ size_t utf8_to_cp437_string(char *buf, size_t len) {
             }
         }
 
-        /* Pass through other characters unchanged */
         buf[write_pos++] = buf[read_pos++];
     }
 
@@ -78,7 +72,7 @@ size_t utf8_to_cp437_string(char *buf, size_t len) {
 }
 
 int putchar(int c) {
-    char printf_buf[PRINTF_BUF_SIZE];  /* Stack allocation */
+    char printf_buf[PRINTF_BUF_SIZE];
     char ch = (char)c;
     printf_buf[0] = ch;
     printf_buf[1] = '\0';
@@ -97,8 +91,6 @@ int puts(const char *s) {
     sys_write("\n");
     return 0;
 }
-
-/* ===== internal formatting core ===== */
 
 #define FLAGS_LEFT   (1 << 0)  /* '-' */
 #define FLAGS_PLUS   (1 << 1)  /* '+' */
@@ -192,7 +184,6 @@ static long get_signed_arg(va_list *ap, length_t len) {
     }
 }
 
-/* Returns number of chars that WOULD have been written (like snprintf) */
 int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
     size_t pos = 0;
 
@@ -208,9 +199,8 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
             continue;
         }
 
-        p++; /* skip '%' */
+        p++;
 
-        /* flags */
         int flags = 0;
         int parsing = 1;
         while (parsing) {
@@ -224,10 +214,9 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
             }
         }
         if (flags & FLAGS_LEFT) {
-            flags &= ~FLAGS_ZERO;   /* left-align kills zero pad */
+            flags &= ~FLAGS_ZERO;
         }
 
-        /* width */
         int width = 0;
         if (*p == '*') {
             width = va_arg(ap, int);
@@ -244,7 +233,6 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
             }
         }
 
-        /* precision */
         int precision = -1;
         if (*p == '.') {
             p++;
@@ -261,7 +249,6 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
             if (precision < 0) precision = 0;
         }
 
-        /* length */
         length_t len = LEN_NONE;
         if (*p == 'h') {
             if (*(p + 1) == 'h') {
@@ -284,7 +271,6 @@ int vsnprintf(char *buf, size_t size, const char *fmt, va_list ap) {
             p++;
         }
 
-        /* specifier */
         char spec = *p;
         if (!spec) break;
 

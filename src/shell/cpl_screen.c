@@ -132,7 +132,6 @@ static void save_settings(cpl_screen_state_t *state) {
     char tmp[4096];
     char desktop_text[512];
 
-    /* Read existing INI to preserve other sections */
     int fd = sys_open(SETTINGS_PATH, "r");
     int bytes = 0;
     if (fd >= 0) {
@@ -142,7 +141,6 @@ static void save_settings(cpl_screen_state_t *state) {
     if (bytes > 0) read_buf[bytes] = '\0';
     else read_buf[0] = '\0';
 
-    /* Build DESKTOP section text (CRLF terminated) */
     snprintf(desktop_text, sizeof(desktop_text),
         "[DESKTOP]\r\n"
         "COLOR=%d\r\n"
@@ -222,13 +220,12 @@ static void update_dropdown_list(cpl_screen_state_t *state) {
             pos += len;
         }
         
-        /* Check if this file matches the current wallpaper */
         if (current_filename && strcmp(state->bmp_files[i], current_filename) == 0) {
-            selected_idx = i + 1; /* +1 because (none) is at index 0 */
+            selected_idx = i + 1;
         }
     }
     drop->text[pos] = '\0';
-    drop->dropdown.item_count = state->bmp_count + 1; /* +1 for (none) */
+    drop->dropdown.item_count = state->bmp_count + 1;
     drop->dropdown.cursor_pos = selected_idx;
 }
 
@@ -353,7 +350,6 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
         return PROG_EVENT_HANDLED;
     }
 
-    /* Dropdown selection changed */
     if (event == CTRL_DROP_IMAGES) {
         gui_control_t *drop = sys_win_get_control(state->form, CTRL_DROP_IMAGES);
         if (drop) {
@@ -367,7 +363,6 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
                 new_wallpaper[0] = '\0';
             }
             
-            /* Update wallpaper and preview image */
             if (strcmp(state->wallpaper, new_wallpaper) != 0) {
                 strcpy(state->wallpaper, new_wallpaper);
                 ctrl_set_image(state->form, CTRL_PIC_PREVIEW, state->wallpaper);

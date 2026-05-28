@@ -15,25 +15,20 @@ typedef struct {
     void* ctx;
 } console_t;
 
-// Global current console (stdout/stderr equivalent)
 void console_set(const console_t* c);
 const console_t* console_get(void);
 
-// Minimal stdio-like surface
 int putchar(int c);
 int puts(const char* s);
 int vprintf(const char* fmt, va_list ap);
 int printf(const char* fmt, ...);
 
-// Safe buffers for logs or panic messages
 int vsnprintf(char* dst, size_t cap, const char* fmt, va_list ap);
 int snprintf(char* dst, size_t cap, const char* fmt, ...);
 
-// Core formatter reusable for any sink
 typedef void (*emit_fn)(char ch, void* user);
 int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user);
 
-// Definitions that once occupied string.h for kernel
 void memcpy_s(void *dst, const void *src, size_t n);
 void memset_s(void *dst, int val, size_t n);
 int memcmp_s(const void *s1, const void *s2, size_t n);

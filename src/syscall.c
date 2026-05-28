@@ -29,6 +29,7 @@
 
 #define MAX_OPEN_FILES 32
 #define TEXTBOX_MULTILINE_SIZE 8125
+#define DROPDOWN_HOVER_SCROLLBAR (-2)
 
 static char textbox_clipboard[TEXTBOX_MULTILINE_SIZE];
 static char shell_version_buf[64] = "";
@@ -741,12 +742,10 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
             if (!sys_range_mapped(ebx, sizeof(sys_cpuinfo_t))) return -1;
             sys_cpuinfo_t *out = (sys_cpuinfo_t*)ebx;
 
-            /* Clear output */
             for (int i = 0; i < (int)sizeof(out->vendor); i++) out->vendor[i] = '\0';
             for (int i = 0; i < (int)sizeof(out->model); i++) out->model[i] = '\0';
             out->mhz = 0;
 
-            /* --- Vendor string (CPUID leaf 0) --- */
             uint32_t a, b, c, d;
             char vbuf[13];
             __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0));
@@ -756,7 +755,6 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
             vbuf[12] = '\0';
             for (int i = 0; i < 13; i++) out->vendor[i] = vbuf[i];
 
-            /* --- Brand string (if supported) --- */
             __asm__ volatile("cpuid" : "=a"(a) : "a"(0x80000000) : "ebx","ecx","edx");
             if (a >= 0x80000004) {
                 uint32_t regs[12];
@@ -764,7 +762,6 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                 __asm__ volatile("cpuid" : "=a"(regs[4]), "=b"(regs[5]), "=c"(regs[6]), "=d"(regs[7]) : "a"(0x80000003));
                 __asm__ volatile("cpuid" : "=a"(regs[8]), "=b"(regs[9]), "=c"(regs[10]), "=d"(regs[11]) : "a"(0x80000004));
 
-                /* copy 48 bytes into a temporary brand string */
                 char brand[49];
                 for (int ii = 0; ii < 12; ii++) {
                     uint32_t v = regs[ii];
@@ -775,37 +772,30 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                 }
                 brand[48] = '\0';
 
-                /* Try to extract an explicit frequency from the brand string (e.g. "300MHz" or "1.2GHz").
-                   If present we'll trust that value (most reliable); otherwise fall back to TSC sampling. */
+                /* Brand strings often carry a usable MHz/GHz token on older CPUs. */
                 int freq_idx = -1;
                 uint32_t brand_mhz = 0;
                 for (int p = 0; brand[p]; p++) {
                     if (brand[p] >= '0' && brand[p] <= '9') {
-                        /* parse integer part */
                         uint32_t intval = 0;
                         int q = p;
                         while (brand[q] >= '0' && brand[q] <= '9') { intval = intval * 10 + (brand[q] - '0'); q++; }
 
-                        /* optional fractional part */
                         uint32_t frac = 0; int frac_d = 0;
                         if (brand[q] == '.') {
                             q++;
                             while (brand[q] >= '0' && brand[q] <= '9' && frac_d < 3) { frac = frac * 10 + (brand[q] - '0'); frac_d++; q++; }
                         }
 
-                        /* skip spaces */
                         while (brand[q] == ' ' || brand[q] == '\t') q++;
 
-                        /* unit - look for 'M' (MHz) or 'G' (GHz) */
                         if (brand[q] == 'M' || brand[q] == 'm') {
-                            brand_mhz = intval; /* ignore fraction for MHz */
+                            brand_mhz = intval;
                             freq_idx = p;
                             break;
                         } else if (brand[q] == 'G' || brand[q] == 'g') {
-                            /* GHz -> convert to MHz, include up to 3 fractional digits */
                             uint32_t add = intval * 1000u;
                             if (frac_d > 0) {
-                                /* scale fractional digits to MHz (e.g. .2GHz -> 200MHz) */
                                 uint32_t scale = 1000u;
                                 for (int s = 0; s < frac_d; s++) scale /= 10u;
                                 add += frac * scale;
@@ -814,14 +804,12 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                             freq_idx = p;
                             break;
                         }
-                        /* if not MHz/GHz, continue searching */
                     }
                 }
 
-                /* Build a sanitized model string: drop vendor prefix, remove (R)/(TM)/CPU and trim. */
+                /* Trim vendor and trademark clutter from the CPUID brand string. */
                 char vendor_norm[16];
                 int vnlen = 0;
-                /* derive a short vendor token */
                 {
                     int is_genuineintel = 1;
                     const char *genuine = "GenuineIntel";
@@ -843,14 +831,12 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
 
                 char tmp[64]; int ti = 0;
                 int idx = 0;
-                /* skip vendor prefix if present (allow "Intel(R)" too) */
                 int skip = 1;
                 if (vnlen > 0) {
                     skip = 1;
                     for (int _k = 0; _k < vnlen; _k++) { if (brand[_k] != vendor_norm[_k]) { skip = 0; break; } }
                     if (skip) {
                         idx = vnlen;
-                        /* skip optional (R) or (TM) immediately after vendor name */
                         while (brand[idx] == ' ' || brand[idx] == '(' || brand[idx] == '\t') {
                             if (brand[idx] == '(') {
                                 while (brand[idx] && brand[idx] != ')') idx++;
@@ -864,25 +850,21 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                     }
                 }
 
-                /* copy until frequency position or until 'CPU' token or string end */
                 int stop_at = -1;
                 if (freq_idx >= 0) stop_at = freq_idx;
                 for (int p = idx; brand[p]; p++) {
-                    /* detect 'CPU' token - stop and don't include it */
                     if ((brand[p] == 'C' || brand[p] == 'c') && (brand[p+1] == 'P' || brand[p+1] == 'p') && (brand[p+2] == 'U' || brand[p+2] == 'u')) {
                         stop_at = (stop_at < 0) ? p : (stop_at < p ? stop_at : p);
                         break;
                     }
                 }
-                if (stop_at < 0) stop_at = 48; /* whole brand */
+                if (stop_at < 0) stop_at = 48;
 
                 for (int p = idx; p < stop_at && ti < (int)sizeof(tmp)-1; p++) {
-                    /* skip (R)/(TM) fragments inside */
                     if (brand[p] == '(') {
                         while (p < stop_at && brand[p] && brand[p] != ')') p++;
                         continue;
                     }
-                    /* collapse multiple spaces */
                     if (brand[p] == ' ' || brand[p] == '\t') {
                         if (ti == 0 || tmp[ti-1] == ' ') continue;
                         tmp[ti++] = ' ';
@@ -896,21 +878,15 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                 if (ti > 0) {
                     int ci = 0; for (; ci < (int)sizeof(out->model)-1 && tmp[ci]; ci++) out->model[ci] = tmp[ci]; out->model[ci] = '\0';
                 } else {
-                    /* fallback to a short vendor/model if nothing parsed */
                     int ci = 0; for (; ci < (int)sizeof(out->model)-1 && out->vendor[ci]; ci++) out->model[ci] = out->vendor[ci]; out->model[ci] = '\0';
                 }
 
-                /* If brand string contained an explicit MHz/GHz token, use that (most reliable).
-                   Otherwise we'll measure using TSC (averaged over several ticks). */
                 if (brand_mhz > 0) {
                     out->mhz = brand_mhz;
                     return 0;
                 }
             } else {
-                /* No extended brand string — try SMBIOS/DMI Type-4 (BIOS-reported CPU name) first,
-                   then fall back to CPUID leaf-1 family/model mapping. */
-
-                /* Search BIOS memory for SMBIOS Entry Point "_SM_" (0xF0000 - 0x100000, step 16) */
+                /* Some Pentium-era BIOSes have no extended CPUID brand string. */
                 const char *smb_ent = NULL;
                 for (uintptr_t addr = 0xF0000; addr < 0x100000; addr += 16) {
                     const char *p = (const char*)(uintptr_t)addr;
@@ -919,7 +895,6 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
 
                 int smbios_used = 0;
                 if (smb_ent) {
-                    /* basic validation: entry point length at offset 0x05, table length at 0x16 */
                     uint8_t entry_len = (uint8_t)smb_ent[0x05];
                     if (entry_len >= 0x1F) {
                         uint16_t table_len = *(uint16_t*)(smb_ent + 0x16);
@@ -940,23 +915,15 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                                     int found_model = 0;
 
                                     while ((uintptr_t)(siter - tbl) < table_len && *siter) {
-                                        /* read string at siter */
                                         const char *st = (const char*)siter;
-                                        /* check for keywords or an explicit MHz/GHz token */
-                                        /* case-insensitive substring search for 'Celeron'/'Pentium' */
                                         for (int i = 0; st[i]; i++) {
-                                            /* check Celeron */
                                             if ((st[i] == 'C' || st[i] == 'c') && (st[i+1] == 'e' || st[i+1] == 'E')) {
-                                                /* crude check for "Celeron" substring */
                                                 if ((st[i+0] == 'C' || st[i+0]=='c') && (st[i+1]=='e'||st[i+1]=='E') && (st[i+2]=='l'||st[i+2]=='L')) {
-                                                    /* copy a cleaned model string */
                                                     int ci = 0; int si = i;
                                                     while (st[si] && ci < (int)sizeof(out->model)-1 && st[si] != '\r' && st[si] != '\n') out->model[ci++] = st[si++];
                                                     out->model[ci] = '\0';
-                                                    /* try parse frequency from same string */
                                                     for (int k = 0; st[k]; k++) {
                                                         if (st[k] >= '0' && st[k] <= '9') {
-                                                            /* parse number */
                                                             uint32_t intval = 0; int q = k; while (st[q] >= '0' && st[q] <= '9') { intval = intval*10 + (st[q]-'0'); q++; }
                                                             while (st[q] == ' ' || st[q] == '\t') q++;
                                                             if (st[q] == 'M' || st[q] == 'm') { out->mhz = intval; }
@@ -968,9 +935,7 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                                                     break;
                                                 }
                                             }
-                                            /* check Pentium token as fallback */
                                             if ((st[i] == 'P' || st[i]=='p') && (st[i+1]=='e' || st[i+1]=='E') && (st[i+2]=='n' || st[i+2]=='N')) {
-                                                /* copy first words until digit or '(' */
                                                 int ci = 0; int si = i;
                                                 while (st[si] && ci < (int)sizeof(out->model)-1 && st[si] != '(' && !(st[si] >= '0' && st[si] <= '9')) {
                                                     out->model[ci++] = st[si++];
@@ -982,7 +947,6 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                                             }
                                         }
 
-                                        /* parse frequency if present in this string even without model token */
                                         for (int k = 0; st[k]; k++) {
                                             if (st[k] >= '0' && st[k] <= '9') {
                                                 uint32_t intval = 0; int q = k; while (st[q] >= '0' && st[q] <= '9') { intval = intval*10 + (st[q]-'0'); q++; }
@@ -993,7 +957,6 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                                             }
                                         }
 
-                                        /* advance to next string */
                                         while (*siter) siter++;
                                         siter++;
                                         if (found_model) break;
@@ -1005,7 +968,6 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                                     }
                                 }
 
-                                /* advance to next structure (find terminating double NUL after strings) */
                                 const uint8_t *next = cur + lenf;
                                 const uint8_t *s2 = next;
                                 while ((uintptr_t)(s2 - tbl) < table_len) {
@@ -1021,7 +983,6 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                 }
 
                 if (!smbios_used) {
-                    /* No SMBIOS model found — fallback to CPUID leaf-1 mapping */
                     uint32_t ea, eb, ec, ed;
                     __asm__ volatile("cpuid" : "=a"(ea), "=b"(eb), "=c"(ec), "=d"(ed) : "a"(1));
                     uint32_t base_model = (ea >> 4) & 0xF;
@@ -1033,7 +994,7 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                     uint32_t display_family = base_family;
                     if (base_family == 15) display_family = base_family + ext_family;
 
-                    /* small family/model -> marketing-name map (include Celeron entries if known) */
+                    /* A small map is enough for the old CPUs osLET commonly runs on. */
                     struct fammap { uint8_t fam; uint8_t mod; const char *name; } fmap[] = {
                         {6, 3, "Pentium II"},
                         {6, 5, "Pentium II"},
@@ -1066,27 +1027,22 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
                 }
             }
 
-            /* --- Determine clock speed --- */
             if (out->mhz == 0) {
-                /* 1) Try CPUID leaf 0x16 (base frequency, common on newer Intel CPUs) */
+                /* Newer Intel CPUs may report base MHz directly in CPUID.0x16. */
                 uint32_t a16=0, b16=0, c16=0, d16=0;
                 __asm__ volatile("cpuid" : "=a"(a16), "=b"(b16), "=c"(c16), "=d"(d16) : "a"(0x16));
                 if (a16 && a16 < 0x80000) {
-                    /* a16 is base frequency in MHz */
                     out->mhz = a16;
                     return 0;
                 }
 
                 /* NOTE: CPUID.0x15 handling omitted (avoids 64-bit div helpers). */
 
-                /* 3) Try to parse explicit frequency from the brand string was handled earlier.
-                   4) Fallback — measure TSC over multiple PIT ticks (serialized). */
-                const uint32_t sample_ticks = 20; /* ~200ms at default 100Hz PIT — reduces error */
+                const uint32_t sample_ticks = 20; /* about 200ms at the default PIT rate */
 
                 unsigned int lo1, hi1, lo2, hi2;
                 uint64_t t1, t2, cycles64;
 
-                /* serialize, read TSC */
                 uint32_t ca, cb, cc, cd;
                 __asm__ volatile("cpuid" : "=a"(ca), "=b"(cb), "=c"(cc), "=d"(cd) : "a"(0));
                 __asm__ volatile ("rdtsc" : "=a"(lo1), "=d"(hi1));
@@ -1298,7 +1254,6 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 bitmap_t *scaled = bitmap_scale_nearest(&src, dest_w, dest_h);
 
                 if (!scaled) {
-                    /* Scaling failed - draw original as fallback */
                     gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
                     kfree(bmp);
                     return (uint32_t)-1;
@@ -1547,14 +1502,11 @@ static void init_window_menu(gui_form_t *form) {
 
 static int pump_handle_minimize(gui_form_t *form, int mx, int my) {
     if (win_is_minimize_button(&form->win, mx, my)) {
-        /* Initialize menu if needed */
         init_window_menu(form);
 
-        /* Calculate menu position - below the minimize button */
         int menu_x = form->win.x + form->win.w - 80;
         int menu_y = form->win.y + WM_TITLEBAR_HEIGHT + 2;
 
-        /* Show the window menu instead of minimizing */
         menu_show(&form->window_menu, menu_x, menu_y);
         return 2;  /* Menu shown, needs redraw but don't minimize */
     }
@@ -1614,7 +1566,6 @@ static int pump_handle_resize_corner_click(gui_form_t *form, int mx, int my) {
 }
 
 static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
-    /* Update hover state for any open dropdown list */
     int needs_redraw = 0;
 
     if (!form->controls) return 0;
@@ -1623,8 +1574,7 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
         gui_control_t *ctrl = &form->controls[i];
         if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown.dropdown_open) continue;
 
-        /* If user is dragging the dropdown scrollbar, don't overwrite that state */
-        if (ctrl->dropdown.pressed && ctrl->dropdown.hovered_item == -2) continue;
+        if (ctrl->dropdown.pressed && ctrl->dropdown.hovered_item == DROPDOWN_HOVER_SCROLLBAR) continue;
 
         int abs_x = form->win.x + ctrl->x;
         int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
@@ -1632,7 +1582,6 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
         int list_h = ctrl->dropdown.item_count * item_h;
         int list_y = abs_y + ctrl->h;
         
-        /* Auto-flip: if list extends past screen bottom, render above control */
         if (list_y + list_h > GFX_HEIGHT) {
             list_y = abs_y - list_h;
             if (list_y < 0) {
@@ -1642,7 +1591,6 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
             }
         }
 
-        /* Calculate visible area and scrollbar requirements */
         int visible_count = list_h / item_h;
         if (visible_count < 1) visible_count = 1;
         int max_scroll = ctrl->dropdown.item_count > visible_count ? (ctrl->dropdown.item_count - visible_count) : 0;
@@ -1650,22 +1598,17 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
         int sb_w = need_scrollbar ? 18 : 0;
         int content_w = ctrl->w - sb_w;
         
-        /* Clamp dropdown_scroll */
         if (ctrl->dropdown.dropdown_scroll > (uint16_t)max_scroll) ctrl->dropdown.dropdown_scroll = max_scroll;
 
         int old_hover = ctrl->dropdown.hovered_item;
 
-        /* Use clipped list bounds when checking hover (support inline scrollbar) */
         if (mx >= abs_x && mx < abs_x + ctrl->w && my >= list_y && my < list_y + list_h) {
-
-            /* If mouse is over the scrollbar area, mark with special hovered value (-2) */
             if (need_scrollbar && mx >= abs_x + content_w && mx < abs_x + ctrl->w) {
-                if (old_hover != -2) {
-                    ctrl->dropdown.hovered_item = -2; /* scrollbar region */
+                if (old_hover != DROPDOWN_HOVER_SCROLLBAR) {
+                    ctrl->dropdown.hovered_item = DROPDOWN_HOVER_SCROLLBAR;
                     needs_redraw = 1;
                 }
             } else {
-                /* Mouse over item region: translate to absolute item index using dropdown_scroll */
                 int rel = (my - list_y) / item_h;
                 int hovered = ctrl->dropdown.dropdown_scroll + rel;
                 if (hovered < 0) hovered = 0;
@@ -1676,7 +1619,6 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
                 }
             }
         } else {
-            /* Mouse not over dropdown list */
             if (old_hover != -1) {
                 ctrl->dropdown.hovered_item = -1;
                 needs_redraw = 1;
@@ -1687,7 +1629,6 @@ static int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl
     return needs_redraw;
 }
 
-/* Helper: get text pointer for textbox (multiline or regular) */
 static char* textbox_get_text(gui_control_t *ctrl) {
     if (ctrl->type == CTRL_TEXTBOX && ctrl->textbox.is_multiline && ctrl->textbox.multiline_text) {
         return ctrl->textbox.multiline_text;
@@ -1911,7 +1852,6 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
     int focus_cleared = 0;
 
     if (form->controls) {
-        /* FIRST: Check if click is on any open dropdown list (highest priority) */
         for (int i = 0; i < form->ctrl_count; i++) {
             gui_control_t *ctrl = &form->controls[i];
             if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown.dropdown_open) continue;
@@ -1921,7 +1861,6 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
             int list_h = ctrl->dropdown.item_count * 16;
             int list_y = abs_y + ctrl->h;
             
-            /* Auto-flip: if list extends past screen bottom, render above control */
             if (list_y + list_h > GFX_HEIGHT) {
                 list_y = abs_y - list_h;
                 if (list_y < 0) {
@@ -1931,7 +1870,6 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 }
             }
 
-            /* Check if click is in dropdown list area */
             if (mx >= abs_x && mx < abs_x + ctrl->w && my >= list_y && my < list_y + list_h) {
                 int item_h = 16;
                 int visible_count = list_h / item_h;
@@ -1941,7 +1879,6 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                 int sb_w = need_scrollbar ? 18 : 0;
                 int content_w = ctrl->w - sb_w;
 
-                /* Click landed inside inline scrollbar area? */
                 if (need_scrollbar && mx >= abs_x + content_w && mx < abs_x + ctrl->w) {
                     int arrow_size = sb_w;
                     int track_len = list_h - 2 * arrow_size;
@@ -1951,47 +1888,40 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     if (max_scroll > 0 && track_len > thumb_size)
                         thumb_pos = ((track_len - thumb_size) * ctrl->dropdown.dropdown_scroll) / max_scroll;
 
-                    int rel_y = my - list_y; /* position within the list box */
+                    int rel_y = my - list_y;
 
-                    /* Up arrow clicked */
                     if (rel_y < arrow_size) {
                         if (ctrl->dropdown.dropdown_scroll > 0) {
                             ctrl->dropdown.dropdown_scroll--;
                         }
-                        /* show pressed state for inline scrollbar */
                         ctrl->dropdown.pressed = 1;
-                        ctrl->dropdown.hovered_item = -2;
+                        ctrl->dropdown.hovered_item = DROPDOWN_HOVER_SCROLLBAR;
                         form->press_control_id = ctrl->id;
                         global_wm.needs_full_redraw = 1;
                         return 1;
                     }
 
-                    /* Down arrow clicked */
                     if (rel_y >= list_h - arrow_size) {
                         if (ctrl->dropdown.dropdown_scroll < max_scroll) {
                             ctrl->dropdown.dropdown_scroll++;
                             if (ctrl->dropdown.dropdown_scroll > max_scroll) ctrl->dropdown.dropdown_scroll = max_scroll;
                         }
-                        /* show pressed state for inline scrollbar */
                         ctrl->dropdown.pressed = 1;
-                        ctrl->dropdown.hovered_item = -2;
+                        ctrl->dropdown.hovered_item = DROPDOWN_HOVER_SCROLLBAR;
                         form->press_control_id = ctrl->id;
                         global_wm.needs_full_redraw = 1;
                         return 1;
                     }
 
-                    /* Thumb clicked -> begin dragging */
                     int thumb_y = arrow_size + thumb_pos;
                     if (rel_y >= thumb_y && rel_y < thumb_y + thumb_size) {
-                        /* Start thumb drag for inline scrollbar */
                         ctrl->dropdown.pressed = 1;
-                        ctrl->dropdown.hovered_item = -2; /* indicate scrollbar interaction */
-                        ctrl->dropdown.scroll_offset = rel_y - thumb_y; /* store drag offset */
+                        ctrl->dropdown.hovered_item = DROPDOWN_HOVER_SCROLLBAR;
+                        ctrl->dropdown.scroll_offset = rel_y - thumb_y;
                         form->press_control_id = ctrl->id;
                         return 1;
                     }
 
-                    /* Click on track (page/jump) */
                     if (rel_y >= arrow_size && rel_y < list_h - arrow_size) {
                         int track_y = arrow_size;
                         int rel_track = rel_y - track_y - thumb_size / 2;
@@ -2007,42 +1937,34 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                             global_wm.needs_full_redraw = 1;
                         }
                         ctrl->dropdown.pressed = 1;
-                        ctrl->dropdown.hovered_item = -2;
+                        ctrl->dropdown.hovered_item = DROPDOWN_HOVER_SCROLLBAR;
                         ctrl->dropdown.scroll_offset = thumb_size / 2;
                         form->press_control_id = ctrl->id;
                         return 1;
                     }
                 }
 
-                /* Click is in item region: map using dropdown_scroll */
                 int rel_item = (my - list_y) / item_h;
                 int clicked_item = ctrl->dropdown.dropdown_scroll + rel_item;
                 if (clicked_item >= 0 && clicked_item < ctrl->dropdown.item_count) {
                     ctrl->dropdown.cursor_pos = clicked_item;
-                    /* Generate event immediately when item is selected */
                     form->clicked_id = ctrl->id;
                 }
                 ctrl_hide_dropdown_list(&form->win, ctrl);
-                form->press_control_id = -1;  /* Clear so release doesn't fire duplicate event */
-                /* Signal desktop to do full redraw (clears artifacts outside window) */
+                form->press_control_id = -1;
                 global_wm.needs_full_redraw = 1;
-                return 1;  /* needs_redraw */
+                return 1;
             }
-            /* Check if click is on dropdown control itself */
             else if (mx >= abs_x && mx < abs_x + ctrl->w &&
                      my >= abs_y && my < abs_y + ctrl->h) {
                 ctrl_hide_dropdown_list(&form->win, ctrl);
                 form->press_control_id = ctrl->id;
-                /* Signal desktop to do full redraw (clears artifacts outside window) */
                 global_wm.needs_full_redraw = 1;
-                return 1;  /* needs_redraw */
+                return 1;
             }
-            /* Click outside open dropdown - close it and consume the click */
             else {
                 ctrl_hide_dropdown_list(&form->win, ctrl);
-                /* Signal desktop to do full redraw (clears artifacts outside window) */
                 global_wm.needs_full_redraw = 1;
-                /* Return immediately - don't propagate click to underlying controls */
                 return 1;
             }
         }
@@ -2069,33 +1991,25 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
             int abs_x = form->win.x + ctrl->x;
             int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
 
-            /* For checkbox and radio - hit area includes the control and label */
             int hit_w = ctrl->w;
             int hit_h = ctrl->h;
             int hit_y_offset = 0;
 
-            /* For checkbox/radio, if w/h are just the box size, expand hit area to include text */
             if (ctrl->type == CTRL_CHECKBOX && ctrl->w == 13) {
-                /* Estimate text width - in practice, user should set w to include text */
-                hit_w = 100;  /* Generous hit area including label */
+                hit_w = 100;
             } else if (ctrl->type == CTRL_RADIOBUTTON && ctrl->w == 12) {
-                hit_w = 100;  /* Generous hit area including label */
+                hit_w = 100;
             } else if (ctrl->type == CTRL_ICON) {
-                /* Icon hit area: 48x58 (32px icon + 24px label + 2px spacing) */
                 hit_w = ctrl->w > 0 ? ctrl->w : 48;
                 hit_h = ctrl->h > 0 ? ctrl->h : 58;
             } else if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
-                /* Extend hit area to include dropdown list */
                 int list_h = ctrl->dropdown.item_count * 16;
                 int list_y = abs_y + ctrl->h;
                 
-                /* Auto-flip: if list extends past screen bottom, it renders above control */
                 if (list_y + list_h > GFX_HEIGHT) {
-                    /* Rendered above - adjust hit area to start above control */
                     hit_y_offset = -(list_h);
                     hit_h = ctrl->h + list_h;
                 } else {
-                    /* Rendered below - extend hit area downward */
                     hit_h = ctrl->h + list_h;
                 }
             }
@@ -2114,20 +2028,16 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     ctrl->button.pressed = 1;
                     return 1;  /* needs_redraw */
                 }
-                /* For label, just record the press */
                 else if (ctrl->type == CTRL_LABEL) {
-                    return focus_cleared;  /* Press recorded, redraw only for focus change */
+                    return focus_cleared;
                 }
-                /* For checkbox and radio, just record the press */
                 else if (ctrl->type == CTRL_CHECKBOX || ctrl->type == CTRL_RADIOBUTTON) {
-                    return focus_cleared;  /* Press recorded, redraw only for focus change */
+                    return focus_cleared;
                 }
-                /* For textbox, set keyboard focus and cursor position */
                 else if (ctrl->type == CTRL_TEXTBOX) {
                     form->focused_control_id = ctrl->id;
                     clicked_on_focusable = 1;
 
-                    /* Calculate cursor position from mouse click */
                     extern bmf_font_t font_n;
                     int size = ctrl->font_size > 0 ? ctrl->font_size : 12;
                     int text_area_x = abs_x + 3;
@@ -2225,25 +2135,21 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     }
                     ctrl->textbox.cursor_pos = new_pos;
 
-                    /* Start mouse selection */
                     ctrl->textbox.sel_start = new_pos;
                     ctrl->textbox.sel_end = new_pos;
                     form->textbox_selecting = 1;
 
-                    return 1;  /* Always redraw to show cursor position */
+                    return 1;
                 }
-                /* For icon, just record the press (selection happens on release) */
                 else if (ctrl->type == CTRL_ICON) {
                     if (old_focus != -1) {
                         form->focused_control_id = -1;
                         return 1;
                     }
-                    return 0;  /* Press recorded, no visual change yet */
+                    return 0;
                 }
-                /* For dropdown - open it (closing/selection handled in priority check above) */
                 else if (ctrl->type == CTRL_DROPDOWN) {
                     if (!ctrl->dropdown.dropdown_open) {
-                        /* Count items in text */
                         int count = 1;
                         const char *p = ctrl->text;
                         while (*p) {
@@ -2252,12 +2158,10 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                         }
                         ctrl->dropdown.item_count = count;
 
-                        /* Ensure dropdown_scroll keeps current selection visible when opened */
                         int item_h = 16;
                         int list_h = ctrl->dropdown.item_count * item_h;
                         int list_y = abs_y + ctrl->h;
                         if (list_y + list_h > GFX_HEIGHT) {
-                            /* clipped; compute available height above control */
                             list_h = abs_y;
                             if (list_h < item_h) list_h = item_h;
                         }
@@ -2276,10 +2180,9 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                         }
 
                         ctrl->dropdown.dropdown_open = 1;
-                        return 1;  /* needs_redraw */
+                        return 1;
                     }
                 }
-                /* For scrollbar - detect which part was clicked (arrow, thumb, or track) */
                 else if (ctrl->type == CTRL_SCROLLBAR) {
                     int vertical = !ctrl->scrollbar.checked;
                     int arrow_size = vertical ? ctrl->w : ctrl->h;
@@ -2288,7 +2191,6 @@ static int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_
                     if (thumb_size > track_len) thumb_size = track_len;
                     int max_val = ctrl->scrollbar.max_length > 0 ? ctrl->scrollbar.max_length : 100;
                     
-                    /* Calculate current thumb position */
                     int thumb_pos = 0;
                     if (max_val > 0 && track_len > thumb_size) {
                         thumb_pos = ((track_len - thumb_size) * ctrl->scrollbar.cursor_pos) / max_val;
@@ -2625,7 +2527,6 @@ static gui_control_t* find_control_by_id(gui_form_t *form, int16_t id) {
     return NULL;
 }
 
-/* Helper: delete selected text in textbox, return 1 if deleted */
 static int textbox_delete_selection(gui_control_t *ctrl) {
     int text_len = textbox_text_len(ctrl);
     int sel_min, sel_max;
@@ -3041,43 +2942,35 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             if (!form) return 0;
 
-            /* Calculate Y offset for controls (titlebar + menubar if present) */
             int ctrl_y_offset = 20;
             if (form->menubar_enabled) {
                 ctrl_y_offset += menubar_get_height(&form->menubar);
             }
 
-            /* Reset clicked_id at start of event processing */
             form->clicked_id = -1;
 
-            /* Get current mouse state */
             int mx = mouse_get_x();
             int my = mouse_get_y();
             uint8_t mb = mouse_get_buttons();
 
-            /* Determine which window is topmost at mouse position */
             gui_form_t *topmost = wm_get_window_at(&global_wm, mx, my);
 
-            /* Detect button transitions */
             uint8_t button_pressed = (mb & 1) && !(form->last_mouse_buttons & 1);
             uint8_t button_released = !(mb & 1) && (form->last_mouse_buttons & 1);
 
-            /* Update last button state for next call */
             form->last_mouse_buttons = mb;
 
             int event_count = 0;
-            int needs_redraw = 0;  /* Track if visual state changed */
-            int z_order_changed = 0;  /* Track if window Z-order changed */
-            int16_t changed_controls[32];  /* Track which specific controls changed */
+            int needs_redraw = 0;
+            int z_order_changed = 0;
+            int16_t changed_controls[32];
             int changed_count = 0;
 
-            /* Handle window menu if visible */
             if (form->window_menu.visible) {
                 int action = menu_handle_mouse(&form->window_menu, mx, my,
                                                button_pressed, button_released);
                 if (action > 0) {
-                    /* Menu action selected */
-                        if (action == MENU_ACTION_MAXIMIZE) {
+                    if (action == MENU_ACTION_MAXIMIZE) {
                         form->dragging = 0;
                         form->resizing = 0;
                         win_maximize(form);
@@ -3094,24 +2987,19 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
                         const char *icon_path = form->icon_path[0] ? form->icon_path : NULL;
                         win_minimize(form, icon_x, icon_y, icon_path);
-                        /* Claim the icon slot */
                         wm_claim_icon_slot(&global_wm, icon_x, icon_y);
                         /* Let the desktop redraw run first to avoid compositing on stale wallpaper. */
                         global_wm.needs_full_redraw = 1;
                         return -2;  /* Window minimized (major state change) */
                     } else if (action == MENU_ACTION_CLOSE) {
-                        /* Signal close request - return special value */
                         return -3;  /* Close requested */
                     }
                 } else if (action == -1) {
-                    /* Menu closed without selection */
                     needs_redraw = 1;
                 } else if (button_pressed && !menu_contains_point(&form->window_menu, mx, my)) {
-                    /* Click outside menu - close it */
                     menu_hide(&form->window_menu);
                     needs_redraw = 1;
                 }
-                /* Don't process other events while menu is visible */
                 if (form->window_menu.visible || action != 0) {
                     if (needs_redraw) {
                         return (uint32_t)-1;
@@ -3436,19 +3324,16 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                             }
 
-                            /* Calculate absolute control position */
                             int abs_x = form->win.x + ctrl->x;
                             int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
 
-                            /* For checkbox and radio - hit area includes the control and label */
                             int hit_w = ctrl->w;
                             int hit_h = ctrl->h;
 
-                            /* For checkbox/radio, if w/h are just the box size, expand hit area to include text */
                             if (ctrl->type == CTRL_CHECKBOX && ctrl->w == 13) {
-                                hit_w = 100;  /* Generous hit area including label */
+                                hit_w = 100;
                             } else if (ctrl->type == CTRL_RADIOBUTTON && ctrl->w == 12) {
-                                hit_w = 100;  /* Generous hit area including label */
+                                hit_w = 100;
                             } else if (ctrl->type == CTRL_ICON) {
                                 /* Icon hit area: 48x58 (32px icon + 24px label + 2px spacing) */
                                 hit_w = ctrl->w > 0 ? ctrl->w : 48;
@@ -3521,9 +3406,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                                 /* Handle dropdown - selection generates event */
                                 else if (ctrl->type == CTRL_DROPDOWN) {
                                     /* Dropdown click was already handled in press, just generate event */
-                                    /* Clear any temporary pressed state used for inline scrollbar dragging */
                                     ctrl->dropdown.pressed = 0;
-                                    if (ctrl->dropdown.hovered_item == -2) ctrl->dropdown.hovered_item = -1;
+                                    if (ctrl->dropdown.hovered_item == DROPDOWN_HOVER_SCROLLBAR) ctrl->dropdown.hovered_item = -1;
                                     form->clicked_id = ctrl->id;
                                     event_count = 1;
                                     needs_redraw = 1;
@@ -3612,10 +3496,9 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
-                        /* Clear dropdown inline scrollbar pressed state */
                         if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown.pressed) {
                             form->controls[i].dropdown.pressed = 0;
-                            if (form->controls[i].dropdown.hovered_item == -2) form->controls[i].dropdown.hovered_item = -1;
+                            if (form->controls[i].dropdown.hovered_item == DROPDOWN_HOVER_SCROLLBAR) form->controls[i].dropdown.hovered_item = -1;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
                         }
@@ -3986,14 +3869,13 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     }
                 }
 
-                /* Dropdown inline scrollbar dragging (ctrl->scrollbar.hovered_item == -2 used as special flag) */
-                if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open && ctrl->dropdown.pressed && ctrl->dropdown.hovered_item == -2) {
+                if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open &&
+                    ctrl->dropdown.pressed && ctrl->dropdown.hovered_item == DROPDOWN_HOVER_SCROLLBAR) {
                     int item_h = 16;
                     int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
                     int list_h = ctrl->dropdown.item_count * item_h;
                     int list_y = abs_y + ctrl->h;
 
-                    /* Auto-flip and clipping like draw routine */
                     if (list_y + list_h > GFX_HEIGHT) {
                         list_y = abs_y - list_h;
                         if (list_y < 0) {
@@ -4014,7 +3896,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (thumb_size > track_len) thumb_size = track_len;
                         int track_y = list_y + arrow_size;
 
-                        int rel_y = my - track_y - ctrl->dropdown.scroll_offset; /* scroll_offset used as drag offset */
+                        int rel_y = my - track_y - ctrl->dropdown.scroll_offset;
                         if (rel_y < 0) rel_y = 0;
                         if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
                         int new_val = 0;
@@ -4023,7 +3905,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (new_val != ctrl->dropdown.dropdown_scroll) {
                             ctrl->dropdown.dropdown_scroll = new_val;
                             form->clicked_id = ctrl->id;
-                            event_count = 1; /* Generate event during drag */
+                            event_count = 1;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
                         }
@@ -4031,10 +3913,8 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 }
             }
 
-            /* Update dropdown hover state (on any mouse move) */
             if (pump_update_dropdown_hover(form, mx, my, ctrl_y_offset)) {
                 needs_redraw = 1;
-                /* Find the dropdown control that's open and mark it changed */
                 for (int i = 0; i < form->ctrl_count; i++) {
                     if (form->controls[i].type == CTRL_DROPDOWN && form->controls[i].dropdown.dropdown_open) {
                         if (changed_count < 32) changed_controls[changed_count++] = form->controls[i].id;
@@ -4063,9 +3943,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     mouse_restore();
                     mouse_invalidate_buffer();
                     if (changed_count > 0) {
-                        /* Redraw only the specific controls that changed */
                         for (int i = 0; i < changed_count; i++) {
-                            /* Check if this is a dropdown with hover change - only redraw list */
                             gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
                             if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                                 compositor_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
@@ -4077,7 +3955,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                         /* Z-order changed: full composite so no lower window paints over the new top */
                         compositor_draw_all(&global_wm);
                     } else {
-                        /* Fallback to single window redraw if no specific controls tracked */
                         compositor_draw_single(&global_wm, form);
                     }
                 }
@@ -4089,9 +3966,7 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 mouse_restore();
                 mouse_invalidate_buffer();
                 if (changed_count > 0) {
-                    /* Redraw only the specific controls that changed */
                     for (int i = 0; i < changed_count; i++) {
-                        /* Check if this is a dropdown with hover change - only redraw list */
                         gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
                         if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                             compositor_draw_dropdown_list_only(&global_wm, form, changed_controls[i]);
@@ -4103,7 +3978,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                     /* Z-order changed: full composite so no lower window paints over the new top */
                     compositor_draw_all(&global_wm);
                 } else {
-                    /* Fallback to single window redraw if no specific controls tracked */
                     compositor_draw_single(&global_wm, form);
                 }
                 /* Return clicked_id if it was set (e.g., scrollbar value changed), otherwise -1 */
@@ -4381,18 +4255,14 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
                 form->controls = NULL;
             }
 
-            /* Destroy window menu */
             if (form->window_menu_initialized) {
                 menu_destroy(&form->window_menu);
             }
 
-            /* Destroy window */
             win_destroy(&form->win);
 
-            /* Free form */
             kfree(form);
 
-            /* Signal desktop to do full redraw */
             global_wm.needs_full_redraw = 1;
 
             return 0;
@@ -5026,7 +4896,6 @@ static uint32_t handle_window(uint32_t al, uint32_t ebx,
             gui_form_t *form = (gui_form_t*)ebx;
             if (!form || !form->win.is_visible || form->win.is_minimized) return 0;
 
-            /* Calculate window bounds including margins */
             int wx = form->win.x - WM_BG_MARGIN;
             int wy = form->win.y - WM_BG_MARGIN;
             int ww = form->win.w + (WM_BG_MARGIN * 2);
@@ -5206,7 +5075,7 @@ static uint32_t handle_power(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t e
         case 0x01: { /* SYS_POWER_REBOOT */
             __asm__ volatile("cli");
 
-            /* Try keyboard controller reset (most reliable) */
+            /* The keyboard controller reset works on many old PC targets. */
             uint8_t temp;
             do {
                 temp = inb(0x64);

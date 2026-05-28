@@ -40,9 +40,7 @@ static double second_dot_mul = 1.0;
 #define ID_BTN_DOT  26
 #define ID_BTN_SQRT 27
 
-// Controls for calculator - Rewritten for the new API
 static gui_control_t calc_controls[] = {
-    // ID, TYPE, FONT_T, FONT_S, X, Y, W, H, FG, BG, BORDER, B_COLOR, [PADDING], {UNION}, TEXT
     { 1, CTRL_LABEL, 1, 24, 10, 7, 135, 30, 10, 2, 1, 0, {0}, {.label = {}}, "0" },
     { 17, CTRL_BUTTON, 0, 14, 10, 70, 30, 30, 0, -1, 0, 0, {0}, {.button = {NULL, 0}}, "7" },
     { 18, CTRL_BUTTON, 0, 14, 45, 70, 30, 30, 0, -1, 0, 0, {0}, {.button = {NULL, 0}}, "8" },
@@ -205,7 +203,6 @@ static void calculate(void) {
         }
     }
 
-    /* Update decimal flag based on whether result is fractional */
     first_has_dot = (result != (long)result) ? 1 : 0;
     first_dot_mul = 1.0;
     second_has_dot = 0; second_dot_mul = 1.0;
@@ -230,7 +227,6 @@ static void clear_all(void) {
 
 static void press_dot(void) {
     if (has_result) {
-        /* Start a new number "0." after a result */
         first_num = 0.0;
         second_num = 0.0;
         op = 0;
@@ -244,7 +240,6 @@ static void press_dot(void) {
 
     if (entering_second) {
         if (!second_has_dot) { second_has_dot = 1; second_dot_mul = 1.0; }
-        /* show current second number with dot (even if zero) */
         update_display(second_num, second_has_dot);
     } else {
         if (!first_has_dot) { first_has_dot = 1; first_dot_mul = 1.0; }
@@ -271,7 +266,6 @@ static int sqrt(void) {
         first_has_dot = (res != (long)res) ? 1 : 0;
         first_dot_mul = 1.0;
         update_display(first_num, first_has_dot);
-        /* Treat sqrt as a result when applied to the first/only operand */
         has_result = 1;
         op = 0;
         entering_second = 0;
@@ -284,7 +278,6 @@ static int handle_event(void *f, int event, void *userdata) {
     form = f;
     
     switch (event) {
-        /* Digit buttons */
         case ID_BTN_0: append_digit(0); break;
         case ID_BTN_1: append_digit(1); break;
         case ID_BTN_2: append_digit(2); break;
@@ -296,22 +289,17 @@ static int handle_event(void *f, int event, void *userdata) {
         case ID_BTN_8: append_digit(8); break;
         case ID_BTN_9: append_digit(9); break;
 
-        /* Operator buttons */
         case ID_BTN_ADD: set_operator('+'); break;
         case ID_BTN_SUB: set_operator('-'); break;
         case ID_BTN_MUL: set_operator('*'); break;
         case ID_BTN_DIV: set_operator('/'); break;
 
-        /* Equals */
         case ID_BTN_EQ: calculate(); break;
 
-        /* Clear */
         case ID_BTN_CLR: clear_all(); break;
 
-        /* Decimal point */
         case ID_BTN_DOT: press_dot(); break;
 
-        /* Square root */
         case ID_BTN_SQRT: sqrt(); break;
     }
     

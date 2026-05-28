@@ -99,7 +99,6 @@ static void save_settings(cpl_boot_state_t *state) {
     char tmp1[4096];
     char boot_text[512];
 
-    /* Read existing INI to preserve other sections */
     int fd = sys_open(SETTINGS_PATH, "r");
     int bytes = 0;
     if (fd >= 0) {
@@ -109,7 +108,6 @@ static void save_settings(cpl_boot_state_t *state) {
     if (bytes > 0) read_buf[bytes] = '\0';
     else read_buf[0] = '\0';
 
-    /* Build boot section text */
     const char *shell_val;
     if (state->shell_type == 0) {
         shell_val = "C:/DESKTOP.ELF";
@@ -245,12 +243,10 @@ static int cpl_boot_event(prog_instance_t *inst, int win_idx, int event) {
         return PROG_EVENT_HANDLED;
     }
 
-    /* OK button */
     if (event == CTRL_BTN_OK) {
         read_current_values(state);
         save_settings(state);
 
-        /* Update originals so cancel doesn't revert */
         state->orig_shell_type = state->shell_type;
         strncpy(state->orig_shell_path, state->shell_path, sizeof(state->orig_shell_path));
         state->orig_boot_screen = state->boot_screen;

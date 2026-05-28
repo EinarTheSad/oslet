@@ -3,6 +3,9 @@
 #include "../irq/io.h"
 #include "../mem/paging.h"
 
+/* Experimental USB mass-storage path. It is useful when the controller and
+   device match this simple driver, but it is not a general USB stack. */
+
 #define PCI_CONFIG_ADDR 0xCF8
 #define PCI_CONFIG_DATA 0xCFC
 
@@ -1337,7 +1340,7 @@ static int enumerate_device(int port_index) {
     if (msd_read_capacity() != 0)
         return -1;
 
-    usb_set_status("mass storage ready");
+    usb_set_status("experimental USB storage ready");
     return 0;
 }
 
@@ -1726,12 +1729,12 @@ static int init_uhci(void) {
 void usb_init(void) {
     usb_available = 0;
     usb_host = USB_HOST_NONE;
-    usb_set_status("probing");
+    usb_set_status("experimental probe");
     cbw_tag = 1;
 
     if (init_xhci() == 0 || init_ehci() == 0 || init_uhci() == 0) {
         usb_available = 1;
-        usb_set_status("mass storage ready");
+        usb_set_status("experimental USB storage ready");
     }
 }
 

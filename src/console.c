@@ -104,7 +104,7 @@ char toupper_s(char c) {
     return (c >= 'a' && c <= 'z') ? c - 32 : c;
 }
 
-/* UTF-8 to CP437 conversion for box drawing and block characters */
+/* Small UTF-8 to CP437 map for text-mode line and block glyphs. */
 static uint8_t utf8_to_cp437(uint8_t b2, uint8_t b3) {
     if (b2 == 0x94) {
         switch (b3) {
@@ -144,7 +144,6 @@ static uint8_t utf8_to_cp437(uint8_t b2, uint8_t b3) {
     return 0;
 }
 
-/* UTF-8 aware emit - buffers E2 xx xx sequences */
 static uint8_t utf8_buf[3];
 static int utf8_pos = 0;
 
@@ -168,7 +167,6 @@ static void emit_console_utf8(char ch, void* user) {
         if (cp437 != 0) {
             emit_console((char)cp437, user);
         } else {
-            /* Unknown sequence - emit original bytes */
             emit_console((char)utf8_buf[0], user);
             emit_console((char)utf8_buf[1], user);
             emit_console((char)utf8_buf[2], user);
@@ -179,14 +177,12 @@ static void emit_console_utf8(char ch, void* user) {
     emit_console(ch, user);
 }
 
-/* Supports: %c %s %d %u %x %X %p %% with width/zero-pad basics */
 int kvprintf(const char* fmt, va_list ap, emit_fn emit, void* user) {
     int written = 0;
     for (const char* p = fmt; *p; ++p) {
         if (*p != '%') { emit(*p, user); written++; continue; }
         ++p;
 
-        // flags: '-' (left-justify), '0' (zero pad)
         bool left = false;
         bool zero = false;
         for (;;) {
