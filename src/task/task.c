@@ -39,6 +39,7 @@ void tasking_init(void) {
     }
     
     memset_s(current_task, 0, sizeof(task_t));
+    current_task->exec_slot = -1;
     current_task->msg_queue.head = 0;
     current_task->msg_queue.tail = 0;
     current_task->msg_queue.count = 0;
@@ -72,6 +73,7 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     task_t *task = (task_t*)kmalloc(sizeof(task_t));
     if (!task) return 0;
     memset_s(task, 0, sizeof(task_t));
+    task->exec_slot = -1;
 
     task->stack = kmalloc(TASK_STACK_SIZE);
     if (!task->stack) { kfree(task); return 0; }
