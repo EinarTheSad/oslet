@@ -7,6 +7,9 @@ DISK_SIZE = 32
 
 CC      = gcc
 LD      = ld
+QEMU_AUDIO ?= sdl
+QEMU_DISPLAY ?= sdl,grab-mod=lctrl-lalt,show-cursor=on
+QEMU_SOUND ?= -audiodev $(QEMU_AUDIO),id=snd0 -device sb16,audiodev=snd0
 
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector
 BINCFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -fno-stack-protector -fPIE -fno-plt
@@ -264,6 +267,8 @@ run:
 	-m 32M \
 	-net none \
 	-vga std \
+	-display $(QEMU_DISPLAY) \
+	$(QEMU_SOUND) \
 	-rtc base=localtime
 
 full:
@@ -281,6 +286,8 @@ run-usb:
 	-m 32M \
 	-net none \
 	-vga std \
+	-display $(QEMU_DISPLAY) \
+	$(QEMU_SOUND) \
 	-rtc base=localtime \
 	-boot menu=on \
 	-drive if=none,id=usbstick,file=$(DISK),format=raw \
