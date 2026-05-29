@@ -1,17 +1,21 @@
 #include "progmod.h"
 #include "progman.h"
 #include "../syscall.h"
+#include "../win/wm_config.h"
 #include "../lib/string.h"
 #include "../lib/elf.h"
 #include "../lib/app.h"
 
 #define CTRL_APP_BASE 100
 #define CTRL_BACK_BUTTON 99
+#define CTRL_START_SCROLLBAR 98
 
 #define ICON_W 48
 #define ICON_H 58
 #define PADDING_X 12
 #define PADDING_Y 8
+#define SCROLLBAR_W 18
+#define SCROLLBAR_PAD 1
 #define COLS 2
 #define COLS_CHILD 4
 
@@ -48,6 +52,7 @@ typedef struct {
     char grp_path[64];
     char grp_title[64];
     int is_main_window;
+    int scroll_offset;
 } startman_state_t;
 
 static char g_pending_grp_path[64] = {0};
@@ -340,6 +345,48 @@ static int g_main_win_h = MAIN_HEIGHT;
 static void rebuild_layout(startman_state_t *state);
 static void open_group_window(const char *grp_path, const char *parent_grp, const char *icon_path, const char *display_name);
 
+static int startman_total_icons(startman_state_t *state) {
+    if (!state) return 0;
+    return state->app_count + (state->is_main_window ? 0 : 1);
+}
+
+static int startman_total_rows(startman_state_t *state, int cols) {
+    int total_icons = startman_total_icons(state);
+    if (cols < 1) cols = 1;
+    return (total_icons + cols - 1) / cols;
+}
+
+static int startman_scrollbar_x(int win_w) {
+    return win_w - WM_FRAME_WIDTH - SCROLLBAR_PAD - SCROLLBAR_W;
+}
+
+static int startman_scrollbar_h(int win_h) {
+    int h = win_h - WM_TITLEBAR_HEIGHT - (WM_FRAME_WIDTH * 2) - (SCROLLBAR_PAD * 2);
+    if (h < SCROLLBAR_W * 3)
+        h = SCROLLBAR_W * 3;
+    return h;
+}
+
+static int startman_visible_rows(int win_h) {
+    int client_h = win_h - WM_TITLEBAR_HEIGHT - (WM_FRAME_WIDTH * 2) - (SCROLLBAR_PAD * 2);
+    int row_step = ICON_H + PADDING_Y;
+    int rows = client_h / row_step;
+    if (rows < 1) rows = 1;
+    return rows;
+}
+
+static int startman_columns(int win_w, int use_scrollbar) {
+    int right_edge = use_scrollbar
+        ? startman_scrollbar_x(win_w) - SCROLLBAR_PAD
+        : win_w - WM_FRAME_WIDTH - SCROLLBAR_PAD;
+    int content_w = right_edge - PADDING_X;
+
+    int cols = (content_w + PADDING_X) / (ICON_W + PADDING_X);
+    if (cols < 1) cols = 1;
+    if (cols > 10) cols = 10;
+    return cols;
+}
+
 static void save_main_geometry(startman_state_t *state) {
     if (!state || !state->is_main_window || !state->form)
         return;
@@ -403,6 +450,7 @@ static int startman_init(prog_instance_t *inst) {
     inst->user_data = state;
     state->app_count = 0;
     state->grp_path[0] = '\0';
+    state->scroll_offset = 0;
 
     /* Check if we have a pending GRP path to open */
     if (g_pending_grp_path[0]) {
@@ -543,8 +591,20 @@ static int startman_init(prog_instance_t *inst) {
         ctrl_set_image(state->form, icon.id, state->apps[i].icon_path);
     }
 
-    if (state->is_main_window && g_main_geom_valid)
-        rebuild_layout(state);
+    gui_control_t scrollbar = {0};
+    scrollbar.type = CTRL_SCROLLBAR;
+    scrollbar.x = startman_scrollbar_x(win_w);
+    scrollbar.y = 1;
+    scrollbar.w = SCROLLBAR_W;
+    scrollbar.h = startman_scrollbar_h(win_h);
+    scrollbar.fg = 8;
+    scrollbar.bg = 7;
+    scrollbar.id = CTRL_START_SCROLLBAR;
+    scrollbar.font_size = 12;
+    sys_win_add_control(state->form, &scrollbar);
+    ctrl_set_visible(state->form, CTRL_START_SCROLLBAR, 0);
+
+    rebuild_layout(state);
     sys_win_draw(state->form);
     prog_register_window(inst, state->form);
     return 0;
@@ -552,35 +612,53 @@ static int startman_init(prog_instance_t *inst) {
 
 static void rebuild_layout(startman_state_t *state) {
     if (!state || !state->form) return;
-    
+
     gui_form_t *f = (gui_form_t *)state->form;
     int win_w = f->win.w;
-    
-    /* Calculate columns based on window width */
-    int cols = (win_w - PADDING_X) / (ICON_W + PADDING_X);
-    if (cols < 1) cols = 1;
-    if (cols > 10) cols = 10;  /* reasonable max */
-    
-    /* Determine icon offset for back button */
+    int win_h = f->win.h;
+
+    sys_win_invalidate_icons();
+
+    int visible_rows = startman_visible_rows(win_h);
+    int cols = startman_columns(win_w, 0);
+    int total_rows = startman_total_rows(state, cols);
+    int needs_scrollbar = total_rows > visible_rows;
+    if (needs_scrollbar) {
+        cols = startman_columns(win_w, 1);
+        total_rows = startman_total_rows(state, cols);
+        needs_scrollbar = total_rows > visible_rows;
+    }
+
+    int max_scroll = needs_scrollbar ? total_rows - visible_rows : 0;
+    if (state->scroll_offset > max_scroll) state->scroll_offset = max_scroll;
+    if (state->scroll_offset < 0) state->scroll_offset = 0;
+
     int icon_offset = state->is_main_window ? 0 : 1;
-    
-    /* Rebuild controls - update positions of existing controls */
+
     if (f->controls) {
         for (int ctrl_idx = 0; ctrl_idx < f->ctrl_count; ctrl_idx++) {
             gui_control_t *ctrl = &f->controls[ctrl_idx];
-            
+
             if (ctrl->id == CTRL_BACK_BUTTON) {
-                /* Back button always at first position */
+                int row = 0 - state->scroll_offset;
                 ctrl->x = PADDING_X;
-                ctrl->y = PADDING_Y;
+                ctrl->y = PADDING_Y + row * (ICON_H + PADDING_Y);
+                ctrl_set_visible(state->form, ctrl->id, row >= 0 && row < visible_rows);
             } else if (ctrl->id >= CTRL_APP_BASE) {
-                /* App icon - recalculate position */
-                int app_idx = ctrl->id - CTRL_APP_BASE;
-                int pos = app_idx + icon_offset;
+                int pos = (ctrl->id - CTRL_APP_BASE) + icon_offset;
                 int col = pos % cols;
-                int row = pos / cols;
+                int row = (pos / cols) - state->scroll_offset;
                 ctrl->x = PADDING_X + col * (ICON_W + PADDING_X);
                 ctrl->y = PADDING_Y + row * (ICON_H + PADDING_Y);
+                ctrl_set_visible(state->form, ctrl->id, row >= 0 && row < visible_rows);
+            } else if (ctrl->id == CTRL_START_SCROLLBAR) {
+                ctrl->x = startman_scrollbar_x(win_w);
+                ctrl->y = 1;
+                ctrl->w = SCROLLBAR_W;
+                ctrl->h = startman_scrollbar_h(win_h);
+                ctrl->scrollbar.max_length = max_scroll > 0 ? max_scroll : 1;
+                ctrl->scrollbar.cursor_pos = state->scroll_offset;
+                ctrl_set_visible(state->form, ctrl->id, needs_scrollbar);
             }
         }
     }
@@ -602,6 +680,17 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
         rebuild_layout(state);
         save_main_geometry(state);
         return PROG_EVENT_REDRAW;
+    }
+
+    if (event == CTRL_START_SCROLLBAR && state) {
+        gui_control_t *scrollbar = sys_win_get_control(state->form, CTRL_START_SCROLLBAR);
+        if (scrollbar) {
+            state->scroll_offset = scrollbar->scrollbar.cursor_pos;
+            rebuild_layout(state);
+            sys_win_draw(state->form);
+            return PROG_EVENT_HANDLED;
+        }
+        return PROG_EVENT_HANDLED;
     }
 
     /* Handle back button - only for child windows */

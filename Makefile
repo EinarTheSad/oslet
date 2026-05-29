@@ -29,8 +29,10 @@ KERNEL_SYSCALL_OBJS = $(CURDIR)/$(BUILD)/syscall/core.o \
                       $(CURDIR)/$(BUILD)/syscall/gui_helpers.o
 
 KERNEL_SUBDIR_SRCS_C := $(foreach dir,$(KERNEL_SUBDIRS),$(wildcard $(SRC)/$(dir)/*.c))
+KERNEL_WIN_CONTROL_SRCS_C := $(wildcard $(SRC)/win/controls/*.c)
 KERNEL_SUBDIR_SRCS_S := $(foreach dir,$(KERNEL_SUBDIRS),$(wildcard $(SRC)/$(dir)/*.S))
 KERNEL_SUBDIR_OBJS := $(patsubst $(SRC)/%.c,$(CURDIR)/$(BUILD)/%.o,$(KERNEL_SUBDIR_SRCS_C)) \
+                      $(patsubst $(SRC)/%.c,$(CURDIR)/$(BUILD)/%.o,$(KERNEL_WIN_CONTROL_SRCS_C)) \
                       $(patsubst $(SRC)/%.S,$(CURDIR)/$(BUILD)/%.o,$(KERNEL_SUBDIR_SRCS_S))
 
 KERNEL_OBJS = $(KERNEL_ROOT_OBJS) $(KERNEL_SYSCALL_OBJS) $(KERNEL_SUBDIR_OBJS)

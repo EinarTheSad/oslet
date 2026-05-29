@@ -776,6 +776,9 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
             int thumb_size = 20;
             if (thumb_size > track_len) thumb_size = track_len;
             int max_val = ctrl->scrollbar.max_length > 0 ? ctrl->scrollbar.max_length : 100;
+            int travel = track_len - thumb_size;
+            if (travel <= 0)
+                travel = 1;
 
             int abs_x = form->win.x + ctrl->x;
             int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
@@ -784,8 +787,8 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 int track_y = abs_y + arrow_size;
                 int rel_y = my - track_y - ctrl->scrollbar.scroll_offset; /* Account for drag offset */
                 if (rel_y < 0) rel_y = 0;
-                if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
-                int new_val = (rel_y * max_val) / (track_len - thumb_size);
+                if (rel_y > travel) rel_y = travel;
+                int new_val = (rel_y * max_val) / travel;
                 if (new_val > max_val) new_val = max_val;
                 if (new_val != ctrl->scrollbar.cursor_pos) {
                     ctrl->scrollbar.cursor_pos = new_val;
@@ -798,8 +801,8 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 int track_x = abs_x + arrow_size;
                 int rel_x = mx - track_x - ctrl->scrollbar.scroll_offset;
                 if (rel_x < 0) rel_x = 0;
-                if (rel_x > track_len - thumb_size) rel_x = track_len - thumb_size;
-                int new_val = (rel_x * max_val) / (track_len - thumb_size);
+                if (rel_x > travel) rel_x = travel;
+                int new_val = (rel_x * max_val) / travel;
                 if (new_val > max_val) new_val = max_val;
                 if (new_val != ctrl->scrollbar.cursor_pos) {
                     ctrl->scrollbar.cursor_pos = new_val;

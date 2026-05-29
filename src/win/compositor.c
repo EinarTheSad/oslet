@@ -442,18 +442,13 @@ void compositor_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, 
 void compositor_invalidate_icon_backgrounds(window_manager_t *wm) {
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *form = wm->windows[i];
-        if (form && form->win.is_minimized) {
-            if (form->win.minimized_icon_id != -1 && form->controls) {
-                for (int j = 0; j < form->ctrl_count; j++) {
-                    gui_control_t *ctrl = &form->controls[j];
-                    if (ctrl->type == CTRL_ICON && ctrl->id == form->win.minimized_icon_id) {
-                        if (ctrl->icon.saved_bg) {
-                            kfree(ctrl->icon.saved_bg);
-                            ctrl->icon.saved_bg = NULL;
-                        }
-                        break;
-                    }
-                }
+        if (!form || !form->controls) continue;
+
+        for (int j = 0; j < form->ctrl_count; j++) {
+            gui_control_t *ctrl = &form->controls[j];
+            if ((ctrl->type & 0x7F) == CTRL_ICON && ctrl->icon.saved_bg) {
+                kfree(ctrl->icon.saved_bg);
+                ctrl->icon.saved_bg = NULL;
             }
         }
     }

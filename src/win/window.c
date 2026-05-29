@@ -556,7 +556,7 @@ void win_resize(window_t *win, int new_w, int new_h) {
     
     /* Apply minimum size constraints */
     if (new_w < 100) new_w = 100;
-    if (new_h < 80) new_h = 80;
+    if (new_h < 95) new_h = 95;
     
     /* Keep window on screen */
     if (win->x + new_w > WM_SCREEN_WIDTH) new_w = WM_SCREEN_WIDTH - win->x;
