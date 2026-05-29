@@ -21,15 +21,19 @@ KERNEL_ROOT_OBJS = $(CURDIR)/$(BUILD)/kernel.o \
                   $(CURDIR)/$(BUILD)/console.o \
                   $(CURDIR)/$(BUILD)/vconsole.o \
                   $(CURDIR)/$(BUILD)/rtc.o \
-                  $(CURDIR)/$(BUILD)/shell_kernel.o \
-                  $(CURDIR)/$(BUILD)/syscall.o
+                  $(CURDIR)/$(BUILD)/shell_kernel.o
+
+KERNEL_SYSCALL_OBJS = $(CURDIR)/$(BUILD)/syscall/core.o \
+                      $(CURDIR)/$(BUILD)/syscall/gui.o \
+                      $(CURDIR)/$(BUILD)/syscall/gui_events.o \
+                      $(CURDIR)/$(BUILD)/syscall/gui_helpers.o
 
 KERNEL_SUBDIR_SRCS_C := $(foreach dir,$(KERNEL_SUBDIRS),$(wildcard $(SRC)/$(dir)/*.c))
 KERNEL_SUBDIR_SRCS_S := $(foreach dir,$(KERNEL_SUBDIRS),$(wildcard $(SRC)/$(dir)/*.S))
 KERNEL_SUBDIR_OBJS := $(patsubst $(SRC)/%.c,$(CURDIR)/$(BUILD)/%.o,$(KERNEL_SUBDIR_SRCS_C)) \
                       $(patsubst $(SRC)/%.S,$(CURDIR)/$(BUILD)/%.o,$(KERNEL_SUBDIR_SRCS_S))
 
-KERNEL_OBJS = $(KERNEL_ROOT_OBJS) $(KERNEL_SUBDIR_OBJS)
+KERNEL_OBJS = $(KERNEL_ROOT_OBJS) $(KERNEL_SYSCALL_OBJS) $(KERNEL_SUBDIR_OBJS)
 
 LIB_OBJ_DIR      = $(CURDIR)/$(BUILD)/lib
 LIB_SRCS         = $(filter-out $(SRC)/lib/elf.c $(SRC)/lib/mode_marker.c,$(wildcard $(SRC)/lib/*.c))
