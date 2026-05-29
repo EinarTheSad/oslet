@@ -1,7 +1,7 @@
 SRCDIR := win
 BLDDIR := $(BUILD)/$(SRCDIR)
 
-SRCS_C := $(wildcard *.c)
+SRCS_C := $(wildcard *.c) $(wildcard controls/*.c)
 SRCS := $(SRCS_C)
 
 OBJS := $(patsubst %.c,$(BLDDIR)/%.o,$(SRCS_C))

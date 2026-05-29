@@ -807,10 +807,11 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                     int thumb_size = 20;
                     if (thumb_size > track_len) thumb_size = track_len;
                     int max_val = ctrl->scrollbar.max_length > 0 ? ctrl->scrollbar.max_length : 100;
+                    int travel = track_len - thumb_size;
 
                     int thumb_pos = 0;
-                    if (max_val > 0 && track_len > thumb_size) {
-                        thumb_pos = ((track_len - thumb_size) * ctrl->scrollbar.cursor_pos) / max_val;
+                    if (max_val > 0 && travel > 0) {
+                        thumb_pos = (travel * ctrl->scrollbar.cursor_pos) / max_val;
                     }
 
                     if (vertical) {
@@ -838,11 +839,13 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                             ctrl->scrollbar.scroll_offset = my - thumb_y; /* Store drag offset */
                             return 1;
                         } else if (my >= track_y && my < track_y + track_len) {
+                            if (travel <= 0)
+                                return 1;
                             /* Track clicked (not on thumb) - jump to position */
                             int rel_y = my - track_y - thumb_size / 2; /* Center thumb on click */
                             if (rel_y < 0) rel_y = 0;
-                            if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
-                            ctrl->scrollbar.cursor_pos = (rel_y * max_val) / (track_len - thumb_size);
+                            if (rel_y > travel) rel_y = travel;
+                            ctrl->scrollbar.cursor_pos = (rel_y * max_val) / travel;
                             if (ctrl->scrollbar.cursor_pos > max_val) ctrl->scrollbar.cursor_pos = max_val;
                             ctrl->scrollbar.hovered_item = 1;
                             ctrl->scrollbar.pressed = 1;
@@ -875,11 +878,13 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                             ctrl->scrollbar.scroll_offset = mx - thumb_x; /* Store drag offset */
                             return 1;
                         } else if (mx >= track_x && mx < track_x + track_len) {
+                            if (travel <= 0)
+                                return 1;
                             /* Track clicked (not on thumb) - jump to position */
                             int rel_x = mx - track_x - thumb_size / 2;
                             if (rel_x < 0) rel_x = 0;
-                            if (rel_x > track_len - thumb_size) rel_x = track_len - thumb_size;
-                            ctrl->scrollbar.cursor_pos = (rel_x * max_val) / (track_len - thumb_size);
+                            if (rel_x > travel) rel_x = travel;
+                            ctrl->scrollbar.cursor_pos = (rel_x * max_val) / travel;
                             if (ctrl->scrollbar.cursor_pos > max_val) ctrl->scrollbar.cursor_pos = max_val;
                             ctrl->scrollbar.hovered_item = 1;
                             ctrl->scrollbar.pressed = 1;
