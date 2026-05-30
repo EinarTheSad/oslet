@@ -35,14 +35,14 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 form->dragging = 0;
                 form->resizing = 0;
                 win_maximize(form);
-                global_wm.needs_full_redraw = 1;
-                return -4;  /* Window resized, needs layout update */
+                gui_request_full_redraw();
+                return SYS_WIN_EVENT_RESIZE;
             } else if (action == MENU_ACTION_RESTORE) {
                 form->dragging = 0;
                 form->resizing = 0;
                 win_restore_from_maximize(form);
-                global_wm.needs_full_redraw = 1;
-                return -4;  /* Window resized, needs layout update */
+                gui_request_full_redraw();
+                return SYS_WIN_EVENT_RESIZE;
             } else if (action == MENU_ACTION_MINIMIZE) {
                 int icon_x, icon_y;
                 wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
@@ -50,10 +50,10 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 win_minimize(form, icon_x, icon_y, icon_path);
                 wm_claim_icon_slot(&global_wm, icon_x, icon_y);
                 /* Let the desktop redraw run first to avoid compositing on stale wallpaper. */
-                global_wm.needs_full_redraw = 1;
-                return -2;  /* Window minimized (major state change) */
+                gui_request_full_redraw();
+                return SYS_WIN_EVENT_WINDOW_CHANGED;
             } else if (action == MENU_ACTION_CLOSE) {
-                return -3;  /* Close requested */
+                return SYS_WIN_EVENT_CLOSE;
             }
         } else if (action == -1) {
             needs_redraw = 1;
@@ -63,7 +63,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         }
         if (form->window_menu.visible || action != 0) {
             if (needs_redraw) {
-                return (uint32_t)-1;
+                return (uint32_t)SYS_WIN_EVENT_REDRAW;
             }
             return 0;
         }
@@ -126,24 +126,11 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 for (int i = 0; i < form->ctrl_count; i++) {
                     gui_control_t *ctrl = &form->controls[i];
                     if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
-                        int abs_x = form->win.x + ctrl->x;
-                        int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-                        int list_h = ctrl->dropdown.item_count * 16;
-                        int list_y = abs_y + ctrl->h;
+                        gui_rect_t list_rect;
+                        gui_dropdown_list_rect(form, ctrl, ctrl_y_offset, &list_rect);
 
-                        /* Account for auto-flip */
-                        if (list_y + list_h > GFX_HEIGHT) {
-                            list_y = abs_y - list_h;
-                            if (list_y < 0) {
-                                list_y = 0;
-                                list_h = abs_y;
-                                if (list_h < 16) list_h = 16;
-                            }
-                        }
-
-                        /* Check if click is within dropdown list area */
-                        if (mx >= abs_x && mx < abs_x + ctrl->w &&
-                            my >= list_y && my < list_y + list_h) {
+                        if (mx >= list_rect.x && mx < list_rect.x + list_rect.w &&
+                            my >= list_rect.y && my < list_rect.y + list_rect.h) {
                             click_on_dropdown = 1;
                             break;
                         }
@@ -158,7 +145,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
             int icon_result = pump_handle_icon_click(form, mx, my);
             if (icon_result == 2) {
                 /* Double-click - window restored */
-                return -2;  /* Major state change - window restored */
+                return SYS_WIN_EVENT_WINDOW_CHANGED;
             } else if (icon_result == 1) {
                 /* Single click - selection changed */
                 needs_redraw = 1;
@@ -201,26 +188,14 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 for (int i = 0; i < form->ctrl_count; i++) {
                     gui_control_t *ctrl = &form->controls[i];
                     if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
-                        int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-                        int list_h = ctrl->dropdown.item_count * 16;
-                        int list_y = abs_y + ctrl->h;
+                        gui_rect_t list_rect;
+                        gui_dropdown_list_rect(form, ctrl, ctrl_y_offset, &list_rect);
 
-                        /* Account for auto-flip */
-                        if (list_y + list_h > GFX_HEIGHT) {
-                            list_y = abs_y - list_h;
-                            if (list_y < 0) {
-                                list_y = 0;
-                                list_h = abs_y;
-                                if (list_h < 16) list_h = 16;
-                            }
+                        if (list_rect.y < check_y) {
+                            check_h += (check_y - list_rect.y);
+                            check_y = list_rect.y;
                         }
-
-                        /* Expand bounds to include dropdown list */
-                        if (list_y < check_y) {
-                            check_h += (check_y - list_y);
-                            check_y = list_y;
-                        }
-                        int list_bottom = list_y + list_h;
+                        int list_bottom = list_rect.y + list_rect.h;
                         int window_bottom = form->win.y + form->win.h;
                         if (list_bottom > window_bottom) {
                             int extra_h = list_bottom - window_bottom;
@@ -236,7 +211,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 my >= check_y && my < check_y + check_h) {
                 z_order_changed = wm_bring_to_front(&global_wm, form);
                 if (z_order_changed)
-                    global_wm.needs_full_redraw = 1;
+                    gui_request_full_redraw();
             }
 
             /* Check if click is on an open dropdown list FIRST (highest priority,
@@ -246,25 +221,11 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 for (int i = 0; i < form->ctrl_count; i++) {
                     gui_control_t *ctrl = &form->controls[i];
                     if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
-                        int abs_x = form->win.x + ctrl->x;
-                        int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-                        int list_h = ctrl->dropdown.item_count * 16;
-                        int list_y = abs_y + ctrl->h;
+                        gui_rect_t list_rect;
+                        gui_dropdown_list_rect(form, ctrl, ctrl_y_offset, &list_rect);
 
-                        /* Account for auto-flip */
-                        if (list_y + list_h > GFX_HEIGHT) {
-                            list_y = abs_y - list_h;
-                            if (list_y < 0) {
-                                list_y = 0;
-                                list_h = abs_y;
-                                if (list_h < 16) list_h = 16;
-                            }
-                        }
-
-                        /* Check if click is within dropdown list area */
-                        if (mx >= abs_x && mx < abs_x + ctrl->w &&
-                            my >= list_y && my < list_y + list_h) {
-                            /* Let pump_handle_control_press handle the dropdown click */
+                        if (mx >= list_rect.x && mx < list_rect.x + list_rect.w &&
+                            my >= list_rect.y && my < list_rect.y + list_rect.h) {
                             dropdown_handled = 1;
                             if (pump_handle_control_press(form, mx, my, ctrl_y_offset)) {
                                 needs_redraw = 1;
@@ -282,7 +243,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                     /* Menu shown */
                     needs_redraw = 1;
                 } else if (min_result == 1) {
-                    return -1;  /* Window minimized directly */
+                    return SYS_WIN_EVENT_REDRAW;
                 }
                 /* Check if resize corner was clicked */
                 else if (pump_handle_resize_corner_click(form, mx, my)) {
@@ -571,11 +532,11 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
 
         /* If we just finished dragging or resizing, signal full redraw needed */
         if (was_dragging || was_icon_dragging || was_resizing) {
-            global_wm.needs_full_redraw = 1;  /* Desktop will do full redraw */
+            gui_request_full_redraw();  /* Desktop will do full redraw */
             if (was_resizing) {
-                return (uint32_t)-4;  /* -4 = resize ended */
+                return (uint32_t)SYS_WIN_EVENT_RESIZE;
             }
-            return (uint32_t)-2;  /* -2 = drag ended */
+            return (uint32_t)SYS_WIN_EVENT_WINDOW_CHANGED;
         }
     }
 
@@ -609,15 +570,17 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                         int bg_w = icon_ctrl->w > 0 ? icon_ctrl->w : WM_ICON_TOTAL_WIDTH;
                         int label_lines = icon_count_label_lines(icon_ctrl->text, 49);
                         int bg_h = icon_calc_total_height(32, label_lines);
-                        int row_bytes = (bg_w + 1) / 2;
+                        int save_w = bg_w + 2;
+                        int save_h = bg_h + 2;
+                        int row_bytes = (save_w + 1) / 2;
                         uint8_t *old_saved_bg = icon_ctrl->icon.saved_bg;
                         /* Restore OLD position using existing saved_bg */
                         if (old_saved_bg) {
                             int old_bg_x = old_x - 1;
                             int old_bg_y = old_y - 1;
-                            for (int py = 0; py < bg_h + 2; py++) {
+                            for (int py = 0; py < save_h; py++) {
                                 uint8_t *row = old_saved_bg + py * row_bytes;
-                                for (int px = 0; px < bg_w + 2; px++) {
+                                for (int px = 0; px < save_w; px++) {
                                     int sx = old_bg_x + px;
                                     int sy = old_bg_y + py;
                                     if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
@@ -633,14 +596,14 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                         ctrl_set_pos(form, icon_ctrl->id, new_x, new_y);
                         /* Don't use compositor_draw_all - it would save bg WITH icon.
                            Instead, save bg at new position and draw icon directly. */
-                        uint8_t *new_saved_bg = (uint8_t*)kmalloc(row_bytes * (bg_h + 2));
+                        uint8_t *new_saved_bg = (uint8_t*)kmalloc(row_bytes * save_h);
                         if (new_saved_bg) {
                             int new_bg_x = new_x - 1;
                             int new_bg_y = new_y - 1;
-                            for (int py = 0; py < bg_h + 2; py++) {
+                            for (int py = 0; py < save_h; py++) {
                                 uint8_t *row = new_saved_bg + py * row_bytes;
                                 for (int b = 0; b < row_bytes; b++) row[b] = 0;
-                                for (int px = 0; px < bg_w + 2; px++) {
+                                for (int px = 0; px < save_w; px++) {
                                     int sx = new_bg_x + px;
                                     int sy = new_bg_y + py;
                                     uint8_t pix = 0;
@@ -672,9 +635,13 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         int dy = my - form->drag_start_y;
 
         if (dx != 0 || dy != 0) {
+            int had_saved_bg = form->win.saved_bg != NULL;
             win_move(&form->win, dx, dy);
             form->drag_start_x = mx;
             form->drag_start_y = my;
+            if (global_wm.backgrounds_invalid || !had_saved_bg || !form->win.saved_bg) {
+                gui_request_full_redraw();
+            }
             mouse_restore();
             compositor_draw_all(&global_wm);
             needs_redraw = 0;  /* Already drawn */
@@ -689,7 +656,11 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         if (dx != 0 || dy != 0) {
             int new_w = form->resize_start_w + dx;
             int new_h = form->resize_start_h + dy;
+            int had_saved_bg = form->win.saved_bg != NULL;
             win_resize(&form->win, new_w, new_h);
+            if (global_wm.backgrounds_invalid || !had_saved_bg || !form->win.saved_bg) {
+                gui_request_full_redraw();
+            }
             mouse_restore();
             compositor_draw_all(&global_wm);
             needs_redraw = 0;  /* Already drawn */
@@ -772,24 +743,19 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         if (ctrl && ctrl->type == CTRL_SCROLLBAR && ctrl->scrollbar.hovered_item == 1 && ctrl->scrollbar.pressed) {
             int vertical = !ctrl->scrollbar.checked;
             int arrow_size = vertical ? ctrl->w : ctrl->h;
-            int track_len = vertical ? (ctrl->h - 2 * arrow_size) : (ctrl->w - 2 * arrow_size);
-            int thumb_size = 20;
-            if (thumb_size > track_len) thumb_size = track_len;
             int max_val = ctrl->scrollbar.max_length > 0 ? ctrl->scrollbar.max_length : 100;
-            int travel = track_len - thumb_size;
-            if (travel <= 0)
-                travel = 1;
+            int length = vertical ? ctrl->h : ctrl->w;
+            scrollbar_geom_t sb;
+            gui_scrollbar_make(&sb, length, arrow_size,
+                                ctrl->scrollbar.cursor_pos, max_val);
 
             int abs_x = form->win.x + ctrl->x;
             int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
 
             if (vertical) {
                 int track_y = abs_y + arrow_size;
-                int rel_y = my - track_y - ctrl->scrollbar.scroll_offset; /* Account for drag offset */
-                if (rel_y < 0) rel_y = 0;
-                if (rel_y > travel) rel_y = travel;
-                int new_val = (rel_y * max_val) / travel;
-                if (new_val > max_val) new_val = max_val;
+                int new_val = gui_scrollbar_value_from_pos(&sb, my - track_y,
+                                                            ctrl->scrollbar.scroll_offset);
                 if (new_val != ctrl->scrollbar.cursor_pos) {
                     ctrl->scrollbar.cursor_pos = new_val;
                     form->clicked_id = ctrl->id;
@@ -799,11 +765,8 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 }
             } else {
                 int track_x = abs_x + arrow_size;
-                int rel_x = mx - track_x - ctrl->scrollbar.scroll_offset;
-                if (rel_x < 0) rel_x = 0;
-                if (rel_x > travel) rel_x = travel;
-                int new_val = (rel_x * max_val) / travel;
-                if (new_val > max_val) new_val = max_val;
+                int new_val = gui_scrollbar_value_from_pos(&sb, mx - track_x,
+                                                            ctrl->scrollbar.scroll_offset);
                 if (new_val != ctrl->scrollbar.cursor_pos) {
                     ctrl->scrollbar.cursor_pos = new_val;
                     form->clicked_id = ctrl->id;
@@ -936,36 +899,18 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open &&
             ctrl->dropdown.pressed && ctrl->dropdown.hovered_item == DROPDOWN_HOVER_SCROLLBAR) {
             int item_h = 16;
-            int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-            int list_h = ctrl->dropdown.item_count * item_h;
-            int list_y = abs_y + ctrl->h;
+            gui_rect_t list_rect;
+            gui_dropdown_list_rect(form, ctrl, ctrl_y_offset, &list_rect);
 
-            if (list_y + list_h > GFX_HEIGHT) {
-                list_y = abs_y - list_h;
-                if (list_y < 0) {
-                    list_y = 0;
-                    list_h = abs_y;
-                    if (list_h < item_h) list_h = item_h;
-                }
-            }
-
-            int visible_count = list_h / item_h;
+            int visible_count = list_rect.h / item_h;
             if (visible_count < 1) visible_count = 1;
             int max_val = ctrl->dropdown.item_count > visible_count ? (ctrl->dropdown.item_count - visible_count) : 0;
             if (max_val > 0) {
-                int sb_w = 18;
-                int arrow_size = sb_w;
-                int track_len = list_h - 2 * arrow_size;
-                int thumb_size = 20;
-                if (thumb_size > track_len) thumb_size = track_len;
-                int track_y = list_y + arrow_size;
-
-                int rel_y = my - track_y - ctrl->dropdown.scroll_offset;
-                if (rel_y < 0) rel_y = 0;
-                if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
-                int new_val = 0;
-                if (track_len - thumb_size > 0) new_val = (rel_y * max_val) / (track_len - thumb_size);
-                if (new_val > max_val) new_val = max_val;
+                scrollbar_geom_t sb;
+                gui_scrollbar_make(&sb, list_rect.h, 18, ctrl->dropdown.dropdown_scroll, max_val);
+                int track_y = list_rect.y + sb.arrow_size;
+                int new_val = gui_scrollbar_value_from_pos(&sb, my - track_y,
+                                                            ctrl->dropdown.scroll_offset);
                 if (new_val != ctrl->dropdown.dropdown_scroll) {
                     ctrl->dropdown.dropdown_scroll = new_val;
                     form->clicked_id = ctrl->id;
@@ -1045,7 +990,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
             compositor_draw_single(&global_wm, form);
         }
         /* Return clicked_id if it was set (e.g., scrollbar value changed), otherwise -1 */
-        return (form->clicked_id >= 0) ? (uint32_t)form->clicked_id : (uint32_t)-1;
+        return (form->clicked_id >= 0) ? (uint32_t)form->clicked_id : (uint32_t)SYS_WIN_EVENT_REDRAW;
     }
 
     return 0;

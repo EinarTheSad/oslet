@@ -484,12 +484,86 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
     }
 }
 
-
-static void pump_all_program_events(int mx, int my) {
+static int desktop_deselect_minimized_icons(void) {
     prog_instance_t *inst;
+    int min_x = WM_SCREEN_WIDTH;
+    int min_y = WM_SCREEN_HEIGHT;
+    int max_x = 0;
+    int max_y = 0;
+    int changed = 0;
+
+    PROGMAN_FOREACH_RUNNING(inst) {
+        for (int j = 0; j < inst->window_count; j++) {
+            gui_form_t *form = (gui_form_t*)inst->windows[j];
+            if (!form || !form->win.is_minimized) continue;
+            if (form->win.minimized_icon_id == -1 || !form->controls) continue;
+
+            gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+            if (!ctrl || !ctrl->icon.checked) continue;
+
+            ctrl->icon.checked = 0;
+
+            int x = ctrl->x - 15;
+            int y = ctrl->y - 15;
+            int w = WM_ICON_SLOT_WIDTH + 30;
+            int h = WM_ICON_SLOT_HEIGHT + 30;
+            if (x < min_x) min_x = x;
+            if (y < min_y) min_y = y;
+            if (x + w > max_x) max_x = x + w;
+            if (y + h > max_y) max_y = y + h;
+            changed = 1;
+        }
+    }
+
+    if (!changed) return 0;
+
+    if (min_x < 0) min_x = 0;
+    if (min_y < 0) min_y = 0;
+    if (max_x > WM_SCREEN_WIDTH) max_x = WM_SCREEN_WIDTH;
+    if (max_y > WM_SCREEN_HEIGHT) max_y = WM_SCREEN_HEIGHT;
+    desktop_redraw_rect(min_x, min_y, max_x - min_x, max_y - min_y);
+    return 1;
+}
+
+static int desktop_minimized_icon_mouse_active(void) {
+    prog_instance_t *inst;
+
+    PROGMAN_FOREACH_RUNNING(inst) {
+        for (int j = 0; j < inst->window_count; j++) {
+            gui_form_t *form = (gui_form_t*)inst->windows[j];
+            if (!form || !form->win.is_minimized) continue;
+            if (form->win.minimized_icon_id == -1 || !form->controls) continue;
+
+            gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
+            if (ctrl && (ctrl->icon.checked || ctrl->icon.dragging)) {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
+static void pump_all_program_events(int mx, int my, unsigned char mb) {
+    prog_instance_t *inst;
+    static unsigned char last_empty_desktop_buttons = 0;
     
     /* Determine which window is topmost at the mouse position */
     gui_form_t *topmost = sys_wm_get_topmost_at(mx, my);
+
+    if (topmost == NULL) {
+        if ((mb & 1) && desktop_minimized_icon_mouse_active()) {
+            last_empty_desktop_buttons = mb;
+        } else {
+            int button_pressed = (mb & 1) && !(last_empty_desktop_buttons & 1);
+            if (button_pressed) {
+                desktop_deselect_minimized_icons();
+            }
+            last_empty_desktop_buttons = mb;
+        }
+    } else {
+        last_empty_desktop_buttons = 0;
+    }
     
     PROGMAN_FOREACH_RUNNING(inst) {
         for (int j = 0; j < inst->window_count; j++) {
@@ -667,7 +741,7 @@ void _start(void) {
         }
 
         progman_update_all();
-        pump_all_program_events(mx, my);
+        pump_all_program_events(mx, my, mb);
 
         /* Check if redraw is needed */
         int redraw_type = sys_win_check_redraw();
