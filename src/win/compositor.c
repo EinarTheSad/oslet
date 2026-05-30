@@ -63,12 +63,9 @@ static int rects_intersect(int ax, int ay, int aw, int ah,
 void compositor_draw_all(window_manager_t *wm) {
     mouse_restore();
 
-    /* If a full redraw was requested, draw everything and clear the flag */
-    if (wm->needs_full_redraw) {
-        wm->needs_full_redraw = 0;
-        /* Clear dirty rect to prevent stale values affecting subsequent calls */
-        wm->dirty_x = wm->dirty_y = wm->dirty_w = wm->dirty_h = 0;
-    } else if (wm->dirty_w > 0 && wm->dirty_h > 0) {
+    /* A pending full redraw belongs to the desktop, which repaints the
+       wallpaper/taskbar before asking the compositor to layer windows. */
+    if (!wm->needs_full_redraw && wm->dirty_w > 0 && wm->dirty_h > 0) {
         /* Partial redraw: only draw items overlapping the dirty rect */
         int dx = wm->dirty_x;
         int dy = wm->dirty_y;

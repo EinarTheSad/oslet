@@ -20,6 +20,7 @@ typedef struct {
     icon_slot_t free_slots[WM_MAX_FREE_SLOTS];  // Pool of free icon slots
     int free_slot_count;                         // Number of available free slots
     int needs_full_redraw;                       // Flag: desktop should do full redraw
+    int backgrounds_invalid;                     // Saved backgrounds need fresh desktop pixels
     int dirty_x, dirty_y, dirty_w, dirty_h;      // Dirty rectangle for partial redraw
 } window_manager_t;
 
@@ -38,4 +39,3 @@ void wm_claim_icon_slot(window_manager_t *wm, int x, int y);
 void wm_set_icon_click(window_manager_t *wm, uint32_t time, gui_form_t *form);
 int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, gui_form_t *form);
 void wm_snap_to_slot(int x, int y, int *out_x, int *out_y);
-

@@ -5,8 +5,9 @@ void gfx_read_screen_region_packed(uint8_t *dst, int width, int height, int dest
 
     int row_bytes = (width + 1) / 2;
 
-    /* Byte-aligned rectangles can be copied a row at a time. */
-    if (dest_x >= 0 && dest_y >= 0 && dest_x + width <= GFX_WIDTH && dest_y + height <= GFX_HEIGHT && (dest_x & 1) == 0) {
+    /* Byte-copy only exact whole-byte regions. Odd widths include one extra pixel. */
+    if (dest_x >= 0 && dest_y >= 0 && dest_x + width <= GFX_WIDTH &&
+        dest_y + height <= GFX_HEIGHT && (dest_x & 1) == 0 && (width & 1) == 0) {
         int src_byte_x = dest_x / 2;
         int screen_row_bytes = GFX_WIDTH / 2;
         for (int y = 0; y < height; y++) {
@@ -43,8 +44,9 @@ void gfx_write_screen_region_packed(uint8_t *src, int width, int height, int des
 
     int row_bytes = (width + 1) / 2;
 
-    /* Byte-aligned rectangles can be copied a row at a time. */
-    if (dest_x >= 0 && dest_y >= 0 && dest_x + width <= GFX_WIDTH && dest_y + height <= GFX_HEIGHT && (dest_x & 1) == 0) {
+    /* Byte-copy only exact whole-byte regions. Odd widths include one extra pixel. */
+    if (dest_x >= 0 && dest_y >= 0 && dest_x + width <= GFX_WIDTH &&
+        dest_y + height <= GFX_HEIGHT && (dest_x & 1) == 0 && (width & 1) == 0) {
         int dest_byte_x = dest_x / 2;
         int screen_row_bytes = GFX_WIDTH / 2;
         for (int y = 0; y < height; y++) {

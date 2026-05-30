@@ -4,6 +4,48 @@
 window_manager_t global_wm;
 int wm_initialized = 0;
 
+void gui_invalidate_saved_backgrounds(window_manager_t *wm) {
+    if (!wm) return;
+
+    for (int i = 0; i < wm->count; i++) {
+        gui_form_t *f = wm->windows[i];
+        if (!f) continue;
+
+        if (f->win.saved_bg) {
+            kfree(f->win.saved_bg);
+            f->win.saved_bg = NULL;
+        }
+        f->win.dirty = 1;
+
+        if (f->controls) {
+            for (int j = 0; j < f->ctrl_count; j++) {
+                gui_control_t *ctrl = &f->controls[j];
+
+                if ((ctrl->type & 0x7F) == CTRL_ICON && ctrl->icon.saved_bg) {
+                    kfree(ctrl->icon.saved_bg);
+                    ctrl->icon.saved_bg = NULL;
+                }
+
+                if ((ctrl->type & 0x7F) == CTRL_DROPDOWN &&
+                    ctrl->dropdown.dropdown_saved_bg) {
+                    kfree(ctrl->dropdown.dropdown_saved_bg);
+                    ctrl->dropdown.dropdown_saved_bg = NULL;
+                }
+            }
+        }
+
+        if (f->window_menu.saved_bg) {
+            kfree(f->window_menu.saved_bg);
+            f->window_menu.saved_bg = NULL;
+        }
+    }
+}
+
+void gui_request_full_redraw(void) {
+    global_wm.needs_full_redraw = 1;
+    global_wm.backgrounds_invalid = 1;
+}
+
 int current_task_owns_focused_window(void) {
     if (!wm_initialized || global_wm.count <= 0)
         return 1;
@@ -195,7 +237,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                overwritten until another action (e.g. moving Start
                Manager) forces a redraw. */
             compositor_draw_single(&global_wm, form);
-            global_wm.needs_full_redraw = 1;
+            gui_request_full_redraw();
 
             return (uint32_t)form;
         }
@@ -479,7 +521,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             kfree(form);
 
-            global_wm.needs_full_redraw = 1;
+            gui_request_full_redraw();
 
             return 0;
         }
@@ -533,6 +575,12 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
         }
 
         case 0x0C: { /* SYS_WIN_REDRAW_ALL */
+            if (global_wm.backgrounds_invalid) {
+                gui_invalidate_saved_backgrounds(&global_wm);
+                if (!global_wm.needs_full_redraw) {
+                    global_wm.backgrounds_invalid = 0;
+                }
+            }
             compositor_draw_all(&global_wm);
             return 0;
         }
@@ -932,6 +980,10 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Return codes: 0 = none, 1 = full redraw, 2 = partial redraw (dirty rect available) */
             if (global_wm.needs_full_redraw) {
                 global_wm.needs_full_redraw = 0;
+                global_wm.dirty_x = 0;
+                global_wm.dirty_y = 0;
+                global_wm.dirty_w = 0;
+                global_wm.dirty_h = 0;
                 return 1; /* full redraw */
             }
 
@@ -967,7 +1019,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 if (f && !f->win.is_minimized && f->win.is_visible) {
                     /* Set focused index but DO NOT change z-order - preview behavior */
                     global_wm.focused_index = i;
-                    global_wm.needs_full_redraw = 1;
+                    gui_request_full_redraw();
                     return 1;
                 }
             }
@@ -979,7 +1031,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             gui_form_t *f = global_wm.windows[global_wm.focused_index];
             if (!f || f->win.is_minimized || !f->win.is_visible) return 0;
             wm_bring_to_front(&global_wm, f);
-            global_wm.needs_full_redraw = 1;
+            gui_request_full_redraw();
             return 1;
         }
 
@@ -1005,46 +1057,12 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             wm_bring_to_front(&global_wm, form);
             /* Safety: ensure focused_index points to restored window */
             if (global_wm.count > 0) global_wm.focused_index = global_wm.count - 1;
-            global_wm.needs_full_redraw = 1;
+            gui_request_full_redraw();
             return 2; /* Indicate full redraw */
         }
 
         case 0x17: { /* SYS_WIN_FORCE_FULL_REDRAW - request a desktop full redraw */
-            /* Clear any saved/serialized screen patches that were captured
-               earlier (saved_bg for windows, dropdown/menu saved backgrounds)
-               so they don't restore stale wallpaper portions after the desktop
-               background has changed. */
-            for (int i = 0; i < global_wm.count; i++) {
-                gui_form_t *f = global_wm.windows[i];
-                if (!f) continue;
-
-                /* Free per-window saved background (will be re-captured on next draw) */
-                if (f->win.saved_bg) {
-                    kfree(f->win.saved_bg);
-                    f->win.saved_bg = NULL;
-                }
-
-                /* Free any saved dropdown background for controls */
-                if (f->controls) {
-                    for (int j = 0; j < f->ctrl_count; j++) {
-                        if (f->controls[j].type == CTRL_DROPDOWN && f->controls[j].dropdown.dropdown_saved_bg) {
-                            kfree(f->controls[j].dropdown.dropdown_saved_bg);
-                            f->controls[j].dropdown.dropdown_saved_bg = NULL;
-                        }
-                    }
-                }
-
-                /* Free any saved menu background */
-                if (f->window_menu.saved_bg) {
-                    kfree(f->window_menu.saved_bg);
-                    f->window_menu.saved_bg = NULL;
-                }
-            }
-
-            /* Also invalidate cached icon backgrounds */
-            compositor_invalidate_icon_backgrounds(&global_wm);
-
-            global_wm.needs_full_redraw = 1;
+            gui_request_full_redraw();
             return 1;
         }
 
@@ -1299,8 +1317,6 @@ void wm_cleanup_task(uint32_t tid) {
     /* If we removed any windows, request a full desktop redraw so wallpaper and
        desktop elements behind the removed windows are repainted. */
     if (cleaned) {
-        global_wm.needs_full_redraw = 1;
-        /* Request immediate redraw so wallpaper/background is repainted now */
-        compositor_draw_all(&global_wm);
+        gui_request_full_redraw();
     }
 }

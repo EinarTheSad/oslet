@@ -11,6 +11,12 @@ void wm_init(window_manager_t *wm) {
     wm->last_icon_click_time = 0;
     wm->last_icon_click_form = NULL;
     wm->free_slot_count = 0;
+    wm->needs_full_redraw = 0;
+    wm->backgrounds_invalid = 0;
+    wm->dirty_x = 0;
+    wm->dirty_y = 0;
+    wm->dirty_w = 0;
+    wm->dirty_h = 0;
 
     for (int i = 0; i < WM_MAX_WINDOWS; i++) {
         wm->windows[i] = NULL;
@@ -82,7 +88,7 @@ int wm_bring_to_front(window_manager_t *wm, gui_form_t *form) {
 
     if (found_index == wm->count - 1) {
         wm->focused_index = wm->count - 1;
-        return 1;
+        return 0;
     }
 
     // Move window to end (front in Z-order)
@@ -157,9 +163,52 @@ gui_form_t* wm_get_window_at(window_manager_t *wm, int x, int y) {
     return NULL;  // No window at this position
 }
 
+static gui_control_t *wm_get_minimized_icon(gui_form_t *form) {
+    if (!form || !form->win.is_minimized || !form->controls) return NULL;
+    if (form->win.minimized_icon_id == -1) return NULL;
+
+    for (int i = 0; i < form->ctrl_count; i++) {
+        gui_control_t *ctrl = &form->controls[i];
+        if ((ctrl->type & 0x7F) == CTRL_ICON &&
+            ctrl->id == form->win.minimized_icon_id) {
+            return ctrl;
+        }
+    }
+    return NULL;
+}
+
+static int wm_icon_slot_occupied(window_manager_t *wm, int x, int y) {
+    for (int i = 0; i < wm->count; i++) {
+        gui_control_t *ctrl = wm_get_minimized_icon(wm->windows[i]);
+        if (ctrl && ctrl->x == x && ctrl->y == y) return 1;
+    }
+    return 0;
+}
+
+static int wm_slot_is_before_next(window_manager_t *wm, int x, int y) {
+    int col = (x - WM_ICON_MARGIN) / WM_ICON_SLOT_WIDTH;
+    int row = (y - WM_ICON_MARGIN) / WM_ICON_SLOT_HEIGHT;
+    int slot_x = WM_ICON_MARGIN + col * WM_ICON_SLOT_WIDTH;
+    int slot_y = WM_ICON_MARGIN + row * WM_ICON_SLOT_HEIGHT;
+
+    if (x != slot_x || y != slot_y) return 0;
+    if (col < wm->next_icon_column) return 1;
+    if (col == wm->next_icon_column && row < wm->next_icon_row) return 1;
+    return 0;
+}
+
+static void wm_advance_next_icon_pos(window_manager_t *wm) {
+    wm->next_icon_row++;
+    if (wm->next_icon_row * WM_ICON_SLOT_HEIGHT + WM_ICON_TOTAL_HEIGHT >
+        WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_MARGIN) {
+        wm->next_icon_row = 0;
+        wm->next_icon_column++;
+    }
+}
+
 void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
     // Pop from beginning of free list (top-leftmost slot)
-    if (wm->free_slot_count > 0) {
+    while (wm->free_slot_count > 0) {
         *out_x = wm->free_slots[0].x;
         *out_y = wm->free_slots[0].y;
         // Shift remaining slots down
@@ -167,24 +216,34 @@ void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
             wm->free_slots[i] = wm->free_slots[i + 1];
         }
         wm->free_slot_count--;
-        return;
+
+        if (!wm_icon_slot_occupied(wm, *out_x, *out_y)) {
+            return;
+        }
     }
 
     // No free slots - allocate a new position (top-left first, go down then right)
-    *out_x = WM_ICON_MARGIN + (wm->next_icon_column * WM_ICON_SLOT_WIDTH);
-    *out_y = WM_ICON_MARGIN + (wm->next_icon_row * WM_ICON_SLOT_HEIGHT);
+    int max_slots = WM_MAX_WINDOWS + WM_MAX_FREE_SLOTS;
+    for (int i = 0; i < max_slots; i++) {
+        *out_x = WM_ICON_MARGIN + (wm->next_icon_column * WM_ICON_SLOT_WIDTH);
+        *out_y = WM_ICON_MARGIN + (wm->next_icon_row * WM_ICON_SLOT_HEIGHT);
+        wm_advance_next_icon_pos(wm);
 
-    // Advance to next position
-    wm->next_icon_row++;
-    if (wm->next_icon_row * WM_ICON_SLOT_HEIGHT + WM_ICON_TOTAL_HEIGHT > WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_MARGIN) {
-        wm->next_icon_row = 0;
-        wm->next_icon_column++;
+        if (!wm_icon_slot_occupied(wm, *out_x, *out_y)) {
+            return;
+        }
     }
 }
 
 void wm_release_icon_slot(window_manager_t *wm, int x, int y) {
     // Insert in sorted order (top-to-bottom, left-to-right)
     if (wm->free_slot_count >= WM_MAX_FREE_SLOTS) return;
+    if (!wm_slot_is_before_next(wm, x, y)) return;
+    if (wm_icon_slot_occupied(wm, x, y)) return;
+
+    for (int i = 0; i < wm->free_slot_count; i++) {
+        if (wm->free_slots[i].x == x && wm->free_slots[i].y == y) return;
+    }
 
     int insert_pos = wm->free_slot_count;
     for (int i = 0; i < wm->free_slot_count; i++) {
@@ -205,13 +264,14 @@ void wm_release_icon_slot(window_manager_t *wm, int x, int y) {
 
 void wm_claim_icon_slot(window_manager_t *wm, int x, int y) {
     // Remove slot from free list (it's now occupied)
-    for (int i = 0; i < wm->free_slot_count; i++) {
+    for (int i = 0; i < wm->free_slot_count;) {
         if (wm->free_slots[i].x == x && wm->free_slots[i].y == y) {
             for (int j = i; j < wm->free_slot_count - 1; j++) {
                 wm->free_slots[j] = wm->free_slots[j + 1];
             }
             wm->free_slot_count--;
-            return;
+        } else {
+            i++;
         }
     }
 }

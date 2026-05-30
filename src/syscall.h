@@ -162,6 +162,11 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_DRAW_TASKBAR_BUTTON 0x0B20
 #define SYS_WIN_GET_TOPMOST_AT  0x0B21
 
+#define SYS_WIN_EVENT_REDRAW         -1
+#define SYS_WIN_EVENT_WINDOW_CHANGED -2
+#define SYS_WIN_EVENT_CLOSE          -3
+#define SYS_WIN_EVENT_RESIZE         -4
+
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
 #define PROP_CHECKED    1   /* int - checkbox/radio state */
@@ -1335,7 +1340,7 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
     while (running) {
         int event = sys_win_pump_events(form);
         
-        if (event == -3) {
+        if (event == SYS_WIN_EVENT_CLOSE) {
             if (form)
                 sys_win_destroy_form(form);
             sys_win_redraw_all();
@@ -1343,11 +1348,11 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
             continue;
         }
         
-        if (event == -1) {
+        if (event == SYS_WIN_EVENT_REDRAW) {
             sys_win_mark_dirty(form);
         }
 
-        if (event == -2 || event == -4) {
+        if (event == SYS_WIN_EVENT_WINDOW_CHANGED || event == SYS_WIN_EVENT_RESIZE) {
             sys_win_draw(form);
             sys_win_force_full_redraw();
             sys_win_invalidate_icons();
@@ -1360,7 +1365,8 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
         /* Call the handler for all events.
            This lets applications receive periodic callbacks and respond to user interactions
            without spinning their own event loop. */
-        if (event >= -4 && event != -3 && handler && handler(form, event, userdata) != 0) {
+        if (event >= SYS_WIN_EVENT_RESIZE && event != SYS_WIN_EVENT_CLOSE &&
+            handler && handler(form, event, userdata) != 0) {
             running = 0;
         }
         

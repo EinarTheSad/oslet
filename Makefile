@@ -26,7 +26,11 @@ KERNEL_ROOT_OBJS = $(CURDIR)/$(BUILD)/kernel.o \
 KERNEL_SYSCALL_OBJS = $(CURDIR)/$(BUILD)/syscall/core.o \
                       $(CURDIR)/$(BUILD)/syscall/gui.o \
                       $(CURDIR)/$(BUILD)/syscall/gui_events.o \
-                      $(CURDIR)/$(BUILD)/syscall/gui_helpers.o
+                      $(CURDIR)/$(BUILD)/syscall/gui_helpers.o \
+                      $(CURDIR)/$(BUILD)/syscall/lists.o \
+                      $(CURDIR)/$(BUILD)/syscall/press.o \
+                      $(CURDIR)/$(BUILD)/syscall/scroll.o \
+                      $(CURDIR)/$(BUILD)/syscall/textbox.o
 
 KERNEL_SUBDIR_SRCS_C := $(foreach dir,$(KERNEL_SUBDIRS),$(wildcard $(SRC)/$(dir)/*.c)) \
                         $(wildcard $(SRC)/drivers/fat32/*.c) \

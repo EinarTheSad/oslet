@@ -124,17 +124,17 @@ void gix_app_run(const gix_app_desc_t *desc) {
             int event = sys_win_pump_events(active_form);
             int handled_exit = 0;
 
-            if (event == -1) {
+            if (event == SYS_WIN_EVENT_REDRAW) {
                 sys_win_mark_dirty(active_form);
             }
 
-            if (event == -2) {
+            if (event == SYS_WIN_EVENT_WINDOW_CHANGED) {
                 sys_win_draw(active_form);
                 sys_win_force_full_redraw();
                 sys_win_invalidate_icons();
             }
 
-            if (event == -4) {
+            if (event == SYS_WIN_EVENT_RESIZE) {
                 if (active_form == gix_main_form && desc->on_resize) {
                     desc->on_resize(active_form, desc->userdata);
                 }
@@ -149,7 +149,7 @@ void gix_app_run(const gix_app_desc_t *desc) {
                 handled_exit = 1;
             }
 
-            if (event == -3 && !handled_exit && gix_running) {
+            if (event == SYS_WIN_EVENT_CLOSE && !handled_exit && gix_running) {
                 if (active_form == gix_main_form) {
                     gix_running = 0;
                 } else if (gix_find_window(active_form) >= 0) {
