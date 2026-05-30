@@ -2,7 +2,7 @@
 #include "../mem/heap.h"
 #include "../console.h"
 #include "timer.h"
-#include "../drivers/vga.h"
+#include "../drivers/graphics/vga.h"
 #include <stddef.h>
 #include "../syscall.h"
 #include "exec.h"

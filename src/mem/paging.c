@@ -1,7 +1,7 @@
 #include "paging.h"
 #include "pmm.h"
 #include "../console.h"
-#include "../drivers/vga.h"
+#include "../drivers/graphics/vga.h"
 #include <stdint.h>
 #include "early_alloc.h"
 

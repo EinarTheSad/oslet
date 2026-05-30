@@ -5,7 +5,7 @@
 #include "../console.h"
 #include "../task/timer.h"
 #include "../drivers/fat32.h"
-#include "../drivers/vga.h"
+#include "../drivers/graphics/vga.h"
 #include "../task/exec.h"
 #include "../mem/pmm.h"
 #include "../mem/heap.h"

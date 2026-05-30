@@ -29,7 +29,8 @@ KERNEL_SYSCALL_OBJS = $(CURDIR)/$(BUILD)/syscall/core.o \
                       $(CURDIR)/$(BUILD)/syscall/gui_helpers.o
 
 KERNEL_SUBDIR_SRCS_C := $(foreach dir,$(KERNEL_SUBDIRS),$(wildcard $(SRC)/$(dir)/*.c)) \
-                        $(wildcard $(SRC)/drivers/fat32/*.c)
+                        $(wildcard $(SRC)/drivers/fat32/*.c) \
+                        $(wildcard $(SRC)/drivers/graphics/*.c)
 KERNEL_WIN_CONTROL_SRCS_C := $(wildcard $(SRC)/win/controls/*.c)
 KERNEL_SUBDIR_SRCS_S := $(foreach dir,$(KERNEL_SUBDIRS),$(wildcard $(SRC)/$(dir)/*.S))
 KERNEL_SUBDIR_OBJS := $(patsubst $(SRC)/%.c,$(CURDIR)/$(BUILD)/%.o,$(KERNEL_SUBDIR_SRCS_C)) \

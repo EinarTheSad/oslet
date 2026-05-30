@@ -1,6 +1,6 @@
 #include <stdbool.h>
 #include "console.h"
-#include "drivers/vga.h"
+#include "drivers/graphics/vga.h"
 #include "drivers/fat32.h"
 #include "drivers/graphics.h"
 #include "task/task.h"

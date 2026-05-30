@@ -1,5 +1,5 @@
 #include "console.h"
-#include "drivers/vga.h"
+#include "drivers/graphics/vga.h"
 #include "drivers/graphics.h"
 #include "drivers/keyboard.h"
 #include "drivers/mouse.h"
