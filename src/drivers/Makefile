@@ -1,7 +1,7 @@
 SRCDIR := drivers
 BLDDIR := $(BUILD)/$(SRCDIR)
 
-SRCS_C := $(wildcard *.c)
+SRCS_C := $(wildcard *.c) $(wildcard fat32/*.c)
 SRCS := $(SRCS_C)
 
 OBJS := $(patsubst %.c,$(BLDDIR)/%.o,$(SRCS_C))
