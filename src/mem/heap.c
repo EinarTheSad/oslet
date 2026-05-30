@@ -2,7 +2,7 @@
 #include "pmm.h"
 #include "paging.h"
 #include "../console.h"
-#include "../drivers/vga.h"
+#include "../drivers/graphics/vga.h"
 #include "../task/task.h"
 
 static volatile int heap_lock = 0;
