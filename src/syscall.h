@@ -96,6 +96,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_GFX_DRAW_CACHED_PARTIAL 0x0910 /* Draw a sub-rect of a cached BMP */
 #define SYS_GFX_LOAD_BMP_SCALED 0x0911 /* Load BMP and draw scaled-to-region (no transparency) */
 #define SYS_GFX_CACHE_BMP_SCALED 0x0912 /* Load BMP, scale to target dimensions, and cache it */
+#define SYS_GFX_SET_PALETTE_DATA 0x0913 /* Set the active 16-color VGA palette from 48 bytes of RGB data */
 
 /* AH = 0Ah - Mouse */
 #define SYS_MOUSE_GET_STATE  0x0A00
@@ -351,7 +352,7 @@ typedef struct {
     uint16_t max_length;     /* Max value */
     int8_t hovered_item;
     uint8_t pressed;
-    uint8_t checked;         /* Orientation (0 = horizontal, 1 = vertical) */
+    uint8_t checked;         /* Orientation (0 = vertical, 1 = horizontal) */
     int16_t scroll_offset;
 } control_scrollbar_t;
 
@@ -935,6 +936,12 @@ static inline int sys_gfx_cache_bmp_scaled(const char *path, int target_w, int t
     return ret;
 }
 
+static inline int sys_gfx_set_palette_data(const uint8_t palette[16][3]) {
+    int ret;
+    register const uint8_t *dummy_ebx __asm__("ebx") = (const uint8_t *)palette;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_SET_PALETTE_DATA), "b"(dummy_ebx) : "memory");
+    return ret;
+}
 
 static inline void sys_gfx_free_cached(gfx_cached_bmp_t *bmp) {
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FREE_CACHED), "b"(bmp));

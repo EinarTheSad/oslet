@@ -29,6 +29,13 @@ void gui_dropdown_list_rect(gui_form_t *form, gui_control_t *ctrl,
     out_rect->h = list_h;
 }
 
+int gui_scrollbar_is_vertical(gui_control_t *ctrl) {
+    if (!ctrl) return 1;
+    if (ctrl->w > ctrl->h) return 0;
+    if (ctrl->h > ctrl->w) return 1;
+    return ctrl->scrollbar.checked ? 0 : 1;
+}
+
 void gui_scrollbar_make(scrollbar_geom_t *geom, int length, int arrow_size,
                         int value, int max_value) {
     if (max_value < 0) max_value = 0;

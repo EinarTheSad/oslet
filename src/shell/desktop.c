@@ -6,6 +6,7 @@
 #include "../lib/stdlib.h"
 #include "../lib/string.h"
 #include "../lib/ini.h"
+#include "../lib/palette.h"
 #include "../lib/fonts.h"
 #include "../lib/app.h"
 #include "progman.h"
@@ -13,6 +14,7 @@
 OSLET_APP("Desktop", OSLET_KIND_DESKTOP, "C:/ICONS/OSLET.ICO", OSLET_APP_FLAG_NONE);
 #define TASKBAR_Y (WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT)
 #define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
+#define DEFAULT_PALETTE_PATH "C:/OSLET/palette.pal"
 #define MAX_TASKBAR_BUTTONS 16
 #define KEY_ALT_TAB 0xC0
 #define KEY_ALT_RELEASE 0xC1
@@ -41,6 +43,7 @@ extern const progmod_t textmode_module;
 extern const progmod_t cpl_theme_module;
 extern const progmod_t cpl_screen_module;
 extern const progmod_t cpl_boot_module;
+extern const progmod_t cpl_palette_module;
 extern const progmod_t shutdown_module;
 extern const progmod_t volume_module;
 
@@ -159,6 +162,38 @@ static void load_settings(void) {
     settings.volume = (uint8_t)ini_get_int(&ini, "SOUND", "VOL", settings.volume);
 }
 
+static void load_palette_settings(void) {
+    char palette_path[256] = DEFAULT_PALETTE_PATH;
+    int fd = sys_open(SETTINGS_PATH, "r");
+    if (fd >= 0) {
+        char buffer[1024];
+        int bytes = sys_read(fd, buffer, sizeof(buffer) - 1);
+        sys_close(fd);
+        if (bytes > 0) {
+            buffer[bytes] = '\0';
+            ini_parser_t ini;
+            ini_init(&ini, buffer);
+            const char *val = ini_get(&ini, "PALETTE", "FILE");
+            if (val && val[0] != '\0') {
+                int i = 0;
+                while (val[i] && i < 255) {
+                    palette_path[i] = val[i];
+                    i++;
+                }
+                palette_path[i] = '\0';
+            }
+        }
+    }
+
+    uint8_t palette[16][3];
+    if (palette_parse_pal(palette_path, palette) != 0 &&
+        palette_load_default_file(DEFAULT_PALETTE_PATH, palette) != 0) {
+        palette_set_default(palette);
+    }
+
+    sys_gfx_set_palette_data(palette);
+}
+
 static void cache_wallpaper(void) {
     if (settings.wallpaper[0] == '\0') return;
 
@@ -196,6 +231,7 @@ static void prog_register_all(void) {
     progman_register(&startman_module);
     progman_register(&textmode_module);
     progman_register(&cpl_theme_module);
+    progman_register(&cpl_palette_module);
     progman_register(&cpl_screen_module);
     progman_register(&cpl_boot_module);
     progman_register(&shutdown_module);
@@ -618,6 +654,7 @@ void _start(void) {
 
     sys_gfx_enter();
     load_settings();
+    load_palette_settings();
     cache_wallpaper();
 
     sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT, settings.color);

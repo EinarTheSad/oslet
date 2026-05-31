@@ -295,15 +295,9 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         } else {
             for (int x = 0; x < out_row_bytes; x++) {
                 uint8_t byte_val = row_buf[x];
-                uint8_t hi = (byte_val >> 4) & 0x0F;
-                uint8_t lo = byte_val & 0x0F;
-                
-                if (palette_entries > 0) {
-                    if (hi < palette_entries) hi = find_closest_color(palette[hi][0], palette[hi][1], palette[hi][2]);
-                    if (lo < palette_entries) lo = find_closest_color(palette[lo][0], palette[lo][1], palette[lo][2]);
-                }
-                
-                bitmap[dest_offset + x] = (hi << 4) | lo;
+                /* 4bpp osLET assets already use VGA indexes. Preserve them so
+                   index 5 remains the transparent icon color after palette edits. */
+                bitmap[dest_offset + x] = byte_val;
             }
         }
     }

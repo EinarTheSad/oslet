@@ -1251,6 +1251,14 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             return 0;
         }
 
+        case 0x13: {
+            if (!sys_range_mapped(ebx, 16 * 3)) return (uint32_t)-1;
+            uint8_t palette[16][3];
+            memcpy_s(palette, (const void*)ebx, sizeof(palette));
+            gfx_set_palette_data(palette);
+            return 0;
+        }
+
         case 0x10: { /* Draw partial region of cached BMP */
             /* Userland passes a pointer to this struct in EBX */
             typedef struct {
