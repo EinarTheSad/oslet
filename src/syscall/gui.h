@@ -55,6 +55,7 @@ int listbox_max_scroll_sys(gui_control_t *ctrl);
 int gui_clamp_int(int value, int min_value, int max_value);
 void gui_dropdown_list_rect(gui_form_t *form, gui_control_t *ctrl,
                             int ctrl_y_offset, gui_rect_t *out_rect);
+int gui_scrollbar_is_vertical(gui_control_t *ctrl);
 void gui_scrollbar_make(scrollbar_geom_t *geom, int length, int arrow_size,
                         int value, int max_value);
 int gui_scrollbar_value_from_pos(scrollbar_geom_t *geom, int pos, int drag_offset);

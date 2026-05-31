@@ -333,9 +333,10 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                     case CTRL_SCROLLBAR:
                         dest->scrollbar.hovered_item = -1;
                         dest->scrollbar.pressed = 0;
-                        dest->scrollbar.cursor_pos = 0;
-                        dest->scrollbar.max_length = 100;
-                        dest->scrollbar.checked = 0;
+                        dest->scrollbar.cursor_pos = ctrl->scrollbar.cursor_pos;
+                        dest->scrollbar.max_length = ctrl->scrollbar.max_length > 0 ? ctrl->scrollbar.max_length : 100;
+                        dest->scrollbar.checked = ctrl->scrollbar.checked;
+                        dest->scrollbar.scroll_offset = 0;
                         break;
                     case CTRL_TREEVIEW:
                         dest->treeview.items = (sys_tree_item_t*)kmalloc(sizeof(sys_tree_item_t) * TREEVIEW_MAX_ITEMS);

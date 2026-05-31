@@ -61,9 +61,10 @@ typedef struct {
     uint32_t colors_important;
 } __attribute__((packed)) bmp_info_t;
 
-extern const uint8_t gfx_palette[16][3];
+extern uint8_t gfx_palette[16][3];
 
 void gfx_init(void);
+void gfx_set_palette_data(const uint8_t palette[16][3]);
 void gfx_enter_mode(void);
 void gfx_exit_mode(void);
 int gfx_is_active(void);

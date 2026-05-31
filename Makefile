@@ -116,6 +116,7 @@ $(BUILD_BIN)/desktop.elf: $(SHELL_OBJ_DIR)/desktop.o \
 					  $(SHELL_OBJ_DIR)/cpl_theme.o \
 					  $(SHELL_OBJ_DIR)/cpl_screen.o \
 					  $(SHELL_OBJ_DIR)/cpl_boot.o \
+					  $(SHELL_OBJ_DIR)/cpl_palette.o \
 					  $(SHELL_OBJ_DIR)/shutdown.o \
 					  $(SHELL_OBJ_DIR)/cpl_volume.o \
 					  $(LIB_OBJS) \
@@ -221,6 +222,7 @@ install: $(CURDIR)/$(BUILD)/$(TARGET)
 	sudo cp $(SRC)/assets/wav/*.[wW][aA][vV] mnt/SOUNDS/ 2>/dev/null || true; \
 	sudo mkdir -p mnt/OSLET; \
 	sudo cp $(SRC)/assets/bmp/*.[bB][mM][pP] mnt/OSLET/ 2>/dev/null || true; \
+	sudo cp $(SRC)/assets/pal/*.[pP][aA][lL] mnt/OSLET/ 2>/dev/null || true; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \
 	LOOP=""; \

@@ -1,4 +1,5 @@
 #include "gpriv.h"
+#include "../../lib/string.h"
 
 uint8_t *backbuffer = NULL;
 int graphics_active = 0;
@@ -45,7 +46,7 @@ static const uint8_t mode_80x25_text[] = {
     0x0C, 0x00, 0x0F, 0x00, 0x00
 };
 
-const uint8_t gfx_palette[16][3] = { // osLET custom
+uint8_t gfx_palette[16][3] = { // osLET custom
     {0x00, 0x00, 0x00}, // 0  black
     {0x1E, 0x1E, 0x64}, // 1  dark blue
     {0x34, 0x65, 0x24}, // 2  dark green
@@ -63,6 +64,11 @@ const uint8_t gfx_palette[16][3] = { // osLET custom
     {0xE6, 0xDC, 0x42}, // 14 yellow
     {0xFF, 0xFF, 0xFF}, // 15 white
 };
+
+void gfx_set_palette_data(const uint8_t palette[16][3]) {
+    memcpy_s(gfx_palette, palette, sizeof(gfx_palette));
+    gfx_load_palette();
+}
 
 static void wait_vretrace(void) {
     while (inb(0x3DA) & 0x08);

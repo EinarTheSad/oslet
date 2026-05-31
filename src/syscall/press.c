@@ -329,7 +329,7 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                     }
                 }
                 else if (ctrl->type == CTRL_SCROLLBAR) {
-                    int vertical = !ctrl->scrollbar.checked;
+                    int vertical = gui_scrollbar_is_vertical(ctrl);
                     int arrow_size = vertical ? ctrl->w : ctrl->h;
                     int max_val = ctrl->scrollbar.max_length > 0 ? ctrl->scrollbar.max_length : 100;
                     int length = vertical ? ctrl->h : ctrl->w;

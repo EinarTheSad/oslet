@@ -60,6 +60,16 @@ typedef struct {
 
 static path_dialog_state_t state;
 
+static void path_dialog_present(void) {
+    int mx = 0;
+    int my = 0;
+    unsigned char buttons = 0;
+
+    sys_get_mouse_state(&mx, &my, &buttons);
+    sys_mouse_draw_cursor(mx, my, 0);
+    sys_gfx_swap();
+}
+
 static void safe_copy(char *dst, size_t dst_size, const char *src) {
     if (!dst || dst_size == 0) return;
     if (!src) src = "";
@@ -627,6 +637,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
     sys_win_draw(dlg);
     sys_win_redraw_all();
     sys_mouse_invalidate();
+    path_dialog_present();
 
     out_path[0] = '\0';
     int init_mx = 0, init_my = 0;
@@ -659,6 +670,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
             state.suppress_ok_click = 0;
             sys_win_draw(dlg);
             sys_win_redraw_all();
+            path_dialog_present();
             sys_yield();
             continue;
         }
@@ -667,6 +679,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
             ctrl_list_clear_action(dlg, PATH_DLG_ID_LIST);
             sys_win_draw(dlg);
             sys_win_redraw_all();
+            path_dialog_present();
             sys_yield();
             continue;
         }
@@ -710,17 +723,20 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
             if (out_path[0]) {
                 sys_win_destroy_form(dlg);
                 sys_win_redraw_all();
+                path_dialog_present();
                 return 1;
             }
             sys_win_draw(dlg);
             sys_win_redraw_all();
         }
 
+        path_dialog_present();
         sys_yield();
     }
 
     sys_win_destroy_form(dlg);
     sys_win_redraw_all();
+    path_dialog_present();
     return 0;
 }
 
