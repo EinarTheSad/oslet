@@ -24,6 +24,7 @@ KERNEL_ROOT_OBJS = $(CURDIR)/$(BUILD)/kernel.o \
                   $(CURDIR)/$(BUILD)/shell_kernel.o
 
 KERNEL_SYSCALL_OBJS = $(CURDIR)/$(BUILD)/syscall/core.o \
+                      $(CURDIR)/$(BUILD)/syscall/dropdown.o \
                       $(CURDIR)/$(BUILD)/syscall/gui.o \
                       $(CURDIR)/$(BUILD)/syscall/gui_events.o \
                       $(CURDIR)/$(BUILD)/syscall/gui_helpers.o \

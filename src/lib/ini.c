@@ -92,6 +92,17 @@ int ini_replace_section(const char *data, const char *section, const char *new_t
 
     if (rem <= 0) return -1;
     outbuf[written] = '\0';
+
+    /* Keep saved INI files as plain LF text so editors do not show CR bytes. */
+    int clean = 0;
+    for (int i = 0; i < written; i++) {
+        if (outbuf[i] != '\r') {
+            outbuf[clean++] = outbuf[i];
+        }
+    }
+    outbuf[clean] = '\0';
+    written = clean;
+
     return written;
 }
 
