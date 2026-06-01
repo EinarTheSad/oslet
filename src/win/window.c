@@ -710,6 +710,7 @@ void win_minimize(struct gui_form_s *form, int icon_x, int icon_y, const char *i
         if (existing_icon) {
             /* Use existing icon control from sys_win_set_icon - clear hidden flag */
             existing_icon->type = CTRL_ICON;
+            existing_icon->icon.use_desktop_text_color = 1;
             win->minimized_icon_id = FORM_ICON_CONTROL_ID;
             ctrl_set_pos(form, FORM_ICON_CONTROL_ID, icon_x, icon_y);
             /* Use form's stored icon path */
@@ -727,6 +728,7 @@ void win_minimize(struct gui_form_s *form, int icon_x, int icon_y, const char *i
             icon_ctrl.h = 0;
             icon_ctrl.fg = 0;
             icon_ctrl.bg = 15;
+            icon_ctrl.icon.use_desktop_text_color = 1;
             for (size_t i = 0; i < sizeof(icon_ctrl.text) && win->title[i]; i++) {
                 icon_ctrl.text[i] = win->title[i];
             }

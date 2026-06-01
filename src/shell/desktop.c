@@ -156,6 +156,7 @@ static void load_settings(void) {
     theme->frame_light = (uint8_t)ini_get_color(&ini, "THEME", "FRAME_LIGHT", theme->frame_light);
     theme->text_color = (uint8_t)ini_get_color(&ini, "THEME", "TEXT_COLOR", theme->text_color);
     theme->icon_text_color = (uint8_t)ini_get_color(&ini, "THEME", "ICON_TEXT_COLOR", theme->icon_text_color);
+    theme->desktop_icon_text_color = (uint8_t)ini_get_color(&ini, "THEME", "DESKTOP_ICON_TEXT_COLOR", theme->icon_text_color);
     theme->button_color = (uint8_t)ini_get_color(&ini, "THEME", "BUTTON_COLOR", theme->button_color);
     theme->taskbar_color = (uint8_t)ini_get_color(&ini, "THEME", "TASKBAR_COLOR", theme->taskbar_color);
     theme->start_button_color = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", theme->start_button_color);

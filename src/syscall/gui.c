@@ -386,6 +386,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                         dest->icon.original_y = 0;
                         dest->icon.click_start_x = 0;
                         dest->icon.click_start_y = 0;
+                        dest->icon.use_desktop_text_color = ctrl->icon.use_desktop_text_color;
                         break;
                     default:
                         /* No special initialization */
@@ -561,6 +562,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 icon_ctrl.h = 0;
                 icon_ctrl.fg = 0;
                 icon_ctrl.bg = 15;
+                icon_ctrl.icon.use_desktop_text_color = 1;
                 strcpy_s(icon_ctrl.text, form->win.title, 256);
 
                 sys_win_add_control(form, &icon_ctrl);
@@ -569,6 +571,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 /* Update existing icon control */
                 gui_control_t *ctrl = &form->controls[existing_icon_id];
                 strcpy_s(ctrl->text, form->win.title, 256);
+                ctrl->icon.use_desktop_text_color = 1;
                 ctrl_set_image(form, FORM_ICON_CONTROL_ID, icon_path);
             }
 
