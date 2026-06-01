@@ -97,7 +97,14 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
     }
 
     if (control->text[0]) {
-        uint8_t text_color = control->icon.checked ? 15 : theme->icon_text_color;
+        uint8_t text_color;
+        if (control->icon.checked) {
+            text_color = 15;
+        } else if (control->icon.use_desktop_text_color) {
+            text_color = theme->desktop_icon_text_color;
+        } else {
+            text_color = (control->fg >= 0) ? (uint8_t)control->fg : theme->icon_text_color;
+        }
         int text_y = abs_y + icon_size + 4;
         icon_draw_label_wrapped(control->text, abs_x, text_y, total_w, max_line_width, text_color);
     }

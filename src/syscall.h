@@ -341,6 +341,7 @@ typedef struct {
     int click_start_x, click_start_y;  /* Mouse position at click (for drag threshold detection) */
     bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
     uint8_t *saved_bg;
+    uint8_t use_desktop_text_color;
 } control_icon_t;
 
 typedef struct {
@@ -527,7 +528,8 @@ typedef struct {
     uint8_t frame_dark;
     uint8_t frame_light;
     uint8_t text_color;
-    uint8_t icon_text_color; /* desktop icon label color */
+    uint8_t icon_text_color;
+    uint8_t desktop_icon_text_color;
     uint8_t button_color;
     uint8_t taskbar_color;
     uint8_t start_button_color;

@@ -42,7 +42,7 @@ static const char *color_options =
     "Black|Dark Blue|Dark Green|Cyan|Brown|Dark Purple|Olive|Grey|"
     "Dark Grey|Blue|Green|Light Cyan|Red|Peach|Yellow|White";
 
-/* Simple two-option for icon text color */
+/* Simple two-option for desktop icon text color */
 static const char *icon_text_options = "Black|White"; 
 
 typedef struct {
@@ -50,14 +50,15 @@ typedef struct {
     uint8_t theme_winbg;
     uint8_t theme_titlebar;
     uint8_t theme_titlebtn;
-    uint8_t theme_text_color; /* 0 or 15 */
+    uint8_t theme_icon_text_color;
+    uint8_t theme_desktop_text_color;
     uint8_t theme_taskbar;
     uint8_t theme_startbtn;
     /* Originals for cancel */
     uint8_t orig_theme_winbg;
     uint8_t orig_theme_titlebar;
     uint8_t orig_theme_titlebtn;
-    uint8_t orig_theme_text_color;
+    uint8_t orig_theme_desktop_text_color;
     uint8_t orig_theme_taskbar;
     uint8_t orig_theme_startbtn;
 } cpl_theme_state_t;
@@ -83,7 +84,8 @@ static void load_settings(cpl_theme_state_t *state) {
     state->theme_titlebtn = theme->button_color;
     state->theme_taskbar = theme->taskbar_color;
     state->theme_startbtn = theme->start_button_color;
-    state->theme_text_color = theme->icon_text_color;
+    state->theme_icon_text_color = theme->icon_text_color;
+    state->theme_desktop_text_color = theme->desktop_icon_text_color;
 
     int fd = sys_open(SETTINGS_PATH, "r");
     if (fd < 0) goto store_orig;
@@ -107,14 +109,22 @@ static void load_settings(cpl_theme_state_t *state) {
     const char *val = ini_get(&ini, "THEME", "ICON_TEXT_COLOR");
     if (val) {
         int c = atoi(val);
-        if (c == 0 || c == 15) state->theme_text_color = (uint8_t)c;
+        if (c == 0 || c == 15) state->theme_icon_text_color = (uint8_t)c;
+    }
+
+    val = ini_get(&ini, "THEME", "DESKTOP_ICON_TEXT_COLOR");
+    if (val) {
+        int c = atoi(val);
+        if (c == 0 || c == 15) state->theme_desktop_text_color = (uint8_t)c;
+    } else {
+        state->theme_desktop_text_color = state->theme_icon_text_color;
     }
 
 store_orig:
     state->orig_theme_winbg = state->theme_winbg;
     state->orig_theme_titlebar = state->theme_titlebar;
     state->orig_theme_titlebtn = state->theme_titlebtn;
-    state->orig_theme_text_color = state->theme_text_color;
+    state->orig_theme_desktop_text_color = state->theme_desktop_text_color;
     state->orig_theme_taskbar = state->theme_taskbar;
     state->orig_theme_startbtn = state->theme_startbtn;
 }
@@ -141,12 +151,14 @@ static void save_settings(cpl_theme_state_t *state) {
         "FRAME_DARK=8\r\n"
         "FRAME_LIGHT=7\r\n"
         "ICON_TEXT_COLOR=%d\r\n"
+        "DESKTOP_ICON_TEXT_COLOR=%d\r\n"
         "BUTTON_COLOR=%d\r\n"
         "TASKBAR_COLOR=%d\r\n"
         "START_BUTTON_COLOR=%d\r\n",
         state->theme_winbg,
         state->theme_titlebar,
-        state->theme_text_color,
+        state->theme_icon_text_color,
+        state->theme_desktop_text_color,
         state->theme_titlebtn,
         state->theme_taskbar,
         state->theme_startbtn
@@ -166,7 +178,8 @@ static void apply_theme(cpl_theme_state_t *state) {
     sys_theme_t *theme = sys_win_get_theme();
     theme->bg_color = state->theme_winbg;
     theme->titlebar_color = state->theme_titlebar;
-    theme->icon_text_color = state->theme_text_color;
+    theme->icon_text_color = state->theme_icon_text_color;
+    theme->desktop_icon_text_color = state->theme_desktop_text_color;
     theme->button_color = state->theme_titlebtn;
     theme->taskbar_color = state->theme_taskbar;
     theme->start_button_color = state->theme_startbtn;
@@ -212,7 +225,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
 
         /* Desktop icons frame + icon-text dropdown */
         { .type = CTRL_FRAME,      .x = 6,   .y = 147, .w = 262, .h = 45,  .fg = 0,  .bg = -1, .id = CTRL_FRAME_DESKTOP,  .text = "Desktop icons" },
-        { .type = CTRL_LABEL,      .x = 12,  .y = 167,                    .fg = 0,  .bg = -1, .id = CTRL_LBL_ICON_TEXT, .text = "Icon text:" },
+        { .type = CTRL_LABEL,      .x = 12,  .y = 167,                    .fg = 0,  .bg = -1, .id = CTRL_LBL_ICON_TEXT, .text = "Desktop text:" },
         { .type = CTRL_DROPDOWN,   .x = 95,  .y = 167, .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_ICON_TEXT, .dropdown = { .cursor_pos = 0, .item_count = 2 }, .text = "" },
 
         /* Buttons */
@@ -241,7 +254,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
 
     /* icon text dropdown */
     ctrl_set_text(state->form, CTRL_DROP_ICON_TEXT, icon_text_options);
-    g = sys_win_get_control(state->form, CTRL_DROP_ICON_TEXT); if (g) { g->dropdown.cursor_pos = (state->theme_text_color == 15) ? 1 : 0; g->dropdown.item_count = 2; }
+    g = sys_win_get_control(state->form, CTRL_DROP_ICON_TEXT); if (g) { g->dropdown.cursor_pos = (state->theme_desktop_text_color == 15) ? 1 : 0; g->dropdown.item_count = 2; }
 
     sys_win_draw(state->form);
     prog_register_window(inst, state->form);
@@ -280,7 +293,7 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_titlebtn = get_dropdown_value(state->form, CTRL_DROP_TITLEBTN);
         state->theme_taskbar = get_dropdown_value(state->form, CTRL_DROP_TASKBAR);
         state->theme_startbtn = get_dropdown_value(state->form, CTRL_DROP_STARTBTN);
-        state->theme_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
+        state->theme_desktop_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
 
         apply_theme(state);
         save_settings(state);
@@ -288,7 +301,7 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->orig_theme_winbg = state->theme_winbg;
         state->orig_theme_titlebar = state->theme_titlebar;
         state->orig_theme_titlebtn = state->theme_titlebtn;
-        state->orig_theme_text_color = state->theme_text_color;
+        state->orig_theme_desktop_text_color = state->theme_desktop_text_color;
         state->orig_theme_taskbar = state->theme_taskbar;
         state->orig_theme_startbtn = state->theme_startbtn;
 
@@ -305,7 +318,7 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_titlebtn = get_dropdown_value(state->form, CTRL_DROP_TITLEBTN);
         state->theme_taskbar = get_dropdown_value(state->form, CTRL_DROP_TASKBAR);
         state->theme_startbtn = get_dropdown_value(state->form, CTRL_DROP_STARTBTN);
-        state->theme_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
+        state->theme_desktop_text_color = get_dropdown_value(state->form, CTRL_DROP_ICON_TEXT) ? 15 : 0;
 
         apply_theme(state);
         save_settings(state);
@@ -323,7 +336,7 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         state->theme_titlebtn = state->orig_theme_titlebtn;
         state->theme_taskbar = state->orig_theme_taskbar;
         state->theme_startbtn = state->orig_theme_startbtn;
-        state->theme_text_color = state->orig_theme_text_color;
+        state->theme_desktop_text_color = state->orig_theme_desktop_text_color;
         apply_theme(state);
         /* Revert visible UI immediately: draw the form and request desktop redraw */
         sys_win_draw(state->form);
