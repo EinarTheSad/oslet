@@ -66,6 +66,7 @@ static int load_text_file(void *form, int textbox_id, const char *path) {
     while ((bytes_read = sys_read(fd, buffer, sizeof(buffer))) > 0) {
         for (int i = 0; i < bytes_read; i++) {
             uint8_t c = (uint8_t)buffer[i];
+            if (c == '\r') continue;
             if (!is_valid_text_char(c)) {
                 sys_close(fd);
                 return -1;

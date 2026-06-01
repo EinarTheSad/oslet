@@ -1,50 +1,5 @@
 #include "private.h"
 
-uint16_t rtc_to_fat_time(const rtc_time_t *rtc) {
-    return ((uint16_t)(rtc->hour & 0x1F) << 11) |
-           ((uint16_t)(rtc->minute & 0x3F) << 5) |
-           ((uint16_t)(rtc->second / 2) & 0x1F);
-}
-
-uint16_t rtc_to_fat_date(const rtc_time_t *rtc) {
-    uint16_t year = (rtc->year >= 1980) ? (rtc->year - 1980) : 0;
-    if (year > 127) year = 127;
-    return ((year & 0x7F) << 9) |
-           ((uint16_t)(rtc->month & 0x0F) << 5) |
-           ((uint16_t)(rtc->day & 0x1F));
-}
-
-void get_fat_timestamp(uint16_t *time, uint16_t *date) {
-    rtc_time_t rtc;
-    rtc_read_time(&rtc);
-    if (time) *time = rtc_to_fat_time(&rtc);
-    if (date) *date = rtc_to_fat_date(&rtc);
-}
-
-uint8_t lfn_checksum(const char *short_name) {
-    uint8_t sum = 0;
-    for (int i = 0; i < 11; i++) {
-        sum = ((sum & 1) << 7) + (sum >> 1) + (uint8_t)short_name[i];
-    }
-    return sum;
-}
-
-void utf16_to_ascii(const uint16_t *src, char *dst, int max_chars) {
-    for (int i = 0; i < max_chars && src[i] != 0 && src[i] != 0xFFFF; i++) {
-        dst[i] = (src[i] < 128) ? (char)src[i] : '?';
-    }
-}
-
-void ascii_to_utf16(const char *src, uint16_t *dst, int max_chars) {
-    int i;
-    for (i = 0; i < max_chars && src[i]; i++) {
-        dst[i] = (uint16_t)(uint8_t)src[i];
-    }
-    for (; i < max_chars; i++) {
-        dst[i] = 0xFFFF;
-    }
-}
-
 int parse_path(const char *path, uint8_t *drive, char *rest, size_t rest_size) {
     if (!path || !drive || !rest) return -1;
     
@@ -82,19 +37,70 @@ int parse_path(const char *path, uint8_t *drive, char *rest, size_t rest_size) {
     
     return 0;
 }
-void parse_filename(const char *name, char *out_name) {
-    memset_s(out_name, ' ', 11);
-    int i = 0, j = 0;
-    
-    while (name[i] && name[i] != '.' && j < 8) {
-        out_name[j++] = toupper_s(name[i++]);
+
+int navigate_path(fat32_volume_t *vol, const char *path, uint32_t *out_dir_cluster, char *out_filename) {
+    *out_dir_cluster = vol->root_cluster;
+
+    if (!path || path[0] == '\0' || strcmp_s(path, "/") == 0 || strcmp_s(path, ".") == 0) {
+        if (out_filename) out_filename[0] = '\0';
+        return 0;
     }
-    
-    if (name[i] == '.') {
-        i++;
-        j = 8;
-        while (name[i] && j < 11) {
-            out_name[j++] = toupper_s(name[i++]);
+
+    char temp[FAT32_MAX_PATH];
+    strcpy_s(temp, path, sizeof(temp));
+
+    char *p = temp;
+    if (*p == '/') p++;
+
+    char *last_slash = NULL;
+    for (char *s = p; *s; s++) {
+        if (*s == '/') last_slash = s;
+    }
+
+    if (last_slash) {
+        *last_slash = '\0';
+        if (out_filename) strcpy_s(out_filename, last_slash + 1, FAT32_MAX_PATH);
+    } else {
+        if (out_filename) strcpy_s(out_filename, p, FAT32_MAX_PATH);
+        return 0;
+    }
+
+    char *token = p;
+    while (*token) {
+        char *next = token;
+        while (*next && *next != '/') next++;
+
+        char save = *next;
+        *next = '\0';
+
+        if (token[0] != '\0') {
+            if (strcmp_s(token, "..") == 0) {
+                size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
+                uint8_t *cluster_buf = kmalloc(cluster_size);
+                if (!cluster_buf) return -1;
+
+                if (read_cluster(vol, *out_dir_cluster, cluster_buf) != 0) {
+                    kfree(cluster_buf);
+                    return -1;
+                }
+
+                fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
+                *out_dir_cluster = ((uint32_t)entries[1].first_cluster_high << 16) | entries[1].first_cluster_low;
+                if (*out_dir_cluster == 0) *out_dir_cluster = vol->root_cluster;
+                kfree(cluster_buf);
+            } else if (strcmp_s(token, ".") != 0) {
+                fat32_direntry_t entry;
+                if (find_in_dir(vol, *out_dir_cluster, token, &entry, NULL, NULL) != 0)
+                    return -1;
+                if (!(entry.attr & FAT_ATTR_DIRECTORY))
+                    return -1;
+                *out_dir_cluster = ((uint32_t)entry.first_cluster_high << 16) | entry.first_cluster_low;
+            }
         }
+
+        *next = save;
+        token = save ? (next + 1) : next;
     }
+
+    return 0;
 }

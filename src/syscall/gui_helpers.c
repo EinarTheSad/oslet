@@ -178,60 +178,6 @@ int pump_handle_resize_corner_click(gui_form_t *form, int mx, int my) {
     return 0;
 }
 
-int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl_y_offset) {
-    int needs_redraw = 0;
-
-    if (!form->controls) return 0;
-
-    for (int i = 0; i < form->ctrl_count; i++) {
-        gui_control_t *ctrl = &form->controls[i];
-        if (ctrl->type != CTRL_DROPDOWN || !ctrl->dropdown.dropdown_open) continue;
-
-        if (ctrl->dropdown.pressed && ctrl->dropdown.hovered_item == DROPDOWN_HOVER_SCROLLBAR) continue;
-
-        int item_h = 16;
-        gui_rect_t list_rect;
-        gui_dropdown_list_rect(form, ctrl, ctrl_y_offset, &list_rect);
-
-        int visible_count = list_rect.h / item_h;
-        if (visible_count < 1) visible_count = 1;
-        int max_scroll = ctrl->dropdown.item_count > visible_count ? (ctrl->dropdown.item_count - visible_count) : 0;
-        int need_scrollbar = ctrl->dropdown.item_count > visible_count;
-        int sb_w = need_scrollbar ? 18 : 0;
-        int content_w = ctrl->w - sb_w;
-
-        if (ctrl->dropdown.dropdown_scroll > (uint16_t)max_scroll) ctrl->dropdown.dropdown_scroll = max_scroll;
-
-        int old_hover = ctrl->dropdown.hovered_item;
-
-        if (mx >= list_rect.x && mx < list_rect.x + list_rect.w &&
-            my >= list_rect.y && my < list_rect.y + list_rect.h) {
-            if (need_scrollbar && mx >= list_rect.x + content_w && mx < list_rect.x + list_rect.w) {
-                if (old_hover != DROPDOWN_HOVER_SCROLLBAR) {
-                    ctrl->dropdown.hovered_item = DROPDOWN_HOVER_SCROLLBAR;
-                    needs_redraw = 1;
-                }
-            } else {
-                int rel = (my - list_rect.y) / item_h;
-                int hovered = ctrl->dropdown.dropdown_scroll + rel;
-                if (hovered < 0) hovered = 0;
-                if (hovered >= ctrl->dropdown.item_count) hovered = ctrl->dropdown.item_count - 1;
-                if (hovered != old_hover) {
-                    ctrl->dropdown.hovered_item = hovered;
-                    needs_redraw = 1;
-                }
-            }
-        } else {
-            if (old_hover != -1) {
-                ctrl->dropdown.hovered_item = -1;
-                needs_redraw = 1;
-            }
-        }
-    }
-
-    return needs_redraw;
-}
-
 gui_control_t *find_control_by_id(gui_form_t *form, int16_t id) {
     if (!form || !form->controls || id < 0) return NULL;
     for (int i = 0; i < form->ctrl_count; i++) {

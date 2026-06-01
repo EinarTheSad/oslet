@@ -126,7 +126,7 @@ static void boot_sequence(void) {
         printf("NONE");
     }
     vga_set_color(0, 7);
-    printf("] USB storage (experimental)");
+    printf("] USB storage");
     if (!usb_ready()) {
         printf(" (");
         printf("%s", usb_status());

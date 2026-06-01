@@ -6,29 +6,6 @@ int gui_clamp_int(int value, int min_value, int max_value) {
     return value;
 }
 
-void gui_dropdown_list_rect(gui_form_t *form, gui_control_t *ctrl,
-                            int ctrl_y_offset, gui_rect_t *out_rect) {
-    int item_h = 16;
-    int abs_x = form->win.x + ctrl->x;
-    int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-    int list_h = ctrl->dropdown.item_count * item_h;
-    int list_y = abs_y + ctrl->h;
-
-    if (list_y + list_h > GFX_HEIGHT) {
-        list_y = abs_y - list_h;
-        if (list_y < 0) {
-            list_y = 0;
-            list_h = abs_y;
-            if (list_h < item_h) list_h = item_h;
-        }
-    }
-
-    out_rect->x = abs_x;
-    out_rect->y = list_y;
-    out_rect->w = ctrl->w;
-    out_rect->h = list_h;
-}
-
 int gui_scrollbar_is_vertical(gui_control_t *ctrl) {
     if (!ctrl) return 1;
     if (ctrl->w > ctrl->h) return 0;
