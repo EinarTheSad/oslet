@@ -386,18 +386,20 @@ static int handle_events(void *form, int event, void *userdata) {
 }
 
 static const gix_app_menu_item_t file_items[] = {
-    { "New  Ctrl+N", MENU_FILE_NEW },
+    { "New\tCtrl+N", MENU_FILE_NEW },
     { "Open", MENU_FILE_OPEN },
-    { "Save  Ctrl+S", MENU_FILE_SAVE },
+    { "Save\tCtrl+S", MENU_FILE_SAVE },
     { "Save As...", MENU_FILE_SAVE_AS },
+    GIX_MENU_SEPARATOR,
     { "Exit", MENU_FILE_EXIT }
 };
 
 static const gix_app_menu_item_t edit_items[] = {
-    { "Cut  Ctrl+X", MENU_EDIT_CUT },
-    { "Copy  Ctrl+C", MENU_EDIT_COPY },
-    { "Paste  Ctrl+V", MENU_EDIT_PASTE },
-    { "Select All  Ctrl+A", MENU_EDIT_SELECT_ALL }
+    { "Cut\tCtrl+X", MENU_EDIT_CUT },
+    { "Copy\tCtrl+C", MENU_EDIT_COPY },
+    { "Paste\tCtrl+V", MENU_EDIT_PASTE },
+    GIX_MENU_SEPARATOR,
+    { "Select All\tCtrl+A", MENU_EDIT_SELECT_ALL }
 };
 
 static const gix_app_menu_item_t help_items[] = {

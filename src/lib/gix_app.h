@@ -11,6 +11,8 @@ typedef struct {
     int action_id;
 } gix_app_menu_item_t;
 
+#define GIX_MENU_SEPARATOR { NULL, 0 }
+
 typedef struct {
     const char *title;
     const gix_app_menu_item_t *items;
