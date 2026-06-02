@@ -102,6 +102,11 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_MOUSE_GET_STATE  0x0A00
 #define SYS_MOUSE_DRAW_CURSOR 0x0A01
 #define SYS_MOUSE_INVALIDATE 0x0A02
+#define SYS_MOUSE_SET_CURSOR 0x0A03
+#define SYS_MOUSE_SET_CURSOR_FILE 0x0A04
+
+#define MOUSE_CURSOR_NORMAL 0
+#define MOUSE_CURSOR_MOVE   1
 
 /* AH = 0Ch - Power Management */
 #define SYS_POWER_SHUTDOWN  0x0C00
@@ -162,6 +167,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_SET_RESIZABLE 0x0B1F
 #define SYS_WIN_DRAW_TASKBAR_BUTTON 0x0B20
 #define SYS_WIN_GET_TOPMOST_AT  0x0B21
+#define SYS_WIN_MENUBAR_ADD_SEPARATOR 0x0B22
 
 #define SYS_WIN_EVENT_REDRAW         -1
 #define SYS_WIN_EVENT_WINDOW_CHANGED -2
@@ -341,6 +347,8 @@ typedef struct {
     int click_start_x, click_start_y;  /* Mouse position at click (for drag threshold detection) */
     bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
     uint8_t *saved_bg;
+    int saved_bg_x, saved_bg_y;
+    int saved_bg_w, saved_bg_h;
     uint8_t use_desktop_text_color;
 } control_icon_t;
 
@@ -970,6 +978,19 @@ static inline void sys_mouse_invalidate(void) {
     register int dummy_eax __asm__("eax") = SYS_MOUSE_INVALIDATE;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
 }
+
+static inline void sys_mouse_set_cursor(int mode) {
+    register int dummy_eax __asm__("eax") = SYS_MOUSE_SET_CURSOR;
+    register int dummy_ebx __asm__("ebx") = mode;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx) :: "memory");
+}
+
+static inline int sys_mouse_set_cursor_file(const char *path) {
+    int ret;
+    register const char *dummy_ebx __asm__("ebx") = path;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_MOUSE_SET_CURSOR_FILE), "b"(dummy_ebx) : "memory");
+    return ret;
+}
 static inline int sys_win_msgbox(const char *msg, const char *btn, const char *title) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MSGBOX), "b"(msg), "c"(btn), "d"(title));
@@ -1399,6 +1420,12 @@ static inline int sys_win_menubar_add_item(void *form, int menu_index, const cha
     int ret;
     uint32_t packed = ((uint32_t)menu_index << 16) | (action_id & 0xFFFF);
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MENUBAR_ADD_ITEM), "b"(form), "c"(text), "d"(packed));
+    return ret;
+}
+
+static inline int sys_win_menubar_add_separator(void *form, int menu_index) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_MENUBAR_ADD_SEPARATOR), "b"(form), "c"(menu_index));
     return ret;
 }
 
