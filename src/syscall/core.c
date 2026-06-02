@@ -625,13 +625,15 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
             uint32_t eflags = sys_irq_save();
             task_t *t = start;
             do {
-                if (count >= max) break;
-                
-                tasks[count].tid = t->tid;
-                memcpy_s(tasks[count].name, t->name, 32);
-                tasks[count].state = (uint8_t)t->state;
-                tasks[count].priority = (uint8_t)t->priority;
-                count++;
+                if (t->state != TASK_TERMINATED) {
+                    if (count >= max) break;
+
+                    tasks[count].tid = t->tid;
+                    memcpy_s(tasks[count].name, t->name, 32);
+                    tasks[count].state = (uint8_t)t->state;
+                    tasks[count].priority = (uint8_t)t->priority;
+                    count++;
+                }
                 
                 t = t->next;
             } while (t != start && count < max);
@@ -1331,6 +1333,19 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
         case 0x02: {
             mouse_invalidate_buffer();
             return 0;
+        }
+
+        case 0x03: {
+            mouse_set_cursor_mode((int)ebx);
+            mouse_invalidate_buffer();
+            return 0;
+        }
+
+        case 0x04: {
+            char path[FAT32_MAX_PATH];
+            if (sys_copy_string(path, ebx, sizeof(path)) != 0)
+                return (uint32_t)-1;
+            return (uint32_t)mouse_set_cursor_file(path);
         }
         
         default:

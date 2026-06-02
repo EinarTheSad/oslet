@@ -219,6 +219,7 @@ install: $(CURDIR)/$(BUILD)/$(TARGET)
 	sudo cp images/*.[bB][mM][pP] mnt/IMAGES/ 2>/dev/null || true; \
 	sudo mkdir -p mnt/ICONS; \
 	sudo cp $(SRC)/assets/ico/*.[iI][cC][oO] mnt/ICONS/ 2>/dev/null || true; \
+	sudo cp $(SRC)/assets/cur/*.[cC][uU][rR] mnt/ICONS/ 2>/dev/null || true; \
 	sudo mkdir -p mnt/SOUNDS; \
 	sudo cp $(SRC)/assets/wav/*.[wW][aA][vV] mnt/SOUNDS/ 2>/dev/null || true; \
 	sudo mkdir -p mnt/OSLET; \

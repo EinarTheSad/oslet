@@ -5,21 +5,43 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
 
     int icon_size = 32;
     int label_max_w = control->w > 0 ? control->w : 48;
-    int total_w = label_max_w;
-    int max_line_width = label_max_w - 2;
+    int label_extra_w = 14;
+    int label_x = abs_x - (label_extra_w / 2);
+    int label_total_w = label_max_w + label_extra_w;
+    int max_line_width = label_total_w - 2;
+    int max_label_lines = control->h > 0 ? 2 : 0;
 
-    int label_lines = icon_count_label_lines(control->text, max_line_width);
+    int label_lines = max_label_lines > 0
+                    ? icon_count_label_lines_limited(control->text,
+                                                     max_line_width,
+                                                     max_label_lines)
+                    : icon_count_label_lines(control->text, max_line_width);
     int total_h = icon_calc_total_height(icon_size, label_lines);
+    if (control->h > 0 && total_h > control->h)
+        total_h = control->h;
 
-    int bg_width = total_w + 2;
+    int bg_width = label_total_w + 2;
     int bg_height = total_h + 2;
-    int bg_start_x = abs_x - 1;
+    int bg_start_x = label_x - 1;
     int bg_start_y = abs_y - 1;
     int row_bytes = (bg_width + 1) / 2;
+
+    if (control->icon.saved_bg &&
+        (control->icon.saved_bg_x != bg_start_x ||
+         control->icon.saved_bg_y != bg_start_y ||
+         control->icon.saved_bg_w != bg_width ||
+         control->icon.saved_bg_h != bg_height)) {
+        kfree(control->icon.saved_bg);
+        control->icon.saved_bg = NULL;
+    }
 
     if (!control->icon.saved_bg) {
         control->icon.saved_bg = (uint8_t*)kmalloc(row_bytes * bg_height);
         if (control->icon.saved_bg) {
+            control->icon.saved_bg_x = bg_start_x;
+            control->icon.saved_bg_y = bg_start_y;
+            control->icon.saved_bg_w = bg_width;
+            control->icon.saved_bg_h = bg_height;
             if (bg_start_x >= 0 && bg_start_y >= 0 &&
                 bg_start_x + bg_width <= WM_SCREEN_WIDTH &&
                 bg_start_y + bg_height <= WM_SCREEN_HEIGHT && (bg_start_x & 1) == 0) {
@@ -64,7 +86,7 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
 
     (void)win_bg;
 
-    int icon_x = abs_x + (total_w - icon_size) / 2;
+    int icon_x = abs_x + (label_max_w - icon_size) / 2;
     int icon_y = abs_y;
 
     if (control->icon.cached_bitmap_orig) {
@@ -88,9 +110,9 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
 
     if (control->icon.checked) {
         for (int py = 0; py < total_h; py++) {
-            for (int px = 0; px < total_w; px++) {
+            for (int px = 0; px < label_total_w; px++) {
                 if ((px + py) % 2 == 0) {
-                    gfx_putpixel(abs_x + px, abs_y + py, 1);
+                    gfx_putpixel(label_x + px, abs_y + py, 1);
                 }
             }
         }
@@ -106,6 +128,13 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
             text_color = (control->fg >= 0) ? (uint8_t)control->fg : theme->icon_text_color;
         }
         int text_y = abs_y + icon_size + 4;
-        icon_draw_label_wrapped(control->text, abs_x, text_y, total_w, max_line_width, text_color);
+        if (max_label_lines > 0) {
+            icon_draw_label_wrapped_limit(control->text, label_x, text_y,
+                                          label_total_w, max_line_width,
+                                          text_color, max_label_lines);
+        } else {
+            icon_draw_label_wrapped(control->text, label_x, text_y,
+                                    label_total_w, max_line_width, text_color);
+        }
     }
 }
