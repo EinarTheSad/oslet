@@ -6,7 +6,7 @@
 #include "../mem/heap.h"
 #include "../console.h"
 
-extern bmf_font_t font_n;
+extern bmf_font_t font_b, font_n;
 extern void mouse_invalidate_buffer(void);
 extern void mouse_restore(void);
 
@@ -15,6 +15,47 @@ extern void mouse_restore(void);
 #define MENU_TEXT_COLOR     0
 #define MENU_DISABLED_COLOR 8
 #define MENU_BORDER_COLOR   0
+#define MENU_LEFT_PADDING   8
+#define MENU_RIGHT_PADDING  8
+#define MENU_SHORTCUT_GAP   16
+
+static void menu_split_text(const char *text, char *label, int label_size,
+                            char *shortcut, int shortcut_size) {
+    const char *sep = NULL;
+    int label_len;
+
+    if (!label || label_size <= 0 || !shortcut || shortcut_size <= 0) return;
+    label[0] = '\0';
+    shortcut[0] = '\0';
+    if (!text) return;
+
+    for (const char *p = text; *p; p++) {
+        if (*p == '\t') {
+            sep = p;
+            break;
+        }
+        if (*p == ' ' && p[1] == ' ') {
+            sep = p;
+            break;
+        }
+    }
+
+    if (!sep) {
+        strcpy_s(label, text, label_size);
+        return;
+    }
+
+    label_len = sep - text;
+    if (label_len >= label_size)
+        label_len = label_size - 1;
+    for (int i = 0; i < label_len; i++)
+        label[i] = text[i];
+    label[label_len] = '\0';
+
+    sep++;
+    while (*sep == ' ' || *sep == '\t') sep++;
+    strcpy_s(shortcut, sep, shortcut_size);
+}
 
 void menu_init(menu_t *menu) {
     if (!menu) return;
@@ -77,8 +118,23 @@ static void menu_calculate_size(menu_t *menu) {
     if (font_n.data) {
         for (int i = 0; i < menu->item_count; i++) {
             if (!(menu->items[i].flags & MENU_ITEM_SEPARATOR)) {
-                int text_w = bmf_measure_text(&font_n, 12, menu->items[i].text);
-                int item_w = text_w + MENU_ITEM_PADDING * 2 + 8;
+                char label[32];
+                char shortcut[16];
+                int label_w;
+                int shortcut_w = 0;
+                int item_w;
+
+                menu_split_text(menu->items[i].text, label, sizeof(label),
+                                shortcut, sizeof(shortcut));
+                label_w = bmf_measure_text(&font_n, 12, label);
+                if (shortcut[0]) {
+                    bmf_font_t *shortcut_font = font_b.data ? &font_b : &font_n;
+                    shortcut_w = bmf_measure_text(shortcut_font, 12, shortcut);
+                }
+
+                item_w = MENU_LEFT_PADDING + label_w + MENU_RIGHT_PADDING;
+                if (shortcut_w > 0)
+                    item_w += MENU_SHORTCUT_GAP + shortcut_w;
                 if (item_w > max_width) {
                     max_width = item_w;
                 }
@@ -211,9 +267,9 @@ void menu_draw(menu_t *menu) {
         menu_item_t *item = &menu->items[i];
 
         if (item->flags & MENU_ITEM_SEPARATOR) {
-            /* Draw simple separator line */
+            /* Match the menu item leaf width. */
             int sep_y = item_y + 2;
-            gfx_hline(menu->x + 2, sep_y, menu->w - 4, MENU_BORDER_COLOR);
+            gfx_hline(menu->x + 1, sep_y, menu->w - 2, MENU_BORDER_COLOR);
             item_y += 5;
         } else {
             /* Draw item background if hovered (light gray) */
@@ -222,10 +278,23 @@ void menu_draw(menu_t *menu) {
             }
 
             if (font_n.data) {
+                char label[32];
+                char shortcut[16];
                 uint8_t text_color = (item->flags & MENU_ITEM_ENABLED) ?
                                      MENU_TEXT_COLOR : MENU_DISABLED_COLOR;
-                bmf_printf(menu->x + MENU_ITEM_PADDING + 2, item_y + 4,
-                          &font_n, 12, text_color, "%s", item->text);
+
+                menu_split_text(item->text, label, sizeof(label),
+                                shortcut, sizeof(shortcut));
+                bmf_printf(menu->x + MENU_LEFT_PADDING, item_y + 4,
+                          &font_n, 12, text_color, "%s", label);
+
+                if (shortcut[0]) {
+                    bmf_font_t *shortcut_font = font_b.data ? &font_b : &font_n;
+                    int shortcut_w = bmf_measure_text(shortcut_font, 12, shortcut);
+                    int shortcut_x = menu->x + menu->w - MENU_RIGHT_PADDING - shortcut_w;
+                    bmf_printf(shortcut_x, item_y + 4,
+                               shortcut_font, 12, text_color, "%s", shortcut);
+                }
             }
 
             item_y += MENU_ITEM_HEIGHT;

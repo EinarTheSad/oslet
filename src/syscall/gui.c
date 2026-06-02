@@ -1246,6 +1246,15 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             return (uint32_t)topmost;
         }
 
+        case 0x22: { /* SYS_WIN_MENUBAR_ADD_SEPARATOR */
+            gui_form_t *form = (gui_form_t*)ebx;
+            int menu_index = (int)ecx;
+            if (!form || !form->menubar_enabled) return (uint32_t)-1;
+            menu_t *menu = menubar_get_menu(&form->menubar, menu_index);
+            if (!menu) return (uint32_t)-1;
+            return (uint32_t)menu_add_separator(menu);
+        }
+
         default:
             return (uint32_t)-1;
     }

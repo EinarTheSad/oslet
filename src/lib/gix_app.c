@@ -25,9 +25,13 @@ static void gix_setup_menus(void *form, const gix_app_menu_t *menus, int menu_co
     for (int i = 0; i < menu_count; i++) {
         int menu = sys_win_menubar_add_menu(form, menus[i].title);
         for (int j = 0; j < menus[i].item_count; j++) {
-            sys_win_menubar_add_item(form, menu,
-                                     menus[i].items[j].text,
-                                     menus[i].items[j].action_id);
+            if (menus[i].items[j].text) {
+                sys_win_menubar_add_item(form, menu,
+                                         menus[i].items[j].text,
+                                         menus[i].items[j].action_id);
+            } else {
+                sys_win_menubar_add_separator(form, menu);
+            }
         }
     }
 }

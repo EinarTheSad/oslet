@@ -309,6 +309,7 @@ void _start(void) {
     sys_win_menubar_enable(Form1);
     int file_menu = sys_win_menubar_add_menu(Form1, "File");
     sys_win_menubar_add_item(Form1, file_menu, "New game", MENU_FILE_NEW);
+    sys_win_menubar_add_separator(Form1, file_menu);
     sys_win_menubar_add_item(Form1, file_menu, "Exit", MENU_FILE_EXIT);
     int help_menu = sys_win_menubar_add_menu(Form1, "Help");
     sys_win_menubar_add_item(Form1, help_menu, "About", MENU_HELP_ABOUT);
