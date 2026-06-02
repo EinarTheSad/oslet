@@ -167,20 +167,36 @@ static int task_alive(int tid) {
     return 0;
 }
 
+static void stop_shell(void) {
+    if (shell_tid <= 0)
+        return;
+
+    sys_kill(shell_tid);
+    while (task_alive(shell_tid))
+        sys_yield();
+    shell_tid = 0;
+}
+
+static void terminal_cleanup(void) {
+    if (vc) {
+        sys_vc_destroy(vc);
+        vc = NULL;
+    }
+    if (form) {
+        sys_win_destroy_form(form);
+        form = NULL;
+    }
+    usr_bmf_free(&font);
+}
+
 static int handle_event(void *form_arg, int event, void *userdata)
 {
     (void)userdata;
     gui_form_t *f = (gui_form_t*)form_arg;
 
     if (event == -3) {
-        sys_kill(shell_tid);
-        /* Wait for shell to actually terminate before destroying vconsole */
-        while (task_alive(shell_tid)) {
-            sys_yield();
-        }
-        sys_vc_destroy(vc);
-        sys_win_destroy_form(form);
-        usr_bmf_free(&font);
+        stop_shell();
+        terminal_cleanup();
         sys_exit();
     }
 
@@ -347,5 +363,31 @@ void _start(void) {
     cursor_blink_tick = sys_uptime();
     memset(pixbuf, 0, buf_w * buf_h);
 
-    sys_win_run_event_loop(form, handle_event, NULL);
+    int running = 1;
+    while (running) {
+        int event = sys_win_pump_events(form);
+
+        if (event == SYS_WIN_EVENT_CLOSE) {
+            stop_shell();
+            running = 0;
+            continue;
+        }
+
+        if (event == SYS_WIN_EVENT_REDRAW)
+            sys_win_mark_dirty(form);
+
+        if (handle_event(form, event, NULL) != 0)
+            running = 0;
+
+        if (event == SYS_WIN_EVENT_WINDOW_CHANGED || event == SYS_WIN_EVENT_RESIZE) {
+            sys_win_draw(form);
+            sys_win_force_full_redraw();
+            sys_win_invalidate_icons();
+        }
+
+        sys_yield();
+    }
+
+    terminal_cleanup();
+    sys_exit();
 }

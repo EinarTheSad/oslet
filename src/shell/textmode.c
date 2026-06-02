@@ -8,7 +8,7 @@ static int textmode_init(prog_instance_t *inst) {
 
     progman_kill_tasks();
     sys_gfx_exit();
-    sys_spawn_async_args("SHELL.ELF", "/d");
+    sys_spawn_async_args("C:/SHELL.ELF", "/d");
 
     sys_exit();
 
