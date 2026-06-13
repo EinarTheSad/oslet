@@ -10,6 +10,8 @@
 #define CURSOR_SAVE_H (CURSOR_MAX_H + CURSOR_CLEAN_PAD)
 #define CURSOR_DEFAULT_PATH "C:/ICONS/default.cur"
 #define CURSOR_MOVE_PATH "C:/ICONS/move.cur"
+#define CURSOR_BUSY_PATH "C:/ICONS/hrglass.cur"
+#define CURSOR_PATH_MAX 128
 
 static int mouse_x = 320;
 static int mouse_y = 240;
@@ -20,6 +22,17 @@ static uint8_t cursor_buffer[CURSOR_SAVE_W * CURSOR_SAVE_H];
 static uint8_t *cursor_bitmap = NULL;
 static int cursor_w = 11;
 static int cursor_h = 19;
+static int cursor_is_busy_cache = 0;
+static char cursor_path[CURSOR_PATH_MAX] = CURSOR_DEFAULT_PATH;
+static uint8_t *busy_bitmap = NULL;
+static int busy_w = 0;
+static int busy_h = 0;
+static int busy_missing = 0;
+static int busy_depth = 0;
+static uint8_t *busy_saved_bitmap = NULL;
+static int busy_saved_w = 11;
+static int busy_saved_h = 19;
+static char busy_saved_path[CURSOR_PATH_MAX] = CURSOR_DEFAULT_PATH;
 static int default_cursor_checked = 0;
 static int default_cursor_missing = 0;
 static int saved_x = -1, saved_y = -1;
@@ -151,6 +164,32 @@ static int mouse_streq(const char *a, const char *b) {
     return *a == '\0' && *b == '\0';
 }
 
+static void mouse_copy_path(char *dest, const char *src) {
+    int i = 0;
+
+    if (!dest)
+        return;
+
+    if (!src) {
+        dest[0] = '\0';
+        return;
+    }
+
+    while (src[i] && i < CURSOR_PATH_MAX - 1) {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
+static void mouse_free_current_bitmap(void) {
+    if (cursor_bitmap && !cursor_is_busy_cache)
+        kfree(cursor_bitmap);
+
+    cursor_bitmap = NULL;
+    cursor_is_busy_cache = 0;
+}
+
 static void mouse_clear_drawn_cursor(void) {
     if (buffer_valid)
         mouse_restore();
@@ -159,13 +198,10 @@ static void mouse_clear_drawn_cursor(void) {
 
 static void mouse_use_builtin_cursor(void) {
     mouse_clear_drawn_cursor();
-
-    if (cursor_bitmap) {
-        kfree(cursor_bitmap);
-        cursor_bitmap = NULL;
-    }
+    mouse_free_current_bitmap();
     cursor_w = 11;
     cursor_h = 19;
+    mouse_copy_path(cursor_path, CURSOR_DEFAULT_PATH);
 }
 
 static uint8_t mouse_cursor_pixel(int x, int y) {
@@ -184,11 +220,114 @@ static void mouse_check_default_cursor(void) {
     }
 }
 
-int mouse_set_cursor_file(const char *path) {
+static int mouse_load_cursor_bitmap(const char *path, uint8_t **out_data, int *out_w, int *out_h) {
     int w = 0;
     int h = 0;
     uint8_t *data;
+
+    if (!path || !out_data || !out_w || !out_h)
+        return -1;
+
+    data = gfx_load_bmp_to_buffer(path, &w, &h);
+    if (!data || w <= 0 || h <= 0 || w > CURSOR_MAX_W || h > CURSOR_MAX_H) {
+        if (data)
+            kfree(data);
+        return -1;
+    }
+
+    *out_data = data;
+    *out_w = w;
+    *out_h = h;
+    return 0;
+}
+
+static void mouse_show_current_cursor(int keep_drawn) {
+    int x;
+    int y;
+
+    if (!gfx_is_active())
+        return;
+
+    x = mouse_get_x();
+    y = mouse_get_y();
+    mouse_save(x, y);
+    mouse_draw_cursor(x, y);
+    gfx_swap_buffers();
+
+    if (!keep_drawn) {
+        mouse_restore();
+        buffer_valid = 0;
+    }
+}
+
+static int mouse_set_saved_cursor_file(const char *path) {
+    uint8_t *data = NULL;
+    int w = 0;
+    int h = 0;
     int is_default;
+
+    if (!path) {
+        if (busy_saved_bitmap)
+            kfree(busy_saved_bitmap);
+        busy_saved_bitmap = NULL;
+        busy_saved_w = 11;
+        busy_saved_h = 19;
+        mouse_copy_path(busy_saved_path, CURSOR_DEFAULT_PATH);
+        return -1;
+    }
+
+    is_default = mouse_streq(path, CURSOR_DEFAULT_PATH);
+    if (is_default && default_cursor_missing) {
+        if (busy_saved_bitmap)
+            kfree(busy_saved_bitmap);
+        busy_saved_bitmap = NULL;
+        busy_saved_w = 11;
+        busy_saved_h = 19;
+        mouse_copy_path(busy_saved_path, CURSOR_DEFAULT_PATH);
+        return -1;
+    }
+
+    if (mouse_load_cursor_bitmap(path, &data, &w, &h) != 0) {
+        if (is_default) {
+            default_cursor_checked = 1;
+            default_cursor_missing = 1;
+            if (busy_saved_bitmap)
+                kfree(busy_saved_bitmap);
+            busy_saved_bitmap = NULL;
+            busy_saved_w = 11;
+            busy_saved_h = 19;
+            mouse_copy_path(busy_saved_path, CURSOR_DEFAULT_PATH);
+        }
+        return -1;
+    }
+
+    if (busy_saved_bitmap)
+        kfree(busy_saved_bitmap);
+
+    busy_saved_bitmap = data;
+    busy_saved_w = w;
+    busy_saved_h = h;
+    mouse_copy_path(busy_saved_path, path);
+
+    if (is_default) {
+        default_cursor_checked = 1;
+        default_cursor_missing = 0;
+    }
+
+    return 0;
+}
+
+int mouse_set_cursor_file(const char *path) {
+    int w = 0;
+    int h = 0;
+    uint8_t *data = NULL;
+    int is_default;
+
+    if (busy_depth > 0) {
+        if (path && mouse_streq(path, CURSOR_BUSY_PATH))
+            return 0;
+        return mouse_set_saved_cursor_file(path);
+    }
 
     if (!path) {
         mouse_use_builtin_cursor();
@@ -201,11 +340,7 @@ int mouse_set_cursor_file(const char *path) {
         return -1;
     }
 
-    data = gfx_load_bmp_to_buffer(path, &w, &h);
-    if (!data || w <= 0 || h <= 0 || w > CURSOR_MAX_W || h > CURSOR_MAX_H) {
-        if (data)
-            kfree(data);
-
+    if (mouse_load_cursor_bitmap(path, &data, &w, &h) != 0) {
         if (is_default) {
             default_cursor_checked = 1;
             default_cursor_missing = 1;
@@ -216,13 +351,13 @@ int mouse_set_cursor_file(const char *path) {
     }
 
     mouse_clear_drawn_cursor();
-
-    if (cursor_bitmap)
-        kfree(cursor_bitmap);
+    mouse_free_current_bitmap();
 
     cursor_bitmap = data;
     cursor_w = w;
     cursor_h = h;
+    cursor_is_busy_cache = 0;
+    mouse_copy_path(cursor_path, path);
     if (is_default) {
         default_cursor_checked = 1;
         default_cursor_missing = 0;
@@ -237,6 +372,71 @@ void mouse_set_cursor_mode(int mode) {
     }
 
     mouse_set_cursor_file(CURSOR_DEFAULT_PATH);
+}
+
+int mouse_busy_begin(void) {
+    if (busy_depth > 0) {
+        busy_depth++;
+        return 0;
+    }
+
+    mouse_check_default_cursor();
+    mouse_clear_drawn_cursor();
+
+    busy_depth = 1;
+    busy_saved_bitmap = cursor_bitmap;
+    busy_saved_w = cursor_w;
+    busy_saved_h = cursor_h;
+    mouse_copy_path(busy_saved_path, cursor_path);
+
+    cursor_bitmap = NULL;
+    cursor_is_busy_cache = 0;
+
+    if (!busy_bitmap && !busy_missing) {
+        if (mouse_load_cursor_bitmap(CURSOR_BUSY_PATH, &busy_bitmap, &busy_w, &busy_h) != 0)
+            busy_missing = 1;
+    }
+
+    if (!busy_bitmap) {
+        cursor_bitmap = busy_saved_bitmap;
+        cursor_w = busy_saved_w;
+        cursor_h = busy_saved_h;
+        busy_saved_bitmap = NULL;
+        busy_depth = 0;
+        return -1;
+    }
+
+    cursor_bitmap = busy_bitmap;
+    cursor_w = busy_w;
+    cursor_h = busy_h;
+    cursor_is_busy_cache = 1;
+    mouse_copy_path(cursor_path, CURSOR_BUSY_PATH);
+    mouse_show_current_cursor(0);
+    return 0;
+}
+
+void mouse_busy_end(void) {
+    if (busy_depth <= 0)
+        return;
+
+    busy_depth--;
+    if (busy_depth > 0)
+        return;
+
+    mouse_clear_drawn_cursor();
+
+    cursor_bitmap = busy_saved_bitmap;
+    cursor_w = busy_saved_w;
+    cursor_h = busy_saved_h;
+    cursor_is_busy_cache = 0;
+    mouse_copy_path(cursor_path, busy_saved_path);
+
+    busy_saved_bitmap = NULL;
+    busy_saved_w = 11;
+    busy_saved_h = 19;
+    mouse_copy_path(busy_saved_path, CURSOR_DEFAULT_PATH);
+
+    mouse_show_current_cursor(1);
 }
 
 void mouse_draw_cursor(int x, int y) {

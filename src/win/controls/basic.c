@@ -217,7 +217,35 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
         gfx_fillrect(abs_x, abs_y, control->w, control->h, control->bg);
     }
 
-    if (control->text[0]) {
+    if (control->picturebox.buffer &&
+        control->picturebox.buffer_w > 0 &&
+        control->picturebox.buffer_h > 0) {
+        int bw = control->picturebox.buffer_w;
+        int bh = control->picturebox.buffer_h;
+
+        if (control->picturebox.image_mode == 1) {
+            for (int y = 0; y < control->h; y++) {
+                int sy = (y * bh) / control->h;
+                for (int x = 0; x < control->w; x++) {
+                    int sx = (x * bw) / control->w;
+                    uint8_t color = control->picturebox.buffer[sy * bw + sx] & 0x0F;
+                    gfx_putpixel(abs_x + x, abs_y + y, color);
+                }
+            }
+        } else {
+            int draw_w = bw < control->w ? bw : control->w;
+            int draw_h = bh < control->h ? bh : control->h;
+            int dx = abs_x + (control->w - draw_w) / 2;
+            int dy = abs_y + (control->h - draw_h) / 2;
+
+            for (int y = 0; y < draw_h; y++) {
+                for (int x = 0; x < draw_w; x++) {
+                    uint8_t color = control->picturebox.buffer[y * bw + x] & 0x0F;
+                    gfx_putpixel(dx + x, dy + y, color);
+                }
+            }
+        }
+    } else if (control->text[0]) {
         /* Load original bitmap to cache if not already loaded and not previously failed */
         if (!control->picturebox.cached_bitmap_orig && !control->picturebox.load_failed) {
             control->picturebox.cached_bitmap_orig = bitmap_load_from_file(control->text);

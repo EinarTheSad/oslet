@@ -63,12 +63,15 @@ static int load_text_file(void *form, int textbox_id, const char *path) {
     int content_len = 0;
     int bytes_read;
 
+    sys_mouse_busy_begin();
+
     while ((bytes_read = sys_read(fd, buffer, sizeof(buffer))) > 0) {
         for (int i = 0; i < bytes_read; i++) {
             uint8_t c = (uint8_t)buffer[i];
             if (c == '\r') continue;
             if (!is_valid_text_char(c)) {
                 sys_close(fd);
+                sys_mouse_busy_end();
                 return -1;
             }
             if (content_len < MAX_FILE_CONTENT) {
@@ -80,6 +83,7 @@ static int load_text_file(void *form, int textbox_id, const char *path) {
     sys_close(fd);
     content[content_len] = '\0';
     ctrl_set_text(form, textbox_id, content);
+    sys_mouse_busy_end();
     return 0;
 }
 
@@ -92,14 +96,18 @@ static int save_text_to_file(const char *path, const char *text) {
         while (text[len]) len++;
     }
 
+    sys_mouse_busy_begin();
+
     if (len > 0) {
         if (sys_write_file(fd, text, len) != len) {
             sys_close(fd);
+            sys_mouse_busy_end();
             return -1;
         }
     }
 
     sys_close(fd);
+    sys_mouse_busy_end();
     return 0;
 }
 

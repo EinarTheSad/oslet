@@ -1096,11 +1096,13 @@ static int copy_file_data(const char *src, const char *dst) {
 
     char buffer[512];
     int bytes_read;
+    sys_mouse_busy_begin();
     while ((bytes_read = sys_read(src_fd, buffer, sizeof(buffer))) > 0)
         sys_write_file(dst_fd, buffer, bytes_read);
 
     sys_close(src_fd);
     sys_close(dst_fd);
+    sys_mouse_busy_end();
     return 0;
 }
 

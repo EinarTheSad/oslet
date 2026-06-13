@@ -56,6 +56,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 /* AH = 05h - IPC */
 #define SYS_IPC_SEND        0x0500
 #define SYS_IPC_RECV        0x0501
+#define SYS_IPC_RECV_NONBLOCK 0x0502
 
 /* AH = 06h - Memory Management */
 #define SYS_MEM_ALLOC       0x0600
@@ -97,6 +98,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_GFX_LOAD_BMP_SCALED 0x0911 /* Load BMP and draw scaled-to-region (no transparency) */
 #define SYS_GFX_CACHE_BMP_SCALED 0x0912 /* Load BMP, scale to target dimensions, and cache it */
 #define SYS_GFX_SET_PALETTE_DATA 0x0913 /* Set the active 16-color VGA palette from 48 bytes of RGB data */
+#define SYS_GFX_GET_PALETTE_DATA 0x0914 /* Copy the active 16-color VGA palette to 48 bytes of RGB data */
 
 /* AH = 0Ah - Mouse */
 #define SYS_MOUSE_GET_STATE  0x0A00
@@ -104,6 +106,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_MOUSE_INVALIDATE 0x0A02
 #define SYS_MOUSE_SET_CURSOR 0x0A03
 #define SYS_MOUSE_SET_CURSOR_FILE 0x0A04
+#define SYS_MOUSE_BUSY       0x0A05
 
 #define MOUSE_CURSOR_NORMAL 0
 #define MOUSE_CURSOR_MOVE   1
@@ -200,6 +203,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define PROP_LIST_SCROLL 22 /* int - vertical list scroll offset */
 #define PROP_LIST_ACTION 23 /* int - last list action */
 #define PROP_LIST_ACTION_INDEX 24 /* int - last list action item index */
+#define PROP_BUFFER      25 /* sys_picturebox_buffer_t* - copy pixels into picturebox */
 
 #define TEXTBOX_EDIT_COPY       1
 #define TEXTBOX_EDIT_CUT        2
@@ -275,6 +279,12 @@ typedef struct {
     uint16_t count;
 } sys_list_items_t;
 
+typedef struct {
+    const uint8_t *pixels;
+    uint16_t w;
+    uint16_t h;
+} sys_picturebox_buffer_t;
+
 // Control-specific field structures
 typedef struct {
     bitmap_t *cached_bitmap_orig;
@@ -288,6 +298,9 @@ typedef struct {
 typedef struct {
     bitmap_t *cached_bitmap_orig;    /* Original loaded bitmap */
     bitmap_t *cached_bitmap_scaled;  /* Scaled bitmap cached for current control size */
+    uint8_t *buffer;                 /* Kernel-owned 4-bit/indexed pixels */
+    uint16_t buffer_w;
+    uint16_t buffer_h;
     uint8_t image_mode;              /* 0=center (default), 1=stretch */
     uint8_t load_failed;             /* set when image loading failed to avoid retry storm */
 } control_picturebox_t;
@@ -735,6 +748,12 @@ static inline int sys_recv_msg(message_t *msg) {
     return ret;
 }
 
+static inline int sys_recv_msg_nonblock(message_t *msg) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_IPC_RECV_NONBLOCK), "b"(msg));
+    return ret;
+}
+
 static inline int sys_get_meminfo(sys_meminfo_t *info) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_INFO_MEM), "b"(info) : "memory");
@@ -953,6 +972,13 @@ static inline int sys_gfx_set_palette_data(const uint8_t palette[16][3]) {
     return ret;
 }
 
+static inline int sys_gfx_get_palette_data(uint8_t palette[16][3]) {
+    int ret;
+    register uint8_t *dummy_ebx __asm__("ebx") = (uint8_t *)palette;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_GET_PALETTE_DATA), "b"(dummy_ebx) : "memory");
+    return ret;
+}
+
 static inline void sys_gfx_free_cached(gfx_cached_bmp_t *bmp) {
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FREE_CACHED), "b"(bmp));
 }
@@ -990,6 +1016,14 @@ static inline int sys_mouse_set_cursor_file(const char *path) {
     register const char *dummy_ebx __asm__("ebx") = path;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_MOUSE_SET_CURSOR_FILE), "b"(dummy_ebx) : "memory");
     return ret;
+}
+
+static inline void sys_mouse_busy_begin(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_BUSY), "b"(1) : "memory");
+}
+
+static inline void sys_mouse_busy_end(void) {
+    __asm__ volatile("int $0x80" :: "a"(SYS_MOUSE_BUSY), "b"(0) : "memory");
 }
 static inline int sys_win_msgbox(const char *msg, const char *btn, const char *title) {
     int ret;
@@ -1208,6 +1242,14 @@ static inline int ctrl_get_checked(void *form, int16_t id) {
 
 static inline void ctrl_set_image(void *form, int16_t id, const char *path) {
     sys_ctrl_set_prop(form, id, PROP_IMAGE, (uint32_t)path);
+}
+
+static inline void ctrl_set_buffer(void *form, int16_t id, const uint8_t *pixels, int w, int h) {
+    sys_picturebox_buffer_t buf;
+    buf.pixels = pixels;
+    buf.w = (uint16_t)w;
+    buf.h = (uint16_t)h;
+    sys_ctrl_set_prop(form, id, PROP_BUFFER, (uint32_t)&buf);
 }
 
 static inline void ctrl_tree_set_items(void *form, int16_t id, const sys_tree_item_t *items, uint16_t count) {
