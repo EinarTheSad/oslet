@@ -4,6 +4,26 @@
 window_manager_t global_wm;
 int wm_initialized = 0;
 
+static void gui_picturebox_free_data(gui_control_t *ctrl) {
+    if (!ctrl || (ctrl->type & 0x7F) != CTRL_PICTUREBOX) return;
+
+    if (ctrl->picturebox.cached_bitmap_orig) {
+        bitmap_free(ctrl->picturebox.cached_bitmap_orig);
+        ctrl->picturebox.cached_bitmap_orig = NULL;
+    }
+    if (ctrl->picturebox.cached_bitmap_scaled) {
+        bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
+        ctrl->picturebox.cached_bitmap_scaled = NULL;
+    }
+    if (ctrl->picturebox.buffer) {
+        kfree(ctrl->picturebox.buffer);
+        ctrl->picturebox.buffer = NULL;
+    }
+    ctrl->picturebox.buffer_w = 0;
+    ctrl->picturebox.buffer_h = 0;
+    ctrl->picturebox.load_failed = 0;
+}
+
 void gui_invalidate_saved_backgrounds(window_manager_t *wm) {
     if (!wm) return;
 
@@ -284,6 +304,9 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                     case CTRL_PICTUREBOX:
                         dest->picturebox.cached_bitmap_orig = NULL;
                         dest->picturebox.cached_bitmap_scaled = NULL;
+                        dest->picturebox.buffer = NULL;
+                        dest->picturebox.buffer_w = 0;
+                        dest->picturebox.buffer_h = 0;
                         dest->picturebox.image_mode = ctrl->picturebox.image_mode;
                         dest->picturebox.load_failed = 0;
                         break;
@@ -451,14 +474,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                             break;
 
                         case CTRL_PICTUREBOX:
-                            if (ctrl->picturebox.cached_bitmap_orig) {
-                                bitmap_free(ctrl->picturebox.cached_bitmap_orig);
-                                ctrl->picturebox.cached_bitmap_orig = NULL;
-                            }
-                            if (ctrl->picturebox.cached_bitmap_scaled) {
-                                bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
-                                ctrl->picturebox.cached_bitmap_scaled = NULL;
-                            }
+                            gui_picturebox_free_data(ctrl);
                             break;
 
                         case CTRL_ICON:
@@ -834,18 +850,48 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                             }
                             ctrl->icon.cached_bitmap_orig = bitmap_load_from_file(path);
                         } else if (ctrl->type == CTRL_PICTUREBOX) {
-                            if (ctrl->picturebox.cached_bitmap_orig) {
-                                bitmap_free(ctrl->picturebox.cached_bitmap_orig);
-                                ctrl->picturebox.cached_bitmap_orig = NULL;
-                            }
-                            if (ctrl->picturebox.cached_bitmap_scaled) {
-                                bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
-                                ctrl->picturebox.cached_bitmap_scaled = NULL;
-                            }
-                            ctrl->picturebox.load_failed = 0;
+                            gui_picturebox_free_data(ctrl);
                             ctrl->text[0] = '\0';
                             strcpy_s(ctrl->text, path, sizeof(ctrl->text));
                         }
+                    }
+                    break;
+                case PROP_BUFFER:
+                    if (ctrl->type == CTRL_PICTUREBOX && value) {
+                        if (!sys_range_mapped(value, sizeof(sys_picturebox_buffer_t)))
+                            break;
+
+                        sys_picturebox_buffer_t src;
+                        memcpy_s(&src, (const void*)value, sizeof(src));
+                        if (!src.pixels || src.w == 0 || src.h == 0)
+                            break;
+                        if (src.w > WM_SCREEN_WIDTH || src.h > WM_SCREEN_HEIGHT)
+                            break;
+
+                        uint32_t bytes = (uint32_t)src.w * (uint32_t)src.h;
+                        if (bytes == 0 || bytes > (uint32_t)WM_SCREEN_WIDTH * (uint32_t)WM_SCREEN_HEIGHT)
+                            break;
+                        if (!sys_range_mapped((uint32_t)src.pixels, bytes))
+                            break;
+
+                        if (ctrl->picturebox.buffer &&
+                            ctrl->picturebox.buffer_w == src.w &&
+                            ctrl->picturebox.buffer_h == src.h) {
+                            memcpy_s(ctrl->picturebox.buffer, src.pixels, bytes);
+                            ctrl->text[0] = '\0';
+                            break;
+                        }
+
+                        uint8_t *copy = (uint8_t*)kmalloc(bytes);
+                        if (!copy)
+                            break;
+
+                        memcpy_s(copy, src.pixels, bytes);
+                        gui_picturebox_free_data(ctrl);
+                        ctrl->picturebox.buffer = copy;
+                        ctrl->picturebox.buffer_w = src.w;
+                        ctrl->picturebox.buffer_h = src.h;
+                        ctrl->text[0] = '\0';
                     }
                     break;
                 case 10: /* PROP_ENABLED - picturebox image_mode */
@@ -916,6 +962,11 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 case 10: /* PROP_ENABLED - picturebox image_mode */
                     if (ctrl->type == CTRL_PICTUREBOX) {
                         return ctrl->picturebox.image_mode;
+                    }
+                    return 0;
+                case PROP_BUFFER:
+                    if (ctrl->type == CTRL_PICTUREBOX) {
+                        return (uint32_t)ctrl->picturebox.buffer;
                     }
                     return 0;
                 case PROP_TREE_ITEMS:
@@ -1298,14 +1349,7 @@ void wm_cleanup_task(uint32_t tid) {
                     ctrl->button.cached_bitmap_orig = NULL;
                 }
                 if (ctrl->type == CTRL_PICTUREBOX) {
-                    if (ctrl->picturebox.cached_bitmap_orig) {
-                        bitmap_free(ctrl->picturebox.cached_bitmap_orig);
-                        ctrl->picturebox.cached_bitmap_orig = NULL;
-                    }
-                    if (ctrl->picturebox.cached_bitmap_scaled) {
-                        bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
-                        ctrl->picturebox.cached_bitmap_scaled = NULL;
-                    }
+                    gui_picturebox_free_data(ctrl);
                 }
                 if (ctrl->type == CTRL_ICON && ctrl->icon.cached_bitmap_orig) {
                     bitmap_free(ctrl->icon.cached_bitmap_orig);

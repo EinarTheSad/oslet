@@ -647,6 +647,45 @@ static void pump_all_program_events(int mx, int my, unsigned char mb) {
     }
 }
 
+static void launch_or_restore_module(const char *name) {
+    if (!name || !name[0]) return;
+
+    if (!progman_is_running(name)) {
+        progman_launch(name);
+        desktop_redraw();
+        return;
+    }
+
+    int count = progman_get_running_count();
+    for (int i = 0; i < count; i++) {
+        prog_instance_t *other = progman_get_instance(i);
+        if (!other || !other->module) continue;
+        if (strcmp(other->module->name, name) != 0) continue;
+
+        if (other->window_count > 0 && other->windows[0]) {
+            sys_win_restore_form(other->windows[0]);
+            desktop_redraw();
+            return;
+        }
+    }
+}
+
+static void desktop_handle_messages(void) {
+    message_t msg;
+
+    while (sys_recv_msg_nonblock(&msg) == 0) {
+        char command[MSG_MAX_SIZE + 1];
+        int len = msg.size < MSG_MAX_SIZE ? (int)msg.size : MSG_MAX_SIZE;
+
+        for (int i = 0; i < len; i++)
+            command[i] = msg.data[i];
+        command[len] = '\0';
+
+        if (strcmp(command, "OSLET:LAUNCH:Palette") == 0)
+            launch_or_restore_module("Palette");
+    }
+}
+
 __attribute__((section(".entry"), used))
 void _start(void) {
     int mx = 320;
@@ -693,6 +732,8 @@ void _start(void) {
     int gk = 0;
 
     while (!exit_requested) {
+        desktop_handle_messages();
+
         if (sys_take_textmode_request()) {
             progman_launch("Text Mode");
             continue;

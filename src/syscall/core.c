@@ -568,6 +568,31 @@ static uint32_t handle_ipc(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx
             memcpy_s((void*)ebx, &local_msg, sizeof(message_t));
             return 0;
         }
+
+        case 0x02: {
+            if (!sys_range_mapped(ebx, sizeof(message_t))) return -1;
+
+            task_t *current = task_get_current();
+            if (!current) return -2;
+
+            msg_queue_t *q = &current->msg_queue;
+            uint32_t eflags = sys_irq_save();
+            if (q->count == 0) {
+                sys_irq_restore(eflags);
+                return -3;
+            }
+
+            message_t local_msg;
+            message_t *msg = &q->msgs[q->tail];
+            memcpy_s(&local_msg, msg, sizeof(message_t));
+
+            q->tail = (q->tail + 1) % MSG_QUEUE_SIZE;
+            q->count--;
+            sys_irq_restore(eflags);
+
+            memcpy_s((void*)ebx, &local_msg, sizeof(message_t));
+            return 0;
+        }
             
         default:
             return -1;
@@ -1140,7 +1165,10 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
             int x = (int)(ecx >> 16);
             int y = (int)(ecx & 0xFFFF);
-            return gfx_load_bmp_4bit_ex(path, x, y, (int)edx);
+            mouse_busy_begin();
+            int result = gfx_load_bmp_4bit_ex(path, x, y, (int)edx);
+            mouse_busy_end();
+            return (uint32_t)result;
         }
 
         case 0x0D: { /* Cache BMP to memory */
@@ -1148,11 +1176,16 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             if (!sys_range_mapped(ecx, sizeof(cached_bmp_t))) return (uint32_t)-1;
             cached_bmp_t *out = (cached_bmp_t*)ecx;
             int w, h;
+            mouse_busy_begin();
             uint8_t *data = gfx_load_bmp_to_buffer(path, &w, &h);
-            if (!data) return (uint32_t)-1;
+            if (!data) {
+                mouse_busy_end();
+                return (uint32_t)-1;
+            }
             out->data = data;
             out->width = w;
             out->height = h;
+            mouse_busy_end();
             return 0;
         }
 
@@ -1187,8 +1220,12 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             int dest_h = (int)(edx & 0xFFFF);
 
             int src_w, src_h;
+            mouse_busy_begin();
             uint8_t *bmp = gfx_load_bmp_to_buffer(path, &src_w, &src_h);
-            if (!bmp) return (uint32_t)-1;
+            if (!bmp) {
+                mouse_busy_end();
+                return (uint32_t)-1;
+            }
 
             /* Always scale to exact target dimensions */
             if (src_w != dest_w || src_h != dest_h) {
@@ -1203,6 +1240,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 if (!scaled) {
                     gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
                     kfree(bmp);
+                    mouse_busy_end();
                     return (uint32_t)-1;
                 }
                 kfree(bmp); /* free original raw buffer */
@@ -1213,6 +1251,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
                 kfree(bmp);
             }
+            mouse_busy_end();
             return 0;
         }
 
@@ -1224,8 +1263,12 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             cached_bmp_t *out = (cached_bmp_t*)edx;
 
             int src_w, src_h;
+            mouse_busy_begin();
             uint8_t *bmp = gfx_load_bmp_to_buffer(path, &src_w, &src_h);
-            if (!bmp) return (uint32_t)-1;
+            if (!bmp) {
+                mouse_busy_end();
+                return (uint32_t)-1;
+            }
 
             /* Scale if dimensions don't match */
             if (src_w != target_w || src_h != target_h) {
@@ -1238,7 +1281,10 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 bitmap_t *scaled = bitmap_scale_nearest(&src, target_w, target_h);
                 kfree(bmp); /* free original */
 
-                if (!scaled) return (uint32_t)-1;
+                if (!scaled) {
+                    mouse_busy_end();
+                    return (uint32_t)-1;
+                }
                 out->data = scaled->data;
                 out->width = scaled->width;
                 out->height = scaled->height;
@@ -1250,6 +1296,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 out->width = src_w;
                 out->height = src_h;
             }
+            mouse_busy_end();
             return 0;
         }
 
@@ -1258,6 +1305,12 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             uint8_t palette[16][3];
             memcpy_s(palette, (const void*)ebx, sizeof(palette));
             gfx_set_palette_data(palette);
+            return 0;
+        }
+
+        case 0x14: {
+            if (!sys_range_mapped(ebx, 16 * 3)) return (uint32_t)-1;
+            memcpy_s((void*)ebx, gfx_palette, 16 * 3);
             return 0;
         }
 
@@ -1346,6 +1399,14 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
             if (sys_copy_string(path, ebx, sizeof(path)) != 0)
                 return (uint32_t)-1;
             return (uint32_t)mouse_set_cursor_file(path);
+        }
+
+        case 0x05: {
+            if (ebx)
+                return (uint32_t)mouse_busy_begin();
+
+            mouse_busy_end();
+            return 0;
         }
         
         default:
