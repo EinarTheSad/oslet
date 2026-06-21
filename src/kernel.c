@@ -14,6 +14,7 @@
 #include "rtc.h"
 #include "syscall.h"
 #include "drivers/ata.h"
+#include "drivers/ahci.h"
 #include "drivers/usb.h"
 #include "drivers/fat32.h"
 #include "arch/gdt.h"
@@ -162,6 +163,24 @@ static void boot_sequence(void) {
     vga_set_color(0, 7);
     printf(" ] ATA driver\n");
 
+    ahci_init();
+    printf("[");
+    if (ahci_ready()) {
+        vga_set_color(0, 10);
+        printf(" OK ");
+    } else {
+        vga_set_color(0, 8);
+        printf("NONE");
+    }
+    vga_set_color(0, 7);
+    printf("] AHCI/SATA");
+    if (!ahci_ready()) {
+        printf(" (");
+        printf("%s", ahci_status());
+        printf(")");
+    }
+    printf("\n");
+
     fat32_init();
        
     tasking_init();
@@ -194,12 +213,36 @@ static void boot_sequence(void) {
             vga_set_color(0, 8);
             printf("SKIP");
             vga_set_color(0, 7);
-            printf("] USB filesystem mount failed, trying ATA...\n");
+            printf("] USB filesystem mount failed, trying AHCI...\n");
+        }
+    }
+
+    if (!mounted_c && ahci_ready()) {
+        ata_use_ahci(1);
+        vga_set_color(0, 8);
+        printf("[ .. ] Attempting to mount AHCI drive C...");
+        vga_set_color(0, 7);
+
+        if (fat32_mount_auto('C') == 0) {
+            mounted_c = 1;
+            printf("\r[");
+            vga_set_color(0, 10);
+            printf(" OK");
+            vga_set_color(0, 7);
+            printf(" ] Mounted drive C from AHCI/SATA           \n");
+        } else {
+            ata_use_ahci(0);
+            printf("\r[");
+            vga_set_color(0, 8);
+            printf("SKIP");
+            vga_set_color(0, 7);
+            printf("] AHCI filesystem mount failed, trying ATA...\n");
         }
     }
 
     if (!mounted_c) {
         ata_use_usb(0);
+        ata_use_ahci(0);
         vga_set_color(0, 8);
         printf("[ .. ] Attempting to identify ATA drive C...");
 
