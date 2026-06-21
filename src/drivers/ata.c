@@ -1,4 +1,5 @@
 #include "ata.h"
+#include "ahci.h"
 #include "usb.h"
 #include "../irq/io.h"
 #include "../console.h"
@@ -35,6 +36,7 @@ static inline void ata_400ns_delay(void);
  * to avoid constant ERR loops. */
 static int ata_flush_supported = 1;
 static int ata_usb_mode = 0;
+static int ata_ahci_mode = 0;
 
 static volatile int ata_driver_lock = 0;
 
@@ -139,6 +141,7 @@ static inline void ata_400ns_delay(void) {
 
 void ata_init(void) {
     ata_usb_mode = 0;
+    ata_ahci_mode = 0;
 
     // Disable interrupts (bit 1 = nIEN)
     outb(ATA_PRIMARY_CONTROL, 0x02);
@@ -162,6 +165,14 @@ void ata_init(void) {
 
 void ata_use_usb(int enable) {
     ata_usb_mode = enable ? 1 : 0;
+    if (ata_usb_mode)
+        ata_ahci_mode = 0;
+}
+
+void ata_use_ahci(int enable) {
+    ata_ahci_mode = (enable && ahci_ready()) ? 1 : 0;
+    if (ata_ahci_mode)
+        ata_usb_mode = 0;
 }
 
 int ata_using_usb(void) {
@@ -171,6 +182,8 @@ int ata_using_usb(void) {
 int ata_identify(void) {
     if (ata_usb_mode)
         return usb_ready() ? 0 : -1;
+    if (ata_ahci_mode)
+        return ahci_ready() ? 0 : -1;
 
     uint32_t freq = timer_get_frequency();
     uint32_t deadline = timer_get_ticks() + (freq ? freq : 100) * 5;
@@ -264,6 +277,13 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
         return result;
     }
 
+    if (ata_ahci_mode) {
+        ata_acquire();
+        int result = ahci_read_sectors(lba, sector_count, buffer);
+        ata_release();
+        return result;
+    }
+
     // Basic sanity check - reject obviously invalid LBAs
     if (lba > 0x0FFFFFFF) {
         return -1;
@@ -326,6 +346,13 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     if (ata_usb_mode) {
         ata_acquire();
         int result = usb_write_sectors(lba, sector_count, buffer);
+        ata_release();
+        return result;
+    }
+
+    if (ata_ahci_mode) {
+        ata_acquire();
+        int result = ahci_write_sectors(lba, sector_count, buffer);
         ata_release();
         return result;
     }
@@ -442,6 +469,8 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
 int ata_is_available(void) {
     if (ata_usb_mode)
         return usb_ready();
+    if (ata_ahci_mode)
+        return ahci_ready();
 
     ata_acquire();
     uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);

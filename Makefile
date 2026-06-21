@@ -65,7 +65,7 @@ GIX_TARGETS      := $(patsubst $(SRC)/apps/gix/%.c,%.elf,$(GIX_SRCS))
 
 PROGRAM_NAMES    := $(foreach t,$(SHELL_TARGETS) $(AGIX_TARGETS) $(GIX_TARGETS),$(basename $(t)))
 
-.PHONY: all run run-usb clean clean-all disk fresh-disk install binstall binaries update run-existing full kernel-build programs $(PROGRAM_NAMES)
+.PHONY: all run run-ahci run-usb clean clean-all disk fresh-disk install binstall binaries update run-existing full kernel-build programs $(PROGRAM_NAMES)
 
 all: kernel-build $(CURDIR)/$(BUILD)/$(TARGET)
 
@@ -286,6 +286,22 @@ run:
 	-display $(QEMU_DISPLAY) \
 	$(QEMU_SOUND) \
 	-rtc base=localtime
+
+run-ahci:
+	@if [ ! -f "$(DISK)" ]; then \
+		echo "Error: $(DISK) not found. Run 'make full' once to create it."; \
+		exit 1; \
+	fi
+	qemu-system-i386 \
+	-m 32M \
+	-net none \
+	-vga std \
+	-display $(QEMU_DISPLAY) \
+	$(QEMU_SOUND) \
+	-rtc base=localtime \
+	-drive if=none,id=sata0,file=$(DISK),format=raw \
+	-device ich9-ahci,id=ahci \
+	-device ide-hd,drive=sata0,bus=ahci.0
 
 full:
 	@echo "WARNING: full rebuilds a fresh disk image before running."
