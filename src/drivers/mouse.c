@@ -37,6 +37,7 @@ static int default_cursor_checked = 0;
 static int default_cursor_missing = 0;
 static int saved_x = -1, saved_y = -1;
 static int saved_w = 0, saved_h = 0;
+static int saving_cursor_background = 0;
 int buffer_valid = 0;
 
 extern void pic_send_eoi(int irq);
@@ -190,6 +191,19 @@ static void mouse_free_current_bitmap(void) {
     cursor_is_busy_cache = 0;
 }
 
+static void mouse_refresh_drawn_cursor(void) {
+    int x;
+    int y;
+
+    if (!gfx_is_active() || saving_cursor_background)
+        return;
+
+    x = mouse_get_x();
+    y = mouse_get_y();
+    mouse_save(x, y);
+    mouse_draw_cursor(x, y);
+}
+
 static void mouse_clear_drawn_cursor(void) {
     if (buffer_valid)
         mouse_restore();
@@ -202,6 +216,7 @@ static void mouse_use_builtin_cursor(void) {
     cursor_w = 11;
     cursor_h = 19;
     mouse_copy_path(cursor_path, CURSOR_DEFAULT_PATH);
+    mouse_refresh_drawn_cursor();
 }
 
 static uint8_t mouse_cursor_pixel(int x, int y) {
@@ -362,6 +377,7 @@ int mouse_set_cursor_file(const char *path) {
         default_cursor_checked = 1;
         default_cursor_missing = 0;
     }
+    mouse_refresh_drawn_cursor();
     return 0;
 }
 
@@ -470,7 +486,9 @@ void mouse_draw_cursor(int x, int y) {
 }
 
 void mouse_save(int x, int y) {
+    saving_cursor_background = 1;
     mouse_check_default_cursor();
+    saving_cursor_background = 0;
 
     saved_w = cursor_w + CURSOR_CLEAN_PAD;
     saved_h = cursor_h + CURSOR_CLEAN_PAD;
