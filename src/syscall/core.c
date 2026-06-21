@@ -10,6 +10,13 @@ typedef struct {
     int height;
 } cached_bmp_t;
 
+static void graphics_begin_draw(void) {
+    if (buffer_valid) {
+        mouse_restore();
+        mouse_invalidate_buffer();
+    }
+}
+
 #define FD_CRITICAL_BEGIN \
     uint32_t _fd_eflags; \
     __asm__ volatile("pushfl\n\tmovl (%%esp), %0\n\taddl $4, %%esp\n\tcli" : "=r"(_fd_eflags) :: "memory")
@@ -1096,6 +1103,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             return 0;
             
         case 0x02:
+            graphics_begin_draw();
             gfx_clear((uint8_t)ebx);
             return 0;
             
@@ -1104,6 +1112,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             return 0;
             
         case 0x04:
+            graphics_begin_draw();
             gfx_putpixel((int)ebx, (int)ecx, (uint8_t)edx);
             return 0;
             
@@ -1112,6 +1121,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             int y0 = (int)(ebx & 0xFFFF);
             int x1 = (int)(ecx >> 16);
             int y1 = (int)(ecx & 0xFFFF);
+            graphics_begin_draw();
             gfx_line(x0, y0, x1, y1, (uint8_t)edx);
             return 0;
         }
@@ -1121,6 +1131,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             int y = (int)(ebx & 0xFFFF);
             int w = (int)(ecx >> 16);
             int h = (int)(ecx & 0xFFFF);
+            graphics_begin_draw();
             gfx_rect(x, y, w, h, (uint8_t)edx);
             return 0;
         }
@@ -1130,11 +1141,13 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             int y = (int)(ebx & 0xFFFF);
             int w = (int)(ecx >> 16);
             int h = (int)(ecx & 0xFFFF);
+            graphics_begin_draw();
             gfx_fillrect(x, y, w, h, (uint8_t)edx);
             return 0;
         }
             
         case 0x08: {
+            graphics_begin_draw();
             gfx_circle((int)ebx, (int)ecx, (int)(edx >> 8), (uint8_t)(edx & 0xFF));
             return 0;
         }
@@ -1146,6 +1159,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             
         case 0x0A:
             if (sys_copy_string(path, ebx, sizeof(path)) != 0) return (uint32_t)-1;
+            graphics_begin_draw();
             return gfx_load_bmp_4bit(path, (int)ecx, (int)edx);
 
         case 0x0B: { /* Fillrect gradient */
@@ -1157,6 +1171,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             uint8_t c_end = (edx >> 8) & 0xFF;
             int orientation = edx & 0xFF;
 
+            graphics_begin_draw();
             gfx_fillrect_gradient(x, y, w, h, c_start, c_end, orientation);
             return 0;
         }
@@ -1166,6 +1181,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             int x = (int)(ecx >> 16);
             int y = (int)(ecx & 0xFFFF);
             mouse_busy_begin();
+            graphics_begin_draw();
             int result = gfx_load_bmp_4bit_ex(path, x, y, (int)edx);
             mouse_busy_end();
             return (uint32_t)result;
@@ -1196,6 +1212,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             if (!bmp.data) return (uint32_t)-1;
             int x = (int)(ecx >> 16);
             int y = (int)(ecx & 0xFFFF);
+            graphics_begin_draw();
             gfx_draw_cached_bmp_ex(bmp.data, bmp.width, bmp.height, x, y, (int)edx);
             return 0;
         }
@@ -1238,16 +1255,19 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 bitmap_t *scaled = bitmap_scale_nearest(&src, dest_w, dest_h);
 
                 if (!scaled) {
+                    graphics_begin_draw();
                     gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
                     kfree(bmp);
                     mouse_busy_end();
                     return (uint32_t)-1;
                 }
                 kfree(bmp); /* free original raw buffer */
+                graphics_begin_draw();
                 gfx_draw_cached_bmp_ex(scaled->data, scaled->width, scaled->height, dest_x, dest_y, 0);
                 bitmap_free(scaled);
             } else {
                 /* Already exact size - draw directly */
+                graphics_begin_draw();
                 gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
                 kfree(bmp);
             }
@@ -1350,6 +1370,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             if (sy + sh > bmp.height) sh = bmp.height - sy;
             if (sw <= 0 || sh <= 0) return 0;
 
+            graphics_begin_draw();
             gfx_draw_cached_bmp_region((uint8_t*)bmp.data, bmp.width, bmp.height,
                                        r.dest_x, r.dest_y,
                                        sx, sy, sw, sh, r.transparent);
@@ -1390,7 +1411,6 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
 
         case 0x03: {
             mouse_set_cursor_mode((int)ebx);
-            mouse_invalidate_buffer();
             return 0;
         }
 
