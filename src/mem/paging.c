@@ -93,6 +93,18 @@ int paging_unmap_page(uintptr_t vaddr) {
     
     uint32_t *pt = (uint32_t*)(pde & 0xFFFFF000u);
     pt[pt_index(vaddr)] = 0;
+
+    int empty = 1;
+    for (uint32_t i = 0; i < 1024; i++) {
+        if (pt[i] & P_PRESENT) {
+            empty = 0;
+            break;
+        }
+    }
+    if (empty) {
+        pd[pd_index(vaddr)] = 0;
+        pmm_free_frame((uintptr_t)pt);
+    }
     
     __asm__ volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
     return 0;
@@ -111,4 +123,16 @@ int paging_is_mapped(uintptr_t vaddr) {
     uint32_t pte = pt[pt_index(vaddr)];
     
     return (pte & P_PRESENT) ? 1 : 0;
+}
+
+int paging_get_physical(uintptr_t vaddr, uintptr_t *out_paddr) {
+    if (!out_paddr || !current_pd_phys || (vaddr & 0xFFF)) return -1;
+    uint32_t *pd = (uint32_t*)current_pd_phys;
+    uint32_t pde = pd[pd_index(vaddr)];
+    if (!(pde & P_PRESENT)) return -1;
+    uint32_t *pt = (uint32_t*)(pde & 0xFFFFF000u);
+    uint32_t pte = pt[pt_index(vaddr)];
+    if (!(pte & P_PRESENT)) return -1;
+    *out_paddr = (uintptr_t)(pte & 0xFFFFF000u);
+    return 0;
 }

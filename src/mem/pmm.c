@@ -68,6 +68,7 @@ static void pmm_build_bitmap(uintptr_t base, uintptr_t top) {
 
 void pmm_mark_region_free(uintptr_t start, size_t len) {
     if (!frame_bitmap || len == 0) return;
+    if (start > UINTPTR_MAX - len) return;
     uintptr_t a = (start + FRAME_SIZE - 1) & ~(FRAME_SIZE - 1);
     uintptr_t end = (start + len) & ~(FRAME_SIZE - 1);
     if (end <= a) return;
@@ -80,6 +81,7 @@ void pmm_mark_region_free(uintptr_t start, size_t len) {
 
 void pmm_reserve_region(uintptr_t start, size_t len) {
     if (!frame_bitmap || len == 0) return;
+    if (start > UINTPTR_MAX - len || start + len > UINTPTR_MAX - (FRAME_SIZE - 1)) return;
     uintptr_t a = start & ~(FRAME_SIZE - 1);
     uintptr_t end = (start + len + FRAME_SIZE - 1) & ~(FRAME_SIZE - 1);
     size_t first = addr_to_frame_index(a);

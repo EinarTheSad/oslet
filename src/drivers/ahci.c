@@ -104,6 +104,7 @@ static void pci_write32(uint8_t bus, uint8_t dev, uint8_t fn, uint8_t reg, uint3
 }
 
 static int map_mmio(uint32_t base, uint32_t bytes) {
+    if (bytes == 0 || base > UINT32_MAX - bytes - 0xFFFu) return -1;
     uint32_t start = base & 0xFFFFF000u;
     uint32_t end = (base + bytes + 0xFFFu) & 0xFFFFF000u;
 

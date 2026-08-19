@@ -25,16 +25,22 @@ block_t *heap_start = NULL;
 uintptr_t heap_end = 0;
 size_t total_allocated = 0;
 size_t total_freed = 0;
+static int heap_ready = 0;
 
 static int expand_heap(size_t min_size) {
+    if (min_size > (size_t)-1 - (PAGE_SIZE - 1)) return -1;
     size_t pages = (min_size + PAGE_SIZE - 1) / PAGE_SIZE;
     uintptr_t old_heap_end = heap_end;
+    if (pages > ((uintptr_t)-1 - old_heap_end) / PAGE_SIZE) return -1;
     
     for (size_t i = 0; i < pages; i++) {
         uintptr_t phys = pmm_alloc_frame();
         if (!phys) {
             printf("expand_heap: pmm_alloc_frame failed at page %u\n", (unsigned)i);
             for (size_t j = 0; j < i; j++) {
+                uintptr_t mapped = 0;
+                if (paging_get_physical(old_heap_end + (j * PAGE_SIZE), &mapped) == 0)
+                    pmm_free_frame(mapped);
                 paging_unmap_page(old_heap_end + (j * PAGE_SIZE));
             }
             return -1;
@@ -48,6 +54,9 @@ static int expand_heap(size_t min_size) {
             pmm_free_frame(phys);
             
             for (size_t j = 0; j < i; j++) {
+                uintptr_t mapped = 0;
+                if (paging_get_physical(old_heap_end + (j * PAGE_SIZE), &mapped) == 0)
+                    pmm_free_frame(mapped);
                 paging_unmap_page(old_heap_end + (j * PAGE_SIZE));
             }
             return -1;
@@ -66,16 +75,20 @@ void heap_init(void) {
         vga_set_color(12,15);
         printf("[FAIL] Heap could not be initialised\n");
         vga_set_color(0,7);
+        heap_start = NULL;
+        heap_end = 0;
         return;
     }
     
     heap_start->size = HEAP_INITIAL_SIZE - sizeof(block_t);
     heap_start->next = NULL;
     heap_start->free = 1;
+    heap_ready = 1;
 }
 
 static void split_block(block_t *b, size_t size) {
-    if (b->size < size + sizeof(block_t) + 16)
+    if (size > (size_t)-1 - sizeof(block_t) - 16 ||
+        b->size < size + sizeof(block_t) + 16)
         return;
     
     block_t *new_block = (block_t*)((char*)b + sizeof(block_t) + size);
@@ -101,7 +114,7 @@ static void merge_free_blocks(void) {
 }
 
 void *kmalloc(size_t size) {
-    if (size == 0) return NULL;
+    if (size == 0 || !heap_ready || size > (size_t)-1 - 7) return NULL;
     uint32_t eflags = heap_acquire();
     size = ALIGN_UP(size, 8);
     block_t *curr = heap_start;
@@ -116,6 +129,10 @@ void *kmalloc(size_t size) {
         }
         
         if (!curr->next) {
+            if (size > (size_t)-1 - sizeof(block_t)) {
+                heap_release(eflags);
+                return NULL;
+            }
             size_t need = size + sizeof(block_t);
             if (expand_heap(need) != 0) {
                 heap_release(eflags);
@@ -140,13 +157,14 @@ void kfree(void *ptr) {
     if (!ptr) return;
     uint32_t eflags = heap_acquire();
     block_t *b = (block_t*)((char*)ptr - sizeof(block_t));
-    
-    if ((uintptr_t)b < HEAP_START || (uintptr_t)b >= heap_end) {
+
+    block_t *curr = heap_start;
+    while (curr && curr != b) curr = curr->next;
+    if (!curr) {
         printf("Invalid free heap at %p\n", ptr);
         heap_release(eflags);
         return;
     }
-    
     if (b->free) {
         printf("Double free heap detected at %p\n", ptr);
         heap_release(eflags);

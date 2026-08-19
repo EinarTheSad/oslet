@@ -410,6 +410,7 @@ static void ehci_write32(uint32_t off, uint32_t value) {
 }
 
 static int map_mmio(uint32_t base, uint32_t bytes) {
+    if (bytes == 0 || base > UINT32_MAX - bytes - 0xFFFu) return -1;
     uint32_t start = base & 0xFFFFF000u;
     uint32_t end = (base + bytes + 0xFFFu) & 0xFFFFF000u;
 

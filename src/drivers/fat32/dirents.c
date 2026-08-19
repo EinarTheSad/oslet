@@ -227,6 +227,8 @@ int add_dir_entry(fat32_volume_t *vol, uint32_t dir_cluster, const char *name,
             set_next_cluster(vol, cluster, new_cluster);
             memset_s(cluster_buf, 0, cluster_size);
             if (write_cluster(vol, new_cluster, cluster_buf) != 0) {
+                set_next_cluster(vol, cluster, FAT32_EOC);
+                free_cluster_chain(vol, new_cluster);
                 kfree(cluster_buf);
                 return -1;
             }

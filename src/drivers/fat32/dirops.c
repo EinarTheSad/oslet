@@ -191,8 +191,7 @@ static int fat32_mkdir_unlocked(const char *path) {
     }
     
     kfree(cluster_buf);
-    sync_fat(vol);
-    return 0;
+    return sync_fat(vol);
 }
 
 static int fat32_rmdir_unlocked(const char *path) {
@@ -221,20 +220,26 @@ static int fat32_rmdir_unlocked(const char *path) {
     uint8_t *cluster_buf = kmalloc(cluster_size);
     if (!cluster_buf) return -1;
     
-    if (read_cluster(vol, target_cluster, cluster_buf) != 0) {
-        kfree(cluster_buf);
-        return -1;
-    }
-    
-    fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
     uint32_t count = cluster_size / 32;
-    
-    for (uint32_t i = 2; i < count; i++) {
-        if (entries[i].name[0] == 0x00) break;
-        if ((uint8_t)entries[i].name[0] != 0xE5 && entries[i].attr != FAT_ATTR_LFN) {
+    uint32_t cluster = target_cluster;
+    while (cluster >= 2 && cluster < FAT32_EOC) {
+        if (read_cluster(vol, cluster, cluster_buf) != 0) {
             kfree(cluster_buf);
             return -1;
         }
+        fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
+        uint32_t first = cluster == target_cluster ? 2 : 0;
+        for (uint32_t i = first; i < count; i++) {
+            if (entries[i].name[0] == 0x00) {
+                cluster = FAT32_EOC;
+                break;
+            }
+            if ((uint8_t)entries[i].name[0] != 0xE5 && entries[i].attr != FAT_ATTR_LFN) {
+                kfree(cluster_buf);
+                return -1;
+            }
+        }
+        if (cluster != FAT32_EOC) cluster = get_next_cluster(vol, cluster);
     }
     
     kfree(cluster_buf);
@@ -242,8 +247,7 @@ static int fat32_rmdir_unlocked(const char *path) {
     if (remove_dir_entry(vol, dir_cluster, dirname) != 0) return -1;
     
     free_cluster_chain(vol, target_cluster);
-    sync_fat(vol);
-    return 0;
+    return sync_fat(vol);
 }
 
 static int fat32_unlink_unlocked(const char *path) {
@@ -272,8 +276,7 @@ static int fat32_unlink_unlocked(const char *path) {
     
     if (first_cluster >= 2) free_cluster_chain(vol, first_cluster);
     
-    sync_fat(vol);
-    return 0;
+    return sync_fat(vol);
 }
 
 static int fat32_rename_unlocked(const char *oldpath, const char *newpath) {
@@ -373,8 +376,7 @@ static int fat32_rename_unlocked(const char *oldpath, const char *newpath) {
                 return -1;
             }
             
-            sync_fat(vol);
-            return 0;
+            return sync_fat(vol);
         }
         
         /* Simple 8.3 rename: just update the name in place */
@@ -392,8 +394,7 @@ static int fat32_rename_unlocked(const char *oldpath, const char *newpath) {
         }
         
         kfree(cluster_buf);
-        sync_fat(vol);
-        return 0;
+        return sync_fat(vol);
     }
     
     /* Case 2: Different directory - move entry */
@@ -409,8 +410,7 @@ static int fat32_rename_unlocked(const char *oldpath, const char *newpath) {
         return -1;
     }
     
-    sync_fat(vol);
-    return 0;
+    return sync_fat(vol);
 }
 
 static int fat32_stat_unlocked(const char *path, fat32_dirent_t *entry) {
