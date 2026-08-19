@@ -4,9 +4,14 @@ static uint32_t cluster_to_lba(fat32_volume_t *vol, uint32_t cluster) {
     return vol->first_data_sector + (cluster - 2) * vol->sectors_per_cluster;
 }
 
+static int valid_cluster(fat32_volume_t *vol, uint32_t cluster) {
+    return vol && cluster >= 2 && cluster < FAT32_EOC &&
+           cluster - 2 < vol->data_clusters;
+}
+
 uint32_t get_next_cluster(fat32_volume_t *vol, uint32_t cluster) {
     if (!vol->fat_cache) return FAT32_EOC;
-    if (cluster < 2) return FAT32_EOC;
+    if (!valid_cluster(vol, cluster)) return FAT32_EOC;
     uint32_t entries = vol->fat_cache_size / 4;
     if (cluster >= entries) return FAT32_EOC;
     uint32_t val;
@@ -15,7 +20,7 @@ uint32_t get_next_cluster(fat32_volume_t *vol, uint32_t cluster) {
 }
 
 void set_next_cluster(fat32_volume_t *vol, uint32_t cluster, uint32_t value) {
-    if (!vol->fat_cache || cluster < 2) return;
+    if (!vol->fat_cache || !valid_cluster(vol, cluster)) return;
     uint32_t entries = vol->fat_cache_size / 4;
     if (cluster >= entries) return;
     
@@ -53,7 +58,7 @@ uint32_t alloc_cluster(fat32_volume_t *vol) {
     return 0;
 }
 void free_cluster_chain(fat32_volume_t *vol, uint32_t start) {
-    if (!vol->fat_cache || start < 2) return;
+    if (!vol->fat_cache || !valid_cluster(vol, start)) return;
     uint32_t entries = vol->fat_cache_size / 4;
     uint32_t cluster = start;
     uint32_t safety = 0;
@@ -104,7 +109,9 @@ int sync_fat(fat32_volume_t *vol) {
     return 0;
 }
 int read_cluster(fat32_volume_t *vol, uint32_t cluster, void *buffer) {
-    if (cluster < 2 || cluster >= FAT32_EOC) return -1;
+    if (!buffer || !valid_cluster(vol, cluster)) return -1;
+    if (vol->first_data_sector > UINT32_MAX - (cluster - 2) * vol->sectors_per_cluster)
+        return -1;
     uint32_t lba = cluster_to_lba(vol, cluster);
     for (uint32_t i = 0; i < vol->sectors_per_cluster; i++) {
         if (ata_read_sectors(lba + i, 1, (uint8_t*)buffer + i * vol->bytes_per_sector) != 0) {
@@ -114,7 +121,9 @@ int read_cluster(fat32_volume_t *vol, uint32_t cluster, void *buffer) {
     return 0;
 }
 int write_cluster(fat32_volume_t *vol, uint32_t cluster, const void *buffer) {
-    if (cluster < 2 || cluster >= FAT32_EOC) return -1;
+    if (!buffer || !valid_cluster(vol, cluster)) return -1;
+    if (vol->first_data_sector > UINT32_MAX - (cluster - 2) * vol->sectors_per_cluster)
+        return -1;
     uint32_t lba = cluster_to_lba(vol, cluster);
 
     for (uint32_t i = 0; i < vol->sectors_per_cluster; i++) {

@@ -50,23 +50,25 @@ int exec_init(void) {
 }
 
 static int alloc_slot(void) {
-    __asm__ volatile ("cli");
+    uint32_t eflags;
+    __asm__ volatile ("pushfl\n\tpopl %0\n\tcli" : "=r"(eflags) :: "memory");
     for (int i = 0; i < MAX_PROCESS_SLOTS; i++) {
         if (!slot_used[i]) {
             slot_used[i] = 1;
-            __asm__ volatile ("sti");
+            __asm__ volatile ("pushl %0\n\tpopfl" :: "r"(eflags) : "cc", "memory");
             return i;
         }
     }
-    __asm__ volatile ("sti");
+    __asm__ volatile ("pushl %0\n\tpopfl" :: "r"(eflags) : "cc", "memory");
     return -1;
 }
 
 static void free_slot(int slot) {
     if (slot < 0 || slot >= MAX_PROCESS_SLOTS) return;
-    __asm__ volatile ("cli");
+    uint32_t eflags;
+    __asm__ volatile ("pushfl\n\tpopl %0\n\tcli" : "=r"(eflags) :: "memory");
     slot_used[slot] = 0;
-    __asm__ volatile ("sti");
+    __asm__ volatile ("pushl %0\n\tpopfl" :: "r"(eflags) : "cc", "memory");
 }
 
 static uint32_t slot_to_base(int slot) {
@@ -74,8 +76,10 @@ static uint32_t slot_to_base(int slot) {
 }
 
 static int map_region(uint32_t vaddr, uint32_t size, uint32_t flags) {
+    if (size == 0 || (uint64_t)vaddr + size > 0x100000000ULL) return -1;
     uint32_t aligned_start = vaddr & ~(PAGE_SIZE - 1);
-    uint32_t aligned_end = (vaddr + size + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint64_t end = (uint64_t)vaddr + size;
+    uint32_t aligned_end = (uint32_t)((end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1));
     
     for (uint32_t addr = aligned_start; addr < aligned_end; addr += PAGE_SIZE) {
         if (paging_is_mapped(addr)) continue;
@@ -92,10 +96,13 @@ static int map_region(uint32_t vaddr, uint32_t size, uint32_t flags) {
 }
 
 static void unmap_region(uint32_t start, uint32_t end) {
+    if (end <= start) return;
     uint32_t aligned_start = start & ~(PAGE_SIZE - 1);
-    uint32_t aligned_end = (end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    uint32_t aligned_end = (uint32_t)(((uint64_t)end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1));
     
     for (uint32_t addr = aligned_start; addr < aligned_end; addr += PAGE_SIZE) {
+        uintptr_t phys;
+        if (paging_get_physical(addr, &phys) == 0) pmm_free_frame(phys);
         paging_unmap_page(addr);
     }
 }
@@ -110,17 +117,24 @@ int elf_validate(const void *data, uint32_t size) {
     /* Accept both ET_EXEC (2) and ET_DYN (3) for PIE */
     if (ehdr->e_type != 2 && ehdr->e_type != 3) return -1;
     if (ehdr->e_machine != EM_386) return -1;
-    
+    if (ehdr->e_ehsize != sizeof(elf32_ehdr_t) ||
+        ehdr->e_phentsize != sizeof(elf32_phdr_t) ||
+        (uint64_t)ehdr->e_phoff + (uint64_t)ehdr->e_phnum * ehdr->e_phentsize > size)
+        return -1;
     return 0;
 }
 
 /* Apply relocations */
-static int apply_relocations(const void *file_data, uint32_t load_base, uint32_t elf_base) {
+static int apply_relocations(const void *file_data, uint32_t file_size,
+                             uint32_t load_base, uint32_t elf_base) {
     const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_data;
     int32_t delta = (int32_t)(load_base - elf_base);
     
     if (delta == 0) return 0;  /* No relocation needed */
-    if (ehdr->e_shoff == 0) return 0;  /* No section headers */
+    if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0) return 0;
+    if (ehdr->e_shentsize != sizeof(elf32_shdr_t) ||
+        (uint64_t)ehdr->e_shoff + (uint64_t)ehdr->e_shnum * ehdr->e_shentsize > file_size)
+        return -1;
     
     const elf32_shdr_t *shdrs = (const elf32_shdr_t *)((uint8_t *)file_data + ehdr->e_shoff);
     
@@ -128,6 +142,8 @@ static int apply_relocations(const void *file_data, uint32_t load_base, uint32_t
         const elf32_shdr_t *sh = &shdrs[i];
         
         if (sh->sh_type != SHT_REL) continue;
+        if (sh->sh_entsize != sizeof(elf32_rel_t) || sh->sh_size % sizeof(elf32_rel_t)) return -1;
+        if ((uint64_t)sh->sh_offset + sh->sh_size > file_size) return -1;
         
         const elf32_rel_t *rels = (const elf32_rel_t *)((uint8_t *)file_data + sh->sh_offset);
         int num_rels = sh->sh_size / sizeof(elf32_rel_t);
@@ -140,20 +156,21 @@ static int apply_relocations(const void *file_data, uint32_t load_base, uint32_t
                 case R_386_RELATIVE: {
                     /* *ptr += delta */
                     uint32_t *ptr = (uint32_t *)offset;
+                    if ((uint32_t)ptr < load_base || (uint32_t)ptr >= load_base + SLOT_SIZE - 4) return -1;
                     *ptr += delta;
                     break;
                 }
                 case R_386_32: {
                     /* *ptr += delta (symbol + addend, but for static we just add delta) */
                     uint32_t *ptr = (uint32_t *)offset;
+                    if ((uint32_t)ptr < load_base || (uint32_t)ptr >= load_base + SLOT_SIZE - 4) return -1;
                     *ptr += delta;
                     break;
                 }
                 case R_386_NONE:
                     break;
                 default:
-                    printf("Unknown reloc type %u\n", type);
-                    break;
+                    return -1;
             }
         }
     }
@@ -205,6 +222,18 @@ int exec_load(const char *path, exec_image_t *image) {
     
     const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_data;
     const elf32_phdr_t *phdrs = (const elf32_phdr_t *)((uint8_t *)file_data + ehdr->e_phoff);
+
+    for (int i = 0; i < ehdr->e_phnum; i++) {
+        const elf32_phdr_t *ph = &phdrs[i];
+        if (ph->p_type == PT_LOAD &&
+            (ph->p_filesz > ph->p_memsz ||
+             (uint64_t)ph->p_offset + ph->p_filesz > file_size ||
+             (uint64_t)ph->p_vaddr + ph->p_memsz > 0x100000000ULL)) {
+            free_slot(slot);
+            kfree(file_data);
+            return -1;
+        }
+    }
     
     /* Find ELF's original base address */
     uint32_t elf_base = 0xFFFFFFFF;
@@ -226,7 +255,15 @@ int exec_load(const char *path, exec_image_t *image) {
         const elf32_phdr_t *ph = &phdrs[i];
         if (ph->p_type != PT_LOAD || ph->p_memsz == 0) continue;
         
-        uint32_t vaddr = ph->p_vaddr + delta;
+        uint64_t relocated = (int64_t)(uint64_t)ph->p_vaddr + delta;
+        if (relocated < load_base || relocated >= (uint64_t)load_base + SLOT_SIZE ||
+            relocated + ph->p_memsz > (uint64_t)load_base + SLOT_SIZE) {
+            unmap_region(image->base_addr, image->end_addr);
+            free_slot(slot);
+            kfree(file_data);
+            return -1;
+        }
+        uint32_t vaddr = (uint32_t)relocated;
         uint32_t memsz = ph->p_memsz;
         uint32_t filesz = ph->p_filesz;
         
@@ -234,6 +271,7 @@ int exec_load(const char *path, exec_image_t *image) {
         if (ph->p_flags & PF_W) flags |= P_RW;
         
         if (map_region(vaddr, memsz, flags) != 0) {
+            unmap_region(image->base_addr, image->end_addr);
             free_slot(slot);
             kfree(file_data);
             return -1;
@@ -245,11 +283,16 @@ int exec_load(const char *path, exec_image_t *image) {
         }
         
         if (vaddr < image->base_addr) image->base_addr = vaddr;
-        if (vaddr + memsz > image->end_addr) image->end_addr = vaddr + memsz;
+        if ((uint64_t)vaddr + memsz > image->end_addr) image->end_addr = vaddr + memsz;
     }
     
     /* Apply relocations */
-    apply_relocations(file_data, load_base, elf_base);
+    if (apply_relocations(file_data, file_size, load_base, elf_base) != 0) {
+        unmap_region(image->base_addr, image->end_addr);
+        free_slot(slot);
+        kfree(file_data);
+        return -1;
+    }
     
     image->entry_point = ehdr->e_entry + delta;
     image->brk = image->end_addr;
@@ -284,6 +327,18 @@ int exec_run(exec_image_t *image) {
         kfree(image->file_data);
         image->file_data = NULL;
     }
+
+    task_t *child = task_find_by_tid(tid);
+    if (!child) {
+        exec_cleanup_process(image->base_addr, image->end_addr, image->slot);
+        return -1;
+    }
+    child->exec_base = image->base_addr;
+    child->exec_end = image->end_addr;
+    child->exec_slot = image->slot;
+    image->base_addr = 0;
+    image->end_addr = 0;
+    image->slot = -1;
     
     task_yield();
     return 0;

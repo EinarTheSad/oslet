@@ -45,6 +45,8 @@ typedef struct {
     uint32_t sectors_per_cluster;
     uint32_t bytes_per_sector;
     uint32_t sectors_per_fat;
+    uint32_t total_sectors;
+    uint32_t data_clusters;
     uint8_t num_fats;
     uint8_t *fat_cache;
     uint32_t fat_cache_size;

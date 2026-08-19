@@ -51,7 +51,8 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
     fat32_direntry_t entry;
     int found = find_in_dir(vol, dir_cluster, filename, &entry, NULL, NULL);
 
-    if (mode[0] == 'r' && found != 0) {
+    if ((mode[0] == 'r' && found != 0) ||
+        (mode[0] != 'r' && mode[0] != 'w' && mode[0] != 'a')) {
         fat32_release();
         return NULL;
     }
@@ -68,7 +69,11 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
                 fat32_release();
                 return NULL;
             }
-            sync_fat(vol);
+            if (sync_fat(vol) != 0) {
+                free_cluster_chain(vol, new_cluster);
+                fat32_release();
+                return NULL;
+            }
             file->first_cluster = new_cluster;
             file->size = 0;
         } else {
@@ -78,9 +83,24 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
                 free_cluster_chain(vol, next);
                 set_next_cluster(vol, first, FAT32_EOC);
             }
-            sync_fat(vol);
+            if (sync_fat(vol) != 0) {
+                fat32_release();
+                return NULL;
+            }
             file->first_cluster = first;
             file->size = 0;
+        }
+    } else if (mode[0] == 'a') {
+        if (found != 0) {
+            if (add_dir_entry(vol, dir_cluster, filename, 0, 0, FAT_ATTR_ARCHIVE) != 0) {
+                fat32_release();
+                return NULL;
+            }
+            file->first_cluster = 0;
+            file->size = 0;
+        } else {
+            file->first_cluster = ((uint32_t)entry.first_cluster_high << 16) | entry.first_cluster_low;
+            file->size = entry.file_size;
         }
     } else {
         file->first_cluster = ((uint32_t)entry.first_cluster_high << 16) | entry.first_cluster_low;
@@ -88,8 +108,17 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
     }
 
     file->current_cluster = file->first_cluster;
-    file->position = 0;
+    file->position = mode[0] == 'a' ? file->size : 0;
     file->cluster_offset = 0;
+    if (mode[0] == 'a' && file->size > 0) {
+        uint32_t skip = file->size;
+        while (skip >= vol->sectors_per_cluster * vol->bytes_per_sector &&
+               file->current_cluster >= 2 && file->current_cluster < FAT32_EOC) {
+            file->current_cluster = get_next_cluster(vol, file->current_cluster);
+            skip -= vol->sectors_per_cluster * vol->bytes_per_sector;
+        }
+        file->cluster_offset = skip;
+    }
     file->in_use = 1;
     file->drive = drive;
     file->mode = mode[0];
@@ -113,7 +142,7 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
     
     size_t bytes_read = 0;
     size_t to_read = size;
-    if (file->position + to_read > file->size)
+    if (to_read > file->size - file->position)
         to_read = file->size - file->position;
     
     size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
@@ -153,6 +182,7 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
 int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
     if (!file || !file->in_use || !buffer) return -1;
     if (file->mode != 'w' && file->mode != 'a') return -1;
+    if (size > UINT32_MAX - file->position) return -1;
     
     fat32_acquire();
     
@@ -191,6 +221,7 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
             memset_s(cluster_buf, 0, cluster_size);
             if (write_cluster(vol, new_cluster, cluster_buf) != 0) {
                 kfree(cluster_buf);
+                fat32_release();
                 return -1;
             }
         }
@@ -243,6 +274,10 @@ int fat32_seek(fat32_file_t *file, uint32_t offset) {
         fat32_release();
         return -1;
     }
+    if (offset > file->size) {
+        fat32_release();
+        return -1;
+    }
     
     file->position = offset;
     file->current_cluster = file->first_cluster;
@@ -271,7 +306,8 @@ void fat32_close(fat32_file_t *file) {
     if (file->mode == 'w' || file->mode == 'a') {
         fat32_volume_t *vol = get_volume(file->drive);
         if (vol) {
-            sync_fat(vol);
+            if (sync_fat(vol) != 0)
+                printf("Failed to sync FAT\n");
             
             uint8_t drive;
             char rest[FAT32_MAX_PATH];
@@ -290,6 +326,8 @@ void fat32_close(fat32_file_t *file) {
                                 fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
                                 uint32_t idx = offset / 32;
                                 entries[idx].file_size = file->size;
+                                entries[idx].first_cluster_high = (uint16_t)(file->first_cluster >> 16);
+                                entries[idx].first_cluster_low = (uint16_t)file->first_cluster;
 
                                 /* Update modification timestamp */
                                 uint16_t fat_time, fat_date;
