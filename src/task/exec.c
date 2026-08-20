@@ -111,16 +111,16 @@ int elf_validate(const void *data, uint32_t size) {
     if (size < sizeof(elf32_ehdr_t)) return -1;
     const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)data;
     
-    if (*(uint32_t *)ehdr->e_ident != ELF_MAGIC) return -1;
-    if (ehdr->e_ident[4] != ELFCLASS32) return -1;
-    if (ehdr->e_ident[5] != ELFDATA2LSB) return -1;
+    if (*(uint32_t *)ehdr->e_ident != ELF_MAGIC) return -2;
+    if (ehdr->e_ident[4] != ELFCLASS32) return -3;
+    if (ehdr->e_ident[5] != ELFDATA2LSB) return -4;
     /* Accept both ET_EXEC (2) and ET_DYN (3) for PIE */
-    if (ehdr->e_type != 2 && ehdr->e_type != 3) return -1;
-    if (ehdr->e_machine != EM_386) return -1;
+    if (ehdr->e_type != 2 && ehdr->e_type != 3) return -5;
+    if (ehdr->e_machine != EM_386) return -6;
     if (ehdr->e_ehsize != sizeof(elf32_ehdr_t) ||
         ehdr->e_phentsize != sizeof(elf32_phdr_t) ||
         (uint64_t)ehdr->e_phoff + (uint64_t)ehdr->e_phnum * ehdr->e_phentsize > size)
-        return -1;
+        return -7;
     return 0;
 }
 
@@ -204,8 +204,14 @@ int exec_load(const char *path, exec_image_t *image) {
         return -1;
     }
     
-    if (elf_validate(file_data, file_size) != 0) {
-        printf("Invalid ELF\n");
+    int elf_error = elf_validate(file_data, file_size);
+    if (elf_error != 0) {
+        const elf32_ehdr_t *ehdr = (const elf32_ehdr_t *)file_data;
+         printf("Invalid ELF (%d): size=%u magic=0x%x class=%u data=%u type=%u machine=%u phoff=%u phnum=%u phentsize=%u\n",
+             elf_error,
+               file_size, *(const uint32_t *)ehdr->e_ident, ehdr->e_ident[4],
+               ehdr->e_ident[5], ehdr->e_type, ehdr->e_machine, ehdr->e_phoff,
+               ehdr->e_phnum, ehdr->e_phentsize);
         kfree(file_data);
         return -1;
     }
