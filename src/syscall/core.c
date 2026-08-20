@@ -35,19 +35,26 @@ void sys_irq_restore(uint32_t eflags) {
 int sys_range_mapped(uint32_t addr, size_t size) {
     if (size == 0) return 1;
     if (!addr) return 0;
+    if (size > ((size_t)-1) - (size_t)addr) return 0;
 
-    uint32_t end = addr + (uint32_t)size - 1;
-    if (end < addr) return 0;
+    uintptr_t start = (uintptr_t)addr;
+    uintptr_t end = start + (uintptr_t)size - 1U;
+    if (end < start) return 0;
+    if (end > UINT32_MAX) return 0;
 
-    uint32_t page = addr & ~(PAGE_SIZE - 1);
-    uint32_t last = end & ~(PAGE_SIZE - 1);
+    uint32_t page = (uint32_t)(start & ~(uintptr_t)(PAGE_SIZE - 1));
+    uint32_t last = (uint32_t)(end & ~(uintptr_t)(PAGE_SIZE - 1));
     while (1) {
         if (!paging_is_mapped(page)) return 0;
         if (page == last) break;
-        if (page > 0xFFFFFFFFu - PAGE_SIZE) return 0;
+        if (page > UINT32_MAX - PAGE_SIZE) return 0;
         page += PAGE_SIZE;
     }
     return 1;
+}
+
+static int sys_range_writable(uint32_t addr, size_t size) {
+    return sys_range_mapped(addr, size);
 }
 
 int sys_copy_string(char *dst, uint32_t src, size_t dst_size) {
@@ -1071,18 +1078,80 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
     }
 }
 
+typedef struct {
+    void *ptr;
+    size_t size;
+    uint32_t owner_tid;
+    int live;
+} user_alloc_t;
+
+static user_alloc_t user_allocs[256];
+
+static user_alloc_t *user_alloc_lookup(void *ptr) {
+    for (int i = 0; i < (int)(sizeof(user_allocs) / sizeof(user_allocs[0])); i++) {
+        if (user_allocs[i].live && user_allocs[i].ptr == ptr) return &user_allocs[i];
+    }
+    return NULL;
+}
+
+static int user_alloc_register(void *ptr, size_t size, uint32_t owner_tid) {
+    if (!ptr || size == 0) return -1;
+    for (int i = 0; i < (int)(sizeof(user_allocs) / sizeof(user_allocs[0])); i++) {
+        if (!user_allocs[i].live) {
+            user_allocs[i].ptr = ptr;
+            user_allocs[i].size = size;
+            user_allocs[i].owner_tid = owner_tid;
+            user_allocs[i].live = 1;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static void user_alloc_unregister(void *ptr) {
+    user_alloc_t *slot = user_alloc_lookup(ptr);
+    if (!slot) return;
+    slot->ptr = NULL;
+    slot->size = 0;
+    slot->owner_tid = 0;
+    slot->live = 0;
+}
+
+void user_alloc_cleanup_task(uint32_t tid) {
+    for (int i = 0; i < (int)(sizeof(user_allocs) / sizeof(user_allocs[0])); i++) {
+        if (user_allocs[i].live && user_allocs[i].owner_tid == tid) {
+            if (user_allocs[i].ptr) kfree(user_allocs[i].ptr);
+            user_alloc_unregister(user_allocs[i].ptr);
+        }
+    }
+}
+
 static uint32_t handle_memory(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx) {
     (void)ecx; (void)edx;
-    
+    task_t *current = task_get_current();
+
     switch (al) {
         case 0x00: {
-            void *ptr = kmalloc((size_t)ebx);
-            return (uint32_t)ptr;
+            size_t len = (size_t)ebx;
+            if (len == 0 || len > (size_t)-1 - 8) return (uint32_t)-1;
+            void *ptr = kmalloc(len);
+            if (!ptr) return (uint32_t)-1;
+            if (current && user_alloc_register(ptr, len, current->tid) != 0) {
+                kfree(ptr);
+                return (uint32_t)-1;
+            }
+            return (uint32_t)(uintptr_t)ptr;
         }
             
-        case 0x01:
-            kfree((void*)ebx);
+        case 0x01: {
+            if (!ebx || !sys_range_writable((uint32_t)ebx, 1)) return (uint32_t)-1;
+            if (!current) return (uint32_t)-1;
+            user_alloc_t *slot = user_alloc_lookup((void*)(uintptr_t)ebx);
+            if (!slot || !slot->live || slot->owner_tid != current->tid) return (uint32_t)-1;
+            kfree(slot->ptr);
+            user_alloc_unregister(slot->ptr);
             return 0;
+        }
             
         default:
             return (uint32_t)-1;
@@ -1540,14 +1609,16 @@ static uint32_t handle_vconsole(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_
         }
         case 0x01: { /* SYS_VC_DESTROY */
             vconsole_t *vc = (vconsole_t*)ebx;
-            if (!vc) return (uint32_t)-1;
+            if (!vc || !sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (!cur || vc->owner_tid != cur->tid) return (uint32_t)-1;
             vc_destroy(vc);
             return 0;
         }
         case 0x02: { /* SYS_VC_ATTACH */
             vconsole_t *vc = (vconsole_t*)ebx;
             uint32_t tid = (uint32_t)ecx;
-            if (!vc) return (uint32_t)-1;
+            if (!cur || !vc || !sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (vc->owner_tid != cur->tid) return (uint32_t)-1;
             task_t *t = task_find_by_tid(tid);
             if (!t) return (uint32_t)-1;
             t->vconsole = (struct vconsole *)vc;
@@ -1555,7 +1626,10 @@ static uint32_t handle_vconsole(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_
         }
         case 0x03: { /* SYS_VC_READ */
             vconsole_t *vc = (vconsole_t*)ebx;
-            if (!vc || !ecx) return (uint32_t)-1;
+            if (!cur || !vc || !ecx) return (uint32_t)-1;
+            if (!sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (!sys_range_writable((uint32_t)ecx, sizeof(sys_vc_screen_t))) return (uint32_t)-1;
+            if (vc->owner_tid != cur->tid && vc->owner_tid != 0) return (uint32_t)-1;
             uint8_t *dst = (uint8_t*)ecx;
             memcpy_s(dst, vc->chars, VC_ROWS * VC_COLS);
             memcpy_s(dst + VC_ROWS * VC_COLS, vc->attrs, VC_ROWS * VC_COLS);
@@ -1566,13 +1640,15 @@ static uint32_t handle_vconsole(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_
         }
         case 0x04: { /* SYS_VC_SEND_KEY */
             vconsole_t *vc = (vconsole_t*)ebx;
-            if (!vc) return (uint32_t)-1;
+            if (!cur || !vc || !sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (vc->owner_tid != cur->tid) return (uint32_t)-1;
             vc_send_key(vc, (uint8_t)ecx);
             return 0;
         }
         case 0x05: { /* SYS_VC_DIRTY */
             vconsole_t *vc = (vconsole_t*)ebx;
-            if (!vc) return 0;
+            if (!cur || !vc || !sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (vc->owner_tid != cur->tid) return (uint32_t)-1;
             uint8_t was = vc->dirty;
             vc->dirty = 0;
             return was;
