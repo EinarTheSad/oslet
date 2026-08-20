@@ -245,7 +245,8 @@ int kbd_peek_nonblock(void) {
 size_t kbd_getline(char* out, size_t maxlen) {
     size_t n = 0;       /* Length of text */
     size_t cursor = 0;  /* Cursor position */
-    if (maxlen == 0) return 0;
+    if (!out || maxlen == 0) return 0;
+    if (maxlen > HISTORY_MAXLEN - 1) maxlen = HISTORY_MAXLEN - 1;
 
     int browsing = 0;
     int browse_idx = history_count;
@@ -484,6 +485,7 @@ size_t kbd_getline(char* out, size_t maxlen) {
         
         if (save) {
             int idx = history_count % HISTORY_SIZE;
+            if (n >= HISTORY_MAXLEN) n = HISTORY_MAXLEN - 1;
             memcpy_s(cmd_history[idx], out, n);
             cmd_history[idx][n] = '\0';
             if (history_count < HISTORY_SIZE) {
