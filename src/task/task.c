@@ -8,8 +8,10 @@
 #include "exec.h"
 
 extern int gfx_is_active(void);
+extern void user_alloc_cleanup_task(uint32_t tid);
+extern void vc_detach_for_task(uint32_t tid);
 
-static task_t *task_list = NULL;
+task_t *task_list = NULL;
 static task_t *current_task = NULL;
 static uint32_t next_tid = 0;
 static volatile int tasking_enabled = 0;
@@ -209,6 +211,12 @@ static void cleanup_terminated_tasks(void) {
             task_t *to_free = curr;
             prev->next = curr->next;
             curr = curr->next;
+
+            extern void user_alloc_cleanup_task(uint32_t tid);
+            user_alloc_cleanup_task(to_free->tid);
+
+            extern void vc_detach_for_task(uint32_t tid);
+            vc_detach_for_task(to_free->tid);
 
             /* Clean up file descriptors owned by this task */
             extern void fd_cleanup_task(uint32_t tid);
