@@ -4,6 +4,53 @@
 #include "task/task.h"
 #include "drivers/keyboard.h"
 
+static vconsole_t *vc_registry[64];
+
+static int vc_is_registered(vconsole_t *vc) {
+    if (!vc) return 0;
+    for (int i = 0; i < 64; i++) {
+        if (vc_registry[i] == vc) return 1;
+    }
+    return 0;
+}
+
+static void vc_register(vconsole_t *vc) {
+    if (!vc || vc_is_registered(vc)) return;
+    for (int i = 0; i < 64; i++) {
+        if (!vc_registry[i]) {
+            vc_registry[i] = vc;
+            return;
+        }
+    }
+}
+
+static void vc_unregister(vconsole_t *vc) {
+    if (!vc) return;
+    for (int i = 0; i < 64; i++) {
+        if (vc_registry[i] == vc) {
+            vc_registry[i] = NULL;
+            return;
+        }
+    }
+}
+
+int vc_is_owned_by(vconsole_t *vc, uint32_t tid) {
+    return vc && vc_is_registered(vc) && vc->owner_tid == tid;
+}
+
+void vc_detach_for_task(uint32_t tid) {
+    extern task_t *task_list;
+    if (!task_list) return;
+    task_t *t = task_list;
+    do {
+        if (t->tid == tid) {
+            t->vconsole = NULL;
+            break;
+        }
+        t = t->next;
+    } while (t != task_list);
+}
+
 vconsole_t *vc_create(uint32_t owner_tid) {
     vconsole_t *vc = (vconsole_t *)kmalloc(sizeof(vconsole_t));
     if (!vc) return NULL;
@@ -11,6 +58,7 @@ vconsole_t *vc_create(uint32_t owner_tid) {
     vc->color = 0x07;
     vc->owner_tid = owner_tid;
     vc->active = 1;
+    vc_register(vc);
     for (int i = 0; i < VC_ROWS * VC_COLS; i++) {
         vc->chars[i] = ' ';
         vc->attrs[i] = vc->color;
@@ -19,8 +67,10 @@ vconsole_t *vc_create(uint32_t owner_tid) {
 }
 
 void vc_destroy(vconsole_t *vc) {
-    if (!vc) return;
+    if (!vc || !vc_is_registered(vc)) return;
+    vc_detach_for_task(vc->owner_tid);
     vc->active = 0;
+    vc_unregister(vc);
     kfree(vc);
 }
 
@@ -103,7 +153,8 @@ int vc_getchar(vconsole_t *vc) {
 size_t vc_getline(vconsole_t *vc, char *buf, size_t maxlen) {
     size_t n = 0;
     size_t cursor = 0;
-    if (maxlen == 0) return 0;
+    if (!vc || !buf || maxlen == 0) return 0;
+    if (maxlen > VC_HISTORY_MAXLEN - 1) maxlen = VC_HISTORY_MAXLEN - 1;
 
     int browsing = 0;
     int browse_idx = vc->history_count;
@@ -233,6 +284,7 @@ size_t vc_getline(vconsole_t *vc, char *buf, size_t maxlen) {
         }
         if (save) {
             int idx = vc->history_count % VC_HISTORY_SIZE;
+            if (n >= VC_HISTORY_MAXLEN) n = VC_HISTORY_MAXLEN - 1;
             memcpy_s(vc->history[idx], buf, n);
             vc->history[idx][n] = '\0';
             if (vc->history_count < VC_HISTORY_SIZE) vc->history_count++;
