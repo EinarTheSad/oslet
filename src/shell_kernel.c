@@ -41,14 +41,23 @@ int bootscreen(void) {
 }
 
 void shell_init(void) {
+    int shell_result;
     if (bootscr == 1) {
         bootscreen();
     }
     vga_set_color(0, 8);
     printf("Loading %s...\n",shell_name);  
-    if (task_spawn_and_wait(shell_name, "") != 0) {
+    shell_result = task_spawn_and_wait(shell_name, "");
+    if (shell_result != 0 && strcasecmp_s(shell_name, "C:/SHELL.ELF") != 0 &&
+        strcasecmp_s(shell_name, "SHELL.ELF") != 0) {
+        /* A broken optional/configured desktop must not prevent the basic
+           shell from providing maintenance access. */
+        printf("Configured shell failed; trying C:/SHELL.ELF...\n");
+        shell_result = task_spawn_and_wait("C:/SHELL.ELF", "");
+    }
+    if (shell_result != 0) {
         vga_set_color(0, 12);
-        printf("PANIC: Failed to load %s. System halt.\n",shell_name);
+        printf("PANIC: Failed to load configured shell and fallback shell. System halt.\n");
         for (;;) __asm__ volatile ("hlt");
     }
 }

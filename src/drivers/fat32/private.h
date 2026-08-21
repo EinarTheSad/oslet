@@ -91,6 +91,7 @@ uint16_t rtc_to_fat_time(const rtc_time_t *rtc);
 uint16_t rtc_to_fat_date(const rtc_time_t *rtc);
 void get_fat_timestamp(uint16_t *time, uint16_t *date);
 uint8_t lfn_checksum(const char *short_name);
+int lfn_matches_short_name(const char *long_name, const char *short_name);
 void utf16_to_ascii(const uint16_t *src, char *dst, int max_chars);
 void ascii_to_utf16(const char *src, uint16_t *dst, int max_chars);
 int parse_path(const char *path, uint8_t *drive, char *rest, size_t rest_size);

@@ -1,5 +1,93 @@
 #include "private.h"
 
+static int dirop_cluster_valid(const fat32_volume_t *vol, uint32_t cluster) {
+    return vol && cluster >= 2 && cluster < FAT32_EOC &&
+           cluster - 2 < vol->data_clusters;
+}
+
+static int dirop_dot_entry(const fat32_direntry_t *entry, int parent) {
+    if (!entry || !(entry->attr & FAT_ATTR_DIRECTORY) || entry->name[0] != '.')
+        return 0;
+    if (entry->name[1] != (parent ? '.' : ' ')) return 0;
+    for (int i = 2; i < 11; i++) {
+        if (entry->name[i] != ' ') return 0;
+    }
+    return 1;
+}
+
+static int directory_parent(fat32_volume_t *vol, uint32_t cluster,
+                             uint32_t *parent) {
+    size_t cluster_size;
+    uint8_t *buffer;
+    fat32_direntry_t *entries;
+    if (!vol || !parent || !dirop_cluster_valid(vol, cluster) ||
+        vol->sectors_per_cluster == 0 || vol->bytes_per_sector == 0 ||
+        vol->sectors_per_cluster > UINT32_MAX / vol->bytes_per_sector)
+        return -1;
+    cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
+    if (cluster_size < 2 * sizeof(fat32_direntry_t)) return -1;
+    buffer = kmalloc(cluster_size);
+    if (!buffer) return -1;
+    if (read_cluster(vol, cluster, buffer) != 0) {
+        kfree(buffer);
+        return -1;
+    }
+    entries = (fat32_direntry_t*)buffer;
+    if (!dirop_dot_entry(&entries[1], 1)) {
+        kfree(buffer);
+        return -1;
+    }
+    *parent = ((uint32_t)entries[1].first_cluster_high << 16) |
+              entries[1].first_cluster_low;
+    if (*parent == 0) *parent = vol->root_cluster;
+    if (!dirop_cluster_valid(vol, *parent)) {
+        kfree(buffer);
+        return -1;
+    }
+    kfree(buffer);
+    return 0;
+}
+
+static int directory_contains(fat32_volume_t *vol, uint32_t directory,
+                               uint32_t target) {
+    uint32_t current = directory;
+    for (uint32_t count = 0; count <= vol->data_clusters; count++) {
+        if (current == target) return 1;
+        if (current == vol->root_cluster) return 0;
+        if (directory_parent(vol, current, &current) != 0) return -1;
+    }
+    return -1;
+}
+
+static int update_directory_parent(fat32_volume_t *vol, uint32_t directory,
+                                    uint32_t parent) {
+    size_t cluster_size;
+    uint8_t *buffer;
+    fat32_direntry_t *entries;
+    if (!dirop_cluster_valid(vol, directory) || !dirop_cluster_valid(vol, parent) ||
+        vol->sectors_per_cluster == 0 || vol->bytes_per_sector == 0 ||
+        vol->sectors_per_cluster > UINT32_MAX / vol->bytes_per_sector)
+        return -1;
+    cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
+    if (cluster_size < 2 * sizeof(fat32_direntry_t)) return -1;
+    buffer = kmalloc(cluster_size);
+    if (!buffer) return -1;
+    if (read_cluster(vol, directory, buffer) != 0) {
+        kfree(buffer);
+        return -1;
+    }
+    entries = (fat32_direntry_t*)buffer;
+    if (!dirop_dot_entry(&entries[0], 0) || !dirop_dot_entry(&entries[1], 1)) {
+        kfree(buffer);
+        return -1;
+    }
+    entries[1].first_cluster_high = (uint16_t)(parent >> 16);
+    entries[1].first_cluster_low = (uint16_t)parent;
+    int result = write_cluster(vol, directory, buffer);
+    kfree(buffer);
+    return result;
+}
+
 static int fat32_list_dir_unlocked(const char *path, fat32_dirent_t *entries, int max_entries) {
     if (!entries || max_entries <= 0) return -1;
 
@@ -91,7 +179,8 @@ static int fat32_list_dir_unlocked(const char *path, fat32_dirent_t *entries, in
             
             memset_s(entries[count].name, 0, sizeof(entries[count].name));
             
-            if (lfn_valid && lfn_checksum(dir_entries[i].name) == lfn_checksum_val) {
+            if (lfn_valid && lfn_checksum(dir_entries[i].name) == lfn_checksum_val &&
+                lfn_matches_short_name(lfn_buffer, dir_entries[i].name)) {
                 strcpy_s(entries[count].name, lfn_buffer, sizeof(entries[count].name));
             } else {
                 int j = 0;
@@ -215,6 +304,8 @@ static int fat32_rmdir_unlocked(const char *path) {
     if (!(entry.attr & FAT_ATTR_DIRECTORY)) return -1;
     
     uint32_t target_cluster = ((uint32_t)entry.first_cluster_high << 16) | entry.first_cluster_low;
+    if (target_cluster < 2 || target_cluster >= FAT32_EOC ||
+        target_cluster - 2 >= vol->data_clusters) return -1;
     
     size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
     uint8_t *cluster_buf = kmalloc(cluster_size);
@@ -222,24 +313,43 @@ static int fat32_rmdir_unlocked(const char *path) {
     
     uint32_t count = cluster_size / 32;
     uint32_t cluster = target_cluster;
+    uint32_t traversed = 0;
     while (cluster >= 2 && cluster < FAT32_EOC) {
+        if (cluster - 2 >= vol->data_clusters || traversed++ >= vol->data_clusters) {
+            kfree(cluster_buf);
+            return -1;
+        }
         if (read_cluster(vol, cluster, cluster_buf) != 0) {
             kfree(cluster_buf);
             return -1;
         }
         fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
-        uint32_t first = cluster == target_cluster ? 2 : 0;
-        for (uint32_t i = first; i < count; i++) {
-            if (entries[i].name[0] == 0x00) {
-                cluster = FAT32_EOC;
-                break;
+        for (uint32_t i = 0; i < count; i++) {
+            if (entries[i].name[0] == 0x00 ||
+                (uint8_t)entries[i].name[0] == 0xE5 ||
+                entries[i].attr == FAT_ATTR_LFN) continue;
+
+            int is_dot = dirop_dot_entry(&entries[i], 0);
+            int is_dotdot = dirop_dot_entry(&entries[i], 1);
+            if (is_dot || is_dotdot) {
+                if (!is_dot && !is_dotdot) {
+                    kfree(cluster_buf);
+                    return -1;
+                }
+                continue;
             }
-            if ((uint8_t)entries[i].name[0] != 0xE5 && entries[i].attr != FAT_ATTR_LFN) {
+
+            {
                 kfree(cluster_buf);
                 return -1;
             }
         }
-        if (cluster != FAT32_EOC) cluster = get_next_cluster(vol, cluster);
+        cluster = get_next_cluster(vol, cluster);
+        if (cluster != FAT32_EOC &&
+            (cluster < 2 || cluster - 2 >= vol->data_clusters)) {
+            kfree(cluster_buf);
+            return -1;
+        }
     }
     
     kfree(cluster_buf);
@@ -398,8 +508,19 @@ static int fat32_rename_unlocked(const char *oldpath, const char *newpath) {
     }
     
     /* Case 2: Different directory - move entry */
+    if (attr & FAT_ATTR_DIRECTORY) {
+        int descendant = directory_contains(vol, new_dir_cluster, first_cluster);
+        if (descendant != 0) return -1;
+    }
+
     /* Create new entry in destination directory */
     if (add_dir_entry(vol, new_dir_cluster, new_filename, first_cluster, file_size, attr) != 0) {
+        return -1;
+    }
+
+    if ((attr & FAT_ATTR_DIRECTORY) &&
+        update_directory_parent(vol, first_cluster, new_dir_cluster) != 0) {
+        remove_dir_entry(vol, new_dir_cluster, new_filename);
         return -1;
     }
     
@@ -407,6 +528,8 @@ static int fat32_rename_unlocked(const char *oldpath, const char *newpath) {
     if (remove_dir_entry(vol, old_dir_cluster, old_filename) != 0) {
         /* Try to remove the newly created entry if we fail to remove old one */
         remove_dir_entry(vol, new_dir_cluster, new_filename);
+        if (attr & FAT_ATTR_DIRECTORY)
+            update_directory_parent(vol, first_cluster, old_dir_cluster);
         return -1;
     }
     
@@ -453,7 +576,9 @@ static int fat32_stat_unlocked(const char *path, fat32_dirent_t *entry) {
 
 static char* fat32_getcwd_unlocked(char *buf, size_t size) {
     if (!buf || size == 0) return NULL;
-    strcpy_s(buf, current_dir, size);
+    task_t *task = task_get_current();
+    if (task) strcpy_s(buf, task->cwd, size);
+    else strcpy_s(buf, current_dir, size);
     return buf;
 }
 
@@ -477,19 +602,23 @@ static int fat32_chdir_unlocked(const char *path) {
         if (!(entry.attr & FAT_ATTR_DIRECTORY)) return -1;
     }
     
-    current_dir[0] = drive;
-    current_dir[1] = ':';
-    current_dir[2] = '/';
+    task_t *task = task_get_current();
+    char *cwd = task ? task->cwd : current_dir;
+    cwd[0] = drive;
+    cwd[1] = ':';
+    cwd[2] = '/';
     
     if (rest[0] == '\0' || strcmp_s(rest, "/") == 0) {
-        current_dir[3] = '\0';
+        cwd[3] = '\0';
     } else {
-        strcpy_s(current_dir + 3, rest, sizeof(current_dir) - 3);
-        size_t len = strlen_s(current_dir);
-        if (len > 0 && current_dir[len-1] != '/') {
-            if (len < sizeof(current_dir) - 1) {
-                current_dir[len] = '/';
-                current_dir[len+1] = '\0';
+        size_t rest_len = strlen_s(rest);
+        if (rest_len + 4 >= TASK_CWD_SIZE) return -1;
+        memcpy_s(cwd + 3, rest, rest_len + 1);
+        size_t len = strlen_s(cwd);
+        if (len > 0 && cwd[len-1] != '/') {
+            if (len < TASK_CWD_SIZE - 1) {
+                cwd[len] = '/';
+                cwd[len+1] = '\0';
             }
         }
     }

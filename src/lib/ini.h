@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stddef.h>
+
 #define INI_MAX_LINE 256
 
 typedef struct {
@@ -13,10 +15,15 @@ void ini_init(ini_parser_t *ini, char *buffer);
 
 /* Read next key-value pair. Returns 1 if found, 0 if end of file.
  * section, key, value are filled with current values. */
-int ini_next(ini_parser_t *ini, char *section, char *key, char *value);
+int ini_next(ini_parser_t *ini, char *section, size_t section_size,
+             char *key, size_t key_size, char *value, size_t value_size);
 
-/* Get value for key in section. Returns NULL if not found.
- * Restarts parsing from beginning. */
+/* Bounded lookup into caller-owned storage. Returns 0 if found, -1 otherwise. */
+int ini_get_into(ini_parser_t *ini, const char *section, const char *key,
+                 char *value, size_t value_size);
+
+/* Compatibility lookup. The returned pointer is shared and overwritten by
+ * the next ini_get() call. Prefer ini_get_into(). */
 const char* ini_get(ini_parser_t *ini, const char *section, const char *key);
 
 /* Get integer value. Returns default_val if not found or invalid. */
