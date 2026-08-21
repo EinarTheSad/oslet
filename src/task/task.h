@@ -5,6 +5,7 @@
 struct vconsole;
 
 #define TASK_STACK_SIZE 65536
+#define TASK_CWD_SIZE 256
 
 typedef enum {
     TASK_READY,
@@ -39,6 +40,7 @@ typedef struct task {
     int exec_slot;
     char icon_path[64];
     char args[256];
+    char cwd[TASK_CWD_SIZE];
     struct vconsole *vconsole;
     struct task *next;
 } task_t;

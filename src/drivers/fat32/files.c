@@ -1,5 +1,19 @@
 #include "private.h"
 
+static int file_cluster_size(const fat32_volume_t *vol, uint32_t *size) {
+    if (!vol || !size || vol->sectors_per_cluster == 0 ||
+        vol->bytes_per_sector == 0 ||
+        vol->sectors_per_cluster > UINT32_MAX / vol->bytes_per_sector) return -1;
+    *size = vol->sectors_per_cluster * vol->bytes_per_sector;
+    return *size ? 0 : -1;
+}
+
+static int file_cluster_valid(const fat32_volume_t *vol, uint32_t cluster) {
+    return cluster == FAT32_EOC ||
+           (cluster >= 2 && cluster < FAT32_EOC &&
+            cluster - 2 < vol->data_clusters);
+}
+
 fat32_file_t* fat32_open(const char *path, const char *mode) {
     if (!path || !mode) return NULL;
 
@@ -111,11 +125,25 @@ fat32_file_t* fat32_open(const char *path, const char *mode) {
     file->position = mode[0] == 'a' ? file->size : 0;
     file->cluster_offset = 0;
     if (mode[0] == 'a' && file->size > 0) {
+        uint32_t cluster_size;
+        if (file_cluster_size(vol, &cluster_size) != 0 ||
+            !file_cluster_valid(vol, file->current_cluster)) {
+            fat32_release();
+            return NULL;
+        }
         uint32_t skip = file->size;
-        while (skip >= vol->sectors_per_cluster * vol->bytes_per_sector &&
+        while (skip >= cluster_size &&
                file->current_cluster >= 2 && file->current_cluster < FAT32_EOC) {
             file->current_cluster = get_next_cluster(vol, file->current_cluster);
-            skip -= vol->sectors_per_cluster * vol->bytes_per_sector;
+            if (!file_cluster_valid(vol, file->current_cluster) && skip > cluster_size) {
+                fat32_release();
+                return NULL;
+            }
+            skip -= cluster_size;
+        }
+        if (skip >= cluster_size) {
+            fat32_release();
+            return NULL;
         }
         file->cluster_offset = skip;
     }
@@ -144,8 +172,17 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
     size_t to_read = size;
     if (to_read > file->size - file->position)
         to_read = file->size - file->position;
+    if (to_read > 0x7FFFFFFFUL) {
+        fat32_release();
+        return -1;
+    }
     
-    size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
+    uint32_t cluster_size;
+    if (file_cluster_size(vol, &cluster_size) != 0 ||
+        file->cluster_offset >= cluster_size) {
+        fat32_release();
+        return -1;
+    }
     uint8_t *cluster_buf = kmalloc(cluster_size);
     if (!cluster_buf) {
         fat32_release();
@@ -161,6 +198,11 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
         
         uint32_t available = cluster_size - file->cluster_offset;
         uint32_t chunk = (to_read < available) ? (uint32_t)to_read : available;
+        if (bytes_read > 0x7FFFFFFFUL - chunk) {
+            kfree(cluster_buf);
+            fat32_release();
+            return -1;
+        }
         
         memcpy_s((uint8_t*)buffer + bytes_read, cluster_buf + file->cluster_offset, chunk);
         bytes_read += chunk;
@@ -170,6 +212,11 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
         
         if (file->cluster_offset >= cluster_size) {
             file->current_cluster = get_next_cluster(vol, file->current_cluster);
+            if (!file_cluster_valid(vol, file->current_cluster)) {
+                kfree(cluster_buf);
+                fat32_release();
+                return -1;
+            }
             file->cluster_offset = 0;
         }
     }
@@ -183,6 +230,7 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
     if (!file || !file->in_use || !buffer) return -1;
     if (file->mode != 'w' && file->mode != 'a') return -1;
     if (size > UINT32_MAX - file->position) return -1;
+    if (size > 0x7FFFFFFFUL) return -1;
     
     fat32_acquire();
     
@@ -193,7 +241,12 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
     }
     
     size_t bytes_written = 0;
-    size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
+    uint32_t cluster_size;
+    if (file_cluster_size(vol, &cluster_size) != 0 ||
+        file->cluster_offset >= cluster_size) {
+        fat32_release();
+        return -1;
+    }
     uint8_t *cluster_buf = kmalloc(cluster_size);
     if (!cluster_buf) {
         fat32_release();
@@ -212,6 +265,12 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
                 uint32_t last = file->first_cluster;
                 uint32_t next;
                 while ((next = get_next_cluster(vol, last)) < FAT32_EOC) {
+                    if (!file_cluster_valid(vol, next)) {
+                        free_cluster_chain(vol, new_cluster);
+                        kfree(cluster_buf);
+                        fat32_release();
+                        return -1;
+                    }
                     last = next;
                 }
                 set_next_cluster(vol, last, new_cluster);
@@ -236,6 +295,11 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
         
         uint32_t available = cluster_size - file->cluster_offset;
         uint32_t chunk = (size < available) ? (uint32_t)size : available;
+        if (bytes_written > 0x7FFFFFFFUL - chunk) {
+            kfree(cluster_buf);
+            fat32_release();
+            return -1;
+        }
         
         memcpy_s(cluster_buf + file->cluster_offset, (const uint8_t*)buffer + bytes_written, chunk);
         
@@ -252,6 +316,11 @@ int fat32_write(fat32_file_t *file, const void *buffer, size_t size) {
         
         if (file->cluster_offset >= cluster_size) {
             file->current_cluster = get_next_cluster(vol, file->current_cluster);
+            if (!file_cluster_valid(vol, file->current_cluster)) {
+                kfree(cluster_buf);
+                fat32_release();
+                return -1;
+            }
             file->cluster_offset = 0;
         }
     }
@@ -283,12 +352,24 @@ int fat32_seek(fat32_file_t *file, uint32_t offset) {
     file->current_cluster = file->first_cluster;
     file->cluster_offset = 0;
     
-    uint32_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
+    uint32_t cluster_size;
+    if (file_cluster_size(vol, &cluster_size) != 0) {
+        fat32_release();
+        return -1;
+    }
     while (offset >= cluster_size && file->current_cluster < FAT32_EOC) {
         file->current_cluster = get_next_cluster(vol, file->current_cluster);
+        if (!file_cluster_valid(vol, file->current_cluster)) {
+            fat32_release();
+            return -1;
+        }
         offset -= cluster_size;
     }
     
+    if (offset >= cluster_size) {
+        fat32_release();
+        return -1;
+    }
     file->cluster_offset = offset;
     fat32_release();
     return 0;
@@ -319,28 +400,32 @@ void fat32_close(fat32_file_t *file) {
                     uint32_t cluster, offset;
                     
                     if (find_in_dir(vol, dir_cluster, filename, &entry, &cluster, &offset) == 0) {
-                        size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
-                        uint8_t *cluster_buf = kmalloc(cluster_size);
-                        if (cluster_buf) {
-                            if (read_cluster(vol, cluster, cluster_buf) == 0) {
-                                fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
-                                uint32_t idx = offset / 32;
-                                entries[idx].file_size = file->size;
-                                entries[idx].first_cluster_high = (uint16_t)(file->first_cluster >> 16);
-                                entries[idx].first_cluster_low = (uint16_t)file->first_cluster;
+                        uint32_t cluster_size;
+                        if (file_cluster_size(vol, &cluster_size) != 0) {
+                            printf("Invalid FAT cluster size while closing file\n");
+                        } else {
+                            uint8_t *cluster_buf = kmalloc(cluster_size);
+                            if (cluster_buf) {
+                                if (read_cluster(vol, cluster, cluster_buf) == 0) {
+                                    fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
+                                    uint32_t idx = offset / 32;
+                                    entries[idx].file_size = file->size;
+                                    entries[idx].first_cluster_high = (uint16_t)(file->first_cluster >> 16);
+                                    entries[idx].first_cluster_low = (uint16_t)file->first_cluster;
 
-                                /* Update modification timestamp */
-                                uint16_t fat_time, fat_date;
-                                get_fat_timestamp(&fat_time, &fat_date);
-                                entries[idx].modified_time = fat_time;
-                                entries[idx].modified_date = fat_date;
-                                entries[idx].accessed_date = fat_date;
+                                    /* Update modification timestamp */
+                                    uint16_t fat_time, fat_date;
+                                    get_fat_timestamp(&fat_time, &fat_date);
+                                    entries[idx].modified_time = fat_time;
+                                    entries[idx].modified_date = fat_date;
+                                    entries[idx].accessed_date = fat_date;
 
-                                if (write_cluster(vol, cluster, cluster_buf) != 0) {
-                                    printf("Failed to write directory entry\n");
+                                    if (write_cluster(vol, cluster, cluster_buf) != 0) {
+                                        printf("Failed to write directory entry\n");
+                                    }
                                 }
+                                kfree(cluster_buf);
                             }
-                            kfree(cluster_buf);
                         }
                     }
                 }

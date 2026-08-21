@@ -89,10 +89,26 @@ static int find_value(const char *buf, int len, const char *key, char *out, int 
             if (c == '\0' || c == '\r' || c == '\n') break;
             out[out_pos++] = c;
         }
+        if (pos < len && buf[pos] != '\0' && buf[pos] != '\r' && buf[pos] != '\n') {
+            out[0] = '\0';
+            return -1;
+        }
         out[out_pos] = '\0';
         if (out_pos > 0)
             return 1;
     }
+    return 0;
+}
+
+static int copy_metadata(char *dst, int dst_len, const char *src) {
+    int len;
+    if (!dst || !src || dst_len <= 0) return -1;
+    len = strlen(src);
+    if (len >= dst_len) {
+        dst[0] = '\0';
+        return -1;
+    }
+    memcpy(dst, src, len + 1);
     return 0;
 }
 
@@ -132,8 +148,8 @@ int oslet_app_read_info(const char *path, oslet_app_info_t *info) {
 
     if (filename_is(path, "DESKTOP.ELF")) {
         info->kind = OSLET_APP_DESKTOP_BOOTSTRAP;
-        strcpy(info->name, "Desktop");
-        strcpy(info->icon_path, "C:/ICONS/OSLET.ICO");
+        copy_metadata(info->name, sizeof(info->name), "Desktop");
+        copy_metadata(info->icon_path, sizeof(info->icon_path), "C:/ICONS/OSLET.ICO");
     }
 
     fd = sys_open(path, "r");
@@ -146,8 +162,8 @@ int oslet_app_read_info(const char *path, oslet_app_info_t *info) {
     while ((n = sys_read(fd, buf + carry, INFO_READ_SIZE)) > 0) {
         int total = carry + n;
 
-        if (!info->name[0] && find_value(buf, total, "OSLET:NAME=", tmp, sizeof(tmp))) {
-            strcpy(info->name, tmp);
+        if (!info->name[0] && find_value(buf, total, "OSLET:NAME=", tmp, sizeof(tmp)) > 0) {
+            copy_metadata(info->name, sizeof(info->name), tmp);
             saw_metadata = 1;
         }
 
@@ -156,8 +172,8 @@ int oslet_app_read_info(const char *path, oslet_app_info_t *info) {
             saw_metadata = 1;
         }
 
-        if (!info->icon_path[0] && find_value(buf, total, "OSLET:ICON=", tmp, sizeof(tmp))) {
-            strcpy(info->icon_path, tmp);
+        if (!info->icon_path[0] && find_value(buf, total, "OSLET:ICON=", tmp, sizeof(tmp)) > 0) {
+            copy_metadata(info->icon_path, sizeof(info->icon_path), tmp);
             saw_metadata = 1;
         }
 
@@ -187,7 +203,7 @@ int oslet_app_read_info(const char *path, oslet_app_info_t *info) {
 
     if (!info->name[0]) copy_filename_title(info->name, sizeof(info->name), path);
     if (info->kind == OSLET_APP_UNKNOWN) info->kind = OSLET_APP_AGIX;
-    if (!info->icon_path[0]) strcpy(info->icon_path, oslet_app_default_icon(info->kind));
+    if (!info->icon_path[0]) copy_metadata(info->icon_path, sizeof(info->icon_path), oslet_app_default_icon(info->kind));
 
     return 0;
 }

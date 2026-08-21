@@ -53,6 +53,7 @@ void tasking_init(void) {
     current_task->quantum_remaining = QUANTUM_HIGH;
     current_task->stack = NULL;
     current_task->icon_path[0] = '\0';
+    strcpy_s(current_task->cwd, "C:/", sizeof(current_task->cwd));
     current_task->next = current_task;
     
     task_list = current_task;
@@ -91,6 +92,7 @@ uint32_t task_create(void (*entry)(void), const char *name, task_priority_t prio
     task->priority = priority;
     task->sleep_until_ticks = 0;
     task->icon_path[0] = '\0';
+    strcpy_s(task->cwd, "C:/", sizeof(task->cwd));
     
     switch (priority) {
         case PRIORITY_HIGH:   task->quantum_remaining = QUANTUM_HIGH; break;
@@ -438,6 +440,11 @@ int task_spawn_and_wait(const char *path, const char *args) {
     child->parent_tid = current_task->tid;
     current_task->child_tid = child_tid;
     child->vconsole = current_task->vconsole;
+
+    /* CWD is copied, never shared. Protect both task pointers from a switch. */
+    uint32_t cwd_eflags = irq_save();
+    strcpy_s(child->cwd, current_task->cwd, sizeof(child->cwd));
+    irq_restore(cwd_eflags);
     
     /* Store exec info for cleanup on exit */
     child->exec_base = image.base_addr;
@@ -506,6 +513,11 @@ int task_spawn(const char *path, const char *args) {
     child->exec_end = image.end_addr;
     child->exec_slot = image.slot;
     child->parent_tid = current_task->tid;
+    {
+        uint32_t cwd_eflags = irq_save();
+        strcpy_s(child->cwd, current_task->cwd, sizeof(child->cwd));
+        irq_restore(cwd_eflags);
+    }
     /* Inherit vconsole from parent, but if graphics mode is not active we want
        the child to write to the system VGA console */
     if (gfx_is_active()) {

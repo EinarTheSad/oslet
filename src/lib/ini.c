@@ -106,11 +106,13 @@ int ini_replace_section(const char *data, const char *section, const char *new_t
     return written;
 }
 
-static char* read_line(char *buf, char *line, int max_len) {
+static char* read_line(char *buf, char *line, int max_len, int *truncated) {
     int i = 0;
+    if (truncated) *truncated = 0;
     while (*buf && *buf != '\n' && i < max_len - 1) {
         line[i++] = *buf++;
     }
+    if (*buf && *buf != '\n' && truncated) *truncated = 1;
     line[i] = '\0';
     str_trim(line);
 
@@ -118,11 +120,16 @@ static char* read_line(char *buf, char *line, int max_len) {
     return *buf ? buf : NULL;
 }
 
-int ini_next(ini_parser_t *ini, char *section, char *key, char *value) {
+int ini_next(ini_parser_t *ini, char *section, size_t section_size,
+             char *key, size_t key_size, char *value, size_t value_size) {
     char line[INI_MAX_LINE];
 
+    if (!ini || !section || !key || !value || section_size == 0 ||
+        key_size == 0 || value_size == 0) return -1;
     while (ini->ptr) {
-        ini->ptr = read_line(ini->ptr, line, sizeof(line));
+        int truncated = 0;
+        ini->ptr = read_line(ini->ptr, line, sizeof(line), &truncated);
+        if (truncated) return -1;
 
         if (line[0] == '\0' || line[0] == ';' || line[0] == '#')
             continue;
@@ -131,8 +138,9 @@ int ini_next(ini_parser_t *ini, char *section, char *key, char *value) {
             char *end = strchr(line, ']');
             if (end) {
                 *end = '\0';
-                strncpy(ini->section, line + 1, sizeof(ini->section) - 1);
-                ini->section[sizeof(ini->section) - 1] = '\0';
+                size_t section_len = strlen(line + 1);
+                if (section_len >= sizeof(ini->section)) return -1;
+                memcpy(ini->section, line + 1, section_len + 1);
             }
             continue;
         }
@@ -144,9 +152,14 @@ int ini_next(ini_parser_t *ini, char *section, char *key, char *value) {
             char *v = eq + 1;
             str_trim(k);
 
-            strcpy(section, ini->section);
-            strcpy(key, k);
-            strcpy(value, v);
+            size_t section_len = strlen(ini->section);
+            size_t key_len = strlen(k);
+            size_t value_len = strlen(v);
+            if (section_len >= section_size || key_len >= key_size || value_len >= value_size)
+                return -1;
+            memcpy(section, ini->section, section_len + 1);
+            memcpy(key, k, key_len + 1);
+            memcpy(value, v, value_len + 1);
             return 1;
         }
     }
@@ -154,21 +167,27 @@ int ini_next(ini_parser_t *ini, char *section, char *key, char *value) {
     return 0;
 }
 
-const char* ini_get(ini_parser_t *ini, const char *section, const char *key) {
-    static char result[INI_MAX_LINE];
+int ini_get_into(ini_parser_t *ini, const char *section, const char *key,
+                 char *value, size_t value_size) {
     char sect[64], k[64], v[INI_MAX_LINE];
-
+    if (!ini || !section || !key || !value || value_size == 0) return -1;
     ini->ptr = ini->data;
     ini->section[0] = '\0';
-
-    while (ini_next(ini, sect, k, v)) {
+    while (1) {
+        int result = ini_next(ini, sect, sizeof(sect), k, sizeof(k), v, sizeof(v));
+        if (result <= 0) return -1;
         if (strcasecmp(sect, section) == 0 && strcasecmp(k, key) == 0) {
-            strcpy(result, v);
-            return result;
+            size_t len = strlen(v);
+            if (len >= value_size) return -1;
+            memcpy(value, v, len + 1);
+            return 0;
         }
     }
+}
 
-    return NULL;
+const char* ini_get(ini_parser_t *ini, const char *section, const char *key) {
+    static char result[INI_MAX_LINE];
+    return ini_get_into(ini, section, key, result, sizeof(result)) == 0 ? result : NULL;
 }
 
 int ini_get_int(ini_parser_t *ini, const char *section, const char *key, int default_val) {

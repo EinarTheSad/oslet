@@ -8,6 +8,16 @@ uint8_t lfn_checksum(const char *short_name) {
     return sum;
 }
 
+int lfn_matches_short_name(const char *long_name, const char *short_name) {
+    char generated[11];
+    if (!long_name || !short_name || !long_name[0]) return 0;
+    parse_filename(long_name, generated);
+    for (int i = 0; i < 11; i++) {
+        if (toupper_s(generated[i]) != toupper_s(short_name[i])) return 0;
+    }
+    return 1;
+}
+
 void utf16_to_ascii(const uint16_t *src, char *dst, int max_chars) {
     for (int i = 0; i < max_chars && src[i] != 0 && src[i] != 0xFFFF; i++) {
         dst[i] = (src[i] < 128) ? (char)src[i] : '?';

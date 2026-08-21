@@ -88,6 +88,28 @@ static void title_case(char *dst, const char *src, int max_len) {
     dst[i] = '\0';
 }
 
+/* Metadata is normally already presentation-ready.  Normalize only labels
+   that are entirely uppercase, which are typically the filename fallback from
+   FAT 8.3 entries (for example CLOCK -> Clock). */
+static void normalize_display_name(char *name) {
+    int has_alpha = 0;
+    int all_upper = 1;
+    if (!name) return;
+    for (int i = 0; name[i]; i++) {
+        if (name[i] >= 'a' && name[i] <= 'z') {
+            has_alpha = 1;
+            all_upper = 0;
+        } else if (name[i] >= 'A' && name[i] <= 'Z') {
+            has_alpha = 1;
+        }
+    }
+    if (has_alpha && all_upper) {
+        char normalized[sizeof(((app_entry_t *)0)->name)];
+        title_case(normalized, name, sizeof(normalized));
+        strcpy(name, normalized);
+    }
+}
+
 static int is_grp_file(const char *name) {
     int len = strlen(name);
     if (len < 5) return 0;  /* Need at least "x.grp" */
@@ -294,6 +316,7 @@ static int load_grp(startman_state_t *state, const char *grp_path) {
             } else if (have_app_info && app_info.name[0]) {
                 strncpy(app->name, app_info.name, sizeof(app->name) - 1);
                 app->name[sizeof(app->name) - 1] = '\0';
+                normalize_display_name(app->name);
             } else {
                 char raw_name[32];
                 int name_len = strlen(filename);

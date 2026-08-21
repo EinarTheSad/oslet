@@ -1,5 +1,26 @@
 #include "private.h"
 
+static void set_lfn_char(lfn_entry_t *lfn, int index, uint16_t value) {
+    if (!lfn || index < 0 || index >= 13) return;
+    if (index < 5) {
+        lfn->name1[index] = value;
+    } else if (index < 11) {
+        lfn->name2[index - 5] = value;
+    } else {
+        lfn->name3[index - 11] = value;
+    }
+}
+
+static void encode_lfn_entry(lfn_entry_t *lfn, const char *name,
+                             int base, int name_len) {
+    if (!lfn || !name) return;
+    for (int i = 0; i < 13; i++) set_lfn_char(lfn, i, 0xFFFF);
+    for (int i = 0; i < 13 && base + i < name_len; i++)
+        set_lfn_char(lfn, i, (uint16_t)(uint8_t)name[base + i]);
+    if (name_len - base < 13)
+        set_lfn_char(lfn, name_len - base, 0);
+}
+
 int find_in_dir(fat32_volume_t *vol, uint32_t dir_cluster, const char *name, 
                        fat32_direntry_t *out, uint32_t *out_cluster, uint32_t *out_offset) {
     char search[11];
@@ -62,7 +83,8 @@ int find_in_dir(fat32_volume_t *vol, uint32_t dir_cluster, const char *name,
             }
             
             if (lfn_valid && lfn_checksum(entries[i].name) == lfn_checksum_val) {
-                if (strcasecmp_s(lfn_buffer, name) == 0) {
+                if (lfn_matches_short_name(lfn_buffer, entries[i].name) &&
+                    strcasecmp_s(lfn_buffer, name) == 0) {
                     memcpy_s(out, &entries[i], sizeof(fat32_direntry_t));
                     if (out_cluster) *out_cluster = cluster;
                     if (out_offset) *out_offset = i * 32;
@@ -179,14 +201,7 @@ int add_dir_entry(fat32_volume_t *vol, uint32_t dir_cluster, const char *name,
                     lfn->checksum = checksum;
                     lfn->first_cluster = 0;
                     
-                    int base = lfn_idx * 13;
-                    uint16_t temp1[5], temp2[6], temp3[2];
-                    ascii_to_utf16(name + base, temp1, 5);
-                    ascii_to_utf16(name + base + 5, temp2, 6);
-                    ascii_to_utf16(name + base + 11, temp3, 2);
-                    memcpy_s(lfn->name1, temp1, sizeof(temp1));
-                    memcpy_s(lfn->name2, temp2, sizeof(temp2));
-                    memcpy_s(lfn->name3, temp3, sizeof(temp3));
+                    encode_lfn_entry(lfn, name, lfn_idx * 13, name_len);
                 }
             }
             

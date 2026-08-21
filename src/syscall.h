@@ -575,7 +575,9 @@ static inline int sys_getchar(void) {
 
 static inline int sys_readline(char *buf, uint32_t size) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_CONSOLE_IN), "b"(buf), "c"(size));
+    /* The kernel fills buf during the interrupt; prevent the compiler from
+       reusing values cached before the syscall. */
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_CONSOLE_IN), "b"(buf), "c"(size) : "memory");
     return ret;
 }
 
