@@ -885,12 +885,19 @@ static int fileman_ctrl_y_offset(void) {
     return offset;
 }
 
+static int fileman_drag_allowed(void) {
+    gui_form_t *form = (gui_form_t*)state.form;
+
+    return form && form->win.is_visible && !form->win.is_minimized &&
+           sys_win_is_focused(state.form);
+}
+
 static int file_index_at_mouse(int mx, int my) {
     gui_form_t *form = (gui_form_t*)state.form;
     int visible_file_count = state.file_rows * state.file_cols;
     int y_offset = fileman_ctrl_y_offset();
 
-    if (!form) return -1;
+    if (!fileman_drag_allowed()) return -1;
 
     for (int i = 0; i < visible_file_count; i++) {
         int actual_idx = state.file_scroll_offset * state.file_cols + i;
@@ -922,7 +929,7 @@ static int tree_index_at_mouse(int mx, int my) {
     int row_h;
     int visible_idx;
 
-    if (!form) return -1;
+    if (!fileman_drag_allowed()) return -1;
     tree = sys_win_get_control(state.form, ID_TREEVIEW);
     if (!tree) return -1;
 
@@ -976,6 +983,8 @@ static int path_is_same_or_child(const char *folder, const char *path) {
 static int drop_folder_at_mouse(int mx, int my, char *dest, size_t dest_size) {
     int file_idx = file_index_at_mouse(mx, my);
     int tree_idx;
+
+    if (!fileman_drag_allowed()) return 0;
 
     if (file_idx >= 0 && file_idx < state.file_count &&
         state.file_items[file_idx].is_directory) {
@@ -1045,6 +1054,20 @@ static void update_drag_state(void) {
     int released;
 
     sys_get_mouse_state(&mx, &my, &buttons);
+
+    /* File controls retain their normal coordinates while the form is
+       minimized. Do not let this private drag path interpret those hidden
+       coordinates, and cancel a drag that was active before minimization or
+       focus loss. */
+    if (!fileman_drag_allowed()) {
+        state.drag_source_index = -1;
+        if (state.drag_active)
+            sys_mouse_set_cursor_file(CURSOR_DEFAULT);
+        state.drag_active = 0;
+        state.last_mouse_buttons = buttons;
+        return;
+    }
+
     pressed = (buttons & 1) && !(state.last_mouse_buttons & 1);
     released = !(buttons & 1) && (state.last_mouse_buttons & 1);
 

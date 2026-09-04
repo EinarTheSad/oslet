@@ -679,6 +679,75 @@ int win_is_resize_corner(window_t *win, int mx, int my) {
     return 0;
 }
 
+static void win_cancel_form_interaction(gui_form_t *form) {
+    if (!form) return;
+
+    form->last_mouse_buttons = 0;
+    form->press_control_id = -1;
+    form->dragging = 0;
+    form->resizing = 0;
+    form->focused_control_id = -1;
+    form->textbox_selecting = 0;
+    form->last_icon_click_id = -1;
+
+    if (!form->controls) return;
+
+    for (int i = 0; i < form->ctrl_count; i++) {
+        gui_control_t *ctrl = &form->controls[i];
+        int type = ctrl->type & 0x7F;
+
+        /* The minimized desktop icon is the visible representation of this
+           form and must retain its selection/drag state. */
+        if (ctrl->id == form->win.minimized_icon_id)
+            continue;
+
+        switch (type) {
+            case CTRL_BUTTON:
+                ctrl->button.pressed = 0;
+                break;
+            case CTRL_ICON:
+                ctrl->icon.checked = 0;
+                ctrl->icon.dragging = 0;
+                break;
+            case CTRL_DROPDOWN:
+                ctrl->dropdown.dropdown_open = 0;
+                ctrl->dropdown.hovered_item = -1;
+                ctrl->dropdown.pressed = 0;
+                ctrl->dropdown.scroll_offset = 0;
+                if (ctrl->dropdown.dropdown_saved_bg)
+                    ctrl_hide_dropdown_list(&form->win, ctrl);
+                break;
+            case CTRL_SCROLLBAR:
+                ctrl->scrollbar.hovered_item = -1;
+                ctrl->scrollbar.pressed = 0;
+                break;
+            case CTRL_TEXTBOX:
+                ctrl->textbox.is_focused = 0;
+                ctrl->textbox.sel_start = -1;
+                ctrl->textbox.sel_end = -1;
+                ctrl->textbox.scrollbar_hovered_item = -1;
+                ctrl->textbox.scrollbar_pressed = 0;
+                break;
+            case CTRL_TREEVIEW:
+                ctrl->treeview.scrollbar_hovered_item = -1;
+                ctrl->treeview.scrollbar_pressed = 0;
+                ctrl->treeview.hscrollbar_hovered_item = -1;
+                ctrl->treeview.hscrollbar_pressed = 0;
+                ctrl->treeview.last_action = TREE_ACTION_NONE;
+                ctrl->treeview.action_index = -1;
+                break;
+            case CTRL_LISTBOX:
+                ctrl->listbox.scrollbar_hovered_item = -1;
+                ctrl->listbox.scrollbar_pressed = 0;
+                ctrl->listbox.last_action = LIST_ACTION_NONE;
+                ctrl->listbox.action_index = -1;
+                break;
+            default:
+                break;
+        }
+    }
+}
+
 void win_minimize(struct gui_form_s *form, int icon_x, int icon_y, const char *icon_path) {
     window_t *win = &form->win;
     if (win->is_minimized) return;
@@ -694,6 +763,10 @@ void win_minimize(struct gui_form_s *form, int icon_x, int icon_y, const char *i
     menubar_close_all(&form->menubar);
 
     win_restore_background(win);
+
+    /* Normal-window interactions must not survive after its surface is
+       removed. The desktop icon created below remains interactive. */
+    win_cancel_form_interaction(form);
 
     if (win->saved_bg) {
         kfree(win->saved_bg);

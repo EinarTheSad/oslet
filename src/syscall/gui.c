@@ -1125,7 +1125,8 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             gui_form_t *form = (gui_form_t*)ebx;
             if (!form) return 0;
             if (global_wm.focused_index >= 0 && global_wm.focused_index < global_wm.count &&
-                global_wm.windows[global_wm.focused_index] == form) {
+                global_wm.windows[global_wm.focused_index] == form &&
+                form->win.is_visible && !form->win.is_minimized) {
                 return 1;
             }
             return 0;
