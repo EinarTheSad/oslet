@@ -2,28 +2,23 @@
 
 void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg) {
     window_theme_t *theme = theme_get_current();
+    icon_geometry_t geometry;
+    int label_x;
+    int label_total_w;
+    int max_line_width;
+    int bg_width;
+    int bg_height;
+    int bg_start_x;
+    int bg_start_y;
 
-    int icon_size = 32;
-    int label_max_w = control->w > 0 ? control->w : 48;
-    int label_extra_w = 14;
-    int label_x = abs_x - (label_extra_w / 2);
-    int label_total_w = label_max_w + label_extra_w;
-    int max_line_width = label_total_w - 2;
-    int max_label_lines = control->h > 0 ? 2 : 0;
-
-    int label_lines = max_label_lines > 0
-                    ? icon_count_label_lines_limited(control->text,
-                                                     max_line_width,
-                                                     max_label_lines)
-                    : icon_count_label_lines(control->text, max_line_width);
-    int total_h = icon_calc_total_height(icon_size, label_lines);
-    if (control->h > 0 && total_h > control->h)
-        total_h = control->h;
-
-    int bg_width = label_total_w + 2;
-    int bg_height = total_h + 2;
-    int bg_start_x = label_x - 1;
-    int bg_start_y = abs_y - 1;
+    icon_get_geometry(control, abs_x, abs_y, &geometry);
+    label_x = geometry.x;
+    label_total_w = geometry.w;
+    max_line_width = geometry.max_line_width;
+    bg_width = geometry.bg_w;
+    bg_height = geometry.bg_h;
+    bg_start_x = geometry.bg_x;
+    bg_start_y = geometry.bg_y;
     int row_bytes = (bg_width + 1) / 2;
 
     if (control->icon.saved_bg &&
@@ -86,14 +81,14 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
 
     (void)win_bg;
 
-    int icon_x = abs_x + (label_max_w - icon_size) / 2;
-    int icon_y = abs_y;
+    int icon_x = geometry.icon_x;
+    int icon_y = geometry.icon_y;
 
     if (control->icon.cached_bitmap_orig) {
         bitmap_draw(control->icon.cached_bitmap_orig, icon_x, icon_y);
     } else {
-        gfx_fillrect(icon_x, icon_y, icon_size, icon_size, theme->button_color);
-        gfx_rect(icon_x, icon_y, icon_size, icon_size, theme->frame_dark);
+        gfx_fillrect(icon_x, icon_y, WM_ICON_SIZE, WM_ICON_SIZE, theme->button_color);
+        gfx_rect(icon_x, icon_y, WM_ICON_SIZE, WM_ICON_SIZE, theme->frame_dark);
 
         if (font_b.data && control->text[0]) {
             char initials[3];
@@ -102,14 +97,14 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
             initials[2] = '\0';
 
             int tw = bmf_measure_text(&font_b, 12, initials);
-            int tx = icon_x + (icon_size - tw) / 2;
+            int tx = icon_x + (WM_ICON_SIZE - tw) / 2;
             int ty = icon_y + 10;
             bmf_printf(tx, ty, &font_b, 12, theme->text_color, "%s", initials);
         }
     }
 
     if (control->icon.checked) {
-        for (int py = 0; py < total_h; py++) {
+        for (int py = 0; py < geometry.h; py++) {
             for (int px = 0; px < label_total_w; px++) {
                 if ((px + py) % 2 == 0) {
                     gfx_putpixel(label_x + px, abs_y + py, 1);
@@ -127,11 +122,11 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
         } else {
             text_color = (control->fg >= 0) ? (uint8_t)control->fg : theme->icon_text_color;
         }
-        int text_y = abs_y + icon_size + 4;
-        if (max_label_lines > 0) {
+        int text_y = abs_y + WM_ICON_SIZE + 4;
+        if (control->h > 0) {
             icon_draw_label_wrapped_limit(control->text, label_x, text_y,
                                           label_total_w, max_line_width,
-                                          text_color, max_label_lines);
+                                          text_color, 2);
         } else {
             icon_draw_label_wrapped(control->text, label_x, text_y,
                                     label_total_w, max_line_width, text_color);

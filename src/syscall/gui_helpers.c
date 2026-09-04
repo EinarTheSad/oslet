@@ -14,13 +14,12 @@ static void pump_set_icons_dirty_rect(window_manager_t *wm) {
             for (int j = 0; j < f->ctrl_count; j++) {
                 gui_control_t *ctrl = &f->controls[j];
                 if (ctrl->type == CTRL_ICON && ctrl->id == f->win.minimized_icon_id) {
-                    int ix = ctrl->x - ICON_DIRTY_MARGIN;
-                    int iy = ctrl->y - ICON_DIRTY_MARGIN;
-                    int iw = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
-                    int label_lines = icon_count_label_lines(ctrl->text, 49);
-                    int ih = icon_calc_total_height(32, label_lines);
-                    int ix2 = ctrl->x + iw + ICON_DIRTY_MARGIN;
-                    int iy2 = ctrl->y + ih + ICON_DIRTY_MARGIN;
+                    icon_geometry_t geometry;
+                    icon_get_geometry(ctrl, ctrl->x, ctrl->y, &geometry);
+                    int ix = geometry.x - ICON_DIRTY_MARGIN;
+                    int iy = geometry.y - ICON_DIRTY_MARGIN;
+                    int ix2 = geometry.x + geometry.w + ICON_DIRTY_MARGIN;
+                    int iy2 = geometry.y + geometry.h + ICON_DIRTY_MARGIN;
                     if (ix < min_x) min_x = ix;
                     if (iy < min_y) min_y = iy;
                     if (ix2 > max_x) max_x = ix2;
