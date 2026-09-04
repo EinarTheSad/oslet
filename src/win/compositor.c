@@ -89,11 +89,12 @@ void compositor_draw_all(window_manager_t *wm) {
                     for (int j = 0; j < form->ctrl_count; j++) {
                         gui_control_t *ctrl = &form->controls[j];
                         if (ctrl->type == CTRL_ICON && ctrl->id == form->win.minimized_icon_id) {
-                            ix = ctrl->x;
-                            iy = ctrl->y;
-                            iw = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
-                            int label_lines = icon_count_label_lines(ctrl->text, 49);
-                            ih = icon_calc_total_height(32, label_lines);
+                            icon_geometry_t geometry;
+                            icon_get_geometry(ctrl, ctrl->x, ctrl->y, &geometry);
+                            ix = geometry.x;
+                            iy = geometry.y;
+                            iw = geometry.w;
+                            ih = geometry.h;
                             has_icon = 1;
                             break;
                         }
@@ -125,11 +126,12 @@ void compositor_draw_all(window_manager_t *wm) {
                         for (int j = 0; j < form->ctrl_count; j++) {
                             gui_control_t *ctrl = &form->controls[j];
                             if (ctrl->type == CTRL_ICON && ctrl->id == form->win.minimized_icon_id) {
-                                int ix = ctrl->x;
-                                int iy = ctrl->y;
-                                int iw = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
-                                int label_lines = icon_count_label_lines(ctrl->text, 49);
-                                int ih = icon_calc_total_height(32, label_lines);
+                                icon_geometry_t geometry;
+                                icon_get_geometry(ctrl, ctrl->x, ctrl->y, &geometry);
+                                int ix = geometry.x;
+                                int iy = geometry.y;
+                                int iw = geometry.w;
+                                int ih = geometry.h;
                                 if (rects_intersect(dx, dy, dw, dh, ix, iy, iw, ih)) {
                                     ctrl_draw_icon(ctrl, ctrl->x, ctrl->y, 0);
                                 }

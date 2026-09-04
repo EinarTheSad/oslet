@@ -289,15 +289,16 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                     was_icon_dragging = 1;
                     /* Restore old position's background */
                     if (ctrl->icon.saved_bg) {
-                        int old_bg_x = ctrl->x - 1;
-                        int old_bg_y = ctrl->y - 1;
-                        int old_bg_w = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
-                        int label_lines = icon_count_label_lines(ctrl->text, 49);
-                        int old_bg_h = icon_calc_total_height(32, label_lines);
+                        icon_geometry_t geometry;
+                        icon_get_geometry(ctrl, ctrl->x, ctrl->y, &geometry);
+                        int old_bg_x = geometry.bg_x;
+                        int old_bg_y = geometry.bg_y;
+                        int old_bg_w = geometry.bg_w;
+                        int old_bg_h = geometry.bg_h;
                         if (old_bg_x >= 0 && old_bg_y >= 0 &&
-                            old_bg_x + old_bg_w + 2 <= WM_SCREEN_WIDTH &&
-                            old_bg_y + old_bg_h + 2 <= WM_SCREEN_HEIGHT && (old_bg_x & 1) == 0) {
-                            gfx_write_screen_region_packed(ctrl->icon.saved_bg, old_bg_w + 2, old_bg_h + 2, old_bg_x, old_bg_y);
+                            old_bg_x + old_bg_w <= WM_SCREEN_WIDTH &&
+                            old_bg_y + old_bg_h <= WM_SCREEN_HEIGHT && (old_bg_x & 1) == 0) {
+                            gfx_write_screen_region_packed(ctrl->icon.saved_bg, old_bg_w, old_bg_h, old_bg_x, old_bg_y);
                         }
                         kfree(ctrl->icon.saved_bg);
                         ctrl->icon.saved_bg = NULL;
@@ -315,18 +316,19 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                     ctrl->icon.dragging = 0;
                     ctrl_set_pos(form, ctrl->id, snap_x, snap_y);
                     /* Save snapped position's background */
-                    int snap_bg_x = snap_x - 1;
-                    int snap_bg_y = snap_y - 1;
-                    int snap_bg_w = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
-                    int snap_label_lines = icon_count_label_lines(ctrl->text, 49);
-                    int snap_bg_h = icon_calc_total_height(32, snap_label_lines);
-                    int snap_row_bytes = (snap_bg_w + 3) / 2;
-                    ctrl->icon.saved_bg = (uint8_t*)kmalloc(snap_row_bytes * (snap_bg_h + 2));
+                    icon_geometry_t snap_geometry;
+                    icon_get_geometry(ctrl, snap_x, snap_y, &snap_geometry);
+                    int snap_bg_x = snap_geometry.bg_x;
+                    int snap_bg_y = snap_geometry.bg_y;
+                    int snap_bg_w = snap_geometry.bg_w;
+                    int snap_bg_h = snap_geometry.bg_h;
+                    int snap_row_bytes = (snap_bg_w + 1) / 2;
+                    ctrl->icon.saved_bg = (uint8_t*)kmalloc(snap_row_bytes * snap_bg_h);
                     if (ctrl->icon.saved_bg) {
                         if (snap_bg_x >= 0 && snap_bg_y >= 0 &&
-                            snap_bg_x + snap_bg_w + 2 <= WM_SCREEN_WIDTH &&
-                            snap_bg_y + snap_bg_h + 2 <= WM_SCREEN_HEIGHT && (snap_bg_x & 1) == 0) {
-                            gfx_read_screen_region_packed(ctrl->icon.saved_bg, snap_bg_w + 2, snap_bg_h + 2, snap_bg_x, snap_bg_y);
+                            snap_bg_x + snap_bg_w <= WM_SCREEN_WIDTH &&
+                            snap_bg_y + snap_bg_h <= WM_SCREEN_HEIGHT && (snap_bg_x & 1) == 0) {
+                            gfx_read_screen_region_packed(ctrl->icon.saved_bg, snap_bg_w, snap_bg_h, snap_bg_x, snap_bg_y);
                         }
                     }
                 }
@@ -567,11 +569,10 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                     if (new_x != icon_ctrl->x || new_y != icon_ctrl->y) {
                         int old_x = icon_ctrl->x;
                         int old_y = icon_ctrl->y;
-                        int bg_w = icon_ctrl->w > 0 ? icon_ctrl->w : WM_ICON_TOTAL_WIDTH;
-                        int label_lines = icon_count_label_lines(icon_ctrl->text, 49);
-                        int bg_h = icon_calc_total_height(32, label_lines);
-                        int save_w = bg_w + 2;
-                        int save_h = bg_h + 2;
+                        icon_geometry_t old_geometry;
+                        icon_get_geometry(icon_ctrl, old_x, old_y, &old_geometry);
+                        int save_w = old_geometry.bg_w;
+                        int save_h = old_geometry.bg_h;
                         int row_bytes = (save_w + 1) / 2;
                         uint8_t *old_saved_bg = icon_ctrl->icon.saved_bg;
                         /* Restore OLD position using existing saved_bg */

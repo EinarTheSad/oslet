@@ -145,8 +145,10 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
             } else if (ctrl->type == CTRL_RADIOBUTTON && ctrl->w == 12) {
                 hit_w = 100;
             } else if (ctrl->type == CTRL_ICON) {
-                hit_w = ctrl->w > 0 ? ctrl->w : 48;
-                hit_h = ctrl->h > 0 ? ctrl->h : 58;
+                icon_geometry_t geometry;
+                icon_get_geometry(ctrl, abs_x, abs_y, &geometry);
+                hit_w = geometry.w;
+                hit_h = geometry.h;
             } else if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
                 int list_h = ctrl->dropdown.item_count * 16;
                 int list_y = abs_y + ctrl->h;
@@ -160,6 +162,12 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
             }
 
             int hit_test_y = abs_y + (hit_y_offset != 0 ? hit_y_offset : 0);
+
+            if (ctrl->type == CTRL_ICON) {
+                icon_geometry_t geometry;
+                icon_get_geometry(ctrl, abs_x, abs_y, &geometry);
+                hit_test_y = geometry.y;
+            }
 
             if (mx >= abs_x && mx < abs_x + hit_w &&
                 my >= hit_test_y && my < hit_test_y + hit_h) {

@@ -4,9 +4,44 @@
 #include "../fonts/bmf.h"
 #include "../drivers/graphics.h"
 #include "../mem/heap.h"
+#include "../syscall.h"
 #include <stddef.h>
 
 extern bmf_font_t font_b, font_n;
+
+void icon_get_geometry(const struct gui_control_s *control, int abs_x,
+                       int abs_y, icon_geometry_t *out) {
+    int icon_size = WM_ICON_SIZE;
+    int label_width;
+    int max_lines;
+
+    if (!out) return;
+
+    label_width = control && control->w > 0 ? control->w : WM_ICON_TOTAL_WIDTH;
+    max_lines = control && control->h > 0 ? 2 : 0;
+
+    out->x = abs_x;
+    out->y = abs_y;
+    out->w = label_width;
+    out->max_line_width = label_width - 2;
+    if (out->max_line_width < 1) out->max_line_width = 1;
+    out->label_lines = control && max_lines > 0
+                     ? icon_count_label_lines_limited(control->text,
+                                                      out->max_line_width,
+                                                      max_lines)
+                     : icon_count_label_lines(control ? control->text : NULL,
+                                               out->max_line_width);
+    out->h = icon_calc_total_height(icon_size, out->label_lines);
+    if (control && control->h > 0 && out->h > control->h)
+        out->h = control->h;
+
+    out->icon_x = abs_x + (label_width - icon_size) / 2;
+    out->icon_y = abs_y;
+    out->bg_x = out->x - 1;
+    out->bg_y = out->y - 1;
+    out->bg_w = out->w + 2;
+    out->bg_h = out->h + 2;
+}
 
 typedef struct {
     int x, y, total_width;

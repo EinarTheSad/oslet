@@ -860,11 +860,10 @@ int win_is_icon_clicked(struct gui_form_s *form, int mx, int my) {
     if (win->minimized_icon_id != -1 && form->controls) {
         gui_control_t *ctrl = sys_win_get_control(form, win->minimized_icon_id);
         if (ctrl) {
-            int total_w = ctrl->w > 0 ? ctrl->w : WM_ICON_TOTAL_WIDTH;
-            int label_lines = icon_count_label_lines(ctrl->text, 49);
-            int total_h = icon_calc_total_height(32, label_lines);
-            if (mx >= ctrl->x && mx < ctrl->x + total_w &&
-                my >= ctrl->y && my < ctrl->y + total_h) {
+            icon_geometry_t geometry;
+            icon_get_geometry(ctrl, ctrl->x, ctrl->y, &geometry);
+            if (mx >= geometry.x && mx < geometry.x + geometry.w &&
+                my >= geometry.y && my < geometry.y + geometry.h) {
                 return 1;
             }
         }
