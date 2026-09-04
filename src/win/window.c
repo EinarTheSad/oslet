@@ -684,6 +684,15 @@ void win_minimize(struct gui_form_s *form, int icon_x, int icon_y, const char *i
     if (win->is_minimized) return;
 
     mouse_invalidate_buffer();
+
+    /* Popup menus belong to the normal window surface and must not survive
+       minimization. Hide them before restoring the window background so their
+       saved pixels are not written back over the desktop. */
+    if (form->window_menu.visible) {
+        menu_hide(&form->window_menu);
+    }
+    menubar_close_all(&form->menubar);
+
     win_restore_background(win);
 
     if (win->saved_bg) {

@@ -27,7 +27,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
     int16_t changed_controls[32];
     int changed_count = 0;
 
-    if (form->window_menu.visible) {
+    if (!form->win.is_minimized && form->window_menu.visible) {
         int action = menu_handle_mouse(&form->window_menu, mx, my,
                                        button_pressed, button_released);
         if (action > 0) {
@@ -70,7 +70,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
     }
 
     /* Handle menubar if enabled */
-    if (form->menubar_enabled && form->menubar.visible) {
+    if (!form->win.is_minimized && form->menubar_enabled && form->menubar.visible) {
         int bar_y = form->win.y + WM_TITLEBAR_HEIGHT + 2;
         int in_menubar = (mx >= form->win.x + 2 && mx < form->win.x + form->win.w - 2 &&
                           my >= bar_y && my < bar_y + MENUBAR_HEIGHT);
