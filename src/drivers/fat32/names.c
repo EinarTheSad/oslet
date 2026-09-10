@@ -1,5 +1,16 @@
 #include "private.h"
 
+static char fat32_short_name_char(unsigned char ch) {
+    if (ch == 0 || ch == ' ' || ch == '.' || ch == '/' || ch == '\\' ||
+        ch == ':' || ch == '*' || ch == '?' || ch == '"' || ch == '<' ||
+        ch == '>' || ch == '|' || ch == '+' || ch == ',' || ch == ';' ||
+        ch == '=' || ch == '[' || ch == ']' || ch == '\t' || ch == '\r' ||
+        ch == '\n') {
+        return '_';
+    }
+    return (char)toupper_s(ch);
+}
+
 uint8_t lfn_checksum(const char *short_name) {
     uint8_t sum = 0;
     for (int i = 0; i < 11; i++) {
@@ -36,17 +47,51 @@ void ascii_to_utf16(const char *src, uint16_t *dst, int max_chars) {
 
 void parse_filename(const char *name, char *out_name) {
     memset_s(out_name, ' ', 11);
-    int i = 0, j = 0;
+    if (!name || !out_name) return;
 
-    while (name[i] && name[i] != '.' && j < 8) {
-        out_name[j++] = toupper_s(name[i++]);
+    const char *dot = NULL;
+    for (const char *p = name; *p; p++) {
+        if (*p == '.') {
+            dot = p;
+            break;
+        }
     }
 
-    if (name[i] == '.') {
+    size_t base_len = dot ? (size_t)(dot - name) : strlen_s(name);
+    size_t ext_len = dot ? strlen_s(dot + 1) : 0;
+
+    if (base_len == 0 && dot && dot == name) {
+        base_len = 0;
+    }
+
+    if (base_len > 8 || ext_len > 3) {
+        size_t copy_len = base_len > 8 ? 6 : base_len;
+        for (size_t i = 0; i < copy_len && i < 8; i++) {
+            out_name[i] = fat32_short_name_char((unsigned char)name[i]);
+        }
+
+        if (base_len > 8) {
+            out_name[6] = '~';
+            out_name[7] = '1';
+        }
+
+        size_t ext_copy = ext_len > 3 ? 3 : ext_len;
+        for (size_t i = 0; i < ext_copy; i++) {
+            out_name[8 + i] = fat32_short_name_char((unsigned char)dot[1 + i]);
+        }
+        return;
+    }
+
+    size_t i = 0;
+    while (name[i] && name[i] != '.' && i < 8) {
+        out_name[i] = fat32_short_name_char((unsigned char)name[i]);
         i++;
-        j = 8;
-        while (name[i] && j < 11) {
-            out_name[j++] = toupper_s(name[i++]);
+    }
+
+    if (dot && dot[1]) {
+        size_t j = 8;
+        for (size_t k = 1; dot[k] && j < 11; k++) {
+            out_name[j++] = fat32_short_name_char((unsigned char)dot[k]);
         }
     }
 }
