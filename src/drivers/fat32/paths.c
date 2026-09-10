@@ -46,8 +46,9 @@ int parse_path(const char *path, uint8_t *drive, char *rest, size_t rest_size) {
         size_t temp_len = base_len;
         if (separator) temp[temp_len++] = '/';
         memcpy_s(temp + temp_len, path, relative_len + 1);
-        if (temp_len >= rest_size) return -1;
-        memcpy_s(rest, temp, temp_len + 1);
+        size_t total_len = temp_len + relative_len;
+        if (total_len >= rest_size) return -1;
+        memcpy_s(rest, temp, total_len + 1);
     } else if (path[0] == '\0' || strcmp_s(path, ".") == 0) {
         size_t cwd_len = strlen_s(cwd + 3);
         if (cwd_len >= rest_size) return -1;
