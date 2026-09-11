@@ -42,18 +42,55 @@ static int shell_tid = 0;
 static void redraw(void) {
     gui_form_t *f = (gui_form_t*)form;
 
-    int cw = f->win.w - BORDER*2;
+    int cw = f->win.w - BORDER * 2;
     int ch = f->win.h - TITLEBAR_H - BORDER;
 
+    if (cw < 0) cw = 0;
+    if (ch < 0) ch = 0;
     if (cw > buf_w) cw = buf_w;
     if (ch > buf_h) ch = buf_h;
 
-    sys_win_draw_buffer(form, pixbuf, buf_w, buf_h, 0, 0, cw, ch, BORDER, 0, 0);
+    if (cw > 0 && ch > 0)
+        sys_win_draw_buffer(form, pixbuf, buf_w, buf_h, 0, 0, cw, ch, BORDER, 0, 0);
 }
 
 static void recalc_buf(void) {
     buf_w = TERM_COLS * glyph_w;
     buf_h = TERM_ROWS * glyph_h;
+}
+
+static void render_cell(int row, int col, uint8_t ch, uint8_t attr, int draw_cursor) {
+    uint8_t fg = attr & 0x0F;
+    uint8_t bg = (attr >> 4) & 0x0F;
+
+    const usr_bmf_glyph_t *g = usr_bmf_get_glyph(&font, font_pt, ch);
+    int px = col * glyph_w;
+    int py = row * glyph_h;
+
+    for (int gy = 0; gy < glyph_h; gy++) {
+        int off = (py + gy) * buf_w + px;
+        for (int gx = 0; gx < glyph_w; gx++) {
+            uint8_t color = bg;
+            if (g && g->bitmap) {
+                int bi = gx >> 3;
+                int bit = 7 - (gx & 7);
+                if ((g->bitmap[gy * g->pitch + bi] >> bit) & 1)
+                    color = fg;
+            }
+            if (px + gx >= 0 && px + gx < buf_w && py + gy >= 0 && py + gy < buf_h)
+                pixbuf[off + gx] = color;
+        }
+    }
+
+    if (draw_cursor) {
+        for (int gy = glyph_h - 2; gy < glyph_h; gy++) {
+            int off = (py + gy) * buf_w + px;
+            for (int gx = 0; gx < glyph_w; gx++) {
+                if (px + gx >= 0 && px + gx < buf_w && py + gy >= 0 && py + gy < buf_h)
+                    pixbuf[off + gx] = fg;
+            }
+        }
+    }
 }
 
 static void resize(gui_form_t *f) {
@@ -75,43 +112,7 @@ static void render(void) {
             int idx = row * TERM_COLS + col;
             uint8_t ch = screen.chars[idx];
             uint8_t attr = screen.attrs[idx];
-            uint8_t fg = attr & 0x0F;
-            uint8_t bg = (attr >> 4) & 0x0F;
-
-            const usr_bmf_glyph_t *g = usr_bmf_get_glyph(&font, font_pt, ch);
-
-            int px = col * glyph_w;
-            int py = row * glyph_h;
-
-            for (int gy = 0; gy < glyph_h; gy++) {
-                int off = (py + gy) * buf_w + px;
-                for (int gx = 0; gx < glyph_w; gx++) {
-                    uint8_t color = bg;
-                    if (g && g->bitmap) {
-                        int bi = gx >> 3;
-                        int bit = 7 - (gx & 7);
-                        if ((g->bitmap[gy * g->pitch + bi] >> bit) & 1)
-                            color = fg;
-                    }
-                    pixbuf[off + gx] = color;
-                }
-            }
-        }
-    }
-
-    if (cursor_visible) {
-        int cx = screen.cursor_x;
-        int cy = screen.cursor_y;
-        if (cx >= 0 && cx < TERM_COLS && cy >= 0 && cy < TERM_ROWS) {
-            int idx = cy * TERM_COLS + cx;
-            uint8_t fg = screen.attrs[idx] & 0x0F;
-            int px = cx * glyph_w;
-            int py = cy * glyph_h;
-            for (int gy = glyph_h - 2; gy < glyph_h; gy++) {
-                int off = (py + gy) * buf_w + px;
-                for (int gx = 0; gx < glyph_w; gx++)
-                    pixbuf[off + gx] = fg;
-            }
+            render_cell(row, col, ch, attr, cursor_visible && row == screen.cursor_y && col == screen.cursor_x);
         }
     }
 }
@@ -124,38 +125,24 @@ static void refresh_cursor(void) {
     int idx = cy * TERM_COLS + cx;
     uint8_t ch = screen.chars[idx];
     uint8_t attr = screen.attrs[idx];
-    uint8_t fg = attr & 0x0F;
-    uint8_t bg = (attr >> 4) & 0x0F;
-
-    const usr_bmf_glyph_t *g = usr_bmf_get_glyph(&font, font_pt, ch);
     int px = cx * glyph_w;
     int py = cy * glyph_h;
 
-    for (int gy = 0; gy < glyph_h; gy++) {
-        int off = (py + gy) * buf_w + px;
-        for (int gx = 0; gx < glyph_w; gx++) {
-            uint8_t color = bg;
-            if (g && g->bitmap) {
-                int bi = gx >> 3;
-                int bit = 7 - (gx & 7);
-                if ((g->bitmap[gy * g->pitch + bi] >> bit) & 1)
-                    color = fg;
-            }
-            pixbuf[off + gx] = color;
-        }
-    }
-
+    render_cell(cy, cx, ch, attr, 0);
     if (cursor_visible) {
         for (int gy = glyph_h - 2; gy < glyph_h; gy++) {
             int off = (py + gy) * buf_w + px;
-            for (int gx = 0; gx < glyph_w; gx++)
-                pixbuf[off + gx] = fg;
+            for (int gx = 0; gx < glyph_w; gx++) {
+                if (px + gx >= 0 && px + gx < buf_w && py + gy >= 0 && py + gy < buf_h)
+                    pixbuf[off + gx] = attr & 0x0F;
+            }
         }
     }
 
-    sys_win_draw_buffer(form, pixbuf, buf_w, buf_h,
-                        px, py, glyph_w, glyph_h,
-                        px + BORDER, py, 0);
+    if (px >= 0 && py >= 0 && px + glyph_w <= buf_w && py + glyph_h <= buf_h)
+        sys_win_draw_buffer(form, pixbuf, buf_w, buf_h,
+                            px, py, glyph_w, glyph_h,
+                            px + BORDER, py, 0);
 }
 
 static int task_alive(int tid) {
