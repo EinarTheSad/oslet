@@ -1,7 +1,5 @@
-.vscode/
-.github/
+.*/
 build/
 *.img
 *.html
 AGENTS.md
-bugs.txt

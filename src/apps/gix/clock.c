@@ -35,7 +35,10 @@ static void clock_tick(void *form, void *userdata) {
         sys_get_time(&time);
         if (time.second != last_second) {
             last_second = time.second;
-            sys_win_mark_dirty_rect(f->win.x, f->win.y, f->win.w, f->win.h);
+            /* Redraw only the clock control — no window frame/titlebar redraw,
+               no cascading redraw to windows above. This prevents Terminal
+               from blinking and menus from closing when the clock ticks. */
+            sys_win_redraw_control(f, ID_CLOCK);
         }
     }
 }

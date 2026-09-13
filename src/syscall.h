@@ -171,6 +171,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_DRAW_TASKBAR_BUTTON 0x0B20
 #define SYS_WIN_GET_TOPMOST_AT  0x0B21
 #define SYS_WIN_MENUBAR_ADD_SEPARATOR 0x0B22
+#define SYS_WIN_REDRAW_CONTROL       0x0B23
 
 #define SYS_WIN_EVENT_REDRAW         -1
 #define SYS_WIN_EVENT_WINDOW_CHANGED -2
@@ -1366,6 +1367,16 @@ static inline void sys_win_get_dirty_rect(int *out) {
     register int eax __asm__("eax") = SYS_WIN_GET_DIRTY_RECT;
     register int ebx __asm__("ebx") = (int)out;
     __asm__ volatile("int $0x80" : "+r"(eax) : "r"(ebx) : "memory");
+}
+
+/* Redraw a single control by ID without affecting the window frame,
+   titlebar, or other controls. This avoids the full-window redraw cascade
+   that causes flicker in unrelated windows (e.g. Terminal, menus). */
+static inline void sys_win_redraw_control(void *form, int16_t ctrl_id) {
+    register int eax __asm__("eax") = SYS_WIN_REDRAW_CONTROL;
+    register void *ebx __asm__("ebx") = form;
+    register int16_t ecx __asm__("ecx") = ctrl_id;
+    __asm__ volatile("int $0x80" : "+r"(eax), "+r"(ebx), "+r"(ecx) : : "memory");
 }
 
 static inline sys_theme_t* sys_win_get_theme(void) {

@@ -1307,6 +1307,14 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             return (uint32_t)menu_add_separator(menu);
         }
 
+        case 0x23: { /* SYS_WIN_REDRAW_CONTROL - redraw a single control without full window redraw */
+            gui_form_t *form = (gui_form_t*)ebx;
+            int16_t ctrl_id = (int16_t)ecx;
+            if (!form) return 0;
+            compositor_draw_control_by_id(&global_wm, form, ctrl_id);
+            return 0;
+        }
+
         default:
             return (uint32_t)-1;
     }

@@ -60,6 +60,37 @@ static int rects_intersect(int ax, int ay, int aw, int ah,
     return 1;
 }
 
+/* Draw only controls that intersect the given screen-space dirty rect.
+   This avoids redrawing controls that haven't changed, preventing flicker
+   in unrelated controls when only one control needs updating. */
+static void compositor_draw_controls_clipped(gui_form_t *form, int dx, int dy, int dw, int dh) {
+    if (!form || form->win.is_minimized || !form->controls) return;
+
+    /* Don't draw controls while actively resizing to avoid visual glitches */
+    if (form->resizing) return;
+
+    int y_offset = 20;
+    if (form->menubar_enabled) {
+        y_offset += menubar_get_height(&form->menubar);
+    }
+    for (int j = 0; j < form->ctrl_count; j++) {
+        gui_control_t *ctrl = &form->controls[j];
+        int abs_x = form->win.x + ctrl->x;
+        int abs_y = form->win.y + ctrl->y + y_offset;
+
+        /* Skip controls that don't intersect the dirty rect */
+        if (!rects_intersect(abs_x, abs_y, ctrl->w, ctrl->h, dx, dy, dw, dh)) {
+            continue;
+        }
+
+        if (ctrl->type == CTRL_TEXTBOX) {
+            ctrl->textbox.is_focused =
+                (ctrl->id == form->focused_control_id) ? 1 : 0;
+        }
+        ctrl_draw_with_offset(&form->win, ctrl, y_offset);
+    }
+}
+
 void compositor_draw_all(window_manager_t *wm) {
     mouse_restore();
 
@@ -114,8 +145,10 @@ void compositor_draw_all(window_manager_t *wm) {
             }
         }
 
-        /* If nothing intersects, nothing to do. Otherwise draw from the
-           lowest affected window up to the top in back-to-front order. */
+        /* If nothing intersects, nothing to do. Otherwise draw only windows
+           that intersect the dirty rect, in back-to-front order. This prevents
+           cascading redraws to windows above that don't overlap the changed area
+           (e.g. a clock tick shouldn't force Terminal or menus to redraw). */
         if (min_index_to_draw < wm->count) {
             for (int i = min_index_to_draw; i < wm->count; i++) {
                 gui_form_t *form = wm->windows[i];
@@ -140,15 +173,31 @@ void compositor_draw_all(window_manager_t *wm) {
                         }
                     }
                 } else {
-                    /* Draw windows in z-order (bottom->top); we intentionally
-                       draw some windows even if they don't intersect the dirty
-                       rect so they can properly cover earlier windows that do. */
-                    int is_focused = (i == wm->focused_index);
-                    win_draw_focused(&form->win, is_focused);
-                    if (form->menubar_enabled) {
-                        menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
+                    /* Only draw this window if it actually intersects the dirty rect.
+                       Windows above that don't overlap are skipped entirely. */
+                    if (!rects_intersect(dx, dy, dw, dh,
+                                         form->win.x - WM_BG_MARGIN,
+                                         form->win.y - WM_BG_MARGIN,
+                                         form->win.w + (WM_BG_MARGIN * 2),
+                                         form->win.h + (WM_BG_MARGIN * 2))) {
+                        continue;
                     }
-                    compositor_draw_controls(form);
+                    int is_focused = (i == wm->focused_index);
+                    /* If the dirty rect is entirely within the client area (below
+                       titlebar), skip frame/titlebar redraw to avoid erasing popup
+                       menus that may extend over the window. Only redraw controls. */
+                    int client_y = form->win.y + WM_TITLEBAR_HEIGHT;
+                    if (dy >= client_y) {
+                        /* Dirty rect is in client area only - skip frame fill */
+                        compositor_draw_controls_clipped(form, dx, dy, dw, dh);
+                    } else {
+                        /* Dirty rect touches titlebar/frame - do full window redraw */
+                        win_draw_focused(&form->win, is_focused);
+                        if (form->menubar_enabled) {
+                            menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
+                        }
+                        compositor_draw_controls_clipped(form, dx, dy, dw, dh);
+                    }
                 }
             }
         }
@@ -367,10 +416,56 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
             ctrl_y_offset += menubar_get_height(&form->menubar);
         }
 
+        /* Compute control screen rect */
+        int ctrl_abs_x = form->win.x + ctrl->x;
+        int ctrl_abs_y = form->win.y + ctrl->y + ctrl_y_offset;
+        int ctrl_w = ctrl->w;
+        int ctrl_h = ctrl->h;
+
+        /* Clip to screen bounds */
+        int clip_x = ctrl_abs_x < 0 ? 0 : ctrl_abs_x;
+        int clip_y = ctrl_abs_y < 0 ? 0 : ctrl_abs_y;
+        int clip_x2 = (ctrl_abs_x + ctrl_w) < WM_SCREEN_WIDTH ? (ctrl_abs_x + ctrl_w) : WM_SCREEN_WIDTH;
+        int clip_y2 = (ctrl_abs_y + ctrl_h) < WM_SCREEN_HEIGHT ? (ctrl_abs_y + ctrl_h) : WM_SCREEN_HEIGHT;
+        if (clip_x2 <= clip_x || clip_y2 <= clip_y) return;
+
+        /* Save the screen region before drawing the control */
+        int save_w = clip_x2 - clip_x;
+        int save_h = clip_y2 - clip_y;
+        int row_bytes = (save_w + 1) / 2;
+        uint8_t *saved_bg = (uint8_t*)kmalloc(row_bytes * save_h);
+        if (saved_bg) {
+            gfx_read_screen_region_packed(saved_bg, save_w, save_h, clip_x, clip_y);
+        }
+
+        /* Draw the control normally (may paint over windows on top) */
         ctrl_draw_with_offset(&form->win, ctrl, ctrl_y_offset);
         /* If it's a dropdown with an open list, redraw that too */
         if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
             win_draw_dropdown_list(&form->win, ctrl, ctrl_y_offset);
+        }
+
+        /* Restore pixels where the control's form is NOT the topmost window.
+           This "undoes" the control's painting over windows above it,
+           pinpointing exactly which pixels need to be restored. */
+        if (saved_bg) {
+            for (int py = 0; py < save_h; py++) {
+                for (int px = 0; px < save_w; px++) {
+                    int screen_x = clip_x + px;
+                    int screen_y = clip_y + py;
+
+                    /* Check if this form is the topmost at this pixel */
+                    gui_form_t *top = wm_get_window_at(wm, screen_x, screen_y);
+                    if (top == form) continue;  /* Control should be visible here */
+
+                    /* Restore the original pixel from saved background */
+                    int byte_idx = px / 2;
+                    uint8_t pix = saved_bg[py * row_bytes + byte_idx];
+                    uint8_t color = (px & 1) ? (pix & 0x0F) : (pix >> 4);
+                    gfx_putpixel(screen_x, screen_y, color);
+                }
+            }
+            kfree(saved_bg);
         }
     }
 
