@@ -30,7 +30,8 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
         control->icon.saved_bg = NULL;
     }
 
-    if (!control->icon.saved_bg) {
+    if (!control->icon.saved_bg &&
+        gfx_clip_rect_contains(bg_start_x, bg_start_y, bg_width, bg_height)) {
         control->icon.saved_bg = (uint8_t*)kmalloc(row_bytes * bg_height);
         if (control->icon.saved_bg) {
             control->icon.saved_bg_x = bg_start_x;

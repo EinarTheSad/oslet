@@ -17,14 +17,7 @@ void gfx_line(int x0, int y0, int x1, int y1, uint8_t color) {
     int max_y = y0 > y1 ? y0 : y1;
     
     while (1) {
-        if (x0 >= 0 && x0 < GFX_WIDTH && y0 >= 0 && y0 < GFX_HEIGHT) {
-            uint32_t offset = y0 * (GFX_WIDTH / 2) + (x0 / 2);
-            if (x0 & 1) {
-                backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            } else {
-                backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-            }
-        }
+        putpixel_raw(x0, y0, color);
         
         if (x0 == x1 && y0 == y1) break;
         
@@ -48,6 +41,11 @@ void gfx_hline(int x, int y, int w, uint8_t color) {
 
     int x0 = x;
     int x1 = x + w - 1;
+    if (gfx_clip_enabled) {
+        if (y < gfx_clip_y0 || y >= gfx_clip_y1) return;
+        if (x0 < gfx_clip_x0) x0 = gfx_clip_x0;
+        if (x1 >= gfx_clip_x1) x1 = gfx_clip_x1 - 1;
+    }
 
     if (x0 < 0) x0 = 0;
     if (x1 >= GFX_WIDTH) x1 = GFX_WIDTH - 1;
@@ -88,6 +86,11 @@ void gfx_vline(int x, int y, int h, uint8_t color) {
 
     int y0 = y;
     int y1 = y + h - 1;
+    if (gfx_clip_enabled) {
+        if (x < gfx_clip_x0 || x >= gfx_clip_x1) return;
+        if (y0 < gfx_clip_y0) y0 = gfx_clip_y0;
+        if (y1 >= gfx_clip_y1) y1 = gfx_clip_y1 - 1;
+    }
 
     if (y0 < 0) y0 = 0;
     if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
@@ -119,6 +122,13 @@ void gfx_filltriangle(int x1, int y1, int x2, int y2, int x3, int y3, uint8_t co
     if (max_x >= GFX_WIDTH) max_x = GFX_WIDTH - 1;
     if (min_y < 0) min_y = 0;
     if (max_y >= GFX_HEIGHT) max_y = GFX_HEIGHT - 1;
+    if (gfx_clip_enabled) {
+        if (min_x < gfx_clip_x0) min_x = gfx_clip_x0;
+        if (max_x >= gfx_clip_x1) max_x = gfx_clip_x1 - 1;
+        if (min_y < gfx_clip_y0) min_y = gfx_clip_y0;
+        if (max_y >= gfx_clip_y1) max_y = gfx_clip_y1 - 1;
+    }
+    if (min_x > max_x || min_y > max_y) return;
 
     for (int y = min_y; y <= max_y; y++) {
         int x_min = GFX_WIDTH;
@@ -184,6 +194,13 @@ void gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
     if (y0 < 0) y0 = 0;
     if (x1 >= GFX_WIDTH)  x1 = GFX_WIDTH - 1;
     if (y1 >= GFX_HEIGHT) y1 = GFX_HEIGHT - 1;
+    if (gfx_clip_enabled) {
+        if (x0 < gfx_clip_x0) x0 = gfx_clip_x0;
+        if (y0 < gfx_clip_y0) y0 = gfx_clip_y0;
+        if (x1 >= gfx_clip_x1) x1 = gfx_clip_x1 - 1;
+        if (y1 >= gfx_clip_y1) y1 = gfx_clip_y1 - 1;
+    }
+    if (x0 > x1 || y0 > y1) return;
 
     /* Use optimized horizontal line writer per row */
     for (int py = y0; py <= y1; py++) {
@@ -196,65 +213,26 @@ void gfx_fillrect(int x, int y, int w, int h, uint8_t color) {
 void gfx_circle(int cx, int cy, int r, uint8_t color) {
     if (!backbuffer) return;
     if (r < 0) return;
-    
+
     int x = r;
     int y = 0;
     int err = 0;
-    
+
     int min_x = cx - r;
     int max_x = cx + r;
     int min_y = cy - r;
     int max_y = cy + r;
-    
+
     while (x >= y) {
-        if (cx + x >= 0 && cx + x < GFX_WIDTH && cy + y >= 0 && cy + y < GFX_HEIGHT) {
-            uint32_t offset = (cy + y) * (GFX_WIDTH / 2) + ((cx + x) / 2);
-            if ((cx + x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx - x >= 0 && cx - x < GFX_WIDTH && cy + y >= 0 && cy + y < GFX_HEIGHT) {
-            uint32_t offset = (cy + y) * (GFX_WIDTH / 2) + ((cx - x) / 2);
-            if ((cx - x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx + x >= 0 && cx + x < GFX_WIDTH && cy - y >= 0 && cy - y < GFX_HEIGHT) {
-            uint32_t offset = (cy - y) * (GFX_WIDTH / 2) + ((cx + x) / 2);
-            if ((cx + x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx - x >= 0 && cx - x < GFX_WIDTH && cy - y >= 0 && cy - y < GFX_HEIGHT) {
-            uint32_t offset = (cy - y) * (GFX_WIDTH / 2) + ((cx - x) / 2);
-            if ((cx - x) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx + y >= 0 && cx + y < GFX_WIDTH && cy + x >= 0 && cy + x < GFX_HEIGHT) {
-            uint32_t offset = (cy + x) * (GFX_WIDTH / 2) + ((cx + y) / 2);
-            if ((cx + y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx - y >= 0 && cx - y < GFX_WIDTH && cy + x >= 0 && cy + x < GFX_HEIGHT) {
-            uint32_t offset = (cy + x) * (GFX_WIDTH / 2) + ((cx - y) / 2);
-            if ((cx - y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx + y >= 0 && cx + y < GFX_WIDTH && cy - x >= 0 && cy - x < GFX_HEIGHT) {
-            uint32_t offset = (cy - x) * (GFX_WIDTH / 2) + ((cx + y) / 2);
-            if ((cx + y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
-        if (cx - y >= 0 && cx - y < GFX_WIDTH && cy - x >= 0 && cy - x < GFX_HEIGHT) {
-            uint32_t offset = (cy - x) * (GFX_WIDTH / 2) + ((cx - y) / 2);
-            if ((cx - y) & 1) backbuffer[offset] = (backbuffer[offset] & 0xF0) | (color & 0x0F);
-            else backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
-        }
-        
+        putpixel_raw(cx + x, cy + y, color);
+        putpixel_raw(cx - x, cy + y, color);
+        putpixel_raw(cx + x, cy - y, color);
+        putpixel_raw(cx - x, cy - y, color);
+        putpixel_raw(cx + y, cy + x, color);
+        putpixel_raw(cx - y, cy + x, color);
+        putpixel_raw(cx + y, cy - x, color);
+        putpixel_raw(cx - y, cy - x, color);
+
         if (err <= 0) {
             y += 1;
             err += 2*y + 1;
@@ -265,7 +243,7 @@ void gfx_circle(int cx, int cy, int r, uint8_t color) {
             err -= 2*x + 1;
         }
     }
-    
+
     mark_dirty(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1);
 }
 
@@ -282,6 +260,13 @@ void gfx_fillcircle(int cx, int cy, int r, uint8_t color) {
     if (max_x >= GFX_WIDTH) max_x = GFX_WIDTH - 1;
     if (min_y < 0) min_y = 0;
     if (max_y >= GFX_HEIGHT) max_y = GFX_HEIGHT - 1;
+    if (gfx_clip_enabled) {
+        if (min_x < gfx_clip_x0) min_x = gfx_clip_x0;
+        if (max_x >= gfx_clip_x1) max_x = gfx_clip_x1 - 1;
+        if (min_y < gfx_clip_y0) min_y = gfx_clip_y0;
+        if (max_y >= gfx_clip_y1) max_y = gfx_clip_y1 - 1;
+    }
+    if (min_x > max_x || min_y > max_y) return;
 
     int r2 = r * r;
     for (int y = min_y; y <= max_y; y++) {

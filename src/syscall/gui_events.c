@@ -55,22 +55,17 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
             } else if (action == MENU_ACTION_CLOSE) {
                 return SYS_WIN_EVENT_CLOSE;
             }
-        } else if (action == -1) {
-            needs_redraw = 1;
-        } else if (button_pressed && !menu_contains_point(&form->window_menu, mx, my)) {
+        } else if (action == 0 && button_pressed &&
+                   !menu_contains_point(&form->window_menu, mx, my)) {
             menu_hide(&form->window_menu);
-            needs_redraw = 1;
         }
-        if (form->window_menu.visible || action != 0) {
-            if (needs_redraw) {
-                return (uint32_t)SYS_WIN_EVENT_REDRAW;
-            }
-            return 0;
-        }
+        return 0;
     }
 
     /* Handle menubar if enabled */
     if (!form->win.is_minimized && form->menubar_enabled && form->menubar.visible) {
+        int old_hovered_menu = form->menubar.hovered_menu;
+        int old_active_menu = form->menubar.active_menu;
         int bar_y = form->win.y + WM_TITLEBAR_HEIGHT + 2;
         int in_menubar = (mx >= form->win.x + 2 && mx < form->win.x + form->win.w - 2 &&
                           my >= bar_y && my < bar_y + MENUBAR_HEIGHT);
@@ -97,9 +92,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         }
         /* Redraw if needed */
         if (needs_redraw) {
-            mouse_restore();
-            mouse_invalidate_buffer();
-            compositor_draw_single(&global_wm, form);
+            compositor_draw_menubar_update(form, old_hovered_menu, old_active_menu);
             if (action > 0) {
                 return form->clicked_id;
             }
@@ -240,8 +233,8 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 /* Check minimize button */
                 int min_result = pump_handle_minimize(form, mx, my);
                 if (min_result == 2) {
-                    /* Menu shown */
-                    needs_redraw = 1;
+                    /* menu_show drew the popup; avoid repainting the form beneath it. */
+                    return 0;
                 } else if (min_result == 1) {
                     return SYS_WIN_EVENT_REDRAW;
                 }
@@ -990,8 +983,15 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         } else {
             compositor_draw_single(&global_wm, form);
         }
-        /* Return clicked_id if it was set (e.g., scrollbar value changed), otherwise -1 */
-        return (form->clicked_id >= 0) ? (uint32_t)form->clicked_id : (uint32_t)SYS_WIN_EVENT_REDRAW;
+        if (form->clicked_id >= 0) {
+            return (uint32_t)form->clicked_id;
+        }
+
+        /* Changed controls were already redrawn; avoid a redundant full-form dirty pass. */
+        if (changed_count > 0 && changed_count < 32) {
+            return 0;
+        }
+        return (uint32_t)SYS_WIN_EVENT_REDRAW;
     }
 
     return 0;

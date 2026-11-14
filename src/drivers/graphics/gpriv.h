@@ -20,6 +20,11 @@ extern volatile int gfx_dirty_y0;
 extern volatile int gfx_dirty_x1;
 extern volatile int gfx_dirty_y1;
 extern volatile int gfx_full_redraw;
+extern int gfx_clip_enabled;
+extern int gfx_clip_x0;
+extern int gfx_clip_y0;
+extern int gfx_clip_x1;
+extern int gfx_clip_y1;
 
 #define backbuffer gfx_backbuffer
 #define frontbuffer gfx_frontbuffer
@@ -33,18 +38,34 @@ extern volatile int gfx_full_redraw;
 #define full_redraw gfx_full_redraw
 
 static inline void mark_dirty(int x, int y, int w, int h) {
-    int x1 = x + w - 1;
-    int y1 = y + h - 1;
+    if (w <= 0 || h <= 0) return;
+
+    int64_t x1_wide = (int64_t)x + w;
+    int64_t y1_wide = (int64_t)y + h;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    int x1 = x1_wide > GFX_WIDTH ? GFX_WIDTH : (int)x1_wide;
+    int y1 = y1_wide > GFX_HEIGHT ? GFX_HEIGHT : (int)y1_wide;
+    if (gfx_clip_enabled) {
+        if (x < gfx_clip_x0) x = gfx_clip_x0;
+        if (y < gfx_clip_y0) y = gfx_clip_y0;
+        if (x1 > gfx_clip_x1) x1 = gfx_clip_x1;
+        if (y1 > gfx_clip_y1) y1 = gfx_clip_y1;
+    }
+    if (x >= x1 || y >= y1) return;
 
     if (x < dirty_x0) dirty_x0 = x;
     if (y < dirty_y0) dirty_y0 = y;
-    if (x1 > dirty_x1) dirty_x1 = x1;
-    if (y1 > dirty_y1) dirty_y1 = y1;
+    if (x1 - 1 > dirty_x1) dirty_x1 = x1 - 1;
+    if (y1 - 1 > dirty_y1) dirty_y1 = y1 - 1;
 }
 
 static inline void putpixel_raw(int x, int y, uint8_t color) {
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
+    if (gfx_clip_enabled &&
+        (x < gfx_clip_x0 || x >= gfx_clip_x1 ||
+         y < gfx_clip_y0 || y >= gfx_clip_y1)) return;
 
     uint32_t offset = y * (GFX_WIDTH / 2) + (x / 2);
 

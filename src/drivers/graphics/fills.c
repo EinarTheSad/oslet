@@ -3,6 +3,11 @@
 void gfx_floodfill(int x, int y, uint8_t new_color) {
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
+    int clip_x0 = gfx_clip_enabled ? gfx_clip_x0 : 0;
+    int clip_y0 = gfx_clip_enabled ? gfx_clip_y0 : 0;
+    int clip_x1 = gfx_clip_enabled ? gfx_clip_x1 : GFX_WIDTH;
+    int clip_y1 = gfx_clip_enabled ? gfx_clip_y1 : GFX_HEIGHT;
+    if (x < clip_x0 || x >= clip_x1 || y < clip_y0 || y >= clip_y1) return;
 
     uint8_t target = getpixel_raw(x, y);
     if (target == new_color) {
@@ -39,10 +44,10 @@ void gfx_floodfill(int x, int y, uint8_t new_color) {
         int lx = cx;
         int rx = cx;
 
-        while (lx - 1 >= 0 && getpixel_raw(lx - 1, cy) == target) {
+        while (lx - 1 >= clip_x0 && getpixel_raw(lx - 1, cy) == target) {
             lx--;
         }
-        while (rx + 1 < GFX_WIDTH && getpixel_raw(rx + 1, cy) == target) {
+        while (rx + 1 < clip_x1 && getpixel_raw(rx + 1, cy) == target) {
             rx++;
         }
 
@@ -56,7 +61,7 @@ void gfx_floodfill(int x, int y, uint8_t new_color) {
         if (cy > max_y) max_y = cy;
 
         for (int ny = cy - 1; ny <= cy + 1; ny += 2) {
-            if (ny < 0 || ny >= GFX_HEIGHT)
+            if (ny < clip_y0 || ny >= clip_y1)
                 continue;
 
             int nx = lx;
@@ -152,6 +157,11 @@ void gfx_floodfill_gradient(int x, int y,
                             int orientation) {
     if (!backbuffer) return;
     if (x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT) return;
+    int clip_x0 = gfx_clip_enabled ? gfx_clip_x0 : 0;
+    int clip_y0 = gfx_clip_enabled ? gfx_clip_y0 : 0;
+    int clip_x1 = gfx_clip_enabled ? gfx_clip_x1 : GFX_WIDTH;
+    int clip_y1 = gfx_clip_enabled ? gfx_clip_y1 : GFX_HEIGHT;
+    if (x < clip_x0 || x >= clip_x1 || y < clip_y0 || y >= clip_y1) return;
 
     uint8_t target = getpixel_raw(x, y);
 
@@ -200,8 +210,8 @@ void gfx_floodfill_gradient(int x, int y,
         int lx = cx;
         int rx = cx;
 
-        while (lx - 1 >= 0 && getpixel_raw(lx - 1, cy) == target) lx--;
-        while (rx + 1 < GFX_WIDTH && getpixel_raw(rx + 1, cy) == target) rx++;
+        while (lx - 1 >= clip_x0 && getpixel_raw(lx - 1, cy) == target) lx--;
+        while (rx + 1 < clip_x1 && getpixel_raw(rx + 1, cy) == target) rx++;
 
         for (int px = lx; px <= rx; px++)
             putpixel_raw(px, cy, placeholder);
@@ -212,7 +222,7 @@ void gfx_floodfill_gradient(int x, int y,
         if (cy > max_y) max_y = cy;
 
         for (int ny = cy - 1; ny <= cy + 1; ny += 2) {
-            if (ny < 0 || ny >= GFX_HEIGHT) continue;
+            if (ny < clip_y0 || ny >= clip_y1) continue;
 
             int nx = lx;
             while (nx <= rx) {

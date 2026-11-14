@@ -75,6 +75,9 @@ uint8_t* gfx_get_backbuffer(void);
 
 void gfx_putpixel(int x, int y, uint8_t color);
 uint8_t gfx_getpixel(int x, int y);
+void gfx_set_clip_rect(int x, int y, int w, int h);
+void gfx_reset_clip_rect(void);
+int gfx_clip_rect_contains(int x, int y, int w, int h);
 void gfx_line(int x0, int y0, int x1, int y1, uint8_t color);
 void gfx_rect(int x, int y, int w, int h, uint8_t color);
 void gfx_fillrect(int x, int y, int w, int h, uint8_t color);

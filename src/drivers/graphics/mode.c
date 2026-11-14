@@ -9,6 +9,49 @@ int plane_table_init = 0;
 volatile int dirty_x0 = GFX_WIDTH, dirty_y0 = GFX_HEIGHT;
 volatile int dirty_x1 = -1, dirty_y1 = -1;
 volatile int full_redraw = 1;
+int gfx_clip_enabled = 0;
+int gfx_clip_x0 = 0, gfx_clip_y0 = 0;
+int gfx_clip_x1 = GFX_WIDTH, gfx_clip_y1 = GFX_HEIGHT;
+
+void gfx_set_clip_rect(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) {
+        gfx_clip_x0 = gfx_clip_x1 = 0;
+        gfx_clip_y0 = gfx_clip_y1 = 0;
+        gfx_clip_enabled = 1;
+        return;
+    }
+
+    int64_t x1_wide = (int64_t)x + w;
+    int64_t y1_wide = (int64_t)y + h;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    int x1 = x1_wide > GFX_WIDTH ? GFX_WIDTH : (int)x1_wide;
+    int y1 = y1_wide > GFX_HEIGHT ? GFX_HEIGHT : (int)y1_wide;
+    if (x1 < x) x1 = x;
+    if (y1 < y) y1 = y;
+
+    gfx_clip_x0 = x;
+    gfx_clip_y0 = y;
+    gfx_clip_x1 = x1;
+    gfx_clip_y1 = y1;
+    gfx_clip_enabled = 1;
+}
+
+void gfx_reset_clip_rect(void) {
+    gfx_clip_enabled = 0;
+    gfx_clip_x0 = 0;
+    gfx_clip_y0 = 0;
+    gfx_clip_x1 = GFX_WIDTH;
+    gfx_clip_y1 = GFX_HEIGHT;
+}
+
+int gfx_clip_rect_contains(int x, int y, int w, int h) {
+    if (w <= 0 || h <= 0) return 0;
+    if (!gfx_clip_enabled) return 1;
+    return x >= gfx_clip_x0 && y >= gfx_clip_y0 &&
+           (int64_t)x + w <= gfx_clip_x1 &&
+           (int64_t)y + h <= gfx_clip_y1;
+}
 
 static inline void reset_dirty(void) {
     dirty_x0 = GFX_WIDTH;
@@ -144,6 +187,13 @@ int gfx_is_active(void) {
 
 void gfx_clear(uint8_t color) {
     if (!backbuffer) return;
+
+    if (gfx_clip_enabled) {
+        gfx_fillrect(gfx_clip_x0, gfx_clip_y0,
+                     gfx_clip_x1 - gfx_clip_x0,
+                     gfx_clip_y1 - gfx_clip_y0, color);
+        return;
+    }
     
     GFX_LOCK();
     uint8_t pattern = (color & 0x0F) | ((color & 0x0F) << 4);

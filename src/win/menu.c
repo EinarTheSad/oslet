@@ -218,6 +218,9 @@ void menu_show(menu_t *menu, int x, int y) {
 void menu_hide(menu_t *menu) {
     if (!menu || !menu->visible) return;
 
+    /* Clear the cursor's saved footprint before invalidating its buffer. */
+    mouse_restore();
+
     /* Restore background */
     if (menu->saved_bg) {
         int save_w = menu->w;
@@ -407,6 +410,31 @@ menu_t* menubar_get_menu(menubar_t *menubar, int index) {
     return &menubar->menus[index].menu;
 }
 
+void menubar_draw_item(menubar_t *menubar, int index, int win_x, int win_y) {
+    if (!menubar || !menubar->visible || index < 0 ||
+        index >= menubar->menu_count) return;
+
+    window_theme_t *theme = theme_get_current();
+    int bar_y = win_y + WM_TITLEBAR_HEIGHT + 2;
+    int x_offset = win_x + 7;
+    for (int i = 0; i < index; i++) {
+        x_offset += menubar->menus[i].title_width;
+    }
+
+    menubar_entry_t *entry = &menubar->menus[index];
+    uint8_t bg_color = theme->bg_color;
+    if (index == menubar->hovered_menu || index == menubar->active_menu) {
+        bg_color = 7;
+    }
+
+    gfx_fillrect(x_offset - 4, bar_y + 2, entry->title_width - 4,
+                 MENUBAR_HEIGHT - 4, bg_color);
+    if (font_n.data) {
+        bmf_printf(x_offset, bar_y + 5, &font_n, 12, theme->text_color,
+                   "%s", entry->title);
+    }
+}
+
 void menubar_draw(menubar_t *menubar, int win_x, int win_y, int win_w) {
     if (!menubar || !menubar->visible) return;
     
@@ -419,22 +447,8 @@ void menubar_draw(menubar_t *menubar, int win_x, int win_y, int win_w) {
     gfx_fillrect(win_x + 2, bar_y, win_w - 4, MENUBAR_HEIGHT, theme->bg_color);
     gfx_hline(win_x + 2, bar_y + MENUBAR_HEIGHT - 1, win_w - 4, theme->frame_dark);
     
-    int x_offset = win_x + 7;
     for (int i = 0; i < menubar->menu_count; i++) {
-        menubar_entry_t *entry = &menubar->menus[i];
-        uint8_t bg_color = theme->bg_color;
-        uint8_t text_color = theme->text_color;
-        
-        if (i == menubar->hovered_menu || i == menubar->active_menu) {
-            bg_color = 7;
-            gfx_fillrect(x_offset - 4, bar_y + 2, entry->title_width - 4, MENUBAR_HEIGHT - 4, bg_color);
-        }
-        
-        if (font_n.data) {
-            bmf_printf(x_offset, bar_y + 5, &font_n, 12, text_color, "%s", entry->title);
-        }
-        
-        x_offset += entry->title_width;
+        menubar_draw_item(menubar, i, win_x, win_y);
     }
     
     if (menubar->active_menu >= 0 && menubar->active_menu < menubar->menu_count) {

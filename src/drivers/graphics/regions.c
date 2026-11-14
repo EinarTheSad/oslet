@@ -45,7 +45,7 @@ void gfx_write_screen_region_packed(uint8_t *src, int width, int height, int des
     int row_bytes = (width + 1) / 2;
 
     /* Byte-copy only exact whole-byte regions. Odd widths include one extra pixel. */
-    if (dest_x >= 0 && dest_y >= 0 && dest_x + width <= GFX_WIDTH &&
+    if (!gfx_clip_enabled && dest_x >= 0 && dest_y >= 0 && dest_x + width <= GFX_WIDTH &&
         dest_y + height <= GFX_HEIGHT && (dest_x & 1) == 0 && (width & 1) == 0) {
         int dest_byte_x = dest_x / 2;
         int screen_row_bytes = GFX_WIDTH / 2;

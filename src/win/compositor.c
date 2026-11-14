@@ -7,6 +7,7 @@
 #include "theme.h"
 #include "wm_config.h"
 #include "wm.h"
+#include "../drivers/graphics.h"
 #include "../drivers/mouse.h"
 #include "../mem/heap.h"
 
@@ -58,37 +59,6 @@ static int rects_intersect(int ax, int ay, int aw, int ah,
     if (ay + ah <= by) return 0;
     if (by + bh <= ay) return 0;
     return 1;
-}
-
-/* Draw only controls that intersect the given screen-space dirty rect.
-   This avoids redrawing controls that haven't changed, preventing flicker
-   in unrelated controls when only one control needs updating. */
-static void compositor_draw_controls_clipped(gui_form_t *form, int dx, int dy, int dw, int dh) {
-    if (!form || form->win.is_minimized || !form->controls) return;
-
-    /* Don't draw controls while actively resizing to avoid visual glitches */
-    if (form->resizing) return;
-
-    int y_offset = 20;
-    if (form->menubar_enabled) {
-        y_offset += menubar_get_height(&form->menubar);
-    }
-    for (int j = 0; j < form->ctrl_count; j++) {
-        gui_control_t *ctrl = &form->controls[j];
-        int abs_x = form->win.x + ctrl->x;
-        int abs_y = form->win.y + ctrl->y + y_offset;
-
-        /* Skip controls that don't intersect the dirty rect */
-        if (!rects_intersect(abs_x, abs_y, ctrl->w, ctrl->h, dx, dy, dw, dh)) {
-            continue;
-        }
-
-        if (ctrl->type == CTRL_TEXTBOX) {
-            ctrl->textbox.is_focused =
-                (ctrl->id == form->focused_control_id) ? 1 : 0;
-        }
-        ctrl_draw_with_offset(&form->win, ctrl, y_offset);
-    }
 }
 
 void compositor_draw_all(window_manager_t *wm) {
@@ -145,10 +115,8 @@ void compositor_draw_all(window_manager_t *wm) {
             }
         }
 
-        /* If nothing intersects, nothing to do. Otherwise draw only windows
-           that intersect the dirty rect, in back-to-front order. This prevents
-           cascading redraws to windows above that don't overlap the changed area
-           (e.g. a clock tick shouldn't force Terminal or menus to redraw). */
+        gfx_set_clip_rect(dx, dy, dw, dh);
+
         if (min_index_to_draw < wm->count) {
             for (int i = min_index_to_draw; i < wm->count; i++) {
                 gui_form_t *form = wm->windows[i];
@@ -173,8 +141,6 @@ void compositor_draw_all(window_manager_t *wm) {
                         }
                     }
                 } else {
-                    /* Only draw this window if it actually intersects the dirty rect.
-                       Windows above that don't overlap are skipped entirely. */
                     if (!rects_intersect(dx, dy, dw, dh,
                                          form->win.x - WM_BG_MARGIN,
                                          form->win.y - WM_BG_MARGIN,
@@ -183,21 +149,11 @@ void compositor_draw_all(window_manager_t *wm) {
                         continue;
                     }
                     int is_focused = (i == wm->focused_index);
-                    /* If the dirty rect is entirely within the client area (below
-                       titlebar), skip frame/titlebar redraw to avoid erasing popup
-                       menus that may extend over the window. Only redraw controls. */
-                    int client_y = form->win.y + WM_TITLEBAR_HEIGHT;
-                    if (dy >= client_y) {
-                        /* Dirty rect is in client area only - skip frame fill */
-                        compositor_draw_controls_clipped(form, dx, dy, dw, dh);
-                    } else {
-                        /* Dirty rect touches titlebar/frame - do full window redraw */
-                        win_draw_focused(&form->win, is_focused);
-                        if (form->menubar_enabled) {
-                            menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
-                        }
-                        compositor_draw_controls_clipped(form, dx, dy, dw, dh);
+                    win_draw_focused(&form->win, is_focused);
+                    if (form->menubar_enabled) {
+                        menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
                     }
+                    compositor_draw_controls(form);
                 }
             }
         }
@@ -255,6 +211,8 @@ void compositor_draw_all(window_manager_t *wm) {
                 }
             }
         }
+
+        gfx_reset_clip_rect();
 
         /* Clear the dirty rect after drawing */
         wm->dirty_x = wm->dirty_y = wm->dirty_w = wm->dirty_h = 0;
@@ -394,6 +352,22 @@ void compositor_draw_single(window_manager_t *wm, gui_form_t *form) {
         }
     }
 
+    mouse_invalidate_buffer();
+}
+
+void compositor_draw_menubar_update(gui_form_t *form, int old_hovered, int old_active) {
+    if (!form || !form->win.is_visible || form->win.is_minimized ||
+        !form->menubar_enabled || !form->menubar.visible) return;
+
+    mouse_restore();
+    for (int i = 0; i < form->menubar.menu_count; i++) {
+        int was_highlighted = i == old_hovered || i == old_active;
+        int is_highlighted = i == form->menubar.hovered_menu ||
+                             i == form->menubar.active_menu;
+        if (was_highlighted != is_highlighted) {
+            menubar_draw_item(&form->menubar, i, form->win.x, form->win.y);
+        }
+    }
     mouse_invalidate_buffer();
 }
 
