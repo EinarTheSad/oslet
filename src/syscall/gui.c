@@ -210,7 +210,8 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             win_create(&form->win, x, y, w, h, title);
             form->controls = NULL;
             form->ctrl_count = 0;
-            form->clicked_id = -1;
+            form->clicked_event.type = SYS_WIN_EVENT_NONE;
+            form->clicked_event.id = 0;
             form->last_mouse_buttons = 0;
             form->press_control_id = -1;
             form->dragging = 0;
@@ -262,8 +263,13 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             return (uint32_t)form;
         }
 
-        case 0x07: /* SYS_WIN_PUMP_EVENTS */
-            return sys_win_pump_events_kernel((gui_form_t*)ebx);
+        case 0x07: { /* SYS_WIN_PUMP_EVENTS */
+            if (!sys_range_mapped(ecx, sizeof(sys_win_event_t))) return (uint32_t)-1;
+            sys_win_event_t event;
+            sys_win_pump_events_kernel((gui_form_t*)ebx, &event);
+            *(sys_win_event_t*)ecx = event;
+            return 0;
+        }
 
         case 0x08: { /* SYS_WIN_ADD_CONTROL */
             gui_form_t *form = (gui_form_t*)ebx;

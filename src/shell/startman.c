@@ -58,7 +58,8 @@ typedef struct {
 static char g_pending_grp_path[64] = {0};
 
 static int startman_init(prog_instance_t *inst);
-static int startman_event(prog_instance_t *inst, int win_idx, int event);
+static int startman_event(prog_instance_t *inst, int win_idx,
+                          const sys_win_event_t *event);
 static void startman_cleanup(prog_instance_t *inst);
 
 const progmod_t startman_module = {
@@ -687,25 +688,28 @@ static void rebuild_layout(startman_state_t *state) {
     }
 }
 
-static int startman_event(prog_instance_t *inst, int win_idx, int event) {
+static int startman_event(prog_instance_t *inst, int win_idx,
+                          const sys_win_event_t *event) {
     (void)win_idx;
     startman_state_t *state = inst->user_data;
 
     /* Handle window events */
-    if (event == -1 || event == -2) {
-        if (event == -2)
+    if (event->type == SYS_WIN_EVENT_REDRAW ||
+        event->type == SYS_WIN_EVENT_WINDOW_CHANGED) {
+        if (event->type == SYS_WIN_EVENT_WINDOW_CHANGED)
             save_main_geometry(state);
         return PROG_EVENT_REDRAW;
     }
     
     /* Handle resize event */
-    if (event == -4) {
+    if (event->type == SYS_WIN_EVENT_RESIZE) {
         rebuild_layout(state);
         save_main_geometry(state);
         return PROG_EVENT_REDRAW;
     }
 
-    if (event == CTRL_START_SCROLLBAR && state) {
+    if (event->type != SYS_WIN_EVENT_CONTROL) return PROG_EVENT_NONE;
+    if (event->id == CTRL_START_SCROLLBAR && state) {
         gui_control_t *scrollbar = sys_win_get_control(state->form, CTRL_START_SCROLLBAR);
         if (scrollbar) {
             state->scroll_offset = scrollbar->scrollbar.cursor_pos;
@@ -717,7 +721,7 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
     }
 
     /* Handle back button - only for child windows */
-    if (event == CTRL_BACK_BUTTON && state && !state->is_main_window) {
+    if (event->id == CTRL_BACK_BUTTON && state && !state->is_main_window) {
         /* Check if main Start Manager window is already open */
         int main_exists = 0;
         for (int i = 0; i < PROGMAN_INSTANCES_MAX; i++) {
@@ -742,8 +746,8 @@ static int startman_event(prog_instance_t *inst, int win_idx, int event) {
     }
 
     /* Handle icon double-clicks */
-    if (event >= CTRL_APP_BASE && state) {
-        int app_index = event - CTRL_APP_BASE;
+    if (event->id >= CTRL_APP_BASE && state) {
+        int app_index = event->id - CTRL_APP_BASE;
         if (app_index >= 0 && app_index < state->app_count) {
             app_entry_t *app = &state->apps[app_index];
             if (app->type == ENTRY_GRP) {

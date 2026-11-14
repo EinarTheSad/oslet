@@ -24,6 +24,7 @@ OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG
 #define ID_BACK_BUTTON       51
 #define ID_TOOLBAR_FRAME     52
 #define ID_TREEVIEW          53
+#define ID_FILE_FRAME        54
 #define ID_FILE_SCROLLBAR    61
 
 #define ID_TB_BACK           69
@@ -145,10 +146,13 @@ static char* show_prompt_dialog(const char *title, const char *label, const char
     int confirmed = 0;
     
     while (dlg_running) {
-        int ev = sys_win_pump_events(dlg);
-        if (ev == -3 || ev == 4) {
+        sys_win_event_t event;
+        if (sys_win_pump_events(dlg, &event) != 0) {
             dlg_running = 0;
-        } else if (ev == 3) {
+        } else if (event.type == SYS_WIN_EVENT_CLOSE ||
+                   (event.type == SYS_WIN_EVENT_CONTROL && event.id == 4)) {
+            dlg_running = 0;
+        } else if (event.type == SYS_WIN_EVENT_CONTROL && event.id == 3) {
             gui_control_t *tb = sys_win_get_control(dlg, 2);
             if (tb && tb->text[0]) {
                 strncpy(result, tb->text, sizeof(result) - 1);
@@ -156,7 +160,8 @@ static char* show_prompt_dialog(const char *title, const char *label, const char
                 confirmed = 1;
             }
             dlg_running = 0;
-        } else if (ev == -1 || ev == -2) {
+        } else if (event.type == SYS_WIN_EVENT_REDRAW ||
+                   event.type == SYS_WIN_EVENT_WINDOW_CHANGED) {
             sys_win_draw(dlg);
             sys_win_redraw_all();
         }
@@ -772,6 +777,10 @@ static void relayout(void) {
     if (state.file_rows < 1) state.file_rows = 1;
     if (state.file_rows > MAX_FILE_ROWS) state.file_rows = MAX_FILE_ROWS;
 
+    sys_ctrl_set_prop(state.form, ID_FILE_FRAME, PROP_X, state.files_x);
+    sys_ctrl_set_prop(state.form, ID_FILE_FRAME, PROP_W, state.files_w + FILE_SCROLLBAR_W);
+    sys_ctrl_set_prop(state.form, ID_FILE_FRAME, PROP_H, avail_h - 9);
+
     sys_ctrl_set_prop(state.form, ID_FILE_SCROLLBAR, PROP_X, sb_x);
     sys_ctrl_set_prop(state.form, ID_FILE_SCROLLBAR, PROP_H, avail_h-9);
 }
@@ -818,8 +827,8 @@ static void refresh_display(void) {
         if (idx < state.file_count && ctrl) {
             int col = i % state.file_cols;
             int row = i / state.file_cols;
-            sys_ctrl_set_prop(state.form, ctrl_id, PROP_X, state.files_x + col * (FILE_ICON_W + FILE_PAD));
-            sys_ctrl_set_prop(state.form, ctrl_id, PROP_Y, CONTENT_Y + row * (FILE_ICON_H + FILE_PAD));
+            sys_ctrl_set_prop(state.form, ctrl_id, PROP_X, state.files_x + 1 + col * (FILE_ICON_W + FILE_PAD));
+            sys_ctrl_set_prop(state.form, ctrl_id, PROP_Y, CONTENT_Y + 4 + row * (FILE_ICON_H + FILE_PAD));
 
             ctrl_set_text(state.form, ctrl_id, state.file_items[idx].name);
             ctrl_set_visible(state.form, ctrl_id, 1);
@@ -1297,20 +1306,22 @@ static void handle_shortcut(int key) {
 }
 
 /* Event handling — returns 1 to exit */
-static int handle_event(int event) {
-    if (event >= SYS_EVENT_CTRL_KEY_BASE && event < SYS_EVENT_CTRL_KEY_BASE + 32) {
-        handle_shortcut(event - SYS_EVENT_CTRL_KEY_BASE);
+static int handle_event(const sys_win_event_t *event) {
+    if (event->type == SYS_WIN_EVENT_CONTROL_KEY) {
+        handle_shortcut(event->id);
         return 0;
     }
 
-    if (event == MENU_FILE_EXIT)
+    if (event->type == SYS_WIN_EVENT_MENU && event->id == MENU_FILE_EXIT)
         return 1;
     
-    if (event <= 0)
+    if (event->type != SYS_WIN_EVENT_CONTROL && event->type != SYS_WIN_EVENT_MENU)
         return 0;
+
+    int id = event->id;
     
     /* Handle path textbox */
-    if (event == ID_PATH_TEXTBOX) {
+    if (event->type == SYS_WIN_EVENT_CONTROL && id == ID_PATH_TEXTBOX) {
         gui_control_t *textbox = sys_win_get_control(state.form, ID_PATH_TEXTBOX);
         if (textbox && textbox->text[0]) {
             char prev_path[256];
@@ -1325,7 +1336,9 @@ static int handle_event(int event) {
     }
 
     /* Back button (toolbar or menu) */
-    if (event == ID_BACK_BUTTON || event == ID_TB_BACK || event == MENU_GO_BACK) {
+    if ((event->type == SYS_WIN_EVENT_CONTROL &&
+         (id == ID_BACK_BUTTON || id == ID_TB_BACK)) ||
+        (event->type == SYS_WIN_EVENT_MENU && id == MENU_GO_BACK)) {
         if (strcmp(state.current_path, "C:/") != 0) {
             char new_path[256];
             strcpy(new_path, state.current_path);
@@ -1349,14 +1362,14 @@ static int handle_event(int event) {
     }
 
     /* Go Home */
-    if (event == MENU_GO_HOME) {
+    if (event->type == SYS_WIN_EVENT_MENU && id == MENU_GO_HOME) {
         if (set_current_path("C:/", 0))
             refresh_display();
         return 0;
     }
     
     /* Handle tree view */
-    if (event == ID_TREEVIEW) {
+    if (event->type == SYS_WIN_EVENT_CONTROL && id == ID_TREEVIEW) {
         int action = ctrl_tree_get_action(state.form, ID_TREEVIEW);
         int idx = ctrl_tree_get_action_index(state.form, ID_TREEVIEW);
         ctrl_tree_clear_action(state.form, ID_TREEVIEW);
@@ -1383,7 +1396,7 @@ static int handle_event(int event) {
     }
     
     /* Handle file scrollbar */
-    if (event == ID_FILE_SCROLLBAR) {
+    if (event->type == SYS_WIN_EVENT_CONTROL && id == ID_FILE_SCROLLBAR) {
         gui_control_t *scrollbar = sys_win_get_control(state.form, ID_FILE_SCROLLBAR);
         if (scrollbar) {
             state.file_scroll_offset = scrollbar->scrollbar.cursor_pos;
@@ -1393,8 +1406,9 @@ static int handle_event(int event) {
     }
     
     /* Handle file icon double-clicks */
-    if (event >= ID_FILE_BASE && event < ID_FILE_BASE + (MAX_FILE_ROWS * MAX_FILE_COLS)) {
-        int visible_idx = event - ID_FILE_BASE;
+    if (event->type == SYS_WIN_EVENT_CONTROL &&
+        id >= ID_FILE_BASE && id < ID_FILE_BASE + (MAX_FILE_ROWS * MAX_FILE_COLS)) {
+        int visible_idx = id - ID_FILE_BASE;
         int actual_idx = (state.file_scroll_offset * state.file_cols) + visible_idx;
         if (state.suppress_next_open) {
             state.suppress_next_open = 0;
@@ -1406,14 +1420,20 @@ static int handle_event(int event) {
     }
     
     /* Toolbar and edit menu */
-    if (event == ID_TB_CUT || event == MENU_EDIT_CUT)       { do_cut_action();    return 0; }
-    if (event == ID_TB_COPY || event == MENU_EDIT_COPY)     { do_copy_action();   return 0; }
-    if (event == ID_TB_PASTE || event == MENU_EDIT_PASTE)   { do_paste_action();  return 0; }
-    if (event == ID_TB_RENAME || event == MENU_EDIT_RENAME) { do_rename_action(); return 0; }
-    if (event == ID_TB_DELETE || event == MENU_EDIT_DELETE) { do_delete_action(); return 0; }
+    if ((event->type == SYS_WIN_EVENT_CONTROL && id == ID_TB_CUT) ||
+        (event->type == SYS_WIN_EVENT_MENU && id == MENU_EDIT_CUT))       { do_cut_action();    return 0; }
+    if ((event->type == SYS_WIN_EVENT_CONTROL && id == ID_TB_COPY) ||
+        (event->type == SYS_WIN_EVENT_MENU && id == MENU_EDIT_COPY))      { do_copy_action();   return 0; }
+    if ((event->type == SYS_WIN_EVENT_CONTROL && id == ID_TB_PASTE) ||
+        (event->type == SYS_WIN_EVENT_MENU && id == MENU_EDIT_PASTE))     { do_paste_action();  return 0; }
+    if ((event->type == SYS_WIN_EVENT_CONTROL && id == ID_TB_RENAME) ||
+        (event->type == SYS_WIN_EVENT_MENU && id == MENU_EDIT_RENAME))    { do_rename_action(); return 0; }
+    if ((event->type == SYS_WIN_EVENT_CONTROL && id == ID_TB_DELETE) ||
+        (event->type == SYS_WIN_EVENT_MENU && id == MENU_EDIT_DELETE))    { do_delete_action(); return 0; }
     
     /* New Folder (toolbar + menu) */
-    if (event == ID_TB_NEW_FOLDER || event == MENU_FILE_NEW_FOLDER) {
+    if ((event->type == SYS_WIN_EVENT_CONTROL && id == ID_TB_NEW_FOLDER) ||
+        (event->type == SYS_WIN_EVENT_MENU && id == MENU_FILE_NEW_FOLDER)) {
         char *folder_name = show_prompt_dialog("New Folder", "Name:", "");
         if (folder_name && folder_name[0]) {
             char folder_path[256];
@@ -1432,7 +1452,8 @@ static int handle_event(int event) {
     }
     
     /* Toolbar and menu: New File */
-    if (event == ID_TB_NEW_FILE || event == MENU_FILE_NEW_FILE) {
+    if ((event->type == SYS_WIN_EVENT_CONTROL && id == ID_TB_NEW_FILE) ||
+        (event->type == SYS_WIN_EVENT_MENU && id == MENU_FILE_NEW_FILE)) {
         char *file_name = show_prompt_dialog("New File", "Name:", "");
         if (file_name && file_name[0]) {
             char file_path[256];
@@ -1453,7 +1474,7 @@ static int handle_event(int event) {
     /* Menu: Open removed */
     
     /* Menu: Refresh */
-    if (event == MENU_VIEW_REFRESH) {
+    if (event->type == SYS_WIN_EVENT_MENU && id == MENU_VIEW_REFRESH) {
         tree_reload_children_for_path(state.current_path);
         tree_ensure_path(state.current_path);
         refresh_display();
@@ -1461,7 +1482,7 @@ static int handle_event(int event) {
     }
     
     /* Menu: About */
-    if (event == MENU_HELP_ABOUT) {
+    if (event->type == SYS_WIN_EVENT_MENU && id == MENU_HELP_ABOUT) {
         sys_win_msgbox("osLET File Manager\n\nThis is a work in progress!", "OK", "About");
         sys_win_redraw_all();
         return 0;
@@ -1580,6 +1601,16 @@ void _start(void) {
     sys_win_add_control(state.form, &treeview);
     ctrl_tree_set_icons(state.form, ID_TREEVIEW, "C:/ICONS/FLD.ICO", "C:/ICONS/FLO.ICO");
 
+    /* White background beneath the file icons */
+    gui_control_t file_frame = {0};
+    file_frame.type = CTRL_LABEL;
+    file_frame.x = TREE_X + TREE_W + 12; file_frame.y = CONTENT_Y - 1;
+    file_frame.w = 1; file_frame.h = 1;
+    file_frame.fg = 0; file_frame.bg = 15;
+    file_frame.id = ID_FILE_FRAME; file_frame.font_size = 12;
+    file_frame.border = 1; file_frame.border_color = 7;
+    sys_win_add_control(state.form, &file_frame);
+
     /* File scrollbar */
     gui_control_t file_scrollbar = {0};
     file_scrollbar.type = CTRL_SCROLLBAR;
@@ -1599,8 +1630,8 @@ void _start(void) {
         int row = i / MAX_FILE_COLS;
         gui_control_t file_icon = {0};
         file_icon.type = CTRL_ICON;
-        file_icon.x = (TREE_X + TREE_W + 12) + col * (FILE_ICON_W + FILE_PAD);
-        file_icon.y = CONTENT_Y + row * (FILE_ICON_H + FILE_PAD);
+        file_icon.x = (TREE_X + TREE_W + 12) + 1 + col * (FILE_ICON_W + FILE_PAD);
+        file_icon.y = CONTENT_Y + 4 + row * (FILE_ICON_H + FILE_PAD);
         file_icon.w = FILE_ICON_W; file_icon.h = FILE_ICON_H;
         file_icon.bg = 15;
         file_icon.id = ID_FILE_BASE + i; file_icon.font_size = 9;
@@ -1617,16 +1648,23 @@ void _start(void) {
     
     int running = 1;
     while (running) {
-        int ev = sys_win_pump_events(state.form);
-        if (ev == -3) { running = 0; break; }
-        if (ev == -4) { relayout(); refresh_display(); }
-        if (ev == -1 || ev == -2) { sys_win_mark_dirty(state.form); }
+        sys_win_event_t event;
+        if (sys_win_pump_events(state.form, &event) != 0) { running = 0; break; }
+        if (event.type == SYS_WIN_EVENT_CLOSE) { running = 0; break; }
+        if (event.type == SYS_WIN_EVENT_RESIZE) { relayout(); refresh_display(); }
+        if (event.type == SYS_WIN_EVENT_REDRAW ||
+            event.type == SYS_WIN_EVENT_WINDOW_CHANGED) { sys_win_mark_dirty(state.form); }
         update_drag_state();
         if (state.suppress_next_open &&
-            !(ev >= ID_FILE_BASE && ev < ID_FILE_BASE + (MAX_FILE_ROWS * MAX_FILE_COLS))) {
+            !(event.type == SYS_WIN_EVENT_CONTROL &&
+              event.id >= ID_FILE_BASE &&
+              event.id < ID_FILE_BASE + (MAX_FILE_ROWS * MAX_FILE_COLS))) {
             state.suppress_next_open = 0;
         }
-        if (ev > 0 && handle_event(ev)) { running = 0; break; }
+        if ((event.type == SYS_WIN_EVENT_CONTROL ||
+             event.type == SYS_WIN_EVENT_MENU ||
+             event.type == SYS_WIN_EVENT_CONTROL_KEY) &&
+            handle_event(&event)) { running = 0; break; }
         if (sys_win_is_focused(state.form)) {
             gui_form_t *form = (gui_form_t*)state.form;
             if (form && form->focused_control_id < 0) {

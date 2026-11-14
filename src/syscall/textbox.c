@@ -161,7 +161,8 @@ int pump_handle_keyboard(gui_form_t *form) {
     int has_selection = (ctrl->textbox.sel_start >= 0 && ctrl->textbox.sel_start != ctrl->textbox.sel_end);
 
     if (key == 14 || key == 19) {
-        form->clicked_id = SYS_EVENT_CTRL_KEY(key);
+        form->clicked_event.type = SYS_WIN_EVENT_CONTROL_KEY;
+        form->clicked_event.id = key;
         return 2;
     }
 
@@ -249,7 +250,8 @@ int pump_handle_keyboard(gui_form_t *form) {
             ctrl->textbox.cursor_pos++;
             needs_redraw = 1;
         } else {
-            form->clicked_id = ctrl->id;
+            form->clicked_event.type = SYS_WIN_EVENT_CONTROL;
+            form->clicked_event.id = ctrl->id;
             needs_redraw = 1;
         }
     }

@@ -621,16 +621,16 @@ static void pump_all_program_events(int mx, int my, unsigned char mb) {
             
             if (!should_process) continue;
 
-            int event = sys_win_pump_events(form);
-            if (event != 0) {
-                /* Handle close from window menu (-3) */
-                if (event == -3) {
+            sys_win_event_t event;
+            if (sys_win_pump_events(form, &event) != 0) continue;
+            if (event.type != SYS_WIN_EVENT_NONE) {
+                if (event.type == SYS_WIN_EVENT_CLOSE) {
                     progman_close(inst->instance_id);
                     desktop_redraw();
                     break;
                 }
 
-                int result = progman_route_event(form, event);
+                int result = progman_route_event(form, &event);
 
                 if (result == PROG_EVENT_CLOSE) {
                     progman_close(inst->instance_id);
@@ -638,7 +638,8 @@ static void pump_all_program_events(int mx, int my, unsigned char mb) {
                     break;
                 }
 
-                if (event == -2 || event == -4) {
+                if (event.type == SYS_WIN_EVENT_WINDOW_CHANGED ||
+                    event.type == SYS_WIN_EVENT_RESIZE) {
                     /* Major window state change - full redraw */
                     desktop_redraw();
                 }

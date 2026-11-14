@@ -176,18 +176,18 @@ static void terminal_cleanup(void) {
     usr_bmf_free(&font);
 }
 
-static int handle_event(void *form_arg, int event, void *userdata)
+static int handle_event(void *form_arg, const sys_win_event_t *event, void *userdata)
 {
     (void)userdata;
     gui_form_t *f = (gui_form_t*)form_arg;
 
-    if (event == -3) {
+    if (event->type == SYS_WIN_EVENT_CLOSE) {
         stop_shell();
         terminal_cleanup();
         sys_exit();
     }
 
-    if (event == -4) {
+    if (event->type == SYS_WIN_EVENT_RESIZE) {
         resize(f);
     }
 
@@ -352,21 +352,25 @@ void _start(void) {
 
     int running = 1;
     while (running) {
-        int event = sys_win_pump_events(form);
+        sys_win_event_t event;
+        if (sys_win_pump_events(form, &event) != 0) {
+            running = 0;
+            continue;
+        }
 
-        if (event == SYS_WIN_EVENT_CLOSE) {
+        if (event.type == SYS_WIN_EVENT_CLOSE) {
             stop_shell();
             running = 0;
             continue;
         }
 
-        if (event == SYS_WIN_EVENT_REDRAW)
+        if (event.type == SYS_WIN_EVENT_REDRAW)
             sys_win_mark_dirty(form);
 
-        if (handle_event(form, event, NULL) != 0)
+        if (handle_event(form, &event, NULL) != 0)
             running = 0;
 
-        if (event == SYS_WIN_EVENT_WINDOW_CHANGED || event == SYS_WIN_EVENT_RESIZE) {
+        if (event.type == SYS_WIN_EVENT_WINDOW_CHANGED || event.type == SYS_WIN_EVENT_RESIZE) {
             sys_win_draw(form);
             sys_win_force_full_redraw();
             sys_win_invalidate_icons();

@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include "../syscall.h"
 
-typedef int (*gix_app_event_fn)(void *form, int event, void *userdata);
+typedef int (*gix_app_event_fn)(void *form, const sys_win_event_t *event, void *userdata);
 typedef void (*gix_app_callback_fn)(void *form, void *userdata);
 
 typedef struct {

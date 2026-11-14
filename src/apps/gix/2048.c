@@ -242,11 +242,11 @@ static gui_control_t Form1_controls[] = {
     { .type = CTRL_LABEL, .x = 56, .y = 176, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "0", .id = ID_SCORE_VALUE, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
 };
 
-static int Form1_handle_event(void *form, int event, void *userdata) {
+static int Form1_handle_event(void *form, const sys_win_event_t *event, void *userdata) {
     (void)userdata; (void)form;
     
-    if (event > 0) {
-        switch (event) {
+    if (event->type == SYS_WIN_EVENT_MENU) {
+        switch (event->id) {
             case MENU_FILE_NEW:
                 init_game();
                 sys_win_mark_dirty(Form1);
@@ -288,7 +288,7 @@ static int Form1_handle_event(void *form, int event, void *userdata) {
         }
     }
     
-    if (event == -2) {
+    if (event->type == SYS_WIN_EVENT_WINDOW_CHANGED) {
         sys_win_draw(form);
         sys_win_force_full_redraw();
     }

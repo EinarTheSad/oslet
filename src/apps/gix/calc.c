@@ -273,11 +273,13 @@ static int sqrt(void) {
     return res;
 }
 
-static int handle_event(void *f, int event, void *userdata) {
+static int handle_event(void *f, const sys_win_event_t *event, void *userdata) {
     (void)userdata;
     form = f;
     
-    switch (event) {
+    if (event->type != SYS_WIN_EVENT_CONTROL) return 0;
+
+    switch (event->id) {
         case ID_BTN_0: append_digit(0); break;
         case ID_BTN_1: append_digit(1); break;
         case ID_BTN_2: append_digit(2); break;

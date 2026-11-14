@@ -1,12 +1,14 @@
 #pragma once
 #include <stdint.h>
+#include "../syscall.h"
 
 typedef struct prog_instance prog_instance_t;
 
 /* Module lifecycle function types */
 typedef int  (*prog_init_fn)(prog_instance_t *inst);
 typedef void (*prog_update_fn)(prog_instance_t *inst);
-typedef int  (*prog_event_fn)(prog_instance_t *inst, int window_idx, int event);
+typedef int  (*prog_event_fn)(prog_instance_t *inst, int window_idx,
+                              const sys_win_event_t *event);
 typedef void (*prog_cleanup_fn)(prog_instance_t *inst);
 
 /* Program module definition (static, compile-time) */

@@ -184,7 +184,7 @@ prog_instance_t* progman_find_by_window(void *form) {
     return 0;
 }
 
-int progman_route_event(void *form, int event) {
+int progman_route_event(void *form, const sys_win_event_t *event) {
     prog_instance_t *inst = progman_find_by_window(form);
     if (!inst || !inst->module || !inst->module->handle_event)
         return PROG_EVENT_NONE;

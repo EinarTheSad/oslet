@@ -54,7 +54,8 @@ typedef struct {
 } cpl_screen_state_t;
 
 static int cpl_screen_init(prog_instance_t *inst);
-static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event);
+static int cpl_screen_event(prog_instance_t *inst, int win_idx,
+                            const sys_win_event_t *event);
 static void cpl_screen_cleanup(prog_instance_t *inst);
 
 const progmod_t cpl_screen_module = {
@@ -328,17 +329,21 @@ static void apply_settings(cpl_screen_state_t *state) {
     desktop_apply_settings(state->desktop_color, state->wallpaper, state->wallpaper_mode);
 }
 
-static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
+static int cpl_screen_event(prog_instance_t *inst, int win_idx,
+                            const sys_win_event_t *event) {
     (void)win_idx;
     cpl_screen_state_t *state = inst->user_data;
     if (!state) return PROG_EVENT_NONE;
 
-    if (event == -1 || event == -2) {
+    if (event->type == SYS_WIN_EVENT_REDRAW ||
+        event->type == SYS_WIN_EVENT_WINDOW_CHANGED) {
         return PROG_EVENT_NONE;
     }
+    if (event->type != SYS_WIN_EVENT_CONTROL) return PROG_EVENT_NONE;
+    int id = event->id;
 
     /* Folder OK button */
-    if (event == CTRL_BTN_FOLDER_OK) {
+    if (id == CTRL_BTN_FOLDER_OK) {
         const char *folder = ctrl_get_text(state->form, CTRL_TXT_FOLDER);
         if (folder) {
             strncpy(state->folder, folder, sizeof(state->folder) - 1);
@@ -350,7 +355,7 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_DROP_IMAGES) {
+    if (id == CTRL_DROP_IMAGES) {
         gui_control_t *drop = sys_win_get_control(state->form, CTRL_DROP_IMAGES);
         if (drop) {
             char new_wallpaper[128];
@@ -373,7 +378,7 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
     }
 
     /* Wallpaper mode dropdown changed */
-    if (event == CTRL_DROP_MODE) {
+    if (id == CTRL_DROP_MODE) {
         gui_control_t *drop_mode = sys_win_get_control(state->form, CTRL_DROP_MODE);
         if (drop_mode) {
             state->wallpaper_mode = drop_mode->dropdown.cursor_pos;
@@ -383,7 +388,7 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
     }
 
     /* Color dropdown changed */
-    if (event == CTRL_DROP_COLOR) {
+    if (id == CTRL_DROP_COLOR) {
         gui_control_t *dropcol = sys_win_get_control(state->form, CTRL_DROP_COLOR);
         if (dropcol) {
             uint8_t new_color = (uint8_t)dropcol->dropdown.cursor_pos;
@@ -398,7 +403,7 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
     }
 
     /* Apply button */
-    if (event == CTRL_BTN_APPLY) {
+    if (id == CTRL_BTN_APPLY) {
         apply_settings(state);
         state->orig_desktop_color = state->desktop_color;
         strncpy(state->orig_wallpaper, state->wallpaper, sizeof(state->orig_wallpaper));
@@ -408,13 +413,13 @@ static int cpl_screen_event(prog_instance_t *inst, int win_idx, int event) {
     }
 
     /* OK button */
-    if (event == CTRL_BTN_OK) {
+    if (id == CTRL_BTN_OK) {
         apply_settings(state);
         return PROG_EVENT_CLOSE;
     }
 
     /* Cancel button */
-    if (event == CTRL_BTN_CANCEL) {
+    if (id == CTRL_BTN_CANCEL) {
         state->desktop_color = state->orig_desktop_color;
         strncpy(state->wallpaper, state->orig_wallpaper, sizeof(state->wallpaper));
         state->wallpaper_mode = state->orig_wallpaper_mode;

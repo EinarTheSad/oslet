@@ -647,15 +647,18 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
         gui_form_t *form = (gui_form_t*)dlg;
         int text_was_focused = form && form->focused_control_id == PATH_DLG_ID_TEXT;
         int filter_applied_before_pump = text_click_away_filter();
-        int ev = sys_win_pump_events(dlg);
+        sys_win_event_t event;
+        if (sys_win_pump_events(dlg, &event) != 0) break;
         int text_lost_focus = text_was_focused && form &&
                               form->focused_control_id != PATH_DLG_ID_TEXT;
         int filter_applied = filter_applied_before_pump;
 
-        if (ev == -3 || ev == PATH_DLG_ID_CANCEL)
+        if (event.type == SYS_WIN_EVENT_CLOSE ||
+            (event.type == SYS_WIN_EVENT_CONTROL && event.id == PATH_DLG_ID_CANCEL))
             break;
 
-        if (state.suppress_ok_click && ev != PATH_DLG_ID_OK) {
+        if (state.suppress_ok_click &&
+            !(event.type == SYS_WIN_EVENT_CONTROL && event.id == PATH_DLG_ID_OK)) {
             int mx = 0, my = 0;
             unsigned char buttons = 0;
             sys_get_mouse_state(&mx, &my, &buttons);
@@ -663,10 +666,14 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
                 state.suppress_ok_click = 0;
         }
 
-        if (!filter_applied && ev != PATH_DLG_ID_OK && ev != PATH_DLG_ID_TEXT && text_lost_focus)
+        if (!filter_applied &&
+            !(event.type == SYS_WIN_EVENT_CONTROL &&
+              (event.id == PATH_DLG_ID_OK || event.id == PATH_DLG_ID_TEXT)) &&
+            text_lost_focus)
             filter_applied = apply_typed_filter_if_needed();
 
-        if ((state.suppress_ok_click || filter_applied) && ev == PATH_DLG_ID_OK) {
+        if ((state.suppress_ok_click || filter_applied) &&
+            event.type == SYS_WIN_EVENT_CONTROL && event.id == PATH_DLG_ID_OK) {
             state.suppress_ok_click = 0;
             sys_win_draw(dlg);
             sys_win_redraw_all();
@@ -675,7 +682,8 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
             continue;
         }
 
-        if (filter_applied && !filter_applied_before_pump && ev == PATH_DLG_ID_LIST) {
+        if (filter_applied && !filter_applied_before_pump &&
+            event.type == SYS_WIN_EVENT_CONTROL && event.id == PATH_DLG_ID_LIST) {
             ctrl_list_clear_action(dlg, PATH_DLG_ID_LIST);
             sys_win_draw(dlg);
             sys_win_redraw_all();
@@ -684,10 +692,12 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
             continue;
         }
 
-        if (ev == -1 || ev == -2 || ev == -4) {
+        if (event.type == SYS_WIN_EVENT_REDRAW ||
+            event.type == SYS_WIN_EVENT_WINDOW_CHANGED ||
+            event.type == SYS_WIN_EVENT_RESIZE) {
             sys_win_draw(dlg);
             sys_win_redraw_all();
-        } else if (ev == PATH_DLG_ID_TREE) {
+        } else if (event.type == SYS_WIN_EVENT_CONTROL && event.id == PATH_DLG_ID_TREE) {
             int action = ctrl_tree_get_action(dlg, PATH_DLG_ID_TREE);
             int idx = ctrl_tree_get_action_index(dlg, PATH_DLG_ID_TREE);
             ctrl_tree_clear_action(dlg, PATH_DLG_ID_TREE);
@@ -707,7 +717,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
                     sys_win_draw(dlg);
                 }
             }
-        } else if (ev == PATH_DLG_ID_LIST) {
+        } else if (event.type == SYS_WIN_EVENT_CONTROL && event.id == PATH_DLG_ID_LIST) {
             int idx = ctrl_list_get_action_index(dlg, PATH_DLG_ID_LIST);
             ctrl_list_clear_action(dlg, PATH_DLG_ID_LIST);
             if (idx >= 0 && idx < state.list_count) {
@@ -718,7 +728,8 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
                     ctrl_set_text(dlg, PATH_DLG_ID_TEXT, state.list[idx].name);
                 sys_win_draw(dlg);
             }
-        } else if (ev == PATH_DLG_ID_OK || ev == PATH_DLG_ID_TEXT) {
+        } else if (event.type == SYS_WIN_EVENT_CONTROL &&
+                   (event.id == PATH_DLG_ID_OK || event.id == PATH_DLG_ID_TEXT)) {
             accept_path(out_path, out_len);
             if (out_path[0]) {
                 sys_win_destroy_form(dlg);

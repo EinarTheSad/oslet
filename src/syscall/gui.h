@@ -36,7 +36,7 @@ int pump_handle_resize_corner_click(gui_form_t *form, int mx, int my);
 int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl_y_offset);
 int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offset);
 int pump_handle_keyboard(gui_form_t *form);
-uint32_t sys_win_pump_events_kernel(gui_form_t *form);
+void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event);
 
 gui_control_t *find_control_by_id(gui_form_t *form, int16_t id);
 char *textbox_get_text(gui_control_t *ctrl);

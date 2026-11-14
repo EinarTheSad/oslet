@@ -352,16 +352,16 @@ static int handle_shortcut(notepad_state_t *state, int key) {
     }
 }
 
-static int handle_events(void *form, int event, void *userdata) {
+static int handle_events(void *form, const sys_win_event_t *event, void *userdata) {
     notepad_state_t *state = userdata;
     (void)form;
 
-    if (event >= SYS_EVENT_CTRL_KEY_BASE && event < SYS_EVENT_CTRL_KEY_BASE + 32) {
-        return handle_shortcut(state, event - SYS_EVENT_CTRL_KEY_BASE);
+    if (event->type == SYS_WIN_EVENT_CONTROL_KEY) {
+        return handle_shortcut(state, event->id);
     }
 
-    if (event > 0) {
-        switch (event) {
+    if (event->type == SYS_WIN_EVENT_MENU) {
+        switch (event->id) {
             case MENU_FILE_OPEN:
                 return notepad_open(state);
             case MENU_FILE_NEW:

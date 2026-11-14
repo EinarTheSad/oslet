@@ -173,10 +173,22 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_MENUBAR_ADD_SEPARATOR 0x0B22
 #define SYS_WIN_REDRAW_CONTROL       0x0B23
 
-#define SYS_WIN_EVENT_REDRAW         -1
-#define SYS_WIN_EVENT_WINDOW_CHANGED -2
-#define SYS_WIN_EVENT_CLOSE          -3
-#define SYS_WIN_EVENT_RESIZE         -4
+typedef enum {
+    SYS_WIN_EVENT_NONE = 0,
+    SYS_WIN_EVENT_CONTROL,
+    SYS_WIN_EVENT_MENU,
+    SYS_WIN_EVENT_CONTROL_KEY,
+    SYS_WIN_EVENT_REDRAW,
+    SYS_WIN_EVENT_WINDOW_CHANGED,
+    SYS_WIN_EVENT_CLOSE,
+    SYS_WIN_EVENT_RESIZE
+} sys_win_event_type_t;
+
+typedef struct {
+    sys_win_event_type_t type;
+    /* Menu/control ID or key code; lifecycle events use zero. */
+    int id;
+} sys_win_event_t;
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -210,9 +222,6 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define TEXTBOX_EDIT_CUT        2
 #define TEXTBOX_EDIT_PASTE      3
 #define TEXTBOX_EDIT_SELECT_ALL 4
-
-#define SYS_EVENT_CTRL_KEY_BASE 0x7000
-#define SYS_EVENT_CTRL_KEY(key) (SYS_EVENT_CTRL_KEY_BASE + (key))
 
 #define MSG_QUEUE_SIZE 16
 #define MSG_MAX_SIZE   128
@@ -452,7 +461,7 @@ typedef struct gui_form_s {
     window_t win;
     gui_control_t *controls;
     uint8_t ctrl_count;
-    int16_t clicked_id;
+    sys_win_event_t clicked_event;
     uint8_t last_mouse_buttons;
     int16_t press_control_id;
     uint8_t dragging;
@@ -1055,9 +1064,9 @@ static inline void sys_win_add_control(void *form, gui_control_t *ctrl) {
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx));
 }
 
-static inline int sys_win_pump_events(void *form) {
+static inline int sys_win_pump_events(void *form, sys_win_event_t *event) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_PUMP_EVENTS), "b"(form));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_PUMP_EVENTS), "b"(form), "c"(event) : "memory");
     return ret;
 }
 
@@ -1418,14 +1427,18 @@ static inline uint32_t sys_sound_get_volume(void) {
 }
 
 /* Event loop helper for standard applications */
-typedef int (*sys_event_handler_t)(void *form, int event, void *userdata);
+typedef int (*sys_event_handler_t)(void *form, const sys_win_event_t *event, void *userdata);
 
 static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handler, void *userdata) {
     int running = 1;
     while (running) {
-        int event = sys_win_pump_events(form);
+        sys_win_event_t event;
+        if (sys_win_pump_events(form, &event) != 0) {
+            running = 0;
+            continue;
+        }
         
-        if (event == SYS_WIN_EVENT_CLOSE) {
+        if (event.type == SYS_WIN_EVENT_CLOSE) {
             if (form)
                 sys_win_destroy_form(form);
             sys_win_redraw_all();
@@ -1433,25 +1446,24 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
             continue;
         }
         
-        if (event == SYS_WIN_EVENT_REDRAW) {
+        if (event.type == SYS_WIN_EVENT_REDRAW) {
             sys_win_mark_dirty(form);
         }
 
-        if (event == SYS_WIN_EVENT_WINDOW_CHANGED || event == SYS_WIN_EVENT_RESIZE) {
+        if (event.type == SYS_WIN_EVENT_WINDOW_CHANGED || event.type == SYS_WIN_EVENT_RESIZE) {
             sys_win_draw(form);
             sys_win_force_full_redraw();
             sys_win_invalidate_icons();
         }
         
-        if (event > 0 && !form) {
+        if (!form) {
             continue;
         }
 
         /* Call the handler for all events.
            This lets applications receive periodic callbacks and respond to user interactions
            without spinning their own event loop. */
-        if (event >= SYS_WIN_EVENT_RESIZE && event != SYS_WIN_EVENT_CLOSE &&
-            handler && handler(form, event, userdata) != 0) {
+        if (handler && handler(form, &event, userdata) != 0) {
             running = 0;
         }
         

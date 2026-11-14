@@ -17,12 +17,12 @@ static gui_control_t Form1_controls[] = {
     { .type = CTRL_LABEL, .x = 7, .y = 129, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "", .id = 5, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
 };
 
-static int Form1_handle_event(void *form, int event, void *userdata) {
+static int Form1_handle_event(void *form, const sys_win_event_t *event, void *userdata) {
     (void)userdata; (void)form;
-    if (event == 2) 
+    if (event->type == SYS_WIN_EVENT_CONTROL && event->id == 2)
         return 1;
 
-    if (event == -2) {
+    if (event->type == SYS_WIN_EVENT_WINDOW_CHANGED) {
         sys_win_draw(form);
         sys_win_force_full_redraw();
     }

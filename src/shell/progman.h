@@ -20,7 +20,7 @@ int progman_launch(const char *name);
 int progman_launch_with_icon(const char *name, const char *icon_path);
 void progman_close(uint16_t instance_id);
 void progman_update_all(void);
-int progman_route_event(void *form, int event);
+int progman_route_event(void *form, const sys_win_event_t *event);
 prog_instance_t* progman_find_by_window(void *form);
 int progman_is_running(const char *name);
 int progman_get_registered_count(void);

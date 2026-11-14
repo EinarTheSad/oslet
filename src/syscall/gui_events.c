@@ -1,14 +1,20 @@
 #include "gui.h"
 
-uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
-    if (!form) return 0;
+static void set_event(sys_win_event_t *event, sys_win_event_type_t type, int id) {
+    event->type = type;
+    event->id = id;
+}
+
+void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
+    set_event(event, SYS_WIN_EVENT_NONE, 0);
+    if (!form) return;
 
     int ctrl_y_offset = 20;
     if (form->menubar_enabled) {
         ctrl_y_offset += menubar_get_height(&form->menubar);
     }
 
-    form->clicked_id = -1;
+    set_event(&form->clicked_event, SYS_WIN_EVENT_NONE, 0);
 
     int mx = mouse_get_x();
     int my = mouse_get_y();
@@ -36,13 +42,15 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 form->resizing = 0;
                 win_maximize(form);
                 gui_request_full_redraw();
-                return SYS_WIN_EVENT_RESIZE;
+                set_event(event, SYS_WIN_EVENT_RESIZE, 0);
+                return;
             } else if (action == MENU_ACTION_RESTORE) {
                 form->dragging = 0;
                 form->resizing = 0;
                 win_restore_from_maximize(form);
                 gui_request_full_redraw();
-                return SYS_WIN_EVENT_RESIZE;
+                set_event(event, SYS_WIN_EVENT_RESIZE, 0);
+                return;
             } else if (action == MENU_ACTION_MINIMIZE) {
                 int icon_x, icon_y;
                 wm_get_next_icon_pos(&global_wm, &icon_x, &icon_y);
@@ -51,15 +59,17 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 wm_claim_icon_slot(&global_wm, icon_x, icon_y);
                 /* Let the desktop redraw run first to avoid compositing on stale wallpaper. */
                 gui_request_full_redraw();
-                return SYS_WIN_EVENT_WINDOW_CHANGED;
+                set_event(event, SYS_WIN_EVENT_WINDOW_CHANGED, 0);
+                return;
             } else if (action == MENU_ACTION_CLOSE) {
-                return SYS_WIN_EVENT_CLOSE;
+                set_event(event, SYS_WIN_EVENT_CLOSE, 0);
+                return;
             }
         } else if (action == 0 && button_pressed &&
                    !menu_contains_point(&form->window_menu, mx, my)) {
             menu_hide(&form->window_menu);
         }
-        return 0;
+        return;
     }
 
     /* Handle menubar if enabled */
@@ -79,9 +89,9 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         int action = menubar_handle_mouse(&form->menubar, form->win.x, form->win.y,
                                           mx, my, button_pressed, button_released);
         if (action > 0) {
-            /* Menu item selected - return action ID as event */
+            /* Menu item selected */
             menubar_close_all(&form->menubar);
-            form->clicked_id = action;
+            set_event(&form->clicked_event, SYS_WIN_EVENT_MENU, action);
             event_count = 1;
             needs_redraw = 1;
         } else if (action == -1) {
@@ -94,9 +104,10 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         if (needs_redraw) {
             compositor_draw_menubar_update(form, old_hovered_menu, old_active_menu);
             if (action > 0) {
-                return form->clicked_id;
+                *event = form->clicked_event;
+                return;
             }
-            return 0;
+            return;
         }
     }
 
@@ -138,7 +149,8 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
             int icon_result = pump_handle_icon_click(form, mx, my);
             if (icon_result == 2) {
                 /* Double-click - window restored */
-                return SYS_WIN_EVENT_WINDOW_CHANGED;
+                set_event(event, SYS_WIN_EVENT_WINDOW_CHANGED, 0);
+                return;
             } else if (icon_result == 1) {
                 /* Single click - selection changed */
                 needs_redraw = 1;
@@ -234,9 +246,10 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 int min_result = pump_handle_minimize(form, mx, my);
                 if (min_result == 2) {
                     /* menu_show drew the popup; avoid repainting the form beneath it. */
-                    return 0;
+                    return;
                 } else if (min_result == 1) {
-                    return SYS_WIN_EVENT_REDRAW;
+                    set_event(event, SYS_WIN_EVENT_REDRAW, 0);
+                    return;
                 }
                 /* Check if resize corner was clicked */
                 else if (pump_handle_resize_corner_click(form, mx, my)) {
@@ -257,7 +270,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
     }
 
     /* Check if an event was generated during button press (e.g., dropdown item selected) */
-    if (form->clicked_id >= 0 && !button_released) {
+    if (form->clicked_event.type != SYS_WIN_EVENT_NONE && !button_released) {
         event_count = 1;
     }
 
@@ -369,7 +382,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                             ctrl->checkbox.checked = !ctrl->checkbox.checked;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
-                            /* Don't set clicked_id for checkbox - just redraw */
+                            /* Checkbox changes only its state. */
                         }
 
                         /* Handle radio button selection */
@@ -386,7 +399,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                             /* Check this radio button */
                             ctrl->checkbox.checked = 1;
                             needs_redraw = 1;
-                            /* Don't set clicked_id for radio - just redraw */
+                            /* Radio changes only its state. */
                         }
 
                         /* Handle icon click/double-click */
@@ -407,7 +420,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                                 (now - form->last_icon_click_time) < WM_DOUBLECLICK_TICKS) {
                                 /* Double-click - activate the icon and deselect it */
                                 ctrl->icon.checked = 0;
-                                form->clicked_id = ctrl->id;
+                                set_event(&form->clicked_event, SYS_WIN_EVENT_CONTROL, ctrl->id);
                                 event_count = 1;
                                 form->last_icon_click_id = -1;
                             } else {
@@ -425,7 +438,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                             /* Dropdown click was already handled in press, just generate event */
                             ctrl->dropdown.pressed = 0;
                             if (ctrl->dropdown.hovered_item == DROPDOWN_HOVER_SCROLLBAR) ctrl->dropdown.hovered_item = -1;
-                            form->clicked_id = ctrl->id;
+                            set_event(&form->clicked_event, SYS_WIN_EVENT_CONTROL, ctrl->id);
                             event_count = 1;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
@@ -434,7 +447,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                         /* Handle scrollbar - clear pressed state and generate event */
                         else if (ctrl->type == CTRL_SCROLLBAR) {
                             ctrl->scrollbar.pressed = 0;
-                            form->clicked_id = ctrl->id;
+                            set_event(&form->clicked_event, SYS_WIN_EVENT_CONTROL, ctrl->id);
                             event_count = 1;
                             needs_redraw = 1;
                             if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
@@ -467,7 +480,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
 
                         /* Valid click detected for buttons and other controls */
                         else {
-                            form->clicked_id = ctrl->id;
+                            set_event(&form->clicked_event, SYS_WIN_EVENT_CONTROL, ctrl->id);
                             event_count = 1;
                         }
                     }
@@ -529,9 +542,11 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         if (was_dragging || was_icon_dragging || was_resizing) {
             gui_request_full_redraw();  /* Desktop will do full redraw */
             if (was_resizing) {
-                return (uint32_t)SYS_WIN_EVENT_RESIZE;
+                set_event(event, SYS_WIN_EVENT_RESIZE, 0);
+                return;
             }
-            return (uint32_t)SYS_WIN_EVENT_WINDOW_CHANGED;
+            set_event(event, SYS_WIN_EVENT_WINDOW_CHANGED, 0);
+            return;
         }
     }
 
@@ -752,7 +767,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                                                             ctrl->scrollbar.scroll_offset);
                 if (new_val != ctrl->scrollbar.cursor_pos) {
                     ctrl->scrollbar.cursor_pos = new_val;
-                    form->clicked_id = ctrl->id;
+                    set_event(&form->clicked_event, SYS_WIN_EVENT_CONTROL, ctrl->id);
                     event_count = 1; /* Generate event during drag */
                     needs_redraw = 1;
                     if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
@@ -763,7 +778,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                                                             ctrl->scrollbar.scroll_offset);
                 if (new_val != ctrl->scrollbar.cursor_pos) {
                     ctrl->scrollbar.cursor_pos = new_val;
-                    form->clicked_id = ctrl->id;
+                    set_event(&form->clicked_event, SYS_WIN_EVENT_CONTROL, ctrl->id);
                     event_count = 1; /* Generate event during drag */
                     needs_redraw = 1;
                     if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
@@ -907,7 +922,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                                                             ctrl->dropdown.scroll_offset);
                 if (new_val != ctrl->dropdown.dropdown_scroll) {
                     ctrl->dropdown.dropdown_scroll = new_val;
-                    form->clicked_id = ctrl->id;
+                    set_event(&form->clicked_event, SYS_WIN_EVENT_CONTROL, ctrl->id);
                     event_count = 1;
                     needs_redraw = 1;
                     if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
@@ -939,7 +954,7 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         }
     }
 
-    /* Return clicked control ID directly (0 if none clicked) */
+    /* Return a typed event, or NONE if no control or menu action occurred. */
     if (event_count > 0) {
         /* If button was pressed, we need to redraw to show unpressed state */
         if (needs_redraw) {
@@ -961,10 +976,11 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
                 compositor_draw_single(&global_wm, form);
             }
         }
-        return form->clicked_id;
+        *event = form->clicked_event;
+        return;
     }
 
-    /* Return -1 if visual state changed and needs redraw */
+    /* Return REDRAW if visual state changed and needs redraw. */
     if (needs_redraw) {
         mouse_restore();
         mouse_invalidate_buffer();
@@ -983,16 +999,18 @@ uint32_t sys_win_pump_events_kernel(gui_form_t *form) {
         } else {
             compositor_draw_single(&global_wm, form);
         }
-        if (form->clicked_id >= 0) {
-            return (uint32_t)form->clicked_id;
+        if (form->clicked_event.type != SYS_WIN_EVENT_NONE) {
+            *event = form->clicked_event;
+            return;
         }
 
         /* Changed controls were already redrawn; avoid a redundant full-form dirty pass. */
         if (changed_count > 0 && changed_count < 32) {
-            return 0;
+            return;
         }
-        return (uint32_t)SYS_WIN_EVENT_REDRAW;
+        set_event(event, SYS_WIN_EVENT_REDRAW, 0);
+        return;
     }
 
-    return 0;
+    return;
 }

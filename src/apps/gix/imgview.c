@@ -210,18 +210,18 @@ static void imgview_resize(void *form, void *userdata) {
     update_layout(form);
 }
 
-static int imgview_event(void *form, int ev, void *userdata) {
+static int imgview_event(void *form, const sys_win_event_t *event, void *userdata) {
     imgview_state_t *state = userdata;
 
-    if (ev == -3 && form == state->fs_form) {
+    if (event->type == SYS_WIN_EVENT_CLOSE && form == state->fs_form) {
         const char *cur = ctrl_get_text(state->fs_form, ID_PICTURE);
         toggle_fullscreen(state, cur);
         return 0;
     }
 
-    if (form != state->form || ev <= 0) return 0;
+    if (form != state->form || event->type != SYS_WIN_EVENT_CONTROL) return 0;
 
-    if (ev == ID_PICTURE) {
+    if (event->id == ID_PICTURE) {
         char newpath[256];
         const char *cur = ctrl_get_text(state->form, ID_PICTURE);
         char initial[256] = "C:/" IMGVIEW_FILE_FILTER;
@@ -242,9 +242,10 @@ static int imgview_event(void *form, int ev, void *userdata) {
             ctrl_set_image(state->form, ID_PICTURE, newpath);
             sys_win_draw(state->form);
         }
-    } else if (ev == ID_NEXT || ev == ID_PREV) {
-        navigate_dir(state->form, (ev == ID_NEXT) ? 1 : -1, state->fullscreen, state->fs_form);
-    } else if (ev == ID_FULLSCREEN) {
+    } else if (event->id == ID_NEXT || event->id == ID_PREV) {
+        navigate_dir(state->form, (event->id == ID_NEXT) ? 1 : -1,
+                     state->fullscreen, state->fs_form);
+    } else if (event->id == ID_FULLSCREEN) {
         const char *cur = ctrl_get_text(state->form, ID_PICTURE);
         toggle_fullscreen(state, cur);
     }

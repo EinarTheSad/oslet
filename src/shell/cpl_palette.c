@@ -435,58 +435,62 @@ static int cpl_palette_init(prog_instance_t *inst) {
     return 0;
 }
 
-static int cpl_palette_event(prog_instance_t *inst, int win_idx, int event) {
+static int cpl_palette_event(prog_instance_t *inst, int win_idx,
+                             const sys_win_event_t *event) {
     (void)win_idx;
     cpl_palette_state_t *state = inst->user_data;
     if (!state) return PROG_EVENT_NONE;
 
     sync_rgb_text_focus(state);
 
-    if (event == -1 || event == -2) return PROG_EVENT_REDRAW;
+    if (event->type == SYS_WIN_EVENT_REDRAW ||
+        event->type == SYS_WIN_EVENT_WINDOW_CHANGED) return PROG_EVENT_REDRAW;
+    if (event->type != SYS_WIN_EVENT_CONTROL) return PROG_EVENT_NONE;
+    int id = event->id;
 
-    if (event >= CTRL_COLOR_BASE && event < CTRL_COLOR_BASE + 16) {
-        state->selected_color = event - CTRL_COLOR_BASE;
+    if (id >= CTRL_COLOR_BASE && id < CTRL_COLOR_BASE + 16) {
+        state->selected_color = id - CTRL_COLOR_BASE;
         update_slider_values(state);
         sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_BTN_OPEN) {
+    if (id == CTRL_BTN_OPEN) {
         state->open_requested = 1;
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_BTN_SAVE) {
+    if (id == CTRL_BTN_SAVE) {
         state->save_requested = 1;
         return PROG_EVENT_HANDLED;
     }
 
-    if (rgb_value_control(event)) {
-        apply_rgb_text(state, event);
+    if (rgb_value_control(id)) {
+        apply_rgb_text(state, id);
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_SLIDER_RED ||
-        event == CTRL_SLIDER_GREEN ||
-        event == CTRL_SLIDER_BLUE) {
+    if (id == CTRL_SLIDER_RED ||
+        id == CTRL_SLIDER_GREEN ||
+        id == CTRL_SLIDER_BLUE) {
         read_sliders(state);
         preview_palette(state, 1);
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_BTN_APPLY) {
+    if (id == CTRL_BTN_APPLY) {
         if (apply_palette_setting(state) == 0)
             sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_BTN_OK) {
+    if (id == CTRL_BTN_OK) {
         if (apply_palette_setting(state) == 0)
             return PROG_EVENT_CLOSE;
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_BTN_CANCEL) {
+    if (id == CTRL_BTN_CANCEL) {
         restore_original_palette(state);
         return PROG_EVENT_CLOSE;
     }

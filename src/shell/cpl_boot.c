@@ -37,7 +37,8 @@ typedef struct {
 } cpl_boot_state_t;
 
 static int cpl_boot_init(prog_instance_t *inst);
-static int cpl_boot_event(prog_instance_t *inst, int win_idx, int event);
+static int cpl_boot_event(prog_instance_t *inst, int win_idx,
+                          const sys_win_event_t *event);
 static void cpl_boot_cleanup(prog_instance_t *inst);
 
 const progmod_t cpl_boot_module = {
@@ -227,23 +228,27 @@ static void read_current_values(cpl_boot_state_t *state) {
     }
 }
 
-static int cpl_boot_event(prog_instance_t *inst, int win_idx, int event) {
+static int cpl_boot_event(prog_instance_t *inst, int win_idx,
+                          const sys_win_event_t *event) {
     (void)win_idx;
     cpl_boot_state_t *state = inst->user_data;
     if (!state) return PROG_EVENT_NONE;
 
-    if (event == -1 || event == -2)
+    if (event->type == SYS_WIN_EVENT_REDRAW ||
+        event->type == SYS_WIN_EVENT_WINDOW_CHANGED)
         return PROG_EVENT_REDRAW;
+    if (event->type != SYS_WIN_EVENT_CONTROL) return PROG_EVENT_NONE;
+    int id = event->id;
 
     /* Radio button or textbox changed - just redraw */
-    if (event == CTRL_RADIO_SHELL_GUI || event == CTRL_RADIO_SHELL_TEXT ||
-        event == CTRL_RADIO_BOOTSCR_EN || event == CTRL_RADIO_BOOTSCR_DIS ||
-        event == CTRL_TXT_OTHER) {
+    if (id == CTRL_RADIO_SHELL_GUI || id == CTRL_RADIO_SHELL_TEXT ||
+        id == CTRL_RADIO_BOOTSCR_EN || id == CTRL_RADIO_BOOTSCR_DIS ||
+        id == CTRL_TXT_OTHER) {
         sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_BTN_OK) {
+    if (id == CTRL_BTN_OK) {
         read_current_values(state);
         save_settings(state);
 
@@ -255,7 +260,7 @@ static int cpl_boot_event(prog_instance_t *inst, int win_idx, int event) {
     }
 
     /* Cancel button */
-    if (event == CTRL_BTN_CANCEL) {
+    if (id == CTRL_BTN_CANCEL) {
         /* Restore original values (no need to save) */
         state->shell_type = state->orig_shell_type;
         strncpy(state->shell_path, state->orig_shell_path, sizeof(state->shell_path));

@@ -125,20 +125,24 @@ void gix_app_run(const gix_app_desc_t *desc) {
     while (gix_running) {
         for (int i = 0; i < gix_window_count && gix_running; i++) {
             void *active_form = gix_windows[i];
-            int event = sys_win_pump_events(active_form);
+            sys_win_event_t event;
+            if (sys_win_pump_events(active_form, &event) != 0) {
+                gix_running = 0;
+                break;
+            }
             int handled_exit = 0;
 
-            if (event == SYS_WIN_EVENT_REDRAW) {
+            if (event.type == SYS_WIN_EVENT_REDRAW) {
                 sys_win_mark_dirty(active_form);
             }
 
-            if (event == SYS_WIN_EVENT_WINDOW_CHANGED) {
+            if (event.type == SYS_WIN_EVENT_WINDOW_CHANGED) {
                 sys_win_draw(active_form);
                 sys_win_force_full_redraw();
                 sys_win_invalidate_icons();
             }
 
-            if (event == SYS_WIN_EVENT_RESIZE) {
+            if (event.type == SYS_WIN_EVENT_RESIZE) {
                 if (active_form == gix_main_form && desc->on_resize) {
                     desc->on_resize(active_form, desc->userdata);
                 }
@@ -147,13 +151,13 @@ void gix_app_run(const gix_app_desc_t *desc) {
                 sys_win_invalidate_icons();
             }
 
-            if (event != 0 && desc->on_event &&
-                desc->on_event(active_form, event, desc->userdata)) {
+            if (event.type != SYS_WIN_EVENT_NONE && desc->on_event &&
+                desc->on_event(active_form, &event, desc->userdata)) {
                 gix_running = 0;
                 handled_exit = 1;
             }
 
-            if (event == SYS_WIN_EVENT_CLOSE && !handled_exit && gix_running) {
+            if (event.type == SYS_WIN_EVENT_CLOSE && !handled_exit && gix_running) {
                 if (active_form == gix_main_form) {
                     gix_running = 0;
                 } else if (gix_find_window(active_form) >= 0) {

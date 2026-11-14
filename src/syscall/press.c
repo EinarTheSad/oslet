@@ -95,7 +95,8 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                 int clicked_item = ctrl->dropdown.dropdown_scroll + rel_item;
                 if (clicked_item >= 0 && clicked_item < ctrl->dropdown.item_count) {
                     ctrl->dropdown.cursor_pos = clicked_item;
-                    form->clicked_id = ctrl->id;
+                    form->clicked_event.type = SYS_WIN_EVENT_CONTROL;
+                    form->clicked_event.id = ctrl->id;
                 }
                 ctrl_hide_dropdown_list(&form->win, ctrl);
                 form->press_control_id = -1;
@@ -542,7 +543,8 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                                 ctrl->treeview.last_action = TREE_ACTION_SELECT;
                             }
                             ctrl->treeview.action_index = item_idx;
-                            form->clicked_id = ctrl->id;
+                            form->clicked_event.type = SYS_WIN_EVENT_CONTROL;
+                            form->clicked_event.id = ctrl->id;
                             form->press_control_id = -1;
                             return 1;
                         }
@@ -620,7 +622,8 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                             ctrl->listbox.selected_index = item_idx;
                             ctrl->listbox.last_action = LIST_ACTION_SELECT;
                             ctrl->listbox.action_index = item_idx;
-                            form->clicked_id = ctrl->id;
+                            form->clicked_event.type = SYS_WIN_EVENT_CONTROL;
+                            form->clicked_event.id = ctrl->id;
                             form->press_control_id = -1;
                             return 1;
                         }

@@ -64,7 +64,8 @@ typedef struct {
 } cpl_theme_state_t;
 
 static int cpl_theme_init(prog_instance_t *inst);
-static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event);
+static int cpl_theme_event(prog_instance_t *inst, int win_idx,
+                           const sys_win_event_t *event);
 static void cpl_theme_cleanup(prog_instance_t *inst);
 
 const progmod_t cpl_theme_module = {
@@ -270,24 +271,28 @@ static uint8_t get_dropdown_value(void *form, int ctrl_id) {
     return 0;
 }
 
-static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
+static int cpl_theme_event(prog_instance_t *inst, int win_idx,
+                           const sys_win_event_t *event) {
     (void)win_idx;
     cpl_theme_state_t *state = inst->user_data;
     if (!state) return PROG_EVENT_NONE;
 
-    if (event == -1 || event == -2)
+    if (event->type == SYS_WIN_EVENT_REDRAW ||
+        event->type == SYS_WIN_EVENT_WINDOW_CHANGED)
         return PROG_EVENT_REDRAW;
+    if (event->type != SYS_WIN_EVENT_CONTROL) return PROG_EVENT_NONE;
+    int id = event->id;
 
     /* Dropdown selection changed - just redraw (values read on apply) */
-    if (event == CTRL_DROP_WINBG || event == CTRL_DROP_TITLEBAR ||
-        event == CTRL_DROP_TITLEBTN || event == CTRL_DROP_TASKBAR ||
-        event == CTRL_DROP_STARTBTN || event == CTRL_DROP_ICON_TEXT) {
+    if (id == CTRL_DROP_WINBG || id == CTRL_DROP_TITLEBAR ||
+        id == CTRL_DROP_TITLEBTN || id == CTRL_DROP_TASKBAR ||
+        id == CTRL_DROP_STARTBTN || id == CTRL_DROP_ICON_TEXT) {
         sys_win_draw(state->form);
         return PROG_EVENT_HANDLED;
     }
 
     /* Apply button */
-    if (event == CTRL_BTN_APPLY) {
+    if (id == CTRL_BTN_APPLY) {
         state->theme_winbg = get_dropdown_value(state->form, CTRL_DROP_WINBG);
         state->theme_titlebar = get_dropdown_value(state->form, CTRL_DROP_TITLEBAR);
         state->theme_titlebtn = get_dropdown_value(state->form, CTRL_DROP_TITLEBTN);
@@ -312,7 +317,7 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         return PROG_EVENT_HANDLED;
     }
 
-    if (event == CTRL_BTN_OK) {
+    if (id == CTRL_BTN_OK) {
         state->theme_winbg = get_dropdown_value(state->form, CTRL_DROP_WINBG);
         state->theme_titlebar = get_dropdown_value(state->form, CTRL_DROP_TITLEBAR);
         state->theme_titlebtn = get_dropdown_value(state->form, CTRL_DROP_TITLEBTN);
@@ -330,7 +335,7 @@ static int cpl_theme_event(prog_instance_t *inst, int win_idx, int event) {
         return PROG_EVENT_CLOSE;
     }
 
-    if (event == CTRL_BTN_CANCEL) {
+    if (id == CTRL_BTN_CANCEL) {
         state->theme_winbg = state->orig_theme_winbg;
         state->theme_titlebar = state->orig_theme_titlebar;
         state->theme_titlebtn = state->orig_theme_titlebtn;

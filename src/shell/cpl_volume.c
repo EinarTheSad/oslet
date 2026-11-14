@@ -20,7 +20,8 @@ typedef struct {
 } volume_state_t;
 
 static int volume_init(prog_instance_t *inst);
-static int volume_event(prog_instance_t *inst, int win_idx, int event);
+static int volume_event(prog_instance_t *inst, int win_idx,
+                        const sys_win_event_t *event);
 static void volume_cleanup(prog_instance_t *inst);
 
 const progmod_t volume_module = {
@@ -152,16 +153,18 @@ static int volume_init(prog_instance_t *inst) {
     return 0;
 }
 
-static int volume_event(prog_instance_t *inst, int win_idx, int event) {
+static int volume_event(prog_instance_t *inst, int win_idx,
+                        const sys_win_event_t *event) {
     (void)win_idx;
 
-    if (event == -1 || event == -2) return PROG_EVENT_REDRAW;
+    if (event->type == SYS_WIN_EVENT_REDRAW ||
+        event->type == SYS_WIN_EVENT_WINDOW_CHANGED) return PROG_EVENT_REDRAW;
+    if (event->type != SYS_WIN_EVENT_CONTROL) return PROG_EVENT_NONE;
 
     volume_state_t *state = (volume_state_t*)inst->user_data;
     if (!state) return PROG_EVENT_NONE;
 
-    gui_form_t *form = (gui_form_t*)state->form;
-    int clicked_id = form->clicked_id;
+    int clicked_id = event->id;
 
     if (clicked_id == CTRL_SCROLLBAR_ID) {
         gui_control_t *sb = sys_win_get_control(state->form, CTRL_SCROLLBAR_ID);
