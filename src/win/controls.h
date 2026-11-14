@@ -5,6 +5,8 @@
 
 void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y);
+void ctrl_draw_label_3d(gui_control_t *control, int abs_x, int abs_y);
+void ctrl_draw_sunken_border(int x, int y, int w, int h);
 void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_checkbox(gui_control_t *control, int abs_x, int abs_y);
 void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y);

@@ -96,12 +96,7 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
     int hsb_h = 18;
 
     gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
-    gfx_hline(abs_x, abs_y, control->w, theme->frame_dark);
-    gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);
-    gfx_hline(abs_x + 1, abs_y + control->h - 1, control->w - 1, theme->frame_light);
-    gfx_vline(abs_x + control->w - 1, abs_y, control->h, theme->frame_light);
-    gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_DARK_GRAY);
-    gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_DARK_GRAY);
+    ctrl_draw_sunken_border(abs_x, abs_y, control->w, control->h);
 
     if (!control->treeview.items || control->treeview.item_count == 0)
         return;
@@ -236,19 +231,13 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
 }
 
 void ctrl_draw_listbox(gui_control_t *control, int abs_x, int abs_y) {
-    window_theme_t *theme = theme_get_current();
     bmf_font_t *font = &font_n;
     int size = control->font_size > 0 ? control->font_size : 12;
     int row_h = control->listbox.row_height ? control->listbox.row_height : 16;
     int sb_w = 18;
 
     gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
-    gfx_hline(abs_x, abs_y, control->w, theme->frame_dark);
-    gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);
-    gfx_hline(abs_x + 1, abs_y + control->h - 1, control->w - 1, theme->frame_light);
-    gfx_vline(abs_x + control->w - 1, abs_y, control->h, theme->frame_light);
-    gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_DARK_GRAY);
-    gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_DARK_GRAY);
+    ctrl_draw_sunken_border(abs_x, abs_y, control->w, control->h);
 
     if (!control->listbox.items || control->listbox.item_count == 0)
         return;

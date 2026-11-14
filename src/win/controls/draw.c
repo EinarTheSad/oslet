@@ -1,5 +1,16 @@
 #include "internal.h"
 
+void ctrl_draw_sunken_border(int x, int y, int w, int h) {
+    window_theme_t *theme = theme_get_current();
+
+    gfx_hline(x, y, w, theme->frame_dark);
+    gfx_vline(x, y, h, theme->frame_dark);
+    gfx_hline(x + 1, y + h - 1, w - 1, theme->frame_light);
+    gfx_vline(x + w - 1, y, h, theme->frame_light);
+    gfx_hline(x + 1, y + 1, w - 2, COLOR_DARK_GRAY);
+    gfx_vline(x + 1, y + 1, h - 2, COLOR_DARK_GRAY);
+}
+
 void ctrl_draw_with_offset(window_t *win, gui_control_t *control, int y_offset) {
     /* Check visibility - high bit (0x80) indicates hidden */
     if (control->type & 0x80) return;
@@ -15,6 +26,9 @@ void ctrl_draw_with_offset(window_t *win, gui_control_t *control, int y_offset) 
     }
     else if (ctrl_type == 2) { /* CTRL_LABEL */
         ctrl_draw_label(control, abs_x, abs_y);
+    }
+    else if (ctrl_type == CTRL_LABEL_3D) {
+        ctrl_draw_label_3d(control, abs_x, abs_y);
     }
     else if (ctrl_type == 3) { /* CTRL_PICTUREBOX */
         ctrl_draw_picturebox(control, abs_x, abs_y);

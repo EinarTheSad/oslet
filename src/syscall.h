@@ -240,6 +240,7 @@ typedef struct {
 #define CTRL_SCROLLBAR 11
 #define CTRL_TREEVIEW 12
 #define CTRL_LISTBOX 13
+#define CTRL_LABEL_3D 14
 
 #define TREEVIEW_MAX_ITEMS 256
 #define LISTBOX_MAX_ITEMS 128

@@ -1603,7 +1603,7 @@ void _start(void) {
 
     /* White background beneath the file icons */
     gui_control_t file_frame = {0};
-    file_frame.type = CTRL_LABEL;
+    file_frame.type = CTRL_LABEL_3D;
     file_frame.x = TREE_X + TREE_W + 12; file_frame.y = CONTENT_Y - 1;
     file_frame.w = 1; file_frame.h = 1;
     file_frame.fg = 0; file_frame.bg = 15;

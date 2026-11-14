@@ -117,7 +117,7 @@ void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
     }
 }
 
-void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
+static void draw_label(gui_control_t *control, int abs_x, int abs_y, int sunken) {
     bmf_font_t *font = &font_n;
 
     if (control->font_type == 1) font = &font_b;
@@ -187,9 +187,13 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
 
         if (control->bg != -1) {
             gfx_fillrect(abs_x, abs_y, label_w, label_h, control->bg);
+        } else if (sunken) {
+            gfx_fillrect(abs_x, abs_y, label_w, label_h, COLOR_WHITE);
         }
 
-        if (control->border) {
+        if (sunken) {
+            ctrl_draw_sunken_border(abs_x, abs_y, label_w, label_h);
+        } else if (control->border) {
             gfx_rect(abs_x, abs_y, label_w, label_h, control->border_color);
         }
 
@@ -209,6 +213,14 @@ void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
         int text_y = abs_y + 5;
         bmf_printf(text_x, text_y, font, size, control->fg, "%s", formatted_text);
     }
+}
+
+void ctrl_draw_label(gui_control_t *control, int abs_x, int abs_y) {
+    draw_label(control, abs_x, abs_y, 0);
+}
+
+void ctrl_draw_label_3d(gui_control_t *control, int abs_x, int abs_y) {
+    draw_label(control, abs_x, abs_y, 1);
 }
 
 void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {

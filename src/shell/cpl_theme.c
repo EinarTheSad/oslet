@@ -226,7 +226,7 @@ static int cpl_theme_init(prog_instance_t *inst) {
 
         /* Desktop icons frame + icon-text dropdown */
         { .type = CTRL_FRAME,      .x = 6,   .y = 147, .w = 262, .h = 45,  .fg = 0,  .bg = -1, .id = CTRL_FRAME_DESKTOP,  .text = "Desktop icons" },
-        { .type = CTRL_LABEL,      .x = 12,  .y = 167,                    .fg = 0,  .bg = -1, .id = CTRL_LBL_ICON_TEXT, .text = "Desktop text:" },
+        { .type = CTRL_LABEL,      .x = 12,  .y = 167,                    .fg = 0,  .bg = -1, .id = CTRL_LBL_ICON_TEXT, .text = "Captions:" },
         { .type = CTRL_DROPDOWN,   .x = 95,  .y = 167, .w = 165, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_ICON_TEXT, .dropdown = { .cursor_pos = 0, .item_count = 2 }, .text = "" },
 
         /* Buttons */

@@ -130,7 +130,8 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                 ctrl->type != CTRL_PICTUREBOX &&
                 ctrl->type != CTRL_SCROLLBAR &&
                 ctrl->type != CTRL_TREEVIEW &&
-                ctrl->type != CTRL_LISTBOX) {
+                ctrl->type != CTRL_LISTBOX &&
+                ctrl->type != CTRL_LABEL_3D) {
                 continue;
             }
 
@@ -182,7 +183,7 @@ int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offse
                     ctrl->button.pressed = 1;
                     return 1;
                 }
-                else if (ctrl->type == CTRL_LABEL) {
+                else if (ctrl->type == CTRL_LABEL || ctrl->type == CTRL_LABEL_3D) {
                     return focus_cleared;
                 }
                 else if (ctrl->type == CTRL_CHECKBOX || ctrl->type == CTRL_RADIOBUTTON) {
