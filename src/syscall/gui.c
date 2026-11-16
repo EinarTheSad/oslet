@@ -903,8 +903,6 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 case 10: /* PROP_ENABLED - picturebox image_mode */
                     if (ctrl->type == CTRL_PICTUREBOX) {
                         ctrl->picturebox.image_mode = (uint8_t)value;
-                    } else {
-                        // For now - nothing. TODO: disabled controls
                     }
                     break;
                 default:

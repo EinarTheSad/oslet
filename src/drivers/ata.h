@@ -8,8 +8,6 @@ extern uint32_t boot_device;
 void ata_init(void);
 void ata_use_usb(int enable);
 void ata_use_ahci(int enable);
-int ata_using_usb(void);
 int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer);
 int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer);
 int ata_identify(void);
-int ata_is_available(void);

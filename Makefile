@@ -11,9 +11,10 @@ QEMU_AUDIO ?= sdl
 QEMU_DISPLAY ?= sdl,grab-mod=lctrl-lalt,show-cursor=on
 QEMU_SOUND ?= -audiodev $(QEMU_AUDIO),id=snd0 -device sb16,audiodev=snd0
 
-CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector
-BINCFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -fno-stack-protector -fPIE -fno-plt
+CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector -MMD -MP
+BINCFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -fno-stack-protector -fPIE -fno-plt -ffunction-sections -fdata-sections -MMD -MP
 LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
+BIN_LDFLAGS = -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie --gc-sections
 
 KERNEL_SUBDIRS = arch drivers fonts irq mem task win
 
@@ -47,6 +48,7 @@ KERNEL_OBJS = $(KERNEL_ROOT_OBJS) $(KERNEL_SYSCALL_OBJS) $(KERNEL_SUBDIR_OBJS)
 LIB_OBJ_DIR      = $(CURDIR)/$(BUILD)/lib
 LIB_SRCS         = $(filter-out $(SRC)/lib/elf.c $(SRC)/lib/mode_marker.c,$(wildcard $(SRC)/lib/*.c))
 LIB_OBJS         = $(patsubst $(SRC)/lib/%.c,$(LIB_OBJ_DIR)/%.o,$(LIB_SRCS))
+BINARY_CONFIG_STAMP = $(CURDIR)/$(BUILD)/.userland-config
 
 BUILD_BIN        = $(CURDIR)/$(BUILD)/bin
 
@@ -56,33 +58,31 @@ APPS_GIX_OBJ_DIR = $(CURDIR)/$(BUILD)/obj/apps/gix
 
 SHELL_SRCS       := $(filter-out $(SRC)/shell/cpl_%.c $(SRC)/shell/progman.c $(SRC)/shell/startman.c $(SRC)/shell/textmode.c $(SRC)/shell/shutdown.c,$(wildcard $(SRC)/shell/*.c))
 SHELL_TARGETS     := $(patsubst $(SRC)/shell/%.c,%.elf,$(SHELL_SRCS))
+SHELL_OBJS        := $(patsubst $(SRC)/shell/%.c,$(SHELL_OBJ_DIR)/%.o,$(wildcard $(SRC)/shell/*.c))
 
 AGIX_SRCS        := $(wildcard $(SRC)/apps/agix/*.c)
 AGIX_TARGETS     := $(patsubst $(SRC)/apps/agix/%.c,%.elf,$(AGIX_SRCS))
+AGIX_OBJS        := $(patsubst $(SRC)/apps/agix/%.c,$(APPS_AGIX_OBJ_DIR)/%.o,$(AGIX_SRCS))
 
 GIX_SRCS         := $(wildcard $(SRC)/apps/gix/*.c)
 GIX_TARGETS      := $(patsubst $(SRC)/apps/gix/%.c,%.elf,$(GIX_SRCS))
+GIX_OBJS         := $(patsubst $(SRC)/apps/gix/%.c,$(APPS_GIX_OBJ_DIR)/%.o,$(GIX_SRCS))
 
 PROGRAM_NAMES    := $(foreach t,$(SHELL_TARGETS) $(AGIX_TARGETS) $(GIX_TARGETS),$(basename $(t)))
+PROGRAM_BINARIES := $(addprefix $(BUILD_BIN)/,$(SHELL_TARGETS) $(AGIX_TARGETS) $(GIX_TARGETS))
+DEP_FILES        := $(KERNEL_OBJS:.o=.d) $(LIB_OBJS:.o=.d) \
+                    $(LIB_OBJ_DIR)/elf.d $(LIB_OBJ_DIR)/mode_marker_gix.d \
+                    $(LIB_OBJ_DIR)/mode_marker_agix.d $(SHELL_OBJS:.o=.d) \
+                    $(AGIX_OBJS:.o=.d) $(GIX_OBJS:.o=.d)
 
-.PHONY: all run run-ahci run-usb clean clean-all disk fresh-disk install binstall binaries update run-existing full kernel-build programs $(PROGRAM_NAMES)
+.PHONY: all kernel run run-ahci run-usb clean clean-all disk fresh-disk install binstall binaries update full programs FORCE $(PROGRAM_NAMES)
 
-all: kernel-build $(CURDIR)/$(BUILD)/$(TARGET)
+all: $(CURDIR)/$(BUILD)/$(TARGET)
 
 kernel: $(CURDIR)/$(BUILD)/$(TARGET)
 
-$(CURDIR)/$(BUILD)/$(TARGET): $(KERNEL_OBJS)
-	$(LD) $(LDFLAGS) -o $@ $^
-
-kernel-build:
-	@$(MAKE) -C $(SRC) BUILD=$(CURDIR)/$(BUILD) CFLAGS="$(CFLAGS)"
-	@$(MAKE) -C $(SRC)/arch BUILD=$(CURDIR)/$(BUILD) CFLAGS="$(CFLAGS)"
-	@$(MAKE) -C $(SRC)/drivers BUILD=$(CURDIR)/$(BUILD) CFLAGS="$(CFLAGS)"
-	@$(MAKE) -C $(SRC)/fonts BUILD=$(CURDIR)/$(BUILD) CFLAGS="$(CFLAGS)"
-	@$(MAKE) -C $(SRC)/irq BUILD=$(CURDIR)/$(BUILD) CFLAGS="$(CFLAGS)"
-	@$(MAKE) -C $(SRC)/mem BUILD=$(CURDIR)/$(BUILD) CFLAGS="$(CFLAGS)"
-	@$(MAKE) -C $(SRC)/task BUILD=$(CURDIR)/$(BUILD) CFLAGS="$(CFLAGS)"
-	@$(MAKE) -C $(SRC)/win BUILD=$(CURDIR)/$(BUILD) CFLAGS="$(CFLAGS)"
+$(CURDIR)/$(BUILD)/$(TARGET): $(KERNEL_OBJS) $(LNK)
+	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS)
 
 $(CURDIR)/$(BUILD)/%.o: $(SRC)/%.c
 	@mkdir -p $(dir $@)
@@ -90,25 +90,43 @@ $(CURDIR)/$(BUILD)/%.o: $(SRC)/%.c
 
 $(CURDIR)/$(BUILD)/%.o: $(SRC)/%.S
 	@mkdir -p $(dir $@)
-	$(CC) -m32 -c $< -o $@
+	$(CC) -m32 -MMD -MP -c $< -o $@
 
-$(CURDIR)/$(BUILD)/obj/shell/%.o: $(SRC)/shell/%.c
+FORCE:
+
+$(BINARY_CONFIG_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@if ! printf '%s\n' '$(BINCFLAGS) $(BIN_LDFLAGS)' | cmp -s - $@; then \
+		printf '%s\n' '$(BINCFLAGS) $(BIN_LDFLAGS)' > $@; \
+	fi
+
+$(CURDIR)/$(BUILD)/obj/shell/%.o: $(SRC)/shell/%.c $(BINARY_CONFIG_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(BINCFLAGS) -c $< -o $@
 
-shell-build:
-	@$(MAKE) -C $(SRC)/shell BUILD=$(CURDIR)/$(BUILD) BINCFLAGS="$(BINCFLAGS)"
+$(LIB_OBJ_DIR)/%.o: $(SRC)/lib/%.c $(BINARY_CONFIG_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -c $< -o $@
 
-agix-build:
-	@$(MAKE) -C $(SRC)/apps/agix BUILD=$(CURDIR)/$(BUILD) BINCFLAGS="$(BINCFLAGS)"
+$(LIB_OBJ_DIR)/mode_marker_gix.o: $(SRC)/lib/mode_marker.c $(BINARY_CONFIG_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -DGIX_BUILD -c $< -o $@
 
-gix-build:
-	@$(MAKE) -C $(SRC)/apps/gix BUILD=$(CURDIR)/$(BUILD) BINCFLAGS="$(BINCFLAGS)"
+$(LIB_OBJ_DIR)/mode_marker_agix.o: $(SRC)/lib/mode_marker.c $(BINARY_CONFIG_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -DAGIX_BUILD -c $< -o $@
 
-lib-build:
-	@$(MAKE) -C $(SRC)/lib BUILD=$(CURDIR)/$(BUILD) BINCFLAGS="$(BINCFLAGS)"
+$(APPS_AGIX_OBJ_DIR)/%.o: $(SRC)/apps/agix/%.c $(BINARY_CONFIG_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -DAGIX_BUILD -c $< -o $@
 
-programs: lib-build shell-build agix-build gix-build
+$(APPS_GIX_OBJ_DIR)/%.o: $(SRC)/apps/gix/%.c $(BINARY_CONFIG_STAMP)
+	@mkdir -p $(dir $@)
+	$(CC) $(BINCFLAGS) -DGIX_BUILD -c $< -o $@
+
+programs: $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o \
+          $(LIB_OBJ_DIR)/mode_marker_gix.o $(LIB_OBJ_DIR)/mode_marker_agix.o \
+          $(SHELL_OBJS) $(AGIX_OBJS) $(GIX_OBJS)
 
 $(BUILD_BIN)/desktop.elf: $(SHELL_OBJ_DIR)/desktop.o \
 					  $(SHELL_OBJ_DIR)/progman.o \
@@ -122,43 +140,30 @@ $(BUILD_BIN)/desktop.elf: $(SHELL_OBJ_DIR)/desktop.o \
 					  $(SHELL_OBJ_DIR)/cpl_volume.o \
 					  $(LIB_OBJS) \
 					  $(LIB_OBJ_DIR)/elf.o \
-					  $(LIB_OBJ_DIR)/mode_marker_agix.o
+					  $(LIB_OBJ_DIR)/mode_marker_agix.o \
+					  $(BINARY_CONFIG_STAMP) \
+					  $(SRC)/shell/binary.ld
 	@mkdir -p $(BUILD_BIN)
-	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $^
+	$(LD) $(BIN_LDFLAGS) -o $@ $(filter %.o,$^)
 
-$(BUILD_BIN)/shell.elf: $(SHELL_OBJ_DIR)/shell.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_agix.o
+$(BUILD_BIN)/shell.elf: $(SHELL_OBJ_DIR)/shell.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_agix.o $(BINARY_CONFIG_STAMP) $(SRC)/shell/binary.ld
 	@mkdir -p $(BUILD_BIN)
-	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $^
+	$(LD) $(BIN_LDFLAGS) -o $@ $(filter %.o,$^)
 
 GIX_TARGETS_NOEXT := $(patsubst $(SRC)/apps/gix/%.c,%,$(GIX_SRCS))
 AGIX_TARGETS_NOEXT := $(patsubst $(SRC)/apps/agix/%.c,%,$(AGIX_SRCS))
 
-$(GIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(SRC)/apps/gix/%.c $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
-	@mkdir -p $(APPS_GIX_OBJ_DIR)
-	$(CC) $(BINCFLAGS) -DGIX_BUILD -c $(SRC)/apps/gix/$*.c -o $(APPS_GIX_OBJ_DIR)/$*.o
+$(GIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(APPS_GIX_OBJ_DIR)/%.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o $(BINARY_CONFIG_STAMP) $(SRC)/shell/binary.ld
 	@mkdir -p $(BUILD_BIN)
-	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $(APPS_GIX_OBJ_DIR)/$*.o $(LIB_OBJS) $(LIB_OBJ_DIR)/elf.o $(LIB_OBJ_DIR)/mode_marker_gix.o
+	$(LD) $(BIN_LDFLAGS) -o $@ $(filter %.o,$^)
 
-$(AGIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(SRC)/apps/agix/%.c $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
-	@mkdir -p $(APPS_AGIX_OBJ_DIR)
-	$(CC) $(BINCFLAGS) -DAGIX_BUILD -c $(SRC)/apps/agix/$*.c -o $(APPS_AGIX_OBJ_DIR)/$*.o
+$(AGIX_TARGETS_NOEXT:%=$(BUILD_BIN)/%.elf): $(BUILD_BIN)/%.elf: $(APPS_AGIX_OBJ_DIR)/%.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o $(BINARY_CONFIG_STAMP) $(SRC)/shell/binary.ld
 	@mkdir -p $(BUILD_BIN)
-	$(LD) -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie -o $@ $(APPS_AGIX_OBJ_DIR)/$*.o $(LIB_OBJS) $(LIB_OBJ_DIR)/mode_marker_agix.o
+	$(LD) $(BIN_LDFLAGS) -o $@ $(filter %.o,$^)
 
-binaries: programs
-	@for t in $(filter-out desktop.elf shell.elf,$(SHELL_TARGETS)); do \
-		$(MAKE) $(BUILD_BIN)/$$t; \
-	done
-	$(MAKE) $(BUILD_BIN)/desktop.elf $(BUILD_BIN)/shell.elf
-	@for t in $(AGIX_TARGETS); do \
-		$(MAKE) $(BUILD_BIN)/$$t; \
-	done
-	@for t in $(GIX_TARGETS); do \
-		$(MAKE) $(BUILD_BIN)/$$t; \
-	done
+binaries: $(PROGRAM_BINARIES)
 
-$(PROGRAM_NAMES): lib-build
-	@$(MAKE) $(BUILD_BIN)/$@.elf
+$(PROGRAM_NAMES): %: $(BUILD_BIN)/%.elf
 
 $(DISK):
 	@echo "WARNING: creating a fresh $(DISK); any existing image data will be replaced."
@@ -271,8 +276,6 @@ update:
 	@$(MAKE) install
 	@$(MAKE) binstall
 
-run-existing: run
-
 run:
 	@if [ ! -f "$(DISK)" ]; then \
 		echo "Error: $(DISK) not found. Run 'make full' once to create it."; \
@@ -332,3 +335,5 @@ clean:
 
 clean-all: clean
 	rm -f $(DISK)
+
+-include $(DEP_FILES)

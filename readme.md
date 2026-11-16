@@ -35,7 +35,7 @@ make fileman binstall    # one program, then copy programs to disk
 make run                 # boot without writing to disk
 ```
 
-Use the one-program form only when you changed that program and no shared ABI or kernel-side code. If you changed `src/syscall.h`, `src/syscall.c`, `src/win/`, or another shared interface, use `make update` so the kernel and all user programs are rebuilt together.
+Use the one-program form only when you changed that program and no shared ABI or kernel-side code. If you changed `src/syscall.h`, `src/syscall/`, `src/win/`, or another shared interface, use `make update` so the kernel and all user programs are rebuilt together.
 
 Please note that while the system runs in **QEMU** and **PcEM**, it does not work in VirtualBox. VMware, Bochs, and actual hardware are yet to be tested.
 

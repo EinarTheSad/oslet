@@ -35,16 +35,6 @@ void utf16_to_ascii(const uint16_t *src, char *dst, int max_chars) {
     }
 }
 
-void ascii_to_utf16(const char *src, uint16_t *dst, int max_chars) {
-    int i;
-    for (i = 0; i < max_chars && src[i]; i++) {
-        dst[i] = (uint16_t)(uint8_t)src[i];
-    }
-    for (; i < max_chars; i++) {
-        dst[i] = 0xFFFF;
-    }
-}
-
 void parse_filename(const char *name, char *out_name) {
     memset_s(out_name, ' ', 11);
     if (!name || !out_name) return;

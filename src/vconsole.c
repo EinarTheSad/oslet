@@ -34,10 +34,6 @@ static void vc_unregister(vconsole_t *vc) {
     }
 }
 
-int vc_is_owned_by(vconsole_t *vc, uint32_t tid) {
-    return vc && vc_is_registered(vc) && vc->owner_tid == tid;
-}
-
 void vc_detach_for_task(uint32_t tid) {
     extern task_t *task_list;
     if (!task_list) return;

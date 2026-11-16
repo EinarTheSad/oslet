@@ -24,6 +24,14 @@ SECTIONS
     .rodata ALIGN(4K) : {
         *(.rodata .rodata.*)
     } :rodata
+
+    .oslet_app ALIGN(4) : {
+        KEEP(*(.oslet_app))
+    } :rodata
+
+    .oslet_mode ALIGN(4) : {
+        KEEP(*(.oslet_mode))
+    } :rodata
     
     .data ALIGN(4K) : {
         *(.data .data.*)

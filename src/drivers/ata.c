@@ -175,10 +175,6 @@ void ata_use_ahci(int enable) {
         ata_usb_mode = 0;
 }
 
-int ata_using_usb(void) {
-    return ata_usb_mode;
-}
-
 int ata_identify(void) {
     if (ata_usb_mode)
         return usb_ready() ? 0 : -1;
@@ -339,7 +335,6 @@ int ata_read_sectors(uint32_t lba, uint8_t sector_count, void *buffer) {
     ata_release();
     return 0;
 }
-
 int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
     if (!buffer || sector_count == 0) return -1;
 
@@ -464,50 +459,4 @@ int ata_write_sectors(uint32_t lba, uint8_t sector_count, const void *buffer) {
      * ata_write_sectors returned success earlier. */
     ata_release();
     return 0;
-}
-
-int ata_is_available(void) {
-    if (ata_usb_mode)
-        return usb_ready();
-    if (ata_ahci_mode)
-        return ahci_ready();
-
-    ata_acquire();
-    uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
-    ata_release();
-    return (status != 0xFF && status != 0x00);
-}
-
-int ata_is_present(void) {
-    // Select master drive
-    ata_acquire();
-    outb(ATA_PRIMARY_IO + ATA_REG_DRIVE, 0xA0);
-    ata_400ns_delay();
-
-    // Wait longer for drive to respond
-    for (volatile int i = 0; i < 10000; i++);
-
-    // Check status register
-    uint8_t status = inb(ATA_PRIMARY_IO + ATA_REG_STATUS);
-
-    if (status == 0xFF || status == 0x00) {
-        ata_release();
-        return 0; // No drive present
-    }
-
-    // Check signature registers
-    uint8_t lbamid = inb(ATA_PRIMARY_IO + ATA_REG_LBA_MID);
-    uint8_t lbahi = inb(ATA_PRIMARY_IO + ATA_REG_LBA_HI);
-
-    if (lbamid == 0x14 && lbahi == 0xEB) {
-        ata_release();
-        return 0; // ATAPI (CD-ROM)
-    }
-    if (lbamid == 0x3C && lbahi == 0xC3) {
-        ata_release();
-        return 0; // SATA
-    }
-
-    ata_release();
-    return 1;
 }
