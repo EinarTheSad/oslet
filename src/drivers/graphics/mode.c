@@ -6,8 +6,10 @@ int graphics_active = 0;
 uint8_t *frontbuffer = NULL;
 uint8_t plane_pair_table[4][256];
 int plane_table_init = 0;
-volatile int dirty_x0 = GFX_WIDTH, dirty_y0 = GFX_HEIGHT;
-volatile int dirty_x1 = -1, dirty_y1 = -1;
+volatile int dirty_y0 = GFX_HEIGHT;
+volatile int dirty_y1 = -1;
+volatile int gfx_dirty_row_x0[GFX_HEIGHT];
+volatile int gfx_dirty_row_x1[GFX_HEIGHT];
 volatile int full_redraw = 1;
 int gfx_clip_enabled = 0;
 int gfx_clip_x0 = 0, gfx_clip_y0 = 0;
@@ -54,10 +56,12 @@ int gfx_clip_rect_contains(int x, int y, int w, int h) {
 }
 
 static inline void reset_dirty(void) {
-    dirty_x0 = GFX_WIDTH;
     dirty_y0 = GFX_HEIGHT;
-    dirty_x1 = -1;
     dirty_y1 = -1;
+    for (int y = 0; y < GFX_HEIGHT; y++) {
+        gfx_dirty_row_x0[y] = GFX_WIDTH;
+        gfx_dirty_row_x1[y] = -1;
+    }
     full_redraw = 0;
 }
 
@@ -206,33 +210,39 @@ void gfx_swap_buffers(void) {
     if (!backbuffer) return;
     
     GFX_LOCK();
+
+    if (!full_redraw && dirty_y1 < dirty_y0) {
+        GFX_UNLOCK();
+        return;
+    }
+
     wait_vretrace();
     
     volatile uint8_t* vram = GFX_VRAM;
     
-    int y0, y1, x0_aligned, x1_aligned;
+    int y0, y1;
     
     if (full_redraw) {
         y0 = 0;
         y1 = GFX_HEIGHT - 1;
-        x0_aligned = 0;
-        x1_aligned = GFX_WIDTH - 1;
     } else {
-        if (dirty_x1 < dirty_x0 || dirty_y1 < dirty_y0) {
-            GFX_UNLOCK();
-            return;
-        }
-        
         y0 = dirty_y0;
         y1 = dirty_y1;
-        x0_aligned = dirty_x0 & ~7;
-        x1_aligned = (dirty_x1 + 7) & ~7;
-        
-        if (x1_aligned > GFX_WIDTH) x1_aligned = GFX_WIDTH;
     }
     
-    /* Write per-scanline and finish all planes for that scanline before moving to the next one. */
+    /* Keep sequencer register 2 selected while updating plane masks. */
+    outb(0x3C4, 0x02);
+
+    /* Use each row's actual span instead of the full-screen damage bounding box. */
     for (int y = y0; y <= y1; y++) {
+        int row_x0 = full_redraw ? 0 : gfx_dirty_row_x0[y];
+        int row_x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
+        if (row_x1 < row_x0) continue;
+
+        int x0_aligned = row_x0 & ~7;
+        int x1_aligned = (row_x1 + 8) & ~7;
+        if (x1_aligned > GFX_WIDTH) x1_aligned = GFX_WIDTH;
+
         uint32_t bb_row = y * (GFX_WIDTH / 2);
         uint32_t vram_row = y * 80;
 
@@ -243,18 +253,14 @@ void gfx_swap_buffers(void) {
             uint8_t b2 = backbuffer[bb_offset + 2];
             uint8_t b3 = backbuffer[bb_offset + 3];
 
-            /* Skip writing if frontbuffer already matches (and not full redraw) */
-            if (!full_redraw && frontbuffer) {
-                if (frontbuffer[bb_offset] == b0 && frontbuffer[bb_offset + 1] == b1
-                    && frontbuffer[bb_offset + 2] == b2 && frontbuffer[bb_offset + 3] == b3) {
-                    continue;
-                }
+            if (!full_redraw && frontbuffer &&
+                frontbuffer[bb_offset] == b0 && frontbuffer[bb_offset + 1] == b1 &&
+                frontbuffer[bb_offset + 2] == b2 && frontbuffer[bb_offset + 3] == b3) {
+                continue;
             }
 
             for (uint8_t plane = 0; plane < 4; plane++) {
-                outb(0x3C4, 0x02);
                 outb(0x3C5, 1 << plane);
-
                 uint8_t plane_byte = (uint8_t)(plane_pair_table[plane][b0] << 6)
                                    | (uint8_t)(plane_pair_table[plane][b1] << 4)
                                    | (uint8_t)(plane_pair_table[plane][b2] << 2)
@@ -263,7 +269,6 @@ void gfx_swap_buffers(void) {
                 vram[vram_row + (x / 8)] = plane_byte;
             }
 
-            /* Update frontbuffer cache */
             if (frontbuffer) {
                 frontbuffer[bb_offset] = b0;
                 frontbuffer[bb_offset + 1] = b1;
@@ -273,9 +278,8 @@ void gfx_swap_buffers(void) {
         }
     }
     
-    outb(0x3C4, 0x02);
     outb(0x3C5, 0x0F);
-    
+
     reset_dirty();
     GFX_UNLOCK();
 }

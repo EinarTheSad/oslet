@@ -15,10 +15,10 @@ extern uint8_t *gfx_frontbuffer;
 extern uint8_t gfx_plane_pair_table[4][256];
 extern int gfx_plane_table_init;
 extern int gfx_active;
-extern volatile int gfx_dirty_x0;
 extern volatile int gfx_dirty_y0;
-extern volatile int gfx_dirty_x1;
 extern volatile int gfx_dirty_y1;
+extern volatile int gfx_dirty_row_x0[GFX_HEIGHT];
+extern volatile int gfx_dirty_row_x1[GFX_HEIGHT];
 extern volatile int gfx_full_redraw;
 extern int gfx_clip_enabled;
 extern int gfx_clip_x0;
@@ -31,9 +31,7 @@ extern int gfx_clip_y1;
 #define plane_pair_table gfx_plane_pair_table
 #define plane_table_init gfx_plane_table_init
 #define graphics_active gfx_active
-#define dirty_x0 gfx_dirty_x0
 #define dirty_y0 gfx_dirty_y0
-#define dirty_x1 gfx_dirty_x1
 #define dirty_y1 gfx_dirty_y1
 #define full_redraw gfx_full_redraw
 
@@ -54,10 +52,12 @@ static inline void mark_dirty(int x, int y, int w, int h) {
     }
     if (x >= x1 || y >= y1) return;
 
-    if (x < dirty_x0) dirty_x0 = x;
     if (y < dirty_y0) dirty_y0 = y;
-    if (x1 - 1 > dirty_x1) dirty_x1 = x1 - 1;
     if (y1 - 1 > dirty_y1) dirty_y1 = y1 - 1;
+    for (int row = y; row < y1; row++) {
+        if (x < gfx_dirty_row_x0[row]) gfx_dirty_row_x0[row] = x;
+        if (x1 - 1 > gfx_dirty_row_x1[row]) gfx_dirty_row_x1[row] = x1 - 1;
+    }
 }
 
 static inline void putpixel_raw(int x, int y, uint8_t color) {
