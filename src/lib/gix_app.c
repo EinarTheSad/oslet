@@ -151,10 +151,15 @@ void gix_app_run(const gix_app_desc_t *desc) {
                 sys_win_invalidate_icons();
             }
 
-            if (event.type != SYS_WIN_EVENT_NONE && desc->on_event &&
-                desc->on_event(active_form, &event, desc->userdata)) {
-                gix_running = 0;
-                handled_exit = 1;
+            if (event.type != SYS_WIN_EVENT_NONE && desc->on_event) {
+                int event_result = desc->on_event(active_form, &event, desc->userdata);
+                if (event_result == GIX_APP_EVENT_CANCEL_CLOSE &&
+                    event.type == SYS_WIN_EVENT_CLOSE) {
+                    handled_exit = 1;
+                } else if (event_result) {
+                    gix_running = 0;
+                    handled_exit = 1;
+                }
             }
 
             if (event.type == SYS_WIN_EVENT_CLOSE && !handled_exit && gix_running) {

@@ -6,6 +6,8 @@
 typedef int (*gix_app_event_fn)(void *form, const sys_win_event_t *event, void *userdata);
 typedef void (*gix_app_callback_fn)(void *form, void *userdata);
 
+#define GIX_APP_EVENT_CANCEL_CLOSE 2
+
 typedef struct {
     const char *text;
     int action_id;

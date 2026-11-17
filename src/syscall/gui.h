@@ -2,7 +2,7 @@
 
 #include "internal.h"
 
-#define TEXTBOX_MULTILINE_SIZE 8125
+#define TEXTBOX_INITIAL_CAPACITY 256
 #define DROPDOWN_HOVER_SCROLLBAR (-2)
 #define TREEVIEW_INDENT_W 10
 
@@ -37,9 +37,9 @@ int pump_update_dropdown_hover(gui_form_t *form, int mx, int my, int ctrl_y_offs
 int pump_handle_control_press(gui_form_t *form, int mx, int my, int ctrl_y_offset);
 int pump_handle_keyboard(gui_form_t *form);
 void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event);
+void textbox_reset_cursor_blink(gui_control_t *ctrl);
 
 gui_control_t *find_control_by_id(gui_form_t *form, int16_t id);
-char *textbox_get_text(gui_control_t *ctrl);
 int textbox_run_edit_command(gui_control_t *ctrl, int command);
 
 void treeview_layout_sys(gui_control_t *ctrl, int *out_content_w, int *out_row_area_h,

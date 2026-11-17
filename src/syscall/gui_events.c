@@ -690,34 +690,15 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
             int rel_x = mx - text_area_x;
             int rel_y = my - (abs_y + 6);
 
-            char *text = textbox_get_text(ctrl);
             int new_pos;
             if (ctrl->textbox.is_multiline) {
-                int text_area_h = ctrl->h - 9;
-                int font_height = 0;
-                int seq_idx = -1;
-                for (int j = 0; j < font_n.size_count; j++) {
-                    if (font_n.sequences[j].point_size == size) {
-                        seq_idx = j;
-                        break;
-                    }
-                }
-                font_height = seq_idx >= 0 ? font_n.sequences[seq_idx].height : size;
-                int line_height = font_height + 2;
-                int visible_lines = text_area_h / line_height;
-                if (visible_lines < 1) visible_lines = 1;
+                textbox_multiline_layout(&font_n, size, ctrl,
+                                         &text_area_w, NULL, NULL);
 
-                int total_lines = textbox_wrap_line_count(&font_n, size, text, text_area_w);
-                int needs_scrollbar = total_lines > visible_lines;
-                if (needs_scrollbar) {
-                    text_area_w -= 18;
-                    if (text_area_w < 10) text_area_w = 10;
-                }
-
-                new_pos = textbox_pos_from_xy(&font_n, size, text, text_area_x, text_area_w,
+                new_pos = textbox_pos_from_xy(&font_n, size, ctrl, text_area_x, text_area_w,
                                               ctrl->textbox.current_line, rel_x, rel_y);
             } else {
-                new_pos = textbox_pos_from_x(&font_n, size, text,
+                new_pos = textbox_pos_from_x(&font_n, size, ctrl,
                                              ctrl->textbox.scroll_offset, rel_x);
             }
 
@@ -725,6 +706,9 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
             if (new_pos != ctrl->textbox.sel_end) {
                 ctrl->textbox.sel_end = new_pos;
                 ctrl->textbox.cursor_pos = new_pos;
+                ctrl->textbox.preferred_cursor_x_valid = 0;
+                form->clicked_event.type = SYS_WIN_EVENT_TEXT_UPDATE;
+                form->clicked_event.id = ctrl->id;
                 needs_redraw = 1;
                 if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
             }
@@ -865,39 +849,27 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
         if (ctrl && ctrl->type == CTRL_TEXTBOX && ctrl->textbox.scrollbar_pressed && ctrl->textbox.scrollbar_hovered_item == 1) {
             extern bmf_font_t font_n;
             int abs_y = form->win.y + ctrl->y + ctrl_y_offset;
-            int text_area_w = ctrl->w - 6;
-            int text_area_h = ctrl->h - 9;
-            int seq_idx = -1;
-            for (int j = 0; j < font_n.size_count; j++) {
-                if (font_n.sequences[j].point_size == (ctrl->font_size > 0 ? ctrl->font_size : 12)) {
-                    seq_idx = j;
-                    break;
-                }
-            }
-            int font_height = seq_idx >= 0 ? font_n.sequences[seq_idx].height : (ctrl->font_size > 0 ? ctrl->font_size : 12);
-            int line_height = font_height + 2;
-            int visible_lines = text_area_h / line_height;
-            if (visible_lines < 1) visible_lines = 1;
-            int total_lines = textbox_wrap_line_count(&font_n, (ctrl->font_size > 0 ? ctrl->font_size : 12), textbox_get_text(ctrl), text_area_w);
+            int visible_lines;
+            int total_lines;
+            textbox_multiline_layout(&font_n,
+                (ctrl->font_size > 0 ? ctrl->font_size : 12), ctrl,
+                NULL, &visible_lines, &total_lines);
             int max_scroll = total_lines > visible_lines ? total_lines - visible_lines : 0;
+            int scrollbar_height = ctrl->h - 2;
+            scrollbar_geom_t sb;
+            gui_scrollbar_make(&sb, scrollbar_height, 18,
+                               ctrl->textbox.current_line, max_scroll);
 
-            if (total_lines > visible_lines && max_scroll > 0) {
-                int arrow_size = 18;
-                int track_len = text_area_h - arrow_size * 2;
-                int thumb_size = 20;
-                if (thumb_size > track_len) thumb_size = track_len;
-                int track_y = abs_y + 6 + arrow_size;
+            if (total_lines > visible_lines && max_scroll > 0 && sb.travel > 0) {
+                int track_y = abs_y + 1 + sb.arrow_size;
 
                 int rel_y = my - track_y - ctrl->textbox.scroll_offset;
                 if (rel_y < 0) rel_y = 0;
-                if (rel_y > track_len - thumb_size) rel_y = track_len - thumb_size;
-                int new_line = 0;
-                if (track_len - thumb_size > 0) {
-                    new_line = (rel_y * max_scroll) / (track_len - thumb_size);
-                }
+                if (rel_y > sb.travel) rel_y = sb.travel;
+                int new_line = (rel_y * max_scroll) / sb.travel;
                 if (new_line > max_scroll) new_line = max_scroll;
                 if (new_line < 0) new_line = 0;
-                if (new_line != ctrl->textbox.current_line) {
+                if (new_line != (int)ctrl->textbox.current_line) {
                     ctrl->textbox.current_line = new_line;
                     needs_redraw = 1;
                     if (changed_count < 32) changed_controls[changed_count++] = ctrl->id;
@@ -948,9 +920,40 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
         int keyboard_result = pump_handle_keyboard(form);
         if (keyboard_result == 2) {
             event_count = 1;
+            if (form->clicked_event.type == SYS_WIN_EVENT_TEXT_UPDATE) {
+                needs_redraw = 1;
+                if (changed_count < 32)
+                    changed_controls[changed_count++] = form->clicked_event.id;
+            }
         } else if (keyboard_result) {
             needs_redraw = 1;
             if (changed_count < 32) changed_controls[changed_count++] = form->focused_control_id;
+        }
+    }
+
+    uint32_t now = timer_get_ticks();
+    if (form->clicked_event.type == SYS_WIN_EVENT_TEXT_UPDATE) {
+        gui_control_t *ctrl = find_control_by_id(form, form->clicked_event.id);
+        textbox_reset_cursor_blink(ctrl);
+    }
+
+    if (!form->win.is_minimized && form->focused_control_id >= 0 &&
+        global_wm.focused_index >= 0 && global_wm.windows[global_wm.focused_index] == form) {
+        gui_control_t *ctrl = find_control_by_id(form, form->focused_control_id);
+        if (ctrl && ctrl->type == CTRL_TEXTBOX) {
+            uint32_t blink_interval = timer_get_frequency() / 2;
+            if (blink_interval == 0) blink_interval = 1;
+            uint32_t elapsed = now - ctrl->textbox.cursor_blink_tick;
+            uint32_t toggles = elapsed / blink_interval;
+            if (toggles > 0) {
+                if (toggles & 1) ctrl->textbox.cursor_visible = !ctrl->textbox.cursor_visible;
+                ctrl->textbox.cursor_blink_tick += toggles * blink_interval;
+                if (toggles & 1) {
+                    needs_redraw = 1;
+                    if (changed_count < 32)
+                        changed_controls[changed_count++] = ctrl->id;
+                }
+            }
         }
     }
 

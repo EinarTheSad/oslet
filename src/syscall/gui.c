@@ -331,19 +331,31 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                         dest->textbox.sel_start = -1;
                         dest->textbox.sel_end = -1;
                         dest->textbox.current_line = 0;
+                        dest->textbox.revision = 0;
+                        dest->textbox.gap_start = 0;
+                        dest->textbox.gap_end = 0;
+                        dest->textbox.buffer_capacity = 0;
+                        dest->textbox.scrollbar_hovered_item = -1;
+                        dest->textbox.scrollbar_pressed = 0;
+                        dest->textbox.scrollbar_drag_offset = 0;
+                        dest->textbox.last_cursor_pos = 0xFFFFFFFFU;
+                        dest->textbox.preferred_cursor_x = 0;
+                        dest->textbox.preferred_cursor_x_valid = 0;
                         if (ctrl->textbox.is_multiline) {
                             dest->textbox.is_multiline = 1;
-                            dest->textbox.max_length = TEXTBOX_MULTILINE_SIZE;
-                            dest->textbox.multiline_text = (char*)kmalloc(TEXTBOX_MULTILINE_SIZE);
-                            if (dest->textbox.multiline_text) {
-                                memset_s(dest->textbox.multiline_text, 0, TEXTBOX_MULTILINE_SIZE);
-                                strcpy_s(dest->textbox.multiline_text, ctrl->text, TEXTBOX_MULTILINE_SIZE);
-                            }
+                            dest->textbox.max_length = 0;
+                            dest->textbox.multiline_text = NULL;
+                            uint32_t initial_length = 0;
+                            while (initial_length < sizeof(ctrl->text) &&
+                                   ctrl->text[initial_length]) initial_length++;
+                            if (textbox_set_text(dest, ctrl->text, initial_length) != 0)
+                                return (uint32_t)-1;
                         } else {
                             dest->textbox.is_multiline = 0;
                             dest->textbox.max_length = ctrl->textbox.max_length > 0 ? ctrl->textbox.max_length : 255;
                             dest->textbox.multiline_text = NULL;
                         }
+                        textbox_reset_cursor_blink(dest);
                         break;
                     case CTRL_DROPDOWN:
                         dest->dropdown.dropdown_open = 0;
@@ -424,11 +436,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
 
                 /* For textbox, update cursor to end of text */
                 if (dest->type == CTRL_TEXTBOX) {
-                    char *text_src = dest->textbox.is_multiline && dest->textbox.multiline_text
-                        ? dest->textbox.multiline_text : dest->text;
-                    int len = 0;
-                    while (text_src[len]) len++;
-                    dest->textbox.cursor_pos = len;
+                    dest->textbox.cursor_pos = textbox_text_len(dest);
                 }
 
                 form->ctrl_count++;
@@ -647,18 +655,19 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 case 0: /* PROP_TEXT - universal */
                     if (value) {
                         if (ctrl->type == CTRL_TEXTBOX && ctrl->textbox.is_multiline && ctrl->textbox.multiline_text) {
-                            strcpy_s(ctrl->textbox.multiline_text, (const char*)value, ctrl->textbox.max_length);
-                            ctrl->textbox.cursor_pos = 0;
-                            ctrl->textbox.sel_start = -1;
-                            ctrl->textbox.sel_end = -1;
+                            char text[256];
+                            if (sys_copy_string(text, value, sizeof(text)) != 0) return (uint32_t)-1;
+                            uint32_t length = 0;
+                            while (length < sizeof(text) && text[length]) length++;
+                            return (uint32_t)textbox_set_text(ctrl, text, length);
                         } else {
-                            strcpy_s(ctrl->text, (const char*)value, 256);
+                            if (sys_copy_string(ctrl->text, value, sizeof(ctrl->text)) != 0)
+                                return (uint32_t)-1;
                         }
                     }
                     break;
                 case PROP_TEXTBOX_EDIT:
-                    textbox_run_edit_command(ctrl, (int)value);
-                    break;
+                    return (uint32_t)textbox_run_edit_command(ctrl, (int)value);
                 case PROP_TREE_ITEMS:
                     if (ctrl->type == CTRL_TREEVIEW && ctrl->treeview.items && value) {
                         if (!sys_range_mapped(value, sizeof(sys_tree_items_t)))
@@ -823,9 +832,17 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                     break;
                 case 4: /* PROP_W - universal */
                     ctrl->w = (uint16_t)value;
+                    if ((ctrl->type & 0x7F) == CTRL_TEXTBOX) {
+                        ctrl->textbox.last_cursor_pos = 0xFFFFFFFFU;
+                        ctrl->textbox.preferred_cursor_x_valid = 0;
+                    }
                     break;
                 case 5: /* PROP_H - universal */
                     ctrl->h = (uint16_t)value;
+                    if ((ctrl->type & 0x7F) == CTRL_TEXTBOX) {
+                        ctrl->textbox.last_cursor_pos = 0xFFFFFFFFU;
+                        ctrl->textbox.preferred_cursor_x_valid = 0;
+                    }
                     break;
                 case 6: /* PROP_VISIBLE - universal */
                     if (value)
@@ -1316,6 +1333,114 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             int16_t ctrl_id = (int16_t)ecx;
             if (!form) return 0;
             compositor_draw_control_by_id(&global_wm, form, ctrl_id);
+            return 0;
+        }
+
+        case 0x24: { /* SYS_WIN_SET_TITLE */
+            gui_form_t *form = (gui_form_t*)ebx;
+            char title[sizeof(form->win.title)];
+            if (!form || sys_copy_string(title, ecx, sizeof(title)) != 0)
+                return (uint32_t)-1;
+
+            strcpy_s(form->win.title, title, sizeof(form->win.title));
+            for (int i = 0; i < form->ctrl_count; i++) {
+                gui_control_t *ctrl = &form->controls[i];
+                if ((ctrl->type & 0x7F) == CTRL_ICON && ctrl->id == 5000) {
+                    strcpy_s(ctrl->text, title, sizeof(ctrl->text));
+                    break;
+                }
+            }
+
+            if (!form->win.is_minimized)
+                compositor_draw_single(&global_wm, form);
+            gui_request_full_redraw();
+            return 0;
+        }
+
+        case 0x25: { /* SYS_WIN_TEXTBOX_REPLACE */
+            gui_form_t *form = (gui_form_t*)ebx;
+            sys_textbox_replace_t request;
+            if (!form) return (uint32_t)-1;
+            gui_control_t *ctrl = find_control_by_id(form, (int16_t)ecx);
+            if (!ctrl || ctrl->type != CTRL_TEXTBOX ||
+                !ctrl->textbox.is_multiline ||
+                !sys_range_mapped(edx, sizeof(request)))
+                return (uint32_t)-1;
+            memcpy_s(&request, (const void*)edx, sizeof(request));
+            if (request.length && !sys_range_mapped((uint32_t)request.text, request.length))
+                return (uint32_t)-1;
+            return (uint32_t)textbox_set_text(ctrl, request.text, request.length);
+        }
+
+        case 0x26: { /* SYS_WIN_TEXTBOX_GET_LENGTH */
+            gui_form_t *form = (gui_form_t*)ebx;
+            if (!form) return (uint32_t)-1;
+            gui_control_t *ctrl = find_control_by_id(form, (int16_t)ecx);
+            if (!ctrl || ctrl->type != CTRL_TEXTBOX)
+                return (uint32_t)-1;
+            return textbox_text_len(ctrl);
+        }
+
+        case 0x27: { /* SYS_WIN_TEXTBOX_COPY_RANGE */
+            gui_form_t *form = (gui_form_t*)ebx;
+            sys_textbox_range_t request;
+            if (!form) return (uint32_t)-1;
+            gui_control_t *ctrl = find_control_by_id(form, (int16_t)ecx);
+            if (!ctrl || ctrl->type != CTRL_TEXTBOX ||
+                !sys_range_mapped(edx, sizeof(request)))
+                return (uint32_t)-1;
+            memcpy_s(&request, (const void*)edx, sizeof(request));
+            if (request.length &&
+                !sys_range_mapped((uint32_t)request.destination, request.length))
+                return (uint32_t)-1;
+            return (uint32_t)textbox_copy_range(ctrl, request.offset,
+                                                request.destination, request.length);
+        }
+
+        case 0x28: { /* SYS_WIN_FOCUS_CONTROL */
+            gui_form_t *form = (gui_form_t*)ebx;
+            if (!form) return (uint32_t)-1;
+            gui_control_t *ctrl = find_control_by_id(form, (int16_t)ecx);
+            if (!ctrl || ctrl->type != CTRL_TEXTBOX || (ctrl->type & 0x80))
+                return (uint32_t)-1;
+            if (form->focused_control_id >= 0) {
+                gui_control_t *old = find_control_by_id(form, form->focused_control_id);
+                if (old && old->type == CTRL_TEXTBOX) old->textbox.is_focused = 0;
+            }
+            form->focused_control_id = ctrl->id;
+            ctrl->textbox.is_focused = 1;
+            textbox_reset_cursor_blink(ctrl);
+            ctrl->textbox.last_cursor_pos = 0xFFFFFFFFU;
+            ctrl->textbox.preferred_cursor_x_valid = 0;
+            compositor_draw_single(&global_wm, form);
+            return 0;
+        }
+
+        case 0x29: { /* SYS_WIN_TEXTBOX_SELECT_RANGE */
+            gui_form_t *form = (gui_form_t*)ebx;
+            sys_textbox_range_t request;
+            if (!form) return (uint32_t)-1;
+            gui_control_t *ctrl = find_control_by_id(form, (int16_t)ecx);
+            if (!ctrl || ctrl->type != CTRL_TEXTBOX ||
+                !sys_range_mapped(edx, sizeof(request)))
+                return (uint32_t)-1;
+            memcpy_s(&request, (const void*)edx, sizeof(request));
+            uint32_t length = textbox_text_len(ctrl);
+            if (request.offset > length || request.length > length - request.offset ||
+                request.offset + request.length > 0x7FFFFFFFU)
+                return (uint32_t)-1;
+            ctrl->textbox.cursor_pos = request.offset + request.length;
+            ctrl->textbox.last_cursor_pos = 0xFFFFFFFFU;
+            ctrl->textbox.preferred_cursor_x_valid = 0;
+            if (request.length) {
+                ctrl->textbox.sel_start = (int32_t)request.offset;
+                ctrl->textbox.sel_end = (int32_t)(request.offset + request.length);
+            } else {
+                ctrl->textbox.sel_start = -1;
+                ctrl->textbox.sel_end = -1;
+            }
+            textbox_reset_cursor_blink(ctrl);
+            compositor_draw_control_by_id(&global_wm, form, ctrl->id);
             return 0;
         }
 

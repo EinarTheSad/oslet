@@ -172,6 +172,12 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_GET_TOPMOST_AT  0x0B21
 #define SYS_WIN_MENUBAR_ADD_SEPARATOR 0x0B22
 #define SYS_WIN_REDRAW_CONTROL       0x0B23
+#define SYS_WIN_SET_TITLE            0x0B24
+#define SYS_WIN_TEXTBOX_REPLACE      0x0B25
+#define SYS_WIN_TEXTBOX_GET_LENGTH   0x0B26
+#define SYS_WIN_TEXTBOX_COPY_RANGE   0x0B27
+#define SYS_WIN_FOCUS_CONTROL        0x0B28
+#define SYS_WIN_TEXTBOX_SELECT_RANGE 0x0B29
 
 typedef enum {
     SYS_WIN_EVENT_NONE = 0,
@@ -181,14 +187,29 @@ typedef enum {
     SYS_WIN_EVENT_REDRAW,
     SYS_WIN_EVENT_WINDOW_CHANGED,
     SYS_WIN_EVENT_CLOSE,
-    SYS_WIN_EVENT_RESIZE
+    SYS_WIN_EVENT_RESIZE,
+    SYS_WIN_EVENT_TEXT_UPDATE,
+    SYS_WIN_EVENT_TEXT_ERROR
 } sys_win_event_type_t;
+
+#define SYS_WIN_TEXT_ERROR_NO_MEMORY 1
 
 typedef struct {
     sys_win_event_type_t type;
     /* Menu/control ID or key code; lifecycle events use zero. */
     int id;
 } sys_win_event_t;
+
+typedef struct {
+    const char *text;
+    uint32_t length;
+} sys_textbox_replace_t;
+
+typedef struct {
+    uint32_t offset;
+    uint32_t length;
+    char *destination;
+} sys_textbox_range_t;
 
 /* Control property IDs for sys_ctrl_set/get */
 #define PROP_TEXT       0   /* char* - text content */
@@ -327,18 +348,27 @@ typedef struct {
 } control_radiobutton_t;
 
 typedef struct {
-    uint16_t cursor_pos;
-    uint16_t max_length;
+    uint32_t cursor_pos;
+    uint32_t max_length;
     uint16_t scroll_offset;
     uint8_t is_focused;
-    int16_t sel_start;
-    int16_t sel_end;
+    int32_t sel_start;
+    int32_t sel_end;
     uint8_t is_multiline;
-    uint16_t current_line;
+    uint32_t current_line;
     char* multiline_text;
+    uint32_t gap_start;
+    uint32_t gap_end;
+    uint32_t buffer_capacity;
+    uint32_t revision;
     int8_t scrollbar_hovered_item;
     uint8_t scrollbar_pressed;
     int16_t scrollbar_drag_offset;
+    uint32_t cursor_blink_tick;
+    uint8_t cursor_visible;
+    uint32_t last_cursor_pos;
+    int32_t preferred_cursor_x;
+    uint8_t preferred_cursor_x_valid;
 } control_textbox_t;
 
 typedef struct {
@@ -1156,6 +1186,57 @@ static inline void sys_win_set_icon(void *form, const char *icon_path) {
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx) :: "memory");
 }
 
+static inline int sys_win_set_title(void *form, const char *title) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_SET_TITLE), "b"(form), "c"(title) : "memory");
+    return ret;
+}
+
+static inline int sys_win_textbox_replace(void *form, int16_t id,
+                                          const char *text, uint32_t length) {
+    sys_textbox_replace_t request = { text, length };
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_TEXTBOX_REPLACE),
+                     "b"(form), "c"(id), "d"(&request) : "memory");
+    return ret;
+}
+
+static inline int sys_win_textbox_get_length(void *form, int16_t id, uint32_t *length) {
+    int ret;
+    if (!length) return -1;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_TEXTBOX_GET_LENGTH),
+                     "b"(form), "c"(id) : "memory");
+    if (ret < 0) return ret;
+    *length = (uint32_t)ret;
+    return 0;
+}
+
+static inline int sys_win_textbox_copy_range(void *form, int16_t id,
+                                             uint32_t offset, char *destination,
+                                             uint32_t length) {
+    sys_textbox_range_t request = { offset, length, destination };
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_TEXTBOX_COPY_RANGE),
+                     "b"(form), "c"(id), "d"(&request) : "memory");
+    return ret;
+}
+
+static inline int sys_win_focus_control(void *form, int16_t id) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_FOCUS_CONTROL),
+                     "b"(form), "c"(id) : "memory");
+    return ret;
+}
+
+static inline int sys_win_textbox_select_range(void *form, int16_t id,
+                                               uint32_t offset, uint32_t length) {
+    sys_textbox_range_t request = { offset, length, NULL };
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_TEXTBOX_SELECT_RANGE),
+                     "b"(form), "c"(id), "d"(&request) : "memory");
+    return ret;
+}
+
 static inline void sys_win_set_resizable(void *form, int resizable) {
     register int dummy_eax __asm__("eax") = SYS_WIN_SET_RESIZABLE;
     register void *dummy_ebx __asm__("ebx") = form;
@@ -1212,13 +1293,16 @@ static inline gui_control_t* sys_win_get_control(void *form, int16_t id) {
     return ret;
 }
 
-static inline void sys_ctrl_set_prop(void *form, int16_t ctrl_id, int prop_id, uint32_t value) {
+static inline int sys_ctrl_set_prop(void *form, int16_t ctrl_id, int prop_id, uint32_t value) {
     uint32_t packed = ((uint32_t)ctrl_id << 16) | (prop_id & 0xFFFF);
+    int ret;
     register int dummy_eax __asm__("eax") = SYS_WIN_CTRL_SET_PROP;
     register void *dummy_ebx __asm__("ebx") = form;
     register uint32_t dummy_ecx __asm__("ecx") = packed;
     register uint32_t dummy_edx __asm__("edx") = value;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax), "+r"(dummy_ebx), "+r"(dummy_ecx), "+r"(dummy_edx) :: "memory");
+    ret = dummy_eax;
+    return ret;
 }
 
 static inline uint32_t sys_ctrl_get_prop(void *form, int16_t ctrl_id, int prop_id) {
