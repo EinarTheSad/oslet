@@ -456,23 +456,24 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             gui_form_t *form = (gui_form_t*)ebx;
             if (!form) return 0;
 
-            /* Release icon slot if window was minimized */
+            int release_icon_slot = 0;
+            int icon_x = 0, icon_y = 0;
             if (form->win.is_minimized) {
-                int icon_x = 0, icon_y = 0;
                 if (form->win.minimized_icon_id != -1 && form->controls) {
                     gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
                     if (ctrl) {
                         icon_x = ctrl->x;
                         icon_y = ctrl->y;
+                        release_icon_slot = 1;
                     }
-                }
-                if (icon_x || icon_y) {
-                    wm_release_icon_slot(&global_wm, icon_x, icon_y);
                 }
             }
 
             /* Unregister from window manager */
             wm_unregister_window(&global_wm, form);
+            if (release_icon_slot) {
+                wm_release_icon_slot(&global_wm, icon_x, icon_y);
+            }
 
             /* Free cached bitmaps in controls and restore any open dropdown backgrounds */
             if (form->controls) {
@@ -1117,17 +1118,19 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             if (form->win.is_minimized) {
                 int icon_x = 0, icon_y = 0;
+                int release_icon_slot = 0;
                 if (form->win.minimized_icon_id != -1 && form->controls) {
                     gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
                     if (ctrl) {
                         icon_x = ctrl->x;
                         icon_y = ctrl->y;
+                        release_icon_slot = 1;
                     }
                 }
-                if (icon_x || icon_y) {
+                win_restore(form);
+                if (release_icon_slot) {
                     wm_release_icon_slot(&global_wm, icon_x, icon_y);
                 }
-                win_restore(form);
             }
 
             wm_bring_to_front(&global_wm, form);
@@ -1459,23 +1462,24 @@ void wm_cleanup_task(uint32_t tid) {
         gui_form_t *form = global_wm.windows[i];
         if (!form || form->owner_tid != tid) continue;
 
-        /* Release icon slot if window was minimized */
+        int release_icon_slot = 0;
+        int icon_x = 0, icon_y = 0;
         if (form->win.is_minimized) {
-            int icon_x = 0, icon_y = 0;
             if (form->win.minimized_icon_id != -1 && form->controls) {
                 gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
                 if (ctrl) {
                     icon_x = ctrl->x;
                     icon_y = ctrl->y;
+                    release_icon_slot = 1;
                 }
-            }
-            if (icon_x || icon_y) {
-                wm_release_icon_slot(&global_wm, icon_x, icon_y);
             }
         }
 
         /* Unregister from window manager */
         wm_unregister_window(&global_wm, form);
+        if (release_icon_slot) {
+            wm_release_icon_slot(&global_wm, icon_x, icon_y);
+        }
 
         /* Free cached bitmaps in controls */
         if (form->controls) {

@@ -185,22 +185,14 @@ static int wm_icon_slot_occupied(window_manager_t *wm, int x, int y) {
     return 0;
 }
 
-static int wm_slot_is_before_next(window_manager_t *wm, int x, int y) {
-    int col = (x - WM_ICON_MARGIN) / WM_ICON_SLOT_WIDTH;
-    int row = (y - WM_ICON_MARGIN) / WM_ICON_SLOT_HEIGHT;
-    int slot_x = WM_ICON_MARGIN + col * WM_ICON_SLOT_WIDTH;
-    int slot_y = WM_ICON_MARGIN + row * WM_ICON_SLOT_HEIGHT;
-
-    if (x != slot_x || y != slot_y) return 0;
-    if (col < wm->next_icon_column) return 1;
-    if (col == wm->next_icon_column && row < wm->next_icon_row) return 1;
-    return 0;
+int wm_is_icon_slot_occupied(window_manager_t *wm, int x, int y) {
+    return wm_icon_slot_occupied(wm, x, y);
 }
 
 static void wm_advance_next_icon_pos(window_manager_t *wm) {
     wm->next_icon_row++;
     if (wm->next_icon_row * WM_ICON_SLOT_HEIGHT + WM_ICON_TOTAL_HEIGHT >
-        WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_MARGIN) {
+        WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_MARGIN_Y) {
         wm->next_icon_row = 0;
         wm->next_icon_column++;
     }
@@ -225,8 +217,8 @@ void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
     // No free slots - allocate a new position (top-left first, go down then right)
     int max_slots = WM_MAX_WINDOWS + WM_MAX_FREE_SLOTS;
     for (int i = 0; i < max_slots; i++) {
-        *out_x = WM_ICON_MARGIN + (wm->next_icon_column * WM_ICON_SLOT_WIDTH);
-        *out_y = WM_ICON_MARGIN + (wm->next_icon_row * WM_ICON_SLOT_HEIGHT);
+        *out_x = WM_ICON_MARGIN_X + (wm->next_icon_column * WM_ICON_SLOT_WIDTH);
+        *out_y = WM_ICON_MARGIN_Y + (wm->next_icon_row * WM_ICON_SLOT_HEIGHT);
         wm_advance_next_icon_pos(wm);
 
         if (!wm_icon_slot_occupied(wm, *out_x, *out_y)) {
@@ -238,7 +230,6 @@ void wm_get_next_icon_pos(window_manager_t *wm, int *out_x, int *out_y) {
 void wm_release_icon_slot(window_manager_t *wm, int x, int y) {
     // Insert in sorted order (top-to-bottom, left-to-right)
     if (wm->free_slot_count >= WM_MAX_FREE_SLOTS) return;
-    if (!wm_slot_is_before_next(wm, x, y)) return;
     if (wm_icon_slot_occupied(wm, x, y)) return;
 
     for (int i = 0; i < wm->free_slot_count; i++) {
@@ -291,25 +282,22 @@ int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, gui_form_t *form
 
 void wm_snap_to_slot(int x, int y, int *out_x, int *out_y) {
     int taskbar_height = WM_TASKBAR_HEIGHT;
+    int max_col = (WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH -
+                   (WM_ICON_MARGIN_X * 2)) / WM_ICON_SLOT_WIDTH;
+    int max_row = (WM_SCREEN_HEIGHT - taskbar_height - WM_ICON_TOTAL_HEIGHT -
+                   (WM_ICON_MARGIN_Y * 2)) / WM_ICON_SLOT_HEIGHT;
 
     /* Calculate nearest column and row */
-    int col = (x - WM_ICON_MARGIN + WM_ICON_SLOT_WIDTH / 2) / WM_ICON_SLOT_WIDTH;
-    int row = (y - WM_ICON_MARGIN + WM_ICON_SLOT_HEIGHT / 2) / WM_ICON_SLOT_HEIGHT;
+    int col = (x - WM_ICON_MARGIN_X + WM_ICON_SLOT_WIDTH / 2) / WM_ICON_SLOT_WIDTH;
+    int row = (y - WM_ICON_MARGIN_Y + WM_ICON_SLOT_HEIGHT / 2) / WM_ICON_SLOT_HEIGHT;
 
     /* Clamp to valid range */
     if (col < 0) col = 0;
+    if (col > max_col) col = max_col;
     if (row < 0) row = 0;
+    if (row > max_row) row = max_row;
 
     /* Calculate snapped position */
-    *out_x = WM_ICON_MARGIN + col * WM_ICON_SLOT_WIDTH;
-    *out_y = WM_ICON_MARGIN + row * WM_ICON_SLOT_HEIGHT;
-
-    /* Ensure icon stays within desktop bounds (above taskbar) */
-    int max_x = WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH - WM_ICON_MARGIN;
-    int max_y = WM_SCREEN_HEIGHT - taskbar_height - WM_ICON_TOTAL_HEIGHT - WM_ICON_MARGIN;
-
-    if (*out_x > max_x) *out_x = max_x;
-    if (*out_y > max_y) *out_y = max_y;
-    if (*out_x < WM_ICON_MARGIN) *out_x = WM_ICON_MARGIN;
-    if (*out_y < WM_ICON_MARGIN) *out_y = WM_ICON_MARGIN;
+    *out_x = WM_ICON_MARGIN_X + col * WM_ICON_SLOT_WIDTH;
+    *out_y = WM_ICON_MARGIN_Y + row * WM_ICON_SLOT_HEIGHT;
 }

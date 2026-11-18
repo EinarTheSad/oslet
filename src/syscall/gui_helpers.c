@@ -1,44 +1,7 @@
 #include "gui.h"
 
-#define ICON_DIRTY_MARGIN 15
-
-static void pump_set_icons_dirty_rect(window_manager_t *wm) {
-    int min_x = WM_SCREEN_WIDTH, min_y = WM_SCREEN_HEIGHT, max_x = 0, max_y = 0;
-    int found = 0;
-
-    for (int i = 0; i < wm->count; i++) {
-        gui_form_t *f = wm->windows[i];
-        if (!f || !f->win.is_minimized) continue;
-
-        if (f->win.minimized_icon_id != -1 && f->controls) {
-            for (int j = 0; j < f->ctrl_count; j++) {
-                gui_control_t *ctrl = &f->controls[j];
-                if (ctrl->type == CTRL_ICON && ctrl->id == f->win.minimized_icon_id) {
-                    icon_geometry_t geometry;
-                    icon_get_geometry(ctrl, ctrl->x, ctrl->y, &geometry);
-                    int ix = geometry.x - ICON_DIRTY_MARGIN;
-                    int iy = geometry.y - ICON_DIRTY_MARGIN;
-                    int ix2 = geometry.x + geometry.w + ICON_DIRTY_MARGIN;
-                    int iy2 = geometry.y + geometry.h + ICON_DIRTY_MARGIN;
-                    if (ix < min_x) min_x = ix;
-                    if (iy < min_y) min_y = iy;
-                    if (ix2 > max_x) max_x = ix2;
-                    if (iy2 > max_y) max_y = iy2;
-                    found = 1;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (found) {
-        if (min_x < 0) min_x = 0;
-        if (min_y < 0) min_y = 0;
-        compositor_set_dirty_rect(wm, min_x, min_y, max_x - min_x, max_y - min_y);
-    }
-}
-
 void pump_deselect_all_icons(window_manager_t *wm) {
+    int changed = 0;
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *f = wm->windows[i];
         if (!f || !f->win.is_minimized) continue;
@@ -47,13 +10,16 @@ void pump_deselect_all_icons(window_manager_t *wm) {
             for (int j = 0; j < f->ctrl_count; j++) {
                 gui_control_t *ctrl = &f->controls[j];
                 if (ctrl->type == CTRL_ICON && ctrl->id == f->win.minimized_icon_id) {
-                    ctrl->icon.checked = 0;
+                    if (ctrl->icon.checked) {
+                        ctrl->icon.checked = 0;
+                        changed = 1;
+                    }
                     break;
                 }
             }
         }
     }
-    pump_set_icons_dirty_rect(wm);
+    if (changed) gui_request_full_redraw();
 }
 
 int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
@@ -62,17 +28,19 @@ int pump_handle_icon_click(gui_form_t *form, int mx, int my) {
     if (win_is_icon_clicked(form, mx, my)) {
         if (wm_is_icon_doubleclick(&global_wm, current_time, form)) {
             int icon_x = 0, icon_y = 0;
+            int release_icon_slot = 0;
             if (form->win.minimized_icon_id != -1 && form->controls) {
                 gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
                 if (ctrl) {
                     icon_x = ctrl->x;
                     icon_y = ctrl->y;
+                    release_icon_slot = 1;
                 }
             }
-            if (icon_x || icon_y) {
+            win_restore(form);
+            if (release_icon_slot) {
                 wm_release_icon_slot(&global_wm, icon_x, icon_y);
             }
-            win_restore(form);
             wm_bring_to_front(&global_wm, form);
             if (global_wm.count > 0) global_wm.focused_index = global_wm.count - 1;
             gui_request_full_redraw();

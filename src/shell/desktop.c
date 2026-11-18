@@ -562,44 +562,17 @@ static int desktop_deselect_minimized_icons(void) {
     return 1;
 }
 
-static int desktop_minimized_icon_mouse_active(void) {
-    prog_instance_t *inst;
-
-    PROGMAN_FOREACH_RUNNING(inst) {
-        for (int j = 0; j < inst->window_count; j++) {
-            gui_form_t *form = (gui_form_t*)inst->windows[j];
-            if (!form || !form->win.is_minimized) continue;
-            if (form->win.minimized_icon_id == -1 || !form->controls) continue;
-
-            gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
-            if (ctrl && (ctrl->icon.checked || ctrl->icon.dragging)) {
-                return 1;
-            }
-        }
-    }
-
-    return 0;
-}
-
 static void pump_all_program_events(int mx, int my, unsigned char mb) {
     prog_instance_t *inst;
-    static unsigned char last_empty_desktop_buttons = 0;
+    static unsigned char last_desktop_mouse_buttons = 0;
     
     /* Determine which window is topmost at the mouse position */
     gui_form_t *topmost = sys_wm_get_topmost_at(mx, my);
+    int button_pressed = (mb & 1) && !(last_desktop_mouse_buttons & 1);
+    last_desktop_mouse_buttons = mb;
 
-    if (topmost == NULL) {
-        if ((mb & 1) && desktop_minimized_icon_mouse_active()) {
-            last_empty_desktop_buttons = mb;
-        } else {
-            int button_pressed = (mb & 1) && !(last_empty_desktop_buttons & 1);
-            if (button_pressed) {
-                desktop_deselect_minimized_icons();
-            }
-            last_empty_desktop_buttons = mb;
-        }
-    } else {
-        last_empty_desktop_buttons = 0;
+    if (topmost == NULL && button_pressed) {
+        desktop_deselect_minimized_icons();
     }
     
     PROGMAN_FOREACH_RUNNING(inst) {

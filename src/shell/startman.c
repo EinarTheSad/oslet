@@ -10,7 +10,8 @@
 #define CTRL_BACK_BUTTON 99
 #define CTRL_START_SCROLLBAR 98
 
-#define ICON_W 48
+#define ICON_W WM_ICON_TOTAL_WIDTH
+#define ICON_GRID_W WM_ICON_SLOT_WIDTH
 #define ICON_H 58
 #define PADDING_X 12
 #define PADDING_Y 8
@@ -19,7 +20,7 @@
 #define COLS 2
 #define COLS_CHILD 4
 
-#define MAIN_WIDTH 131
+#define MAIN_WIDTH 138
 #define MAIN_HEIGHT 348
 #define WIN_X 17
 #define WIN_Y 89
@@ -89,9 +90,6 @@ static void title_case(char *dst, const char *src, int max_len) {
     dst[i] = '\0';
 }
 
-/* Metadata is normally already presentation-ready.  Normalize only labels
-   that are entirely uppercase, which are typically the filename fallback from
-   FAT 8.3 entries (for example CLOCK -> Clock). */
 static void normalize_display_name(char *name) {
     int has_alpha = 0;
     int all_upper = 1;
@@ -405,7 +403,7 @@ static int startman_columns(int win_w, int use_scrollbar) {
         : win_w - WM_FRAME_WIDTH - SCROLLBAR_PAD;
     int content_w = right_edge - PADDING_X;
 
-    int cols = (content_w + PADDING_X) / (ICON_W + PADDING_X);
+    int cols = (content_w + (ICON_GRID_W - ICON_W)) / ICON_GRID_W;
     if (cols < 1) cols = 1;
     if (cols > 10) cols = 10;
     return cols;
@@ -556,7 +554,7 @@ static int startman_init(prog_instance_t *inst) {
         /* Dynamic width if few icons */
         int cols_needed = (total_icons < cols) ? total_icons : cols;
         if (cols_needed < 1) cols_needed = 1;
-        win_w = PADDING_X + cols_needed * (ICON_W + PADDING_X) + PADDING_X;
+        win_w = PADDING_X + cols_needed * ICON_GRID_W + PADDING_X;
         if (win_w < 120) win_w = 120;
         if (win_w > SUBWIN_MAX_WIDTH) win_w = SUBWIN_MAX_WIDTH;
     }
@@ -595,7 +593,7 @@ static int startman_init(prog_instance_t *inst) {
         int pos = i + icon_offset;
         int col = pos % cols;
         int row = pos / cols;
-        int x = PADDING_X + col * (ICON_W + PADDING_X);
+        int x = PADDING_X + col * ICON_GRID_W;
         int y = PADDING_Y + row * (ICON_H + PADDING_Y);
 
         gui_control_t icon = {0};
@@ -663,6 +661,11 @@ static void rebuild_layout(startman_state_t *state) {
         for (int ctrl_idx = 0; ctrl_idx < f->ctrl_count; ctrl_idx++) {
             gui_control_t *ctrl = &f->controls[ctrl_idx];
 
+            if ((ctrl->type & 0x7F) == CTRL_ICON) {
+                ctrl->icon.checked = 0;
+                ctrl->icon.dragging = 0;
+            }
+
             if (ctrl->id == CTRL_BACK_BUTTON) {
                 int row = 0 - state->scroll_offset;
                 ctrl->x = PADDING_X;
@@ -672,7 +675,7 @@ static void rebuild_layout(startman_state_t *state) {
                 int pos = (ctrl->id - CTRL_APP_BASE) + icon_offset;
                 int col = pos % cols;
                 int row = (pos / cols) - state->scroll_offset;
-                ctrl->x = PADDING_X + col * (ICON_W + PADDING_X);
+                ctrl->x = PADDING_X + col * ICON_GRID_W;
                 ctrl->y = PADDING_Y + row * (ICON_H + PADDING_Y);
                 ctrl_set_visible(state->form, ctrl->id, row >= 0 && row < visible_rows);
             } else if (ctrl->id == CTRL_START_SCROLLBAR) {

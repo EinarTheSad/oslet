@@ -4,6 +4,7 @@
 #include "../../lib/elf.h"
 #include "../../lib/app.h"
 #include "../../drivers/keyboard.h"
+#include "../../win/wm_config.h"
 
 OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG_NONE);
 
@@ -47,7 +48,8 @@ OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG
 #define TREE_X               11
 #define TREE_W               120
 #define TREE_ITEM_H          18
-#define FILE_ICON_W          48
+#define FILE_ICON_W          WM_ICON_TOTAL_WIDTH
+#define FILE_ICON_STEP_X     WM_ICON_SLOT_WIDTH
 #define FILE_ICON_H          60
 #define FILE_PAD             8
 #define FILE_SCROLLBAR_W     18
@@ -769,7 +771,7 @@ static void relayout(void) {
     state.files_w = sb_x - state.files_x;
     if (state.files_w < FILE_ICON_W) state.files_w = FILE_ICON_W;
 
-    state.file_cols = state.files_w / (FILE_ICON_W + FILE_PAD);
+    state.file_cols = (state.files_w + 1) / FILE_ICON_STEP_X;
     if (state.file_cols < 1) state.file_cols = 1;
     if (state.file_cols > MAX_FILE_COLS) state.file_cols = MAX_FILE_COLS;
 
@@ -789,7 +791,11 @@ static void clear_file_controls(void) {
     int max_count = MAX_FILE_ROWS * MAX_FILE_COLS;
     for (int i = 0; i < max_count; i++) {
         gui_control_t *ctrl = sys_win_get_control(state.form, ID_FILE_BASE + i);
-        if (ctrl) ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);
+        if (ctrl) {
+            ctrl->icon.checked = 0;
+            ctrl->icon.dragging = 0;
+            ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);
+        }
     }
 }
 
@@ -827,7 +833,7 @@ static void refresh_display(void) {
         if (idx < state.file_count && ctrl) {
             int col = i % state.file_cols;
             int row = i / state.file_cols;
-            sys_ctrl_set_prop(state.form, ctrl_id, PROP_X, state.files_x + 1 + col * (FILE_ICON_W + FILE_PAD));
+            sys_ctrl_set_prop(state.form, ctrl_id, PROP_X, state.files_x + 1 + col * FILE_ICON_STEP_X);
             sys_ctrl_set_prop(state.form, ctrl_id, PROP_Y, CONTENT_Y + 4 + row * (FILE_ICON_H + FILE_PAD));
 
             ctrl_set_text(state.form, ctrl_id, state.file_items[idx].name);
@@ -1505,7 +1511,7 @@ void _start(void) {
         strcpy(state.current_path, "C:/");
     normalize_path(state.current_path, sizeof(state.current_path));
     
-    state.form = sys_win_create_form("File Manager", 80, 60, 450, 325);
+    state.form = sys_win_create_form("File Manager", 80, 60, 458, 325);
     if (!state.form) sys_exit();
     
     sys_win_set_icon(state.form, "C:/ICONS/CABINET.ICO");
@@ -1517,7 +1523,6 @@ void _start(void) {
     int file_menu = sys_win_menubar_add_menu(state.form, "File");
     sys_win_menubar_add_item(state.form, file_menu, "New Folder", MENU_FILE_NEW_FOLDER);
     sys_win_menubar_add_item(state.form, file_menu, "New File", MENU_FILE_NEW_FILE);
-    /* open menu item removed - users double-click files instead */
     sys_win_menubar_add_separator(state.form, file_menu);
     sys_win_menubar_add_item(state.form, file_menu, "Exit", MENU_FILE_EXIT);
     
@@ -1614,7 +1619,7 @@ void _start(void) {
     /* File scrollbar */
     gui_control_t file_scrollbar = {0};
     file_scrollbar.type = CTRL_SCROLLBAR;
-    file_scrollbar.x = TREE_X + TREE_W + 12 + MAX_FILE_COLS * (FILE_ICON_W + FILE_PAD);
+    file_scrollbar.x = TREE_X + TREE_W + 12 + MAX_FILE_COLS * FILE_ICON_STEP_X;
     file_scrollbar.y = CONTENT_Y - 1;
     file_scrollbar.w = FILE_SCROLLBAR_W;
     file_scrollbar.h = MAX_FILE_ROWS * (FILE_ICON_H + FILE_PAD);
@@ -1630,7 +1635,7 @@ void _start(void) {
         int row = i / MAX_FILE_COLS;
         gui_control_t file_icon = {0};
         file_icon.type = CTRL_ICON;
-        file_icon.x = (TREE_X + TREE_W + 12) + 1 + col * (FILE_ICON_W + FILE_PAD);
+        file_icon.x = (TREE_X + TREE_W + 12) + 1 + col * FILE_ICON_STEP_X;
         file_icon.y = CONTENT_Y + 4 + row * (FILE_ICON_H + FILE_PAD);
         file_icon.w = FILE_ICON_W; file_icon.h = FILE_ICON_H;
         file_icon.bg = 15;

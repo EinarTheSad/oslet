@@ -5,6 +5,16 @@ static void set_event(sys_win_event_t *event, sys_win_event_type_t type, int id)
     event->id = id;
 }
 
+static int changed_controls_include_icon(gui_form_t *form,
+                                         const int16_t *changed_controls,
+                                         int changed_count) {
+    for (int i = 0; i < changed_count; i++) {
+        gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
+        if (ctrl && (ctrl->type & 0x7F) == CTRL_ICON) return 1;
+    }
+    return 0;
+}
+
 void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
     set_event(event, SYS_WIN_EVENT_NONE, 0);
     if (!form) return;
@@ -153,7 +163,8 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
                 return;
             } else if (icon_result == 1) {
                 /* Single click - selection changed */
-                needs_redraw = 1;
+                gui_request_full_redraw();
+                return;
             } else if (icon_result == 0) {
                 /* Click outside this icon - check if we need to deselect */
                 int icon_selected = 0;
@@ -176,12 +187,26 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
                     /* If no icon was clicked, deselect all */
                     if (!clicked_other_icon) {
                         pump_deselect_all_icons(&global_wm);
-                        needs_redraw = 1;
+                        return;
                     }
                 }
             }
         } else {
             /* Click landed on topmost window - process normally */
+            if (button_pressed) {
+                pump_deselect_all_icons(&global_wm);
+                if (form->controls) {
+                    for (int i = 0; i < form->ctrl_count; i++) {
+                        gui_control_t *ctrl = &form->controls[i];
+                        if ((ctrl->type & 0x7F) == CTRL_ICON &&
+                            ctrl->icon.checked) {
+                            ctrl->icon.checked = 0;
+                            needs_redraw = 1;
+                        }
+                    }
+                }
+                needs_redraw = 1;
+            }
             /* Check if click is within window bounds (including open dropdown lists) */
             int check_x = form->win.x;
             int check_y = form->win.y;
@@ -293,25 +318,20 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
                 gui_control_t *ctrl = sys_win_get_control(form, form->win.minimized_icon_id);
                 if (ctrl && ctrl->icon.dragging) {
                     was_icon_dragging = 1;
-                    /* Restore old position's background */
                     if (ctrl->icon.saved_bg) {
-                        icon_geometry_t geometry;
-                        icon_get_geometry(ctrl, ctrl->x, ctrl->y, &geometry);
-                        int old_bg_x = geometry.bg_x;
-                        int old_bg_y = geometry.bg_y;
-                        int old_bg_w = geometry.bg_w;
-                        int old_bg_h = geometry.bg_h;
-                        if (old_bg_x >= 0 && old_bg_y >= 0 &&
-                            old_bg_x + old_bg_w <= WM_SCREEN_WIDTH &&
-                            old_bg_y + old_bg_h <= WM_SCREEN_HEIGHT && (old_bg_x & 1) == 0) {
-                            gfx_write_screen_region_packed(ctrl->icon.saved_bg, old_bg_w, old_bg_h, old_bg_x, old_bg_y);
-                        }
                         kfree(ctrl->icon.saved_bg);
                         ctrl->icon.saved_bg = NULL;
                     }
                     /* Snap to nearest slot (slot already claimed during drag) */
                     int snap_x, snap_y;
                     wm_snap_to_slot(ctrl->x, ctrl->y, &snap_x, &snap_y);
+                    if (snap_x != ctrl->icon.original_x ||
+                        snap_y != ctrl->icon.original_y) {
+                        if (wm_is_icon_slot_occupied(&global_wm, snap_x, snap_y)) {
+                            snap_x = ctrl->icon.original_x;
+                            snap_y = ctrl->icon.original_y;
+                        }
+                    }
                     /* If actually snapped to different position, update slot */
                     if (snap_x != ctrl->x || snap_y != ctrl->y) {
                         wm_release_icon_slot(&global_wm, ctrl->icon.original_x, ctrl->icon.original_y);
@@ -321,22 +341,6 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
                     }
                     ctrl->icon.dragging = 0;
                     ctrl_set_pos(form, ctrl->id, snap_x, snap_y);
-                    /* Save snapped position's background */
-                    icon_geometry_t snap_geometry;
-                    icon_get_geometry(ctrl, snap_x, snap_y, &snap_geometry);
-                    int snap_bg_x = snap_geometry.bg_x;
-                    int snap_bg_y = snap_geometry.bg_y;
-                    int snap_bg_w = snap_geometry.bg_w;
-                    int snap_bg_h = snap_geometry.bg_h;
-                    int snap_row_bytes = (snap_bg_w + 1) / 2;
-                    ctrl->icon.saved_bg = (uint8_t*)kmalloc(snap_row_bytes * snap_bg_h);
-                    if (ctrl->icon.saved_bg) {
-                        if (snap_bg_x >= 0 && snap_bg_y >= 0 &&
-                            snap_bg_x + snap_bg_w <= WM_SCREEN_WIDTH &&
-                            snap_bg_y + snap_bg_h <= WM_SCREEN_HEIGHT && (snap_bg_x & 1) == 0) {
-                            gfx_read_screen_region_packed(ctrl->icon.saved_bg, snap_bg_w, snap_bg_h, snap_bg_x, snap_bg_y);
-                        }
-                    }
                 }
             }
         }
@@ -573,64 +577,10 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
                     if (new_x < 0) new_x = 0;
                     if (new_y < 0) new_y = 0;
                     if (new_x > WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH) new_x = WM_SCREEN_WIDTH - WM_ICON_TOTAL_WIDTH;
-                    if (new_y > WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - 48) new_y = WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - 48;
+                    if (new_y > WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_TOTAL_HEIGHT) new_y = WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - WM_ICON_TOTAL_HEIGHT;
                     if (new_x != icon_ctrl->x || new_y != icon_ctrl->y) {
-                        int old_x = icon_ctrl->x;
-                        int old_y = icon_ctrl->y;
-                        icon_geometry_t old_geometry;
-                        icon_get_geometry(icon_ctrl, old_x, old_y, &old_geometry);
-                        int save_w = old_geometry.bg_w;
-                        int save_h = old_geometry.bg_h;
-                        int row_bytes = (save_w + 1) / 2;
-                        uint8_t *old_saved_bg = icon_ctrl->icon.saved_bg;
-                        /* Restore OLD position using existing saved_bg */
-                        if (old_saved_bg) {
-                            int old_bg_x = old_x - 1;
-                            int old_bg_y = old_y - 1;
-                            for (int py = 0; py < save_h; py++) {
-                                uint8_t *row = old_saved_bg + py * row_bytes;
-                                for (int px = 0; px < save_w; px++) {
-                                    int sx = old_bg_x + px;
-                                    int sy = old_bg_y + py;
-                                    if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
-                                        int byte_idx = px / 2;
-                                        uint8_t packed = row[byte_idx];
-                                        uint8_t pix = (px & 1) ? (packed & 0x0F) : (packed >> 4);
-                                        gfx_putpixel(sx, sy, pix);
-                                    }
-                                }
-                            }
-                        }
-                        /* Move icon to new position */
                         ctrl_set_pos(form, icon_ctrl->id, new_x, new_y);
-                        /* Don't use compositor_draw_all - it would save bg WITH icon.
-                           Instead, save bg at new position and draw icon directly. */
-                        uint8_t *new_saved_bg = (uint8_t*)kmalloc(row_bytes * save_h);
-                        if (new_saved_bg) {
-                            int new_bg_x = new_x - 1;
-                            int new_bg_y = new_y - 1;
-                            for (int py = 0; py < save_h; py++) {
-                                uint8_t *row = new_saved_bg + py * row_bytes;
-                                for (int b = 0; b < row_bytes; b++) row[b] = 0;
-                                for (int px = 0; px < save_w; px++) {
-                                    int sx = new_bg_x + px;
-                                    int sy = new_bg_y + py;
-                                    uint8_t pix = 0;
-                                    if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
-                                        pix = gfx_getpixel(sx, sy);
-                                    }
-                                    int byte_idx = px / 2;
-                                    if (px & 1) row[byte_idx] = (row[byte_idx] & 0xF0) | (pix & 0x0F);
-                                    else row[byte_idx] = (row[byte_idx] & 0x0F) | (pix << 4);
-                                }
-                            }
-                        }
-                        /* Free old saved_bg and use new one */
-                        if (old_saved_bg) kfree(old_saved_bg);
-                        icon_ctrl->icon.saved_bg = new_saved_bg;
-                        /* Draw icon at new position directly */
-                        ctrl_draw_icon(icon_ctrl, new_x, new_y, 0);
-                        mouse_restore();
+                        gui_request_full_redraw();
                         needs_redraw = 0;
                     }
                 }
@@ -963,7 +913,9 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
         if (needs_redraw) {
             mouse_restore();
             mouse_invalidate_buffer();
-            if (changed_count > 0) {
+            if (changed_controls_include_icon(form, changed_controls, changed_count)) {
+                compositor_draw_all(&global_wm);
+            } else if (changed_count > 0) {
                 for (int i = 0; i < changed_count; i++) {
                     gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
                     if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
@@ -987,7 +939,9 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
     if (needs_redraw) {
         mouse_restore();
         mouse_invalidate_buffer();
-        if (changed_count > 0) {
+        if (changed_controls_include_icon(form, changed_controls, changed_count)) {
+            compositor_draw_all(&global_wm);
+        } else if (changed_count > 0) {
             for (int i = 0; i < changed_count; i++) {
                 gui_control_t *ctrl = find_control_by_id(form, changed_controls[i]);
                 if (ctrl && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
