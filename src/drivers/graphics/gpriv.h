@@ -7,18 +7,22 @@
 #include "vga.h"
 #include "../fat32.h"
 
-#define GFX_LOCK() __asm__ volatile("cli")
-#define GFX_UNLOCK() __asm__ volatile("sti")
+#define GFX_LOCK() \
+    uint32_t gfx_saved_flags; \
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(gfx_saved_flags) :: "memory")
+#define GFX_UNLOCK() \
+    __asm__ volatile("pushl %0\n\tpopfl" :: "r"(gfx_saved_flags) : "cc", "memory")
 
 extern uint8_t *gfx_backbuffer;
 extern uint8_t *gfx_frontbuffer;
+extern uint32_t *gfx_colorbuffer;
 extern uint8_t gfx_plane_pair_table[4][256];
 extern int gfx_plane_table_init;
 extern int gfx_active;
 extern volatile int gfx_dirty_y0;
 extern volatile int gfx_dirty_y1;
-extern volatile int gfx_dirty_row_x0[GFX_HEIGHT];
-extern volatile int gfx_dirty_row_x1[GFX_HEIGHT];
+extern volatile int *gfx_dirty_row_x0;
+extern volatile int *gfx_dirty_row_x1;
 extern volatile int gfx_full_redraw;
 extern int gfx_clip_enabled;
 extern int gfx_clip_x0;
@@ -74,6 +78,8 @@ static inline void putpixel_raw(int x, int y, uint8_t color) {
     } else {
         backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
     }
+    if (gfx_colorbuffer)
+        gfx_colorbuffer[(size_t)y * GFX_WIDTH + x] = 0x80000000u | (color & 0x0F);
 }
 
 static inline uint8_t getpixel_raw(int x, int y) {
@@ -88,4 +94,14 @@ static inline uint8_t getpixel_raw(int x, int y) {
     } else {
         return (byte >> 4) & 0x0F;
     }
+}
+
+static inline void putcolor_raw(int x, int y, uint32_t color) {
+    if (!backbuffer || x < 0 || x >= GFX_WIDTH || y < 0 || y >= GFX_HEIGHT ||
+        (gfx_clip_enabled && (x < gfx_clip_x0 || x >= gfx_clip_x1 ||
+                              y < gfx_clip_y0 || y >= gfx_clip_y1))) return;
+    uint8_t index = (color & 0x80000000u) ? (uint8_t)color : (uint8_t)(color >> 24);
+    putpixel_raw(x, y, index);
+    if (gfx_colorbuffer && !(color & 0x80000000u))
+        gfx_colorbuffer[(size_t)y * GFX_WIDTH + x] = color;
 }

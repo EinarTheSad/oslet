@@ -2,6 +2,7 @@
 #include "../../console.h"
 #include "../../irq/io.h"
 #include "../../fonts/mono8x16.h"
+#include "../graphics.h"
 
 #define VGA_ADDRESS 0xB8000u
 #define VGA_WIDTH   80
@@ -10,6 +11,10 @@
 static volatile uint16_t* const VGA = (volatile uint16_t*)(uintptr_t)VGA_ADDRESS;
 static uint8_t vga_color = 0x07;
 static int cx = 0, cy = 0;
+static int framebuffer_console = 0;
+static int cursor_drawn_x = -1, cursor_drawn_y = -1;
+static uint8_t fb_chars[VGA_WIDTH * VGA_HEIGHT];
+static uint8_t fb_attrs[VGA_WIDTH * VGA_HEIGHT];
 
 static uint8_t saved_sequencer[5];
 static uint8_t saved_crtc[25];
@@ -166,6 +171,18 @@ static inline void clamp_cursor(void) {
 
 static inline void move_hw_cursor(void) {
     clamp_cursor();
+    if (framebuffer_console) {
+        if (cursor_drawn_x >= 0 && cursor_drawn_y >= 0) {
+            int old = cursor_drawn_y * VGA_WIDTH + cursor_drawn_x;
+            gfx_console_draw_cell(cursor_drawn_x, cursor_drawn_y,
+                                  fb_chars[old], fb_attrs[old]);
+        }
+        int pos = cy * VGA_WIDTH + cx;
+        gfx_console_draw_cursor(cx, cy, fb_attrs[pos]);
+        cursor_drawn_x = cx;
+        cursor_drawn_y = cy;
+        return;
+    }
     uint16_t pos = (uint16_t)(cy * VGA_WIDTH + cx);
     outb(0x3D4, 0x0F);
     outb(0x3D5, (uint8_t)(pos & 0xFF));
@@ -175,6 +192,13 @@ static inline void move_hw_cursor(void) {
 
 static inline void put_at(char c, int x, int y) {
     if ((unsigned)x < VGA_WIDTH && (unsigned)y < VGA_HEIGHT) {
+        if (framebuffer_console) {
+            int pos = y * VGA_WIDTH + x;
+            fb_chars[pos] = (uint8_t)c;
+            fb_attrs[pos] = vga_color;
+            gfx_console_draw_cell(x, y, (uint8_t)c, vga_color);
+            return;
+        }
         VGA[y * VGA_WIDTH + x] = (uint16_t)(uint8_t)c | ((uint16_t)vga_color << 8);
     }
 }
@@ -195,6 +219,26 @@ static inline void disable_cursor(void) {
 static void scroll_if_needed(void) {
     if (cy < VGA_HEIGHT)
         return;
+    if (framebuffer_console) {
+        memcpy_s(fb_chars, &fb_chars[VGA_WIDTH],
+                 (VGA_HEIGHT - 1) * VGA_WIDTH);
+        memcpy_s(fb_attrs, &fb_attrs[VGA_WIDTH],
+                 (VGA_HEIGHT - 1) * VGA_WIDTH);
+        int last = (VGA_HEIGHT - 1) * VGA_WIDTH;
+        for (int x = 0; x < VGA_WIDTH; ++x) {
+            fb_chars[last + x] = ' ';
+            fb_attrs[last + x] = vga_color;
+        }
+        for (int y = 0; y < VGA_HEIGHT; ++y) {
+            for (int x = 0; x < VGA_WIDTH; ++x) {
+                int pos = y * VGA_WIDTH + x;
+                gfx_console_draw_cell(x, y, fb_chars[pos], fb_attrs[pos]);
+            }
+        }
+        cy = VGA_HEIGHT - 1;
+        cursor_drawn_x = cursor_drawn_y = -1;
+        return;
+    }
     /* Use block memory moves for scrolling to reduce CPU work */
     int row_words = VGA_WIDTH; /* each cell is uint16_t */
     for (int y = 1; y < VGA_HEIGHT; ++y) {
@@ -259,6 +303,20 @@ static size_t vga_write(const char* s, size_t n, void* ctx) {
 }
 
 void vga_clear(void) {
+    if (framebuffer_console) {
+        for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; ++i) {
+            fb_chars[i] = ' ';
+            fb_attrs[i] = vga_color;
+        }
+        for (int y = 0; y < VGA_HEIGHT; ++y) {
+            for (int x = 0; x < VGA_WIDTH; ++x)
+                gfx_console_draw_cell(x, y, ' ', vga_color);
+        }
+        cx = cy = 0;
+        cursor_drawn_x = cursor_drawn_y = -1;
+        move_hw_cursor();
+        return;
+    }
     /* Clear with CURRENT vga_color on purpose */
     uint16_t blank = (uint16_t)(' ') | ((uint16_t)vga_color << 8);
     for (int y = 0; y < VGA_HEIGHT; ++y) {
@@ -276,9 +334,23 @@ static const console_t VGA_CONSOLE = {
     .ctx   = 0
 };
 
+void vga_set_framebuffer_console(int enabled) {
+    enabled = enabled != 0;
+    if (framebuffer_console == enabled) return;
+    framebuffer_console = enabled;
+    cursor_drawn_x = cursor_drawn_y = -1;
+    if (framebuffer_console) {
+        for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; ++i) {
+            fb_chars[i] = ' ';
+            fb_attrs[i] = vga_color;
+        }
+    }
+}
+
 void vga_use_as_console(void) {
+    vga_set_framebuffer_console(gfx_has_boot_framebuffer());
     console_set(&VGA_CONSOLE);
-    enable_cursor(12, 12);
+    if (!framebuffer_console) enable_cursor(12, 12);
     vga_clear();
 }
 
@@ -295,7 +367,15 @@ void vga_reset_palette(void) {
     vga_load_palette(default_palette);
 }
 
+void vga_set_text_palette(const uint8_t palette[16][3]) {
+    vga_load_palette(palette);
+}
+
 void vga_reset_textmode(void) {
+    if (framebuffer_console) {
+        vga_clear();
+        return;
+    }
     vga_load_font();
     vga_reset_palette();
     (void)inb(0x3DA);
@@ -320,6 +400,23 @@ void vga_set_cursor(int x, int y) {
 void vga_get_cursor(int *x, int *y) {
     if (x) *x = cx;
     if (y) *y = cy;
+}
+
+void vga_blit_text(const uint8_t *chars, const uint8_t *attrs) {
+    if (!chars || !attrs) return;
+    for (int i = 0; i < VGA_WIDTH * VGA_HEIGHT; ++i) {
+        if (framebuffer_console) {
+            fb_chars[i] = chars[i];
+            fb_attrs[i] = attrs[i];
+            gfx_console_draw_cell(i % VGA_WIDTH, i / VGA_WIDTH, chars[i], attrs[i]);
+        } else {
+            VGA[i] = ((uint16_t)attrs[i] << 8) | chars[i];
+        }
+    }
+    if (framebuffer_console) {
+        cursor_drawn_x = cursor_drawn_y = -1;
+        move_hw_cursor();
+    }
 }
 
 void vga_write_regs(const uint8_t* regs) {

@@ -1,8 +1,35 @@
 #include "internal.h"
+#include "gui.h"
 
 #define MAX_OPEN_FILES 32
 static char shell_version_buf[64] = "";
 static int textmode_requested = 0;
+
+static void display_recovery_reboot(void) {
+    static const char message[] = "VBE: restoration failed; restarting\n";
+    for (size_t i = 0; i < sizeof(message) - 1; ++i) {
+        unsigned timeout = 100000;
+        while (timeout && !(inb(0x3fd) & 0x20)) --timeout;
+        if (timeout) outb(0x3f8, (uint8_t)message[i]);
+    }
+    __asm__ volatile("cli");
+    for (unsigned timeout = 100000; timeout; --timeout) {
+        if (!(inb(0x64) & 2)) {
+            outb(0x64, 0xfe);
+            break;
+        }
+    }
+    struct __attribute__((packed)) { uint16_t limit; uint32_t base; } idtr = {0, 0};
+    __asm__ volatile("lidt %0\n\tint $3" :: "m"(idtr) : "memory");
+    for (;;) __asm__ volatile("hlt");
+}
+
+int sys_display_poll(void) {
+    int result = display_switch_poll();
+    if (result == DISPLAY_SWITCH_RESTORE_FAILED) display_recovery_reboot();
+    if (result == 1) gui_display_changed();
+    return result;
+}
 
 typedef struct {
     void *data;
@@ -261,11 +288,7 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
 
         case 0x07: { /* Blit screen buffer */
             if (!sys_range_mapped(ebx, 80 * 25) || !sys_range_mapped(ecx, 80 * 25)) return -1;
-            volatile uint16_t *vmem = (volatile uint16_t*)0xB8000;
-            const uint8_t *ch = (const uint8_t*)ebx;
-            const uint8_t *at = (const uint8_t*)ecx;
-            for (int i = 0; i < 80 * 25; i++)
-                vmem[i] = ((uint16_t)at[i] << 8) | ch[i];
+            vga_blit_text((const uint8_t*)ebx, (const uint8_t*)ecx);
             return 0;
         }
 
@@ -1163,11 +1186,14 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
     char path[FAT32_MAX_PATH];
 
     switch (al) {
-        case 0x00:
-            gfx_enter_mode();
-            return 0;
+        case 0x00: {
+            int result = gfx_enter_mode();
+            if (result == DISPLAY_SWITCH_RESTORE_FAILED) display_recovery_reboot();
+            return (uint32_t)result;
+        }
             
         case 0x01:
+            if (gfx_vbe_mode_pending()) return (uint32_t)-1;
             gfx_exit_mode();
             return 0;
             
@@ -1290,7 +1316,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
             if (!sys_range_mapped(ebx, sizeof(cached_bmp_t))) return (uint32_t)-1;
             cached_bmp_t *bmp = (cached_bmp_t*)ebx;
             if (bmp->data) {
-                kfree(bmp->data);
+                gfx_free_bmp(bmp->data);
                 bmp->data = 0;
                 bmp->width = 0;
                 bmp->height = 0;
@@ -1326,11 +1352,11 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 if (!scaled) {
                     graphics_begin_draw();
                     gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
-                    kfree(bmp);
+                    gfx_free_bmp(bmp);
                     mouse_busy_end();
                     return (uint32_t)-1;
                 }
-                kfree(bmp); /* free original raw buffer */
+                gfx_free_bmp(bmp);
                 graphics_begin_draw();
                 gfx_draw_cached_bmp_ex(scaled->data, scaled->width, scaled->height, dest_x, dest_y, 0);
                 bitmap_free(scaled);
@@ -1338,7 +1364,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 /* Already exact size - draw directly */
                 graphics_begin_draw();
                 gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
-                kfree(bmp);
+                gfx_free_bmp(bmp);
             }
             mouse_busy_end();
             return 0;
@@ -1368,7 +1394,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 src.bits_per_pixel = 4;
 
                 bitmap_t *scaled = bitmap_scale_nearest(&src, target_w, target_h);
-                kfree(bmp); /* free original */
+                gfx_free_bmp(bmp);
 
                 if (!scaled) {
                     mouse_busy_end();
@@ -1400,6 +1426,106 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
         case 0x14: {
             if (!sys_range_mapped(ebx, 16 * 3)) return (uint32_t)-1;
             memcpy_s((void*)ebx, gfx_palette, 16 * 3);
+            return 0;
+        }
+
+        case 0x15: {
+            if (!ebx || !sys_range_writable(ebx, sizeof(sys_display_info_t)))
+                return (uint32_t)-1;
+            sys_display_info_t info = {
+                .width = (uint32_t)GFX_WIDTH,
+                .height = (uint32_t)GFX_HEIGHT
+            };
+            memcpy_s((void*)ebx, &info, sizeof(info));
+            return 0;
+        }
+
+        case 0x16:
+            if (gfx_vbe_mode_pending()) return (uint32_t)-1;
+            return (uint32_t)vbe_discover_modes();
+        case 0x17: {
+            const vbe_mode_t *mode = vbe_mode_at(ebx);
+            if (!mode || !sys_range_writable(ecx, sizeof(sys_vbe_mode_t)))
+                return (uint32_t)-1;
+            sys_vbe_mode_t result = { mode->width, mode->height, mode->bpp };
+            memcpy_s((void*)ecx, &result, sizeof(result));
+            return 0;
+        }
+        case 0x18: {
+            int result = display_switch_try(ebx);
+            if (result == DISPLAY_SWITCH_RESTORE_FAILED) display_recovery_reboot();
+            gui_display_changed();
+            return (uint32_t)result;
+        }
+        case 0x19: {
+            int result = display_switch_confirm();
+            if (result == DISPLAY_SWITCH_RESTORE_FAILED) display_recovery_reboot();
+            if (result == DISPLAY_SWITCH_EXPIRED) gui_display_changed();
+            return (uint32_t)result;
+        }
+        case 0x1a: {
+            int result = display_switch_revert();
+            if (result == DISPLAY_SWITCH_RESTORE_FAILED) display_recovery_reboot();
+            if (result == 0) gui_display_changed();
+            return (uint32_t)result;
+        }
+        case 0x1b: {
+            if (!sys_range_writable(ebx, sizeof(sys_vbe_state_t)))
+                return (uint32_t)-1;
+            sys_vbe_state_t result = {
+                (uint32_t)GFX_WIDTH, (uint32_t)GFX_HEIGHT,
+                gfx_physical_depth(), (uint32_t)gfx_vbe_mode_pending()
+            };
+            memcpy_s((void*)ebx, &result, sizeof(result));
+            return 0;
+        }
+        case 0x1c: {
+            if (!sys_range_mapped(ebx, 16 * 3)) return (uint32_t)-1;
+            uint8_t palette[16][3];
+            memcpy_s(palette, (const void*)ebx, sizeof(palette));
+            int result = gfx_enter_textmode(palette);
+            if (result == DISPLAY_SWITCH_RESTORE_FAILED) display_recovery_reboot();
+            return (uint32_t)result;
+        }
+        case 0x1d:
+            return (uint32_t)gfx_region_size((int)ebx, (int)ecx);
+        case 0x1e:
+        case 0x1f:
+        case 0x20: {
+            if (!sys_range_mapped(ebx, sizeof(sys_gfx_region_t)))
+                return (uint32_t)-1;
+
+            sys_gfx_region_t region;
+            memcpy_s(&region, (const void*)ebx, sizeof(region));
+            if (region.x < 0 || region.y < 0 ||
+                region.width <= 0 || region.height <= 0 ||
+                region.x > GFX_WIDTH - region.width ||
+                region.y > GFX_HEIGHT - region.height)
+                return (uint32_t)-1;
+
+            if (al == 0x20) {
+                graphics_begin_draw();
+                gfx_fillrect_dither(region.x, region.y, region.width,
+                                    region.height, (int8_t)ecx,
+                                    (int8_t)(ecx >> 8));
+                return 0;
+            }
+
+            size_t size = gfx_region_size(region.width, region.height);
+            if (!size || !region.data) return (uint32_t)-1;
+
+            if (al == 0x1e) {
+                if (!sys_range_writable((uint32_t)(uintptr_t)region.data, size))
+                    return (uint32_t)-1;
+                gfx_save_region(region.data, region.width, region.height,
+                                region.x, region.y);
+            } else {
+                if (!sys_range_mapped((uint32_t)(uintptr_t)region.data, size))
+                    return (uint32_t)-1;
+                graphics_begin_draw();
+                gfx_restore_region(region.data, region.width, region.height,
+                                   region.x, region.y);
+            }
             return 0;
         }
 
@@ -1659,6 +1785,7 @@ static uint32_t handle_vconsole(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_
 }
 
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx) {
+    sys_display_poll();
     uint32_t ah = (eax >> 8) & 0xFF;
     uint32_t al = eax & 0xFF;
     

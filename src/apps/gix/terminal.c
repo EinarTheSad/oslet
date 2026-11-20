@@ -4,6 +4,8 @@
 #include "../../lib/stdlib.h"
 #include "../../lib/ini.h"
 #include "../../lib/app.h"
+#include "../../lib/display.h"
+#include "../../win/wm_config.h"
 #include "../../drivers/keyboard.h"
 #include "../../lib/elf.h"  /* needed for mode detection */
 
@@ -16,8 +18,8 @@ OSLET_APP("Terminal", OSLET_KIND_GIX, "C:/ICONS/TERMINAL.ICO", OSLET_APP_FLAG_NO
 #define MAX_BUF_H  (TERM_ROWS * MAX_GLYPH_H)
 #define TITLEBAR_H 20
 #define BORDER     2
-#define SCREEN_W   640
-#define SCREEN_H   480
+#define SCREEN_W   WM_SCREEN_WIDTH
+#define SCREEN_H   WM_SCREEN_HEIGHT
 #define TASKBAR_H  27
 
 #define CURSOR_BLINK_TICKS 50
@@ -229,6 +231,12 @@ static int handle_event(void *form_arg, const sys_win_event_t *event, void *user
 
 __attribute__((section(".entry"), used))
 void _start(void) {
+    if (oslet_display_init() != 0) {
+        sys_win_msgbox("Unable to query display dimensions.", "OK", "Terminal");
+        sys_exit();
+        return;
+    }
+
     /* Determine font path from INI or use default */
     char font_path[64];
     strcpy(font_path, "C:/FONTS/MONO8X8.BMF");

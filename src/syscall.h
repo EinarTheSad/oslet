@@ -99,6 +99,39 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_GFX_CACHE_BMP_SCALED 0x0912 /* Load BMP, scale to target dimensions, and cache it */
 #define SYS_GFX_SET_PALETTE_DATA 0x0913 /* Set the active 16-color VGA palette from 48 bytes of RGB data */
 #define SYS_GFX_GET_PALETTE_DATA 0x0914 /* Copy the active 16-color VGA palette to 48 bytes of RGB data */
+#define SYS_GFX_GET_DISPLAY_INFO 0x0915 /* Copy active display width and height to user memory */
+#define SYS_GFX_VBE_DISCOVER 0x0916
+#define SYS_GFX_VBE_GET_MODE 0x0917
+#define SYS_GFX_VBE_TRY      0x0918
+#define SYS_GFX_VBE_CONFIRM  0x0919
+#define SYS_GFX_VBE_REVERT   0x091A
+#define SYS_GFX_VBE_STATE    0x091B
+#define SYS_GFX_TEXT_MODE    0x091C
+#define SYS_GFX_REGION_SIZE  0x091D
+#define SYS_GFX_SAVE_REGION  0x091E
+#define SYS_GFX_RESTORE_REGION 0x091F
+#define SYS_GFX_DITHER_RECT  0x0920
+
+typedef struct {
+    uint32_t width;
+    uint32_t height;
+} sys_display_info_t;
+
+typedef struct {
+    void *data;
+    int x;
+    int y;
+    int width;
+    int height;
+} sys_gfx_region_t;
+
+typedef struct {
+    uint32_t width, height, depth;
+} sys_vbe_mode_t;
+
+typedef struct {
+    uint32_t width, height, depth, pending;
+} sys_vbe_state_t;
 
 /* AH = 0Ah - Mouse */
 #define SYS_MOUSE_GET_STATE  0x0A00
@@ -178,6 +211,7 @@ static inline int sys_proc_set_icon(int tid, const char *icon_path) {
 #define SYS_WIN_TEXTBOX_COPY_RANGE   0x0B27
 #define SYS_WIN_FOCUS_CONTROL        0x0B28
 #define SYS_WIN_TEXTBOX_SELECT_RANGE 0x0B29
+#define SYS_WIN_DISPLAY_CONFIRM      0x0B2A
 
 typedef enum {
     SYS_WIN_EVENT_NONE = 0,
@@ -513,6 +547,7 @@ typedef struct gui_form_s {
     uint32_t owner_tid;
     menubar_t menubar;
     uint8_t menubar_enabled;
+    uint8_t display_resize_pending;
 } gui_form_t;
 
 typedef struct {
@@ -727,13 +762,13 @@ static inline int sys_close(int fd) {
 
 static inline int sys_read(int fd, void *buf, uint32_t size) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_FILE_READ), "b"(fd), "c"(buf), "d"(size));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_FILE_READ), "b"(fd), "c"(buf), "d"(size) : "memory");
     return ret;
 }
 
 static inline int sys_write_file(int fd, const void *buf, uint32_t size) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_FILE_WRITE), "b"(fd), "c"(buf), "d"(size));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_FILE_WRITE), "b"(fd), "c"(buf), "d"(size) : "memory");
     return ret;
 }
 
@@ -775,7 +810,7 @@ static inline int sys_rmdir(const char *path) {
 
 static inline int sys_readdir(const char *path, sys_dirent_t *entries, int max) {
     int ret;
-    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_DIR_LIST), "b"(path), "c"(entries), "d"(max));
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_DIR_LIST), "b"(path), "c"(entries), "d"(max) : "memory");
     return ret;
 }
 
@@ -863,9 +898,17 @@ static inline void sys_reboot(void) {
     __asm__ volatile("int $0x80" :: "a"(SYS_POWER_REBOOT));
 }
 
-static inline void sys_gfx_enter(void) {
-    register int dummy_eax __asm__("eax") = SYS_GFX_ENTER;
-    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
+static inline int sys_gfx_enter(void) {
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result) : "a"(SYS_GFX_ENTER) : "memory");
+    return result;
+}
+
+static inline int sys_gfx_text_mode(const uint8_t palette[16][3]) {
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result)
+                     : "a"(SYS_GFX_TEXT_MODE), "b"(palette) : "memory");
+    return result;
 }
 
 static inline void sys_gfx_exit(void) {
@@ -1022,6 +1065,82 @@ static inline int sys_gfx_get_palette_data(uint8_t palette[16][3]) {
     return ret;
 }
 
+static inline int sys_gfx_get_display_info(sys_display_info_t *info) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_GET_DISPLAY_INFO), "b"(info) : "memory");
+    return ret;
+}
+
+static inline size_t sys_gfx_region_size(int width, int height) {
+    size_t result;
+    __asm__ volatile("int $0x80" : "=a"(result)
+                     : "a"(SYS_GFX_REGION_SIZE), "b"(width), "c"(height));
+    return result;
+}
+
+static inline int sys_gfx_save_region(sys_gfx_region_t *region) {
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result)
+                     : "a"(SYS_GFX_SAVE_REGION), "b"(region) : "memory");
+    return result;
+}
+
+static inline int sys_gfx_restore_region(const sys_gfx_region_t *region) {
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result)
+                     : "a"(SYS_GFX_RESTORE_REGION), "b"(region) : "memory");
+    return result;
+}
+
+static inline int sys_gfx_dither_rect(const sys_gfx_region_t *region,
+                                      int c1, int c2) {
+    int result;
+    __asm__ volatile("int $0x80" : "=a"(result)
+                     : "a"(SYS_GFX_DITHER_RECT), "b"(region),
+                       "c"((uint32_t)(uint8_t)c1 |
+                            ((uint32_t)(uint8_t)c2 << 8)));
+    return result;
+}
+
+static inline int sys_gfx_vbe_discover(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_VBE_DISCOVER) : "memory");
+    return ret;
+}
+
+static inline int sys_gfx_vbe_get_mode(unsigned index, sys_vbe_mode_t *mode) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_VBE_GET_MODE),
+                     "b"(index), "c"(mode) : "memory");
+    return ret;
+}
+
+static inline int sys_gfx_vbe_try(unsigned index) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_VBE_TRY),
+                     "b"(index) : "memory");
+    return ret;
+}
+
+static inline int sys_gfx_vbe_confirm(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_VBE_CONFIRM) : "memory");
+    return ret;
+}
+
+static inline int sys_gfx_vbe_revert(void) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_VBE_REVERT) : "memory");
+    return ret;
+}
+
+static inline int sys_gfx_vbe_state(sys_vbe_state_t *state) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_GFX_VBE_STATE),
+                     "b"(state) : "memory");
+    return ret;
+}
+
 static inline void sys_gfx_free_cached(gfx_cached_bmp_t *bmp) {
     __asm__ volatile("int $0x80" :: "a"(SYS_GFX_FREE_CACHED), "b"(bmp));
 }
@@ -1074,6 +1193,13 @@ static inline int sys_win_msgbox(const char *msg, const char *btn, const char *t
     return ret;
 }
 
+static inline int sys_win_display_confirm(const char *msg, const char *btn, const char *title) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_DISPLAY_CONFIRM),
+                     "b"(msg), "c"(btn), "d"(title) : "memory");
+    return ret;
+}
+
 static inline void sys_busywait(uint32_t ms) {
     uint32_t start = sys_uptime();
     uint32_t end = start + (ms / 10);
@@ -1096,8 +1222,14 @@ static inline void sys_win_add_control(void *form, gui_control_t *ctrl) {
 }
 
 static inline int sys_win_pump_events(void *form, sys_win_event_t *event) {
+    extern int oslet_display_init(void);
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_PUMP_EVENTS), "b"(form), "c"(event) : "memory");
+    if (ret == 0 && event && event->type == SYS_WIN_EVENT_RESIZE &&
+        oslet_display_init() != 0) {
+        sys_win_msgbox("Unable to query display dimensions.", "OK", "Display");
+        return -1;
+    }
     return ret;
 }
 

@@ -1,5 +1,44 @@
 #include "gpriv.h"
 
+typedef struct bmp_colors_s {
+    uint8_t *data;
+    uint32_t *colors;
+    struct bmp_colors_s *next;
+} bmp_colors_t;
+
+static bmp_colors_t *bmp_colors;
+
+const uint32_t *gfx_bmp_colors(const uint8_t *data) {
+    for (bmp_colors_t *entry = bmp_colors; entry; entry = entry->next)
+        if (entry->data == data) return entry->colors;
+    return NULL;
+}
+
+int gfx_bmp_set_colors(uint8_t *data, uint32_t *colors) {
+    bmp_colors_t *entry = kmalloc(sizeof(*entry));
+    if (!entry) return -1;
+    entry->data = data;
+    entry->colors = colors;
+    entry->next = bmp_colors;
+    bmp_colors = entry;
+    return 0;
+}
+
+void gfx_free_bmp(uint8_t *data) {
+    bmp_colors_t **link = &bmp_colors;
+    while (*link) {
+        bmp_colors_t *entry = *link;
+        if (entry->data == data) {
+            *link = entry->next;
+            kfree(entry->colors);
+            kfree(entry);
+            break;
+        }
+        link = &entry->next;
+    }
+    kfree(data);
+}
+
 static uint8_t find_closest_color(uint8_t r, uint8_t g, uint8_t b) {
     int best_idx = 0;
     int best_dist = 0x7FFFFFFF;
@@ -41,7 +80,9 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         return NULL;
     }
 
-    if (info.compression != 0) {
+    if (info.size < sizeof(info) || header.offset < sizeof(header) ||
+        info.size > header.offset - sizeof(header) ||
+        info.planes != 1 || info.compression != 0) {
         fat32_close(f);
         return NULL;
     }
@@ -51,54 +92,57 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         return NULL;
     }
 
+    const int MAX_DIM = 4096;
+    if (info.width <= 0 || info.width > MAX_DIM ||
+        info.height == 0 || info.height > MAX_DIM || info.height < -MAX_DIM) {
+        fat32_close(f);
+        return NULL;
+    }
+
     int width = info.width;
     int height = info.height > 0 ? info.height : -info.height;
     int bottom_up = info.height > 0;
 
-    if (width <= 0 || height <= 0) {
-        fat32_close(f);
-        return NULL;
-    }
-
-    const int MAX_DIM = 4096;
-    if (width > MAX_DIM || height > MAX_DIM) {
-        fat32_close(f);
-        return NULL;
-    }
-
     int out_row_bytes = (width + 1) / 2;
-    size_t buffer_size = (size_t)out_row_bytes * (size_t)height;
-    const size_t MAX_BUFFER = 1024 * 1024;
-    if (buffer_size == 0 || buffer_size > MAX_BUFFER) {
+    if ((size_t)height > (size_t)-1 / (size_t)out_row_bytes ||
+        (size_t)height > (size_t)-1 / (size_t)width / sizeof(uint32_t)) {
         fat32_close(f);
         return NULL;
     }
-
-    uint8_t *bitmap = kmalloc((int)buffer_size);
+    size_t buffer_size = (size_t)out_row_bytes * (size_t)height;
+    uint8_t *bitmap = kmalloc(buffer_size);
     if (!bitmap) {
         fat32_close(f);
         return NULL;
     }
     memset_s(bitmap, 0, buffer_size);
 
-    /* The display is 4bpp, so indexed BMP palettes are capped to 16 colors. */
     uint8_t (*palette)[3] = NULL;
     int palette_entries = 0;
 
     if (info.bpp <= 8) {
-        palette_entries = info.colors_used ? (int)info.colors_used : (1 << info.bpp);
-        if (palette_entries > 256) palette_entries = 256;
-        
-        int load_entries = palette_entries < 16 ? palette_entries : 16;
-        palette = kmalloc(16 * 3);
+        unsigned max_entries = 1u << info.bpp;
+        if (info.colors_used > max_entries) {
+            kfree(bitmap);
+            fat32_close(f);
+            return NULL;
+        }
+        palette_entries = info.colors_used ? (int)info.colors_used : (int)max_entries;
+        uint32_t palette_offset = sizeof(header) + info.size;
+        if ((uint32_t)palette_entries * 4u > header.offset - palette_offset ||
+            fat32_seek(f, palette_offset) != 0) {
+            kfree(bitmap);
+            fat32_close(f);
+            return NULL;
+        }
+        palette = kmalloc((size_t)palette_entries * sizeof(*palette));
         if (!palette) {
             kfree(bitmap);
             fat32_close(f);
             return NULL;
         }
-        memset_s(palette, 0, 16 * 3);
         
-        for (int i = 0; i < load_entries; i++) {
+        for (int i = 0; i < palette_entries; i++) {
             uint8_t bgr[4];
             if (fat32_read(f, bgr, 4) != 4) {
                 kfree(palette);
@@ -110,16 +154,14 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             palette[i][1] = bgr[1];
             palette[i][2] = bgr[0];
         }
-        
-        for (int i = load_entries; i < palette_entries; i++) {
-            uint8_t bgr[4];
-            fat32_read(f, bgr, 4);
-        }
-        
-        palette_entries = load_entries;
     }
 
-    fat32_seek(f, header.offset);
+    if (fat32_seek(f, header.offset) != 0) {
+        if (palette) kfree(palette);
+        kfree(bitmap);
+        fat32_close(f);
+        return NULL;
+    }
 
     /* BMP rows are DWORD-aligned on disk. */
     int src_row_size;
@@ -141,17 +183,16 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
 
     int16_t *err_r_curr = NULL, *err_g_curr = NULL, *err_b_curr = NULL;
     int16_t *err_r_next = NULL, *err_g_next = NULL, *err_b_next = NULL;
+    uint32_t *colors = NULL;
     
-    if (info.bpp >= 8 && width > 0 && width <= MAX_DIM) {
+    if (info.bpp >= 8) {
         size_t err_buf_size = (size_t)width * sizeof(int16_t);
-        if (err_buf_size > 0 && err_buf_size < MAX_BUFFER) {
-            err_r_curr = kmalloc((int)err_buf_size);
-            err_g_curr = kmalloc((int)err_buf_size);
-            err_b_curr = kmalloc((int)err_buf_size);
-            err_r_next = kmalloc((int)err_buf_size);
-            err_g_next = kmalloc((int)err_buf_size);
-            err_b_next = kmalloc((int)err_buf_size);
-        }
+        err_r_curr = kmalloc(err_buf_size);
+        err_g_curr = kmalloc(err_buf_size);
+        err_b_curr = kmalloc(err_buf_size);
+        err_r_next = kmalloc(err_buf_size);
+        err_g_next = kmalloc(err_buf_size);
+        err_b_next = kmalloc(err_buf_size);
         
         if (!err_r_curr || !err_g_curr || !err_b_curr || !err_r_next || !err_g_next || !err_b_next) {
             if (err_r_curr) kfree(err_r_curr);
@@ -171,22 +212,13 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             err_r_curr[x] = err_g_curr[x] = err_b_curr[x] = 0;
             err_r_next[x] = err_g_next[x] = err_b_next[x] = 0;
         }
+        colors = kmalloc((size_t)width * height * sizeof(*colors));
+        if (!colors) goto invalid_bitmap;
     }
 
     for (int y = 0; y < height; y++) {
-        if (fat32_read(f, row_buf, src_row_size) != src_row_size) {
-            if (err_r_curr) kfree(err_r_curr);
-            if (err_g_curr) kfree(err_g_curr);
-            if (err_b_curr) kfree(err_b_curr);
-            if (err_r_next) kfree(err_r_next);
-            if (err_g_next) kfree(err_g_next);
-            if (err_b_next) kfree(err_b_next);
-            kfree(row_buf);
-            if (palette) kfree(palette);
-            kfree(bitmap);
-            fat32_close(f);
-            return NULL;
-        }
+        if (fat32_read(f, row_buf, src_row_size) != src_row_size)
+            goto invalid_bitmap;
 
         int dest_y = bottom_up ? (height - 1 - y) : y;
         int dest_offset = dest_y * out_row_bytes;
@@ -202,6 +234,9 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
                 if (b < 0) b = 0; else if (b > 255) b = 255;
                 
                 uint8_t color = find_closest_color((uint8_t)r, (uint8_t)g, (uint8_t)b);
+                colors[(size_t)dest_y * width + x] = ((uint32_t)color << 24) |
+                    ((uint32_t)row_buf[x * 3 + 2] << 16) |
+                    ((uint32_t)row_buf[x * 3 + 1] << 8) | row_buf[x * 3];
                 
                 int16_t err_r = r - (int16_t)gfx_palette[color][0];
                 int16_t err_g = g - (int16_t)gfx_palette[color][1];
@@ -243,7 +278,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         } else if (info.bpp == 8) {
             for (int x = 0; x < width; x++) {
                 uint8_t idx = row_buf[x];
-                if (idx >= palette_entries) idx = 0;
+                if (idx >= palette_entries) goto invalid_bitmap;
                 
                 int16_t r = (int16_t)palette[idx][0] + err_r_curr[x];
                 int16_t g = (int16_t)palette[idx][1] + err_g_curr[x];
@@ -254,6 +289,9 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
                 if (b < 0) b = 0; else if (b > 255) b = 255;
                 
                 uint8_t color = find_closest_color((uint8_t)r, (uint8_t)g, (uint8_t)b);
+                colors[(size_t)dest_y * width + x] = ((uint32_t)color << 24) |
+                    ((uint32_t)palette[idx][0] << 16) |
+                    ((uint32_t)palette[idx][1] << 8) | palette[idx][2];
                 
                 int16_t err_r = r - (int16_t)gfx_palette[color][0];
                 int16_t err_g = g - (int16_t)gfx_palette[color][1];
@@ -302,6 +340,8 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         }
     }
     
+    if (colors && gfx_bmp_set_colors(bitmap, colors) != 0) goto invalid_bitmap;
+
     if (err_r_curr) kfree(err_r_curr);
     if (err_g_curr) kfree(err_g_curr);
     if (err_b_curr) kfree(err_b_curr);
@@ -316,10 +356,25 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     *out_width = width;
     *out_height = height;
     return bitmap;
+
+invalid_bitmap:
+    if (colors) kfree(colors);
+    if (err_r_curr) kfree(err_r_curr);
+    if (err_g_curr) kfree(err_g_curr);
+    if (err_b_curr) kfree(err_b_curr);
+    if (err_r_next) kfree(err_r_next);
+    if (err_g_next) kfree(err_g_next);
+    if (err_b_next) kfree(err_b_next);
+    if (palette) kfree(palette);
+    kfree(row_buf);
+    gfx_free_bmp(bitmap);
+    fat32_close(f);
+    return NULL;
 }
 
 void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int dest_x, int dest_y, int transparent) {
     if (!backbuffer || !cached_data) return;
+    const uint32_t *colors = gfx_bmp_colors(cached_data);
 
     int dirty_x0 = dest_x < 0 ? 0 : dest_x;
     int dirty_y0 = dest_y < 0 ? 0 : dest_y;
@@ -332,7 +387,9 @@ void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int des
     int src_row_bytes = (width + 1) / 2;
 
     /* Fast path: no transparency, aligned coordinates, fully on screen */
-    if (!transparent && (dest_x & 1) == 0 && dest_x >= 0 && dest_x + width <= GFX_WIDTH) {
+    if (!gfx_colorbuffer && !gfx_clip_enabled && !transparent &&
+        (dest_x & 1) == 0 && (width & 1) == 0 &&
+        dest_x >= 0 && dest_x + width <= GFX_WIDTH) {
         int dest_byte_x = dest_x / 2;
         for (int y = 0; y < height; y++) {
             int screen_y = dest_y + y;
@@ -357,8 +414,12 @@ void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int des
                 int screen_x = dest_x + x;
 
                 /* Skip transparent pixels (color index 5) only if transparency enabled */
-                if (screen_x >= 0 && screen_x < GFX_WIDTH && (!transparent || pixel != 5)) {
-                    putpixel_raw(screen_x, screen_y, pixel);
+                if (screen_x >= 0 && screen_x < GFX_WIDTH &&
+                    (!transparent || colors || pixel != 5)) {
+                    if (colors && gfx_colorbuffer)
+                        putcolor_raw(screen_x, screen_y, colors[(size_t)y * width + x]);
+                    else
+                        putpixel_raw(screen_x, screen_y, pixel);
                 }
             }
         }
@@ -374,12 +435,11 @@ void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x
     gfx_draw_cached_bmp_ex(cached_data, width, height, dest_x, dest_y, 1);
 }
 
-/* Draw only a sub-rectangle of a cached bitmap. This mirrors the slow path in gfx_draw_cached_bmp_ex
-   but reads pixels from the given source rectangle (src_x,src_y,src_w,src_h) and writes them at
-   (dest_x,dest_y) on screen. */
+/* Draw only a sub-rectangle of a cached bitmap. */
 void gfx_draw_cached_bmp_region(uint8_t *cached_data, int width, int height, int dest_x, int dest_y,
                                 int src_x, int src_y, int src_w, int src_h, int transparent) {
     if (!backbuffer || !cached_data) return;
+    const uint32_t *colors = gfx_bmp_colors(cached_data);
 
     /* Clip source rectangle to bitmap bounds */
     if (src_x < 0) { src_w += src_x; src_x = 0; }
@@ -404,8 +464,13 @@ void gfx_draw_cached_bmp_region(uint8_t *cached_data, int width, int height, int
 
             int screen_x = dest_x + x;
 
-            if (screen_x >= 0 && screen_x < GFX_WIDTH && (!transparent || pixel != 5)) {
-                putpixel_raw(screen_x, screen_y, pixel);
+            if (screen_x >= 0 && screen_x < GFX_WIDTH &&
+                (!transparent || colors || pixel != 5)) {
+                if (colors && gfx_colorbuffer)
+                    putcolor_raw(screen_x, screen_y,
+                                 colors[(size_t)(src_y + y) * width + sx]);
+                else
+                    putpixel_raw(screen_x, screen_y, pixel);
             }
         }
     }
@@ -432,7 +497,7 @@ int gfx_load_bmp_4bit_ex(const char *path, int dest_x, int dest_y, int transpare
     if (!bitmap) return -1;
 
     gfx_draw_cached_bmp_ex(bitmap, width, height, dest_x, dest_y, transparent);
-    kfree(bitmap);
+    gfx_free_bmp(bitmap);
 
     return 0;
 }

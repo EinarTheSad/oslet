@@ -75,6 +75,11 @@ void gfx_hline(int x, int y, int w, uint8_t color) {
         uint32_t offset = row_offset + (px / 2);
         backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
     }
+    if (gfx_colorbuffer) {
+        uint32_t value = 0x80000000u | (color & 0x0F);
+        for (int i = x0; i <= x1; ++i)
+            gfx_colorbuffer[(size_t)y * GFX_WIDTH + i] = value;
+    }
     
     mark_dirty(x0, y, x1 - x0 + 1, 1);
 }
@@ -103,6 +108,8 @@ void gfx_vline(int x, int y, int h, uint8_t color) {
         } else {
             backbuffer[offset] = (backbuffer[offset] & 0x0F) | ((color & 0x0F) << 4);
         }
+        if (gfx_colorbuffer)
+            gfx_colorbuffer[(size_t)py * GFX_WIDTH + x] = 0x80000000u | (color & 0x0F);
     }
     
     mark_dirty(x, y0, 1, y1 - y0 + 1);

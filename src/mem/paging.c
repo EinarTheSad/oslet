@@ -6,6 +6,7 @@
 #include "early_alloc.h"
 
 static uintptr_t current_pd_phys = 0;
+static uintptr_t identity_limit = 0;
 
 static inline uint32_t pd_index(uintptr_t a) { return (a >> 22) & 0x3FF; }
 static inline uint32_t pt_index(uintptr_t a) { return (a >> 12) & 0x3FF; }
@@ -15,7 +16,8 @@ static inline void memzero(void *dst, size_t n) {
 }
 
 static uintptr_t alloc_zeroed_frame(void) {
-    uintptr_t f = pmm_alloc_frame();
+    /* Page-table frames are accessed through their identity mapping. */
+    uintptr_t f = pmm_alloc_contiguous(PAGE_SIZE, identity_limit, 1);
     if (!f || (f & 0xFFFu)) return 0;   
     memzero((void*)f, PAGE_SIZE);
     return f;
@@ -41,12 +43,16 @@ int paging_map_page(uintptr_t vaddr, uintptr_t paddr, uint32_t flags) {
     if (!pt_phys) return -2;
     
     uint32_t *pt = (uint32_t*)pt_phys;
+    uint32_t existing = pt[pt_index(vaddr)];
+    if ((existing & P_PRESENT) && (existing & 0xFFFFF000u) != paddr)
+        return -4;
     pt[pt_index(vaddr)] = (uint32_t)(paddr & 0xFFFFF000u) | (flags & 0xFFFu);
     return 0;
 }
 
 int paging_identity_enable(uintptr_t upto_phys) {
-    if (!upto_phys) return -1;
+    if (!upto_phys || (upto_phys & (PAGE_SIZE - 1))) return -1;
+    identity_limit = upto_phys;
     
     uintptr_t pd_phys = (uintptr_t)mm_early_alloc(PAGE_SIZE, PAGE_SIZE);
     if (!pd_phys) {
@@ -79,6 +85,8 @@ int paging_identity_enable(uintptr_t upto_phys) {
         "movl %%eax, %%cr0\n\t"
         ::: "eax", "memory"
     );
+    /* Leave identity-mapped RAM available for future page tables. */
+    pmm_prefer_frames_above(identity_limit);
     return 0;
 }
 

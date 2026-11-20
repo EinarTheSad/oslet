@@ -3,7 +3,8 @@
     .align 4
 
     .set MBOOT_MAGIC,     0x1BADB002
-    .set MBOOT_FLAGS,     0x00000003
+
+    .set MBOOT_FLAGS,     0x00000007
     .set MBOOT_CHECKSUM, -(MBOOT_MAGIC + MBOOT_FLAGS)
 
     .global multiboot_header
@@ -12,6 +13,16 @@ multiboot_header:
     .long MBOOT_MAGIC
     .long MBOOT_FLAGS
     .long MBOOT_CHECKSUM
+    /* Keep all five address slots so Multiboot's video fields stay at +32. */
+    .long 0
+    .long 0
+    .long 0
+    .long 0
+    .long 0
+    .long 1
+    .long 80
+    .long 25
+    .long 0
 
     .section .rodata
     .align 8

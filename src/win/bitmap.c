@@ -26,7 +26,8 @@ bitmap_t* bitmap_load_from_file(const char *path) {
 /* Nearest-neighbor scale for packed 4-bit bitmap buffers. Returns a newly allocated
    bitmap_t or NULL on failure. */
 bitmap_t* bitmap_scale_nearest(bitmap_t *src, int new_w, int new_h) {
-    if (!src || !src->data || new_w <= 0 || new_h <= 0) return NULL;
+    if (!src || !src->data || new_w <= 0 || new_h <= 0 ||
+        new_w > 4096 || new_h > 4096) return NULL;
 
     /* Allocate new bitmap structure */
     bitmap_t *dst = (bitmap_t*)kmalloc(sizeof(bitmap_t));
@@ -36,6 +37,22 @@ bitmap_t* bitmap_scale_nearest(bitmap_t *src, int new_w, int new_h) {
     int dst_buf_size = dst_row_bytes * new_h;
     uint8_t *dst_buf = (uint8_t*)kmalloc(dst_buf_size);
     if (!dst_buf) { kfree(dst); return NULL; }
+    const uint32_t *src_colors = gfx_bmp_colors(src->data);
+    uint32_t *dst_colors = NULL;
+    if (src_colors) {
+        if ((size_t)new_w > (size_t)-1 / (size_t)new_h / sizeof(*dst_colors)) {
+            kfree(dst_buf);
+            kfree(dst);
+            return NULL;
+        }
+        dst_colors = kmalloc((size_t)new_w * new_h * sizeof(*dst_colors));
+        if (!dst_colors || gfx_bmp_set_colors(dst_buf, dst_colors) != 0) {
+            if (dst_colors) kfree(dst_colors);
+            kfree(dst_buf);
+            kfree(dst);
+            return NULL;
+        }
+    }
 
     /* Zero buffer to ensure nibbles are clean */
     for (int i = 0; i < dst_buf_size; i++) dst_buf[i] = 0;
@@ -52,6 +69,9 @@ bitmap_t* bitmap_scale_nearest(bitmap_t *src, int new_w, int new_h) {
         for (int x = 0; x < new_w; x++) {
             int src_x = (x * src->width) / new_w;
             if (src_x >= src->width) src_x = src->width - 1;
+            if (dst_colors)
+                dst_colors[(size_t)y * new_w + x] =
+                    src_colors[(size_t)src_y * src->width + src_x];
             int src_byte = src_offset + (src_x / 2);
             uint8_t src_val = src->data[src_byte];
             uint8_t pixel = (src_x & 1) ? (src_val & 0x0F) : (src_val >> 4);
@@ -95,7 +115,7 @@ void bitmap_free(bitmap_t *bmp) {
     if (!bmp) return;
 
     if (bmp->data) {
-        kfree(bmp->data);
+        gfx_free_bmp(bmp->data);
         bmp->data = NULL;
     }
 

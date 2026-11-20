@@ -8,8 +8,6 @@
 #define PATH_DLG_ID_OK     5
 #define PATH_DLG_ID_CANCEL 6
 
-#define PATH_DLG_X 130
-#define PATH_DLG_Y 104
 #define PATH_DLG_W 380
 #define PATH_DLG_H 240
 #define PATH_DLG_CONTROL_Y_OFFSET 20
@@ -579,7 +577,14 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
     split_initial_path(initial_path, initial_folder, sizeof(initial_folder),
                        initial_file, sizeof(initial_file));
 
-    void *dlg = sys_win_create_form(title, PATH_DLG_X, PATH_DLG_Y, PATH_DLG_W, PATH_DLG_H);
+    sys_display_info_t display;
+    if (sys_gfx_get_display_info(&display) != 0) {
+        sys_win_msgbox("Could not query the display size.", "OK", title);
+        return 0;
+    }
+    int x = display.width > PATH_DLG_W ? (int)(display.width - PATH_DLG_W) / 2 : 0;
+    int y = display.height > PATH_DLG_H ? (int)(display.height - PATH_DLG_H) / 2 : 0;
+    void *dlg = sys_win_create_form(title, x, y, PATH_DLG_W, PATH_DLG_H);
     if (!dlg) return 0;
     state.form = dlg;
 

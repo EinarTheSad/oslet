@@ -4,6 +4,7 @@
 #include "../../lib/pathdlg.h"
 #include "../../lib/app.h"
 #include "../../lib/gix_app.h"
+#include "../../lib/display.h"
 #include "../../drivers/keyboard.h"
 #include "../../win/wm_config.h"
 
@@ -15,6 +16,8 @@ OSLET_APP("Image Viewer", OSLET_KIND_GIX, "C:/ICONS/VIEWER.ICO", OSLET_APP_FLAG_
 #define ID_NEXT       7
 #define ID_FULLSCREEN 8
 #define IMGVIEW_FILE_FILTER "*.bmp;*.ico"
+#define IMGVIEW_MAX_ENTRIES 256
+#define IMGVIEW_PATH_MAX    256
 
 /* Controls for Form1 */
 static gui_control_t Form1_controls[] = {
@@ -25,75 +28,95 @@ static gui_control_t Form1_controls[] = {
 };
 
 static gui_control_t fullscreen_controls[] = {
-    { .type = CTRL_PICTUREBOX, .x = 0, .y = 0, .w = WM_SCREEN_WIDTH, .h = WM_SCREEN_HEIGHT, .fg = 0, .bg = 7, .text = "", .id = ID_PICTURE, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
+    { .type = CTRL_PICTUREBOX, .x = 0, .y = 0, .w = 640, .h = 480, .fg = 0, .bg = 7, .text = "", .id = ID_PICTURE, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
 };
 
 typedef struct {
     void *form;
     int fullscreen;
     void *fs_form;
+    char image_path[IMGVIEW_PATH_MAX];
+    sys_dirent_t entries[IMGVIEW_MAX_ENTRIES];
 } imgview_state_t;
 
-static int gather_bmps(const char *dir, sys_dirent_t *entries, int max_entries) {
-    int n = sys_readdir(dir, entries, max_entries);
-    if (n <= 0) return 0;
+static int gather_images(imgview_state_t *state, const char *dir) {
+    int count = sys_readdir(dir, state->entries, IMGVIEW_MAX_ENTRIES);
     int out = 0;
-    for (int i = 0; i < n && out < max_entries; i++) {
-        if (!entries[i].is_directory) {
-            if (str_ends_with_icase(entries[i].name, ".bmp")) {
-                entries[out++] = entries[i];
-            }
+
+    if (count <= 0) return 0;
+    if (count > IMGVIEW_MAX_ENTRIES) count = IMGVIEW_MAX_ENTRIES;
+
+    for (int i = 0; i < count; i++) {
+        sys_dirent_t *entry = &state->entries[i];
+        if (!entry->is_directory &&
+            (str_ends_with_icase(entry->name, ".bmp") ||
+             str_ends_with_icase(entry->name, ".ico"))) {
+            if (out != i) state->entries[out] = *entry;
+            out++;
         }
     }
+
     return out;
 }
 
-static void toggle_fullscreen(imgview_state_t *state, const char *cur_path) {
-    if (!cur_path || !cur_path[0]) return;
+static void draw_current_image(imgview_state_t *state) {
+    void *form = state->fullscreen ? state->fs_form : state->form;
 
-    if (!state->fullscreen) {
-        state->fullscreen = 1;
-        sys_mouse_invalidate();
+    if (!form || !state->image_path[0]) return;
 
-        gix_app_window_desc_t fs_desc = {
-            .title = "Image Viewer (full screen)",
-            .icon_path = "C:/ICONS/VIEWER.ICO",
-            .x = 0,
-            .y = -WM_TITLEBAR_HEIGHT - 2,
-            .w = WM_SCREEN_WIDTH + 2,
-            .h = WM_SCREEN_HEIGHT + WM_TITLEBAR_HEIGHT + 4,
-            .resizable = 0,
-            .controls = fullscreen_controls,
-            .control_count = sizeof(fullscreen_controls) / sizeof(fullscreen_controls[0])
-        };
+    ctrl_set_image(form, ID_PICTURE, state->image_path);
+    sys_win_draw(form);
+    sys_mouse_invalidate();
+}
 
-        void *fs = gix_app_create_window(&fs_desc);
-        if (fs) {
-            ctrl_set_image(fs, ID_PICTURE, cur_path);
-            sys_win_draw(fs);
-            sys_win_force_full_redraw();
-            state->fs_form = fs;
-        } else {
-            /* fallback to direct draw */
-            sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT, COLOR_DARK_GRAY);
-            sys_gfx_load_bmp_scaled(cur_path, 0, 0, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT);
-            sys_mouse_invalidate();
-            sys_gfx_swap();
-            state->fs_form = NULL;
-        }
+static void set_current_image(imgview_state_t *state, const char *path) {
+    if (!path || !path[0] || strlen(path) >= sizeof(state->image_path)) return;
 
+    strcpy(state->image_path, path);
+    draw_current_image(state);
+}
+
+static void enter_fullscreen(imgview_state_t *state) {
+    gix_app_window_desc_t fs_desc = {
+        .title = "Image Viewer (full screen)",
+        .icon_path = "C:/ICONS/VIEWER.ICO",
+        .x = 0,
+        .y = -WM_TITLEBAR_HEIGHT - 2,
+        .w = WM_SCREEN_WIDTH + 2,
+        .h = WM_SCREEN_HEIGHT + WM_TITLEBAR_HEIGHT + 4,
+        .resizable = 0,
+        .controls = fullscreen_controls,
+        .control_count = sizeof(fullscreen_controls) / sizeof(fullscreen_controls[0])
+    };
+
+    if (!state->image_path[0]) return;
+
+    state->fs_form = gix_app_create_window(&fs_desc);
+    if (!state->fs_form) return;
+
+    state->fullscreen = 1;
+    draw_current_image(state);
+    sys_win_force_full_redraw();
+}
+
+static void exit_fullscreen(imgview_state_t *state) {
+    void *fs_form = state->fs_form;
+
+    state->fullscreen = 0;
+    state->fs_form = NULL;
+    if (fs_form) gix_app_destroy_window(fs_form);
+
+    sys_win_restore_form(state->form);
+    draw_current_image(state);
+    sys_win_force_full_redraw();
+    sys_gfx_swap();
+}
+
+static void toggle_fullscreen(imgview_state_t *state) {
+    if (state->fullscreen) {
+        exit_fullscreen(state);
     } else {
-        state->fullscreen = 0;
-        if (state->fs_form) {
-            gix_app_destroy_window(state->fs_form);
-            state->fs_form = NULL;
-        }
-
-        sys_win_restore_form(state->form);
-        sys_win_draw(state->form);
-        sys_win_force_full_redraw();
-        sys_mouse_invalidate();
-        sys_gfx_swap();
+        enter_fullscreen(state);
     }
 }
 
@@ -125,65 +148,42 @@ static void update_layout(void *form) {
     sys_ctrl_set_prop(form, ID_FULLSCREEN, PROP_Y, btn_y - 9);
 }
 
-/* Helper: navigate directory by delta (-1 previous, +1 next). If fullscreen is true
-   the function will also redraw the fullscreen overlay with the new image. */
-static void navigate_dir(void *form, int delta, int fullscreen, void *fs_form) {
-    const char *cur = NULL;
-    /* Prefer main form text, but if the main form is destroyed while fullscreen, read from fs_form */
-    if (form) cur = ctrl_get_text(form, ID_PICTURE);
-    if (!cur && fs_form) cur = ctrl_get_text(fs_form, ID_PICTURE);
-    if (!cur || !cur[0]) return;
-
-    const char *last_sep_ptr = strrchr(cur, '/');
-    if (!last_sep_ptr || last_sep_ptr == cur) return;
-
-    char dir[256];
-    int dirlen = last_sep_ptr - cur;
-    if (dirlen >= (int)sizeof(dir) - 1) return;
-    for (int i = 0; i < dirlen; i++) dir[i] = cur[i];
-    dir[dirlen] = '\0';
-
-    sys_dirent_t entries[256];
-    int total = gather_bmps(dir, entries, 256);
-    if (total <= 0) return;
-
-    const char *filename = last_sep_ptr + 1;
+static void navigate_dir(imgview_state_t *state, int delta) {
+    const char *slash;
+    char dir[IMGVIEW_PATH_MAX];
+    char new_path[IMGVIEW_PATH_MAX];
+    int dir_len;
+    int total;
     int idx = -1;
+
+    slash = strrchr(state->image_path, '/');
+    if (!slash || slash == state->image_path) return;
+
+    dir_len = slash - state->image_path;
+    if (dir_len <= 0 || dir_len >= (int)sizeof(dir)) return;
+    for (int i = 0; i < dir_len; i++) dir[i] = state->image_path[i];
+    dir[dir_len] = '\0';
+
+    total = gather_images(state, dir);
+    if (total == 0) return;
+
     for (int i = 0; i < total; i++) {
-        if (strcasecmp(entries[i].name, filename) == 0) { idx = i; break; }
-    }
-    
-    if (idx == -1) {
-        idx = (delta > 0) ? -1 : total;
-    }
-    
-    if (delta > 0) {
-        idx = (idx + 1) % total;
-    } else {
-        idx = (idx - 1 + total) % total;
+        if (strcasecmp(state->entries[i].name, slash + 1) == 0) {
+            idx = i;
+            break;
+        }
     }
 
-    char newpath[256];
-    int n = snprintf(newpath, sizeof(newpath), "%s/%s", dir, entries[idx].name);
-    if (n > 0 && n < (int)sizeof(newpath)) {
-        /* Always update the main form to keep the path in sync */
-        if (form) {
-            ctrl_set_image(form, ID_PICTURE, newpath);
-        }
-        
-        /* If fullscreen overlay is active, also update and draw it */
-        if (fullscreen && fs_form) {
-            ctrl_set_image(fs_form, ID_PICTURE, newpath);
-            sys_win_draw(fs_form);
-            sys_mouse_invalidate();
-        } else {
-            /* Windowed mode: draw the main form */
-            if (form) {
-                sys_win_draw(form);
-            }
-            sys_mouse_invalidate();
-        }
+    if (idx == -1) {
+        idx = delta > 0 ? 0 : total - 1;
+    } else {
+        idx = delta > 0 ? (idx + 1) % total : (idx - 1 + total) % total;
     }
+
+    int length = snprintf(new_path, sizeof(new_path), "%s/%s",
+                          dir, state->entries[idx].name);
+    if (length > 0 && length < (int)sizeof(new_path))
+        set_current_image(state, new_path);
 }
 
 static void imgview_init(void *form, void *userdata) {
@@ -201,7 +201,7 @@ static void imgview_init(void *form, void *userdata) {
     /* Load image from launch arguments if provided */
     char args[256];
     if (sys_getargs(args, sizeof(args)) && args[0]) {
-        ctrl_set_image(form, ID_PICTURE, args);
+        set_current_image(state, args);
     }
 }
 
@@ -214,19 +214,17 @@ static int imgview_event(void *form, const sys_win_event_t *event, void *userdat
     imgview_state_t *state = userdata;
 
     if (event->type == SYS_WIN_EVENT_CLOSE && form == state->fs_form) {
-        const char *cur = ctrl_get_text(state->fs_form, ID_PICTURE);
-        toggle_fullscreen(state, cur);
+        exit_fullscreen(state);
         return 0;
     }
 
     if (form != state->form || event->type != SYS_WIN_EVENT_CONTROL) return 0;
 
     if (event->id == ID_PICTURE) {
-        char newpath[256];
-        const char *cur = ctrl_get_text(state->form, ID_PICTURE);
-        char initial[256] = "C:/" IMGVIEW_FILE_FILTER;
-        if (cur && cur[0]) {
-            strncpy(initial, cur, sizeof(initial) - 1);
+        char new_path[IMGVIEW_PATH_MAX];
+        char initial[IMGVIEW_PATH_MAX] = "C:/" IMGVIEW_FILE_FILTER;
+        if (state->image_path[0]) {
+            strncpy(initial, state->image_path, sizeof(initial) - 1);
             initial[sizeof(initial) - 1] = '\0';
             char *slash = strrchr(initial, '/');
             if (slash && slash >= initial + 2) {
@@ -238,16 +236,12 @@ static int imgview_event(void *form, const sys_win_event_t *event, void *userdat
             }
         }
         if (gui_show_path_dialog_filtered("Open", initial, IMGVIEW_FILE_FILTER,
-                                          newpath, sizeof(newpath))) {
-            ctrl_set_image(state->form, ID_PICTURE, newpath);
-            sys_win_draw(state->form);
-        }
+                                          new_path, sizeof(new_path)))
+            set_current_image(state, new_path);
     } else if (event->id == ID_NEXT || event->id == ID_PREV) {
-        navigate_dir(state->form, (event->id == ID_NEXT) ? 1 : -1,
-                     state->fullscreen, state->fs_form);
+        navigate_dir(state, event->id == ID_NEXT ? 1 : -1);
     } else if (event->id == ID_FULLSCREEN) {
-        const char *cur = ctrl_get_text(state->form, ID_PICTURE);
-        toggle_fullscreen(state, cur);
+        toggle_fullscreen(state);
     }
 
     return 0;
@@ -267,19 +261,13 @@ static void imgview_tick(void *form, void *userdata) {
     }
 
     if (k == KEY_LEFT) {
-        navigate_dir(state->form, -1, state->fullscreen, state->fs_form);
+        navigate_dir(state, -1);
     } else if (k == KEY_RIGHT) {
-        navigate_dir(state->form, 1, state->fullscreen, state->fs_form);
+        navigate_dir(state, 1);
     } else if (k == '\n' || k == '\r') {
-        const char *cur = state->form ? ctrl_get_text(state->form, ID_PICTURE) :
-                          (state->fs_form ? ctrl_get_text(state->fs_form, ID_PICTURE) : "");
-        toggle_fullscreen(state, cur);
+        toggle_fullscreen(state);
     } else if (k == KEY_ESC) {
-        if (state->fullscreen) {
-            const char *cur = state->form ? ctrl_get_text(state->form, ID_PICTURE) :
-                              (state->fs_form ? ctrl_get_text(state->fs_form, ID_PICTURE) : "");
-            toggle_fullscreen(state, cur);
-        }
+        if (state->fullscreen) exit_fullscreen(state);
     }
 }
 
@@ -314,5 +302,14 @@ void _start(void) {
         .userdata = &state
     };
 
+    if (oslet_display_init() != 0) {
+        sys_win_msgbox("Unable to query display dimensions.", "OK", "Image Viewer");
+        sys_exit();
+        return;
+    }
+    app.x = (WM_SCREEN_WIDTH - app.w) / 2;
+    app.y = (WM_SCREEN_HEIGHT - app.h) / 2;
+    fullscreen_controls[0].w = WM_SCREEN_WIDTH;
+    fullscreen_controls[0].h = WM_SCREEN_HEIGHT;
     gix_app_run(&app);
 }

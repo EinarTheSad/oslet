@@ -40,3 +40,4 @@ int wm_is_icon_slot_occupied(window_manager_t *wm, int x, int y);
 void wm_set_icon_click(window_manager_t *wm, uint32_t time, gui_form_t *form);
 int wm_is_icon_doubleclick(window_manager_t *wm, uint32_t time, gui_form_t *form);
 void wm_snap_to_slot(int x, int y, int *out_x, int *out_y);
+void wm_display_changed(window_manager_t *wm);

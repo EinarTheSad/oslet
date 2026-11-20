@@ -11,7 +11,7 @@ QEMU_AUDIO ?= sdl
 QEMU_DISPLAY ?= sdl,grab-mod=lctrl-lalt,show-cursor=on
 QEMU_SOUND ?= -audiodev $(QEMU_AUDIO),id=snd0 -device sb16,audiodev=snd0
 
-CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector -MMD -MP
+CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector -DOSLET_KERNEL -MMD -MP
 BINCFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -fno-stack-protector -fPIE -fno-plt -ffunction-sections -fdata-sections -MMD -MP
 LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
 BIN_LDFLAGS = -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie --gc-sections
@@ -218,6 +218,7 @@ install: $(CURDIR)/$(BUILD)/$(TARGET)
 	mkdir -p mnt; \
 	sudo mount $${LOOP}p1 mnt; \
 	sudo cp $(CURDIR)/$(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
+	sudo cp grub.cfg mnt/boot/grub/grub.cfg; \
 	sudo mkdir -p mnt/FONTS; \
 	sudo cp $(SRC)/assets/bmf/*.[bB][mM][fF] mnt/FONTS/ 2>/dev/null || true; \
 	sudo mkdir -p mnt/IMAGES; \

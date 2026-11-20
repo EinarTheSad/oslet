@@ -177,6 +177,66 @@ static gui_control_t *wm_get_minimized_icon(gui_form_t *form) {
     return NULL;
 }
 
+static void wm_clamp_window_position(int *x, int *y, int width, int height) {
+    int max_x = WM_SCREEN_WIDTH - width;
+    int max_y = WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - height;
+    if (max_x < 0) max_x = 0;
+    if (max_y < 0) max_y = 0;
+    if (*x < 0) *x = 0;
+    if (*x > max_x) *x = max_x;
+    if (*y < 0) *y = 0;
+    if (*y > max_y) *y = max_y;
+}
+
+void wm_display_changed(window_manager_t *wm) {
+    if (!wm) return;
+    wm->next_icon_row = 0;
+    wm->next_icon_column = 0;
+    wm->free_slot_count = 0;
+    wm->last_icon_click_form = NULL;
+
+    for (int i = 0; i < wm->count; ++i) {
+        gui_form_t *form = wm->windows[i];
+        if (!form) continue;
+        gui_control_t *icon = wm_get_minimized_icon(form);
+        if (icon) {
+            if (icon->x < 0 || icon->y < 0 ||
+                icon->x + WM_ICON_TOTAL_WIDTH > WM_SCREEN_WIDTH ||
+                icon->y + WM_ICON_TOTAL_HEIGHT >
+                    WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT) {
+                icon->x = -100;
+                icon->y = -100;
+            }
+            icon->icon.dragging = 0;
+        }
+        form->dragging = 0;
+        form->resizing = 0;
+        if (form->win.is_maximized) {
+            wm_clamp_window_position(&form->win.saved_x, &form->win.saved_y,
+                                     form->win.saved_w, form->win.saved_h);
+            form->win.x = 0;
+            form->win.y = 0;
+            form->win.w = WM_SCREEN_WIDTH;
+            form->win.h = WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT;
+        } else {
+            wm_clamp_window_position(&form->win.x, &form->win.y,
+                                     form->win.w, form->win.h);
+        }
+        form->win.dirty = 1;
+    }
+
+    for (int i = 0; i < wm->count; ++i) {
+        gui_control_t *icon = wm_get_minimized_icon(wm->windows[i]);
+        if (!icon || icon->x >= 0) continue;
+        int x, y;
+        wm_get_next_icon_pos(wm, &x, &y);
+        icon->x = x;
+        icon->y = y;
+    }
+    wm->needs_full_redraw = 1;
+    wm->backgrounds_invalid = 1;
+}
+
 static int wm_icon_slot_occupied(window_manager_t *wm, int x, int y) {
     for (int i = 0; i < wm->count; i++) {
         gui_control_t *ctrl = wm_get_minimized_icon(wm->windows[i]);

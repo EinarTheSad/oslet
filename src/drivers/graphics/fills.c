@@ -47,3 +47,31 @@ void gfx_fillrect_gradient(int x, int y, int w, int h,
 
     mark_dirty(x0, y0, eff_w, eff_h);
 }
+
+void gfx_fillrect_dither(int x, int y, int w, int h, int c1, int c2) {
+    if (!backbuffer || w <= 0 || h <= 0) return;
+    if (x >= GFX_WIDTH || y >= GFX_HEIGHT) return;
+    if (x < 0) {
+        w += x;
+        x = 0;
+    }
+    if (y < 0) {
+        h += y;
+        y = 0;
+    }
+    if (w <= 0 || h <= 0) return;
+    if (w > GFX_WIDTH - x) w = GFX_WIDTH - x;
+    if (h > GFX_HEIGHT - y) h = GFX_HEIGHT - y;
+
+    int x1 = x + w - 1;
+    int y1 = y + h - 1;
+    for (int py = y; py <= y1; py++) {
+        for (int px = x; px <= x1; px++) {
+            int color = ((px + py) & 1) ? c1 : c2;
+            if (color >= 0)
+                putpixel_raw(px, py, (uint8_t)color);
+        }
+    }
+
+    mark_dirty(x, y, w, h);
+}

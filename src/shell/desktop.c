@@ -9,7 +9,9 @@
 #include "../lib/palette.h"
 #include "../lib/fonts.h"
 #include "../lib/app.h"
+#include "../lib/display.h"
 #include "progman.h"
+#include "cpl_screen.h"
 
 OSLET_APP("Desktop", OSLET_KIND_DESKTOP, "C:/ICONS/OSLET.ICO", OSLET_APP_FLAG_NONE);
 #define TASKBAR_Y (WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT)
@@ -56,6 +58,8 @@ sys_time_t current = {0};
 static gfx_cached_bmp_t cached_wallpaper = {0};
 static int wallpaper_x = 0;
 static int wallpaper_y = 0;
+static int desktop_layout_width;
+static int desktop_layout_height;
 
 static int taskbar_add_button(const char *icon_path, const char *action) {
     if (taskbar_button_count >= MAX_TASKBAR_BUTTONS) return -1;
@@ -400,12 +404,40 @@ static int taskbar_click(int mx, int my, unsigned char mb, int *state_changed) {
 } 
 
 static void desktop_redraw(void) {
+    sys_win_force_full_redraw();
+    (void)sys_win_check_redraw();
     sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, TASKBAR_Y, settings.color);
     draw_wallpaper();
     taskbar_draw();
     clock_draw();
     sys_win_invalidate_icons();
     sys_win_redraw_all();
+}
+
+int desktop_refresh_display(void) {
+    if (oslet_display_init() != 0) return -1;
+    if (desktop_layout_width == WM_SCREEN_WIDTH &&
+        desktop_layout_height == WM_SCREEN_HEIGHT) return 0;
+    desktop_layout_width = WM_SCREEN_WIDTH;
+    desktop_layout_height = WM_SCREEN_HEIGHT;
+    if (cached_wallpaper.data) {
+        sys_gfx_free_cached(&cached_wallpaper);
+        cached_wallpaper.data = 0;
+    }
+    cache_wallpaper();
+    for (int i = 0; i < taskbar_button_count; ++i)
+        taskbar_buttons[i].y = TASKBAR_Y + 3;
+    sys_win_force_full_redraw();
+    return 1;
+}
+
+void desktop_present_display(void) {
+    int mx, my;
+    unsigned char buttons;
+    desktop_redraw();
+    sys_get_mouse_state(&mx, &my, &buttons);
+    sys_mouse_draw_cursor(mx, my, 1);
+    sys_gfx_swap();
 }
 
 /* Called by cpanel */
@@ -590,7 +622,9 @@ static void pump_all_program_events(int mx, int my, unsigned char mb) {
                     if (ctrl && ctrl->icon.dragging) icon_dragging = 1;
                 }
             }
-            int should_process = (topmost == form) || gform->dragging || gform->resizing || icon_dragging;
+            int should_process = (topmost == form) || gform->dragging ||
+                                 gform->resizing || icon_dragging ||
+                                 gform->display_resize_pending;
             
             if (!should_process) continue;
 
@@ -662,13 +696,27 @@ static void desktop_handle_messages(void) {
 
 __attribute__((section(".entry"), used))
 void _start(void) {
-    int mx = 320;
-    int my = 240;
+    char args[16] = "";
+    int from_text = sys_getargs(args, sizeof(args)) && strcmp(args, "/text") == 0;
+    int display_info_status = oslet_display_init();
+    desktop_layout_width = WM_SCREEN_WIDTH;
+    desktop_layout_height = WM_SCREEN_HEIGHT;
+    int mx = WM_SCREEN_WIDTH / 2;
+    int my = WM_SCREEN_HEIGHT / 2;
     unsigned char mb;
 
-    sys_gfx_enter();
+    if (sys_gfx_enter() != 0) {
+        sys_write("Could not restore the desktop display.\n");
+        if (sys_spawn_async_args("C:/SHELL.ELF", "/d") <= 0)
+            sys_write("Could not restart the shell.\n");
+        sys_exit();
+        return;
+    }
+    if (display_info_status != 0)
+        sys_win_msgbox("Unable to query display dimensions; using 640x480 defaults.",
+                       "OK", "Display");
     load_settings();
-    load_palette_settings();
+    if (!from_text) load_palette_settings();
     cache_wallpaper();
 
     sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT, settings.color);
@@ -702,10 +750,18 @@ void _start(void) {
     clock_draw();
 
     int exit_requested = 0;
+    desktop_present_display();
+    if (!from_text) screen_restore_display();
     int taskbar_needs_redraw = 0;
     int gk = 0;
 
     while (!exit_requested) {
+        int display_changed = desktop_refresh_display();
+        if (display_changed < 0) {
+            sys_win_msgbox("Unable to query display dimensions.", "OK", "Display");
+            break;
+        }
+        if (display_changed) desktop_redraw();
         desktop_handle_messages();
 
         if (sys_take_textmode_request()) {
@@ -808,6 +864,7 @@ void _start(void) {
             desktop_redraw_rect(dirty[0], dirty[1], dirty[2], dirty[3]);
         }
 
+        sys_get_mouse_state(&mx, &my, &mb);
         sys_mouse_draw_cursor(mx, my, 0);
         sys_gfx_swap();
         sys_yield();

@@ -18,6 +18,8 @@
 #include "drivers/usb.h"
 #include "drivers/fat32.h"
 #include "arch/gdt.h"
+#include "arch/multiboot.h"
+#include "arch/vbe_bios.h"
 #include "win/window.h"
 #include "win/theme.h"
 
@@ -26,22 +28,18 @@ extern void pic_remap(void);
 extern void shell_init(void);
 extern void shell_run(void);
 extern uint8_t __kernel_end;
+extern uint32_t multiboot_info_ptr;
 
 uint32_t boot_device = 0xFFFFFFFF;
 
 static void boot_sequence(void) {
+    multiboot_info_t *mbi = (multiboot_info_t*)(uintptr_t)multiboot_info_ptr;
+    gfx_set_boot_framebuffer(mbi);
+    if (!gfx_has_boot_framebuffer()) gfx_disable_boot_framebuffer();
     vga_use_as_console();
     vga_reset_textmode();
-    
-    typedef struct {
-        uint32_t flags;
-        uint32_t mem_lower;
-        uint32_t mem_upper;
-        uint32_t boot_device;
-    } multiboot_info_header_t;
-    
-    multiboot_info_header_t *mbi = (multiboot_info_header_t*)(uintptr_t)multiboot_info_ptr;
-    if (mbi && (mbi->flags & 0x02)) {
+
+    if (mbi && (mbi->flags & MULTIBOOT_INFO_FLAG_BOOTDEV)) {
         boot_device = mbi->boot_device;
     }
         
@@ -88,12 +86,15 @@ static void boot_sequence(void) {
     
     mm_early_init((uintptr_t)&__kernel_end);
     pmm_init_from_multiboot((uint32_t)multiboot_info_ptr);
+    int vbe_ready = vbe_bios_init() == 0;
     
     printf("[ ");
     vga_set_color(0, 10);
     printf("OK");
     vga_set_color(0, 7);
     printf(" ] Memory manager\n");
+    if (!vbe_ready)
+        printf("[SKIP] VBE low-memory reservation unavailable\n");
     
     __asm__ volatile ("cli");
     
@@ -108,6 +109,12 @@ static void boot_sequence(void) {
         vga_set_color(0, 7);
         printf("] Paging error         \n");
         for (;;) __asm__ volatile ("hlt");
+    }
+
+    if (gfx_has_boot_framebuffer() && gfx_map_boot_framebuffer() != 0) {
+        gfx_disable_boot_framebuffer();
+        vga_use_as_console();
+        printf("Framebuffer mapping failed; using VGA text mode\n");
     }
     
     pmm_identity_map_bitmap();    

@@ -61,6 +61,9 @@ typedef struct {
 /* Base address for dynamically allocated processes */
 #define EXEC_BASE_ADDR   0x08000000  /* Standard Linux user-space base */
 #define EXEC_MAX_SIZE    0x00800000  /* 8MB max per process */
+#define EXEC_SLOT_BASE   0x08000000u
+#define EXEC_SLOT_SIZE   0x00400000u
+#define EXEC_SLOT_COUNT  16
 
 /* Image structure - extended for ELF */
 typedef struct {

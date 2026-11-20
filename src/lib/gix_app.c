@@ -1,4 +1,5 @@
 #include "gix_app.h"
+#include "display.h"
 
 static void *gix_windows[GIX_APP_MAX_WINDOWS];
 static int gix_window_count = 0;
@@ -89,6 +90,11 @@ void gix_app_run(const gix_app_desc_t *desc) {
     void *form;
 
     if (!desc) {
+        sys_exit();
+        return;
+    }
+    if (oslet_display_init() != 0) {
+        sys_win_msgbox("Unable to query display dimensions.", "OK", "Application");
         sys_exit();
         return;
     }

@@ -1,5 +1,6 @@
 #pragma once
 #include <stddef.h>
+#include <stdint.h>
 
 /* 
  * Special key codes - using values 0x80-0xFF range
@@ -69,6 +70,7 @@
 #define KEY_ALT_RELEASE 0xC1
 
 void keyboard_init(void);
+void keyboard_handle_byte(uint8_t scancode);
 
 int kbd_getchar(void);
 int kbd_getchar_nonblock(void);

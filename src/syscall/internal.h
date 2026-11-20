@@ -11,6 +11,8 @@
 #include "../mem/heap.h"
 #include "../mem/paging.h"
 #include "../drivers/graphics.h"
+#include "../drivers/graphics/screen.h"
+#include "../drivers/graphics/vbe.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/mouse.h"
 #include "../drivers/sb16.h"
@@ -38,3 +40,4 @@ int sys_copy_string(char *dst, uint32_t src, size_t dst_size);
 
 uint32_t handle_window(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t edx);
 int current_task_owns_focused_window(void);
+int sys_display_poll(void);

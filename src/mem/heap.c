@@ -6,6 +6,7 @@
 #include "../task/task.h"
 
 static volatile int heap_lock = 0;
+#define RECLAIM_MIN (64 * 1024)
 
 static inline uint32_t heap_acquire(void) {
     uint32_t eflags;
@@ -26,6 +27,44 @@ uintptr_t heap_end = 0;
 size_t total_allocated = 0;
 size_t total_freed = 0;
 static int heap_ready = 0;
+
+static void release_block_pages(block_t *b) {
+    /* Boundary pages may contain this block's header or its neighbour's. */
+    uintptr_t start = ALIGN_UP((uintptr_t)b + sizeof(*b), PAGE_SIZE);
+    uintptr_t end = ((uintptr_t)b + sizeof(*b) + b->size) & ~(uintptr_t)(PAGE_SIZE - 1);
+    for (uintptr_t page = start; page < end; page += PAGE_SIZE) {
+        uintptr_t phys;
+        if (paging_get_physical(page, &phys) != 0) continue;
+        if (paging_unmap_page(page) != 0) {
+            printf("Heap: failed to unmap page at %p\n", (void*)page);
+            continue;
+        }
+        pmm_free_frame(phys);
+    }
+}
+
+static int commit_block_pages(block_t *b, size_t size) {
+    uintptr_t start = ((uintptr_t)b + sizeof(*b)) & ~(uintptr_t)(PAGE_SIZE - 1);
+    uintptr_t end = ALIGN_UP((uintptr_t)b + sizeof(*b) + size, PAGE_SIZE);
+    for (uintptr_t page = start; page < end; page += PAGE_SIZE) {
+        uintptr_t phys;
+        if (paging_get_physical(page, &phys) == 0) continue;
+        phys = pmm_alloc_frame();
+        if (!phys) {
+            printf("Heap: failed to allocate page at %p\n", (void*)page);
+            release_block_pages(b);
+            return -1;
+        }
+        if (paging_map_page(page, phys, P_PRESENT | P_RW) != 0) {
+            printf("Heap: failed to map page at %p\n", (void*)page);
+            pmm_free_frame(phys);
+            release_block_pages(b);
+            return -1;
+        }
+        __asm__ volatile("invlpg (%0)" :: "r"(page) : "memory");
+    }
+    return 0;
+}
 
 static int expand_heap(size_t min_size) {
     if (min_size > (size_t)-1 - (PAGE_SIZE - 1)) return -1;
@@ -100,17 +139,19 @@ static void split_block(block_t *b, size_t size) {
     b->next = new_block;
 }
 
-static void merge_free_blocks(void) {
+static block_t *merge_free_blocks(block_t *block) {
     block_t *curr = heap_start;
     
     while (curr && curr->next) {
         if (curr->free && curr->next->free) {
+            if (curr->next == block) block = curr;
             curr->size += sizeof(block_t) + curr->next->size;
             curr->next = curr->next->next;
         } else {
             curr = curr->next;
         }
     }
+    return block;
 }
 
 void *kmalloc(size_t size) {
@@ -121,6 +162,14 @@ void *kmalloc(size_t size) {
     
     while (curr) {
         if (curr->free && curr->size >= size) {
+            size_t commit_size = curr->size;
+            if (size <= (size_t)-1 - sizeof(block_t) - 16 &&
+                curr->size >= size + sizeof(block_t) + 16)
+                commit_size = size + sizeof(block_t);
+            if (commit_block_pages(curr, commit_size) != 0) {
+                heap_release(eflags);
+                return NULL;
+            }
             split_block(curr, size);
             curr->free = 0;
             total_allocated += size;
@@ -129,6 +178,15 @@ void *kmalloc(size_t size) {
         }
         
         if (!curr->next) {
+            if (curr->free) {
+                uintptr_t old_end = heap_end;
+                if (expand_heap(size - curr->size) != 0) {
+                    heap_release(eflags);
+                    return NULL;
+                }
+                curr->size += heap_end - old_end;
+                continue;
+            }
             if (size > (size_t)-1 - sizeof(block_t)) {
                 heap_release(eflags);
                 return NULL;
@@ -171,8 +229,10 @@ void kfree(void *ptr) {
         return;
     }
     
-    total_freed += b->size;
+    size_t size = b->size;
+    total_freed += size;
     b->free = 1;
-    merge_free_blocks();
+    b = merge_free_blocks(b);
+    if (size >= RECLAIM_MIN) release_block_pages(b);
     heap_release(eflags);
 }

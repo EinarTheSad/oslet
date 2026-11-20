@@ -18,6 +18,7 @@ static int changed_controls_include_icon(gui_form_t *form,
 void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
     set_event(event, SYS_WIN_EVENT_NONE, 0);
     if (!form) return;
+    if (gui_take_display_resize(form, event)) return;
 
     int ctrl_y_offset = 20;
     if (form->menubar_enabled) {

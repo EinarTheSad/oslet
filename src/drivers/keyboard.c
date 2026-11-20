@@ -89,9 +89,7 @@ static int sc_to_letter_index(uint8_t sc) {
     }
 }
 
-static void keyboard_irq(void) {
-    uint8_t sc = inb(0x60);
-    
+void keyboard_handle_byte(uint8_t sc) {
     /* Handle E0 prefix (extended keys) */
     if (sc == 0xE0) {
         prefix_e0 = 1;
@@ -217,6 +215,10 @@ static void keyboard_irq(void) {
         
         if (c) buf_push(c);
     }
+}
+
+static void keyboard_irq(void) {
+    keyboard_handle_byte(inb(0x60));
 }
 
 void keyboard_init(void) {

@@ -18,7 +18,7 @@ static int mouse_y = 240;
 static uint8_t mouse_buttons = 0;
 static uint8_t mouse_cycle = 0;
 static int8_t mouse_byte[3];
-static uint8_t cursor_buffer[CURSOR_SAVE_W * CURSOR_SAVE_H];
+static uint32_t cursor_buffer[CURSOR_SAVE_W * CURSOR_SAVE_H];
 static uint8_t *cursor_bitmap = NULL;
 static int cursor_w = 11;
 static int cursor_h = 19;
@@ -68,6 +68,9 @@ static uint8_t mouse_read(void) {
 }
 
 void mouse_init(void) {
+    mouse_x = GFX_WIDTH / 2;
+    mouse_y = GFX_HEIGHT / 2;
+
     mouse_wait(1);
     outb(0x64, 0xA8);
     
@@ -86,15 +89,8 @@ void mouse_init(void) {
     mouse_read();
 }
 
-void mouse_handler(void) {
-    uint8_t status = inb(0x64);
-    if (!(status & 0x20)) {
-        pic_send_eoi(12);
-        return;
-    }
-    
-    int8_t data = inb(0x60);
-    
+void mouse_handle_byte(uint8_t byte) {
+    int8_t data = (int8_t)byte;
     switch (mouse_cycle) {
         case 0:
             mouse_byte[0] = data;
@@ -110,8 +106,8 @@ void mouse_handler(void) {
             
             mouse_buttons = mouse_byte[0] & 0x07;
             
-            int dx = mouse_byte[1];
-            int dy = mouse_byte[2];
+            int dx = (uint8_t)mouse_byte[1];
+            int dy = (uint8_t)mouse_byte[2];
             
             if (mouse_byte[0] & 0x10) dx |= 0xFFFFFF00;
             if (mouse_byte[0] & 0x20) dy |= 0xFFFFFF00;
@@ -121,17 +117,31 @@ void mouse_handler(void) {
             
             if (mouse_x < 0) mouse_x = 0;
             if (mouse_y < 0) mouse_y = 0;
-            if (mouse_x > 639) mouse_x = 639;
-            if (mouse_y > 479) mouse_y = 479;
+            if (mouse_x >= GFX_WIDTH) mouse_x = GFX_WIDTH - 1;
+            if (mouse_y >= GFX_HEIGHT) mouse_y = GFX_HEIGHT - 1;
             break;
     }
     
+}
+
+void mouse_handler(void) {
+    uint8_t status = inb(0x64);
+    if ((status & 0x21) == 0x21)
+        mouse_handle_byte(inb(0x60));
     pic_send_eoi(12);
 }
 
 int mouse_get_x(void) { return mouse_x; }
 int mouse_get_y(void) { return mouse_y; }
 uint8_t mouse_get_buttons(void) { return mouse_buttons; }
+
+void mouse_display_changed(void) {
+    if (mouse_x >= GFX_WIDTH) mouse_x = GFX_WIDTH - 1;
+    if (mouse_y >= GFX_HEIGHT) mouse_y = GFX_HEIGHT - 1;
+    if (mouse_x < 0) mouse_x = 0;
+    if (mouse_y < 0) mouse_y = 0;
+    mouse_invalidate_buffer();
+}
 
 static const uint8_t cursor[19][11] = {
     {2,0,0,0,0,0,0,0,0,0,0},
@@ -185,7 +195,7 @@ static void mouse_copy_path(char *dest, const char *src) {
 
 static void mouse_free_current_bitmap(void) {
     if (cursor_bitmap && !cursor_is_busy_cache)
-        kfree(cursor_bitmap);
+        gfx_free_bmp(cursor_bitmap);
 
     cursor_bitmap = NULL;
     cursor_is_busy_cache = 0;
@@ -246,7 +256,7 @@ static int mouse_load_cursor_bitmap(const char *path, uint8_t **out_data, int *o
     data = gfx_load_bmp_to_buffer(path, &w, &h);
     if (!data || w <= 0 || h <= 0 || w > CURSOR_MAX_W || h > CURSOR_MAX_H) {
         if (data)
-            kfree(data);
+            gfx_free_bmp(data);
         return -1;
     }
 
@@ -283,7 +293,7 @@ static int mouse_set_saved_cursor_file(const char *path) {
 
     if (!path) {
         if (busy_saved_bitmap)
-            kfree(busy_saved_bitmap);
+            gfx_free_bmp(busy_saved_bitmap);
         busy_saved_bitmap = NULL;
         busy_saved_w = 11;
         busy_saved_h = 19;
@@ -294,7 +304,7 @@ static int mouse_set_saved_cursor_file(const char *path) {
     is_default = mouse_streq(path, CURSOR_DEFAULT_PATH);
     if (is_default && default_cursor_missing) {
         if (busy_saved_bitmap)
-            kfree(busy_saved_bitmap);
+            gfx_free_bmp(busy_saved_bitmap);
         busy_saved_bitmap = NULL;
         busy_saved_w = 11;
         busy_saved_h = 19;
@@ -307,7 +317,7 @@ static int mouse_set_saved_cursor_file(const char *path) {
             default_cursor_checked = 1;
             default_cursor_missing = 1;
             if (busy_saved_bitmap)
-                kfree(busy_saved_bitmap);
+                gfx_free_bmp(busy_saved_bitmap);
             busy_saved_bitmap = NULL;
             busy_saved_w = 11;
             busy_saved_h = 19;
@@ -317,7 +327,7 @@ static int mouse_set_saved_cursor_file(const char *path) {
     }
 
     if (busy_saved_bitmap)
-        kfree(busy_saved_bitmap);
+        gfx_free_bmp(busy_saved_bitmap);
 
     busy_saved_bitmap = data;
     busy_saved_w = w;
@@ -500,9 +510,9 @@ void mouse_save(int x, int y) {
             int sx = x + col;
             int sy = y + row;
             if (sx >= 0 && sx < GFX_WIDTH && sy >= 0 && sy < GFX_HEIGHT)
-                cursor_buffer[row * CURSOR_SAVE_W + col] = gfx_getpixel(sx, sy);
+                cursor_buffer[row * CURSOR_SAVE_W + col] = gfx_get_color(sx, sy);
             else
-                cursor_buffer[row * CURSOR_SAVE_W + col] = 0;
+                cursor_buffer[row * CURSOR_SAVE_W + col] = 0x80000000u;
         }
     }
     saved_x = x;
@@ -518,7 +528,7 @@ void mouse_restore(void) {
             int sx = saved_x + col;
             int sy = saved_y + row;
             if (sx >= 0 && sx < GFX_WIDTH && sy >= 0 && sy < GFX_HEIGHT)
-                gfx_putpixel(sx, sy, cursor_buffer[row * CURSOR_SAVE_W + col]);
+                gfx_put_color(sx, sy, cursor_buffer[row * CURSOR_SAVE_W + col]);
         }
     }
 }

@@ -38,9 +38,9 @@ typedef struct {
 #define ELF32_R_TYPE(i) ((i) & 0xFF)
 
 /* Process slots */
-#define MAX_PROCESS_SLOTS 16
-#define SLOT_SIZE         0x00400000  /* 4MB per slot */
-#define SLOT_BASE         0x08000000
+#define MAX_PROCESS_SLOTS EXEC_SLOT_COUNT
+#define SLOT_SIZE         EXEC_SLOT_SIZE
+#define SLOT_BASE         EXEC_SLOT_BASE
 
 static uint8_t slot_used[MAX_PROCESS_SLOTS] = {0};
 

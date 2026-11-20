@@ -11,6 +11,8 @@ extern int wm_initialized;
 
 void gui_request_full_redraw(void);
 void gui_invalidate_saved_backgrounds(window_manager_t *wm);
+void gui_display_changed(void);
+int gui_take_display_resize(gui_form_t *form, sys_win_event_t *event);
 
 typedef struct {
     int x;

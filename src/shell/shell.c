@@ -497,7 +497,7 @@ static void cmd_exit(int argc, char *argv[]) {
     sys_readline(conf, sizeof(conf));
     if (!strcmp(conf,"Y") || !strcmp(conf,"y")) {
         if (return_to_desktop_on_exit) {
-            int tid = sys_spawn_async("C:/DESKTOP.ELF");
+            int tid = sys_spawn_async_args("C:/DESKTOP.ELF", "/text");
             if (tid <= 0) {
                 sys_setcolor(COLOR_ERROR_BG, COLOR_ERROR_FG);
                 printf("\nCould not return to Desktop.\n");

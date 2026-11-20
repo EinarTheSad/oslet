@@ -185,31 +185,12 @@ void menu_show(menu_t *menu, int x, int y) {
     /* Save background */
     int save_w = menu->w;
     int save_h = menu->h;
-    int row_bytes = (save_w + 1) / 2;
-
     if (menu->saved_bg) {
         kfree(menu->saved_bg);
     }
-    menu->saved_bg = kmalloc(row_bytes * save_h);
+    menu->saved_bg = kmalloc(gfx_region_size(save_w, save_h));
     if (menu->saved_bg) {
-        if (menu->x >= 0 && menu->y >= 0 && menu->x + save_w <= WM_SCREEN_WIDTH && menu->y + save_h <= WM_SCREEN_HEIGHT && (menu->x & 1) == 0) {
-            gfx_read_screen_region_packed(menu->saved_bg, save_w, save_h, menu->x, menu->y);
-        } else {
-            for (int py = 0; py < save_h; py++) {
-                uint8_t *dst_row = menu->saved_bg + py * row_bytes;
-                for (int b = 0; b < row_bytes; b++) dst_row[b] = 0;
-                for (int px = 0; px < save_w; px++) {
-                    int sx = menu->x + px;
-                    int sy = menu->y + py;
-                    if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
-                        uint8_t pix = gfx_getpixel(sx, sy);
-                        int byte_idx = px / 2;
-                        if (px & 1) dst_row[byte_idx] = (dst_row[byte_idx] & 0xF0) | (pix & 0x0F);
-                        else dst_row[byte_idx] = (dst_row[byte_idx] & 0x0F) | (pix << 4);
-                    }
-                }
-            }
-        }
+        gfx_save_region(menu->saved_bg, save_w, save_h, menu->x, menu->y);
     }
 
     menu_draw(menu);
@@ -225,25 +206,7 @@ void menu_hide(menu_t *menu) {
     if (menu->saved_bg) {
         int save_w = menu->w;
         int save_h = menu->h;
-        int row_bytes = (save_w + 1) / 2;
-
-        if (menu->x >= 0 && menu->y >= 0 && menu->x + save_w <= WM_SCREEN_WIDTH && menu->y + save_h <= WM_SCREEN_HEIGHT && (menu->x & 1) == 0) {
-            gfx_write_screen_region_packed(menu->saved_bg, save_w, save_h, menu->x, menu->y);
-        } else {
-            for (int py = 0; py < save_h; py++) {
-                uint8_t *src_row = menu->saved_bg + py * row_bytes;
-                for (int px = 0; px < save_w; px++) {
-                    int sx = menu->x + px;
-                    int sy = menu->y + py;
-                    if (sx >= 0 && sx < WM_SCREEN_WIDTH && sy >= 0 && sy < WM_SCREEN_HEIGHT) {
-                        int byte_idx = px / 2;
-                        uint8_t packed = src_row[byte_idx];
-                        uint8_t pix = (px & 1) ? (packed & 0x0F) : (packed >> 4);
-                        gfx_putpixel(sx, sy, pix);
-                    }
-                }
-            }
-        }
+        gfx_restore_region(menu->saved_bg, save_w, save_h, menu->x, menu->y);
 
         kfree(menu->saved_bg);
         menu->saved_bg = NULL;

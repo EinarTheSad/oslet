@@ -406,10 +406,9 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
         /* Save the screen region before drawing the control */
         int save_w = clip_x2 - clip_x;
         int save_h = clip_y2 - clip_y;
-        int row_bytes = (save_w + 1) / 2;
-        uint8_t *saved_bg = (uint8_t*)kmalloc(row_bytes * save_h);
+        void *saved_bg = kmalloc(gfx_region_size(save_w, save_h));
         if (saved_bg) {
-            gfx_read_screen_region_packed(saved_bg, save_w, save_h, clip_x, clip_y);
+            gfx_save_region(saved_bg, save_w, save_h, clip_x, clip_y);
         }
 
         /* Draw the control normally (may paint over windows on top) */
@@ -433,10 +432,7 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
                     if (top == form) continue;  /* Control should be visible here */
 
                     /* Restore the original pixel from saved background */
-                    int byte_idx = px / 2;
-                    uint8_t pix = saved_bg[py * row_bytes + byte_idx];
-                    uint8_t color = (px & 1) ? (pix & 0x0F) : (pix >> 4);
-                    gfx_putpixel(screen_x, screen_y, color);
+                    gfx_put_color(screen_x, screen_y, gfx_region_color(saved_bg, save_w, px, py));
                 }
             }
             kfree(saved_bg);

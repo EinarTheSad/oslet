@@ -1,12 +1,17 @@
 #pragma once
 #include <stdint.h>
+#include <stddef.h>
 #include "../win/wm_config.h"
+#include "../arch/multiboot.h"
 
-#define GFX_WIDTH       WM_SCREEN_WIDTH
-#define GFX_HEIGHT      WM_SCREEN_HEIGHT
+#define GFX_WIDTH       gfx_width
+#define GFX_HEIGHT      gfx_height
 #define GFX_PLANES      4
-#define GFX_BUFFER_SIZE ((GFX_WIDTH * GFX_HEIGHT) / 2)  /* 153600 bytes - 2 pixels per byte */
+#define GFX_BUFFER_SIZE ((GFX_WIDTH * GFX_HEIGHT + 1) / 2)
 #define GFX_VRAM        ((uint8_t*)0xA0000)
+
+extern int gfx_width;
+extern int gfx_height;
 
 #define COLOR_BLACK         0x00
 #define COLOR_BLUE          0x01
@@ -64,10 +69,22 @@ typedef struct {
 extern uint8_t gfx_palette[16][3];
 
 void gfx_init(void);
+void gfx_set_boot_framebuffer(const multiboot_info_t *info);
+int gfx_map_boot_framebuffer(void);
+int gfx_has_boot_framebuffer(void);
+void gfx_disable_boot_framebuffer(void);
+void gfx_console_draw_cell(int x, int y, uint8_t ch, uint8_t attr);
+void gfx_console_draw_cursor(int x, int y, uint8_t attr);
 void gfx_set_palette_data(const uint8_t palette[16][3]);
-void gfx_enter_mode(void);
+int gfx_enter_mode(void);
 void gfx_exit_mode(void);
+int gfx_enter_textmode(const uint8_t palette[16][3]);
 int gfx_is_active(void);
+int gfx_vbe_try_mode(size_t index);
+int gfx_vbe_confirm_mode(void);
+int gfx_vbe_revert_mode(void);
+int gfx_vbe_mode_pending(void);
+unsigned gfx_physical_depth(void);
 
 void gfx_clear(uint8_t color);
 void gfx_swap_buffers(void);
@@ -75,12 +92,21 @@ uint8_t* gfx_get_backbuffer(void);
 
 void gfx_putpixel(int x, int y, uint8_t color);
 uint8_t gfx_getpixel(int x, int y);
+uint32_t gfx_get_color(int x, int y);
+void gfx_put_color(int x, int y, uint32_t color);
+void gfx_read_screen_region_color(uint32_t *dst, int width, int height, int x, int y);
+void gfx_write_screen_region_color(const uint32_t *src, int width, int height, int x, int y);
+size_t gfx_region_size(int width, int height);
+void gfx_save_region(void *dst, int width, int height, int x, int y);
+void gfx_restore_region(void *src, int width, int height, int x, int y);
+uint32_t gfx_region_color(const void *src, int width, int x, int y);
 void gfx_set_clip_rect(int x, int y, int w, int h);
 void gfx_reset_clip_rect(void);
 int gfx_clip_rect_contains(int x, int y, int w, int h);
 void gfx_line(int x0, int y0, int x1, int y1, uint8_t color);
 void gfx_rect(int x, int y, int w, int h, uint8_t color);
 void gfx_fillrect(int x, int y, int w, int h, uint8_t color);
+void gfx_fillrect_dither(int x, int y, int w, int h, int c1, int c2);
 void gfx_circle(int cx, int cy, int r, uint8_t color);
 void gfx_load_palette(void);
 
@@ -92,6 +118,9 @@ void gfx_fillrect_gradient(int x, int y, int w, int h,
 int gfx_load_bmp_4bit(const char *path, int dest_x, int dest_y);
 int gfx_load_bmp_4bit_ex(const char *path, int dest_x, int dest_y, int transparent);
 uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
+const uint32_t *gfx_bmp_colors(const uint8_t *data);
+int gfx_bmp_set_colors(uint8_t *data, uint32_t *colors);
+void gfx_free_bmp(uint8_t *data);
 void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);
 void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int dest_x, int dest_y, int transparent);
 

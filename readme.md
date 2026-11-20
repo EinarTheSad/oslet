@@ -24,8 +24,6 @@ For development, update the existing disk and then boot it:
 make clean update run
 ```
 
-`make update` builds the kernel and programs, then copies the kernel, resources, apps, INI files, and groups into the existing disk image. `make run` only starts QEMU with the current `disk.img`; it does not mount or modify the disk.
-
 For smaller updates:
 
 ``` bash
@@ -36,8 +34,6 @@ make run                 # boot without writing to disk
 ```
 
 Use the one-program form only when you changed that program and no shared ABI or kernel-side code. If you changed `src/syscall.h`, `src/syscall/`, `src/win/`, or another shared interface, use `make update` so the kernel and all user programs are rebuilt together.
-
-Please note that while the system runs in **QEMU** and **PcEM**, it does not work in VirtualBox. VMware, Bochs, and actual hardware are yet to be tested.
 
 ------------------------------------------------------------------------
 

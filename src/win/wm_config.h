@@ -1,7 +1,17 @@
 #pragma once
 
-#define WM_SCREEN_WIDTH 640
-#define WM_SCREEN_HEIGHT 480
+#ifdef OSLET_KERNEL
+extern int gfx_width;
+extern int gfx_height;
+#define WM_SCREEN_WIDTH gfx_width
+#define WM_SCREEN_HEIGHT gfx_height
+#else
+#include "../lib/display.h"
+#define WM_SCREEN_WIDTH disp_width
+#define WM_SCREEN_HEIGHT disp_height
+#endif
+#define WM_DEFAULT_SCREEN_WIDTH  640
+#define WM_DEFAULT_SCREEN_HEIGHT 480
 #define WM_TASKBAR_HEIGHT 27
 
 #define WM_TITLEBAR_HEIGHT 18

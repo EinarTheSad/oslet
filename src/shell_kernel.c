@@ -13,7 +13,7 @@ int bootscreen(void) {
     if (!f) return 0;
     fat32_close(f);
 
-    gfx_enter_mode();
+    if (gfx_enter_mode() != 0) return 0;
     gfx_clear(COLOR_BLACK);
 
     int bmp_w = 0, bmp_h = 0;
@@ -28,7 +28,7 @@ int bootscreen(void) {
     int dest_y = (GFX_HEIGHT - bmp_h) / 2;
     gfx_draw_cached_bmp_ex(bmp, bmp_w, bmp_h, dest_x, dest_y, 0);
     gfx_swap_buffers();
-    kfree(bmp);
+    gfx_free_bmp(bmp);
 
     /* Wait for ~2 seconds */
     timer_wait(timer_get_frequency() * 2);

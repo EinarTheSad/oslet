@@ -5,6 +5,7 @@
 #include "../lib/stdio.h"
 #include "../lib/stdlib.h"
 #include "../lib/ini.h"
+#include "../win/wm_config.h"
 
 #define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
 
@@ -125,7 +126,9 @@ static int volume_init(prog_instance_t *inst) {
 
     load_volume(state);
 
-    state->form = sys_win_create_form("Sound", 555, 278, 85, 175);
+    state->form = sys_win_create_form("Sound", WM_SCREEN_WIDTH - 85,
+                                      WM_SCREEN_HEIGHT - WM_TASKBAR_HEIGHT - 175,
+                                      85, 175);
     if (!state->form) {
         free(state);
         return -1;

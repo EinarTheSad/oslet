@@ -61,6 +61,48 @@ void gui_invalidate_saved_backgrounds(window_manager_t *wm) {
     }
 }
 
+void gui_display_changed(void) {
+    mouse_display_changed();
+    if (!wm_initialized) return;
+    gui_invalidate_saved_backgrounds(&global_wm);
+    wm_display_changed(&global_wm);
+    for (int i = 0; i < global_wm.count; ++i) {
+        gui_form_t *form = global_wm.windows[i];
+        if (!form) continue;
+        form->display_resize_pending = 1;
+        form->window_menu.visible = 0;
+        form->window_menu.just_opened = 0;
+        if (form->menubar_enabled) {
+            form->menubar.active_menu = -1;
+            form->menubar.hovered_menu = -1;
+            for (int j = 0; j < form->menubar.menu_count && j < MENUBAR_MAX_MENUS; ++j) {
+                menu_t *menu = &form->menubar.menus[j].menu;
+                if (menu->saved_bg) {
+                    kfree(menu->saved_bg);
+                    menu->saved_bg = NULL;
+                }
+                menu->visible = 0;
+                menu->just_opened = 0;
+            }
+        }
+        for (int j = 0; form->controls && j < form->ctrl_count; ++j) {
+            gui_control_t *ctrl = &form->controls[j];
+            if ((ctrl->type & 0x7f) == CTRL_DROPDOWN) {
+                ctrl->dropdown.dropdown_open = 0;
+                ctrl->dropdown.pressed = 0;
+            }
+        }
+    }
+}
+
+int gui_take_display_resize(gui_form_t *form, sys_win_event_t *event) {
+    if (!form || !event || !form->display_resize_pending) return 0;
+    form->display_resize_pending = 0;
+    event->type = SYS_WIN_EVENT_RESIZE;
+    event->id = 0;
+    return 1;
+}
+
 void gui_request_full_redraw(void) {
     global_wm.needs_full_redraw = 1;
     global_wm.backgrounds_invalid = 1;
@@ -87,7 +129,9 @@ int current_task_owns_focused_window(void) {
 uint32_t handle_window(uint32_t al, uint32_t ebx,
                                uint32_t ecx, uint32_t edx) {
     switch (al) {
-        case 0x00: { /* SYS_WIN_MSGBOX - Modal message box */
+        case 0x00: /* SYS_WIN_MSGBOX */
+        case 0x2a: { /* SYS_WIN_DISPLAY_CONFIRM */
+            if (al == 0x2a && !gfx_vbe_mode_pending()) return (uint32_t)-1;
             char msg[256];
             char btn[64];
             char title[64];
@@ -120,9 +164,15 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Modal event loop */
             int dragging = 0;
             int drag_start_x = 0, drag_start_y = 0;
-            uint8_t last_mb = 0;
+            uint8_t last_mb = mouse_get_buttons();
 
             while (1) {
+                if (sys_display_poll() == 1 ||
+                    (al == 0x2a && !gfx_vbe_mode_pending())) {
+                    if (box->base.saved_bg) kfree(box->base.saved_bg);
+                    kfree(box);
+                    return (uint32_t)-1;
+                }
                 mx = mouse_get_x();
                 my = mouse_get_y();
                 uint8_t mb = mouse_get_buttons();
@@ -149,6 +199,8 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                                      mouse_invalidate_buffer();
                                      win_restore_background(&box->base);
                                      gfx_swap_buffers();
+                                     if (box->base.saved_bg)
+                                         kfree(box->base.saved_bg);
                                      kfree(box);
                                      return clicked;
                         }
@@ -184,6 +236,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 mouse_save(mx, my);
                 mouse_draw_cursor(mx, my);
                 gfx_swap_buffers();
+                __asm__ volatile("sti\n\thlt\n\tcli" ::: "memory");
             }
 
             return 0;
@@ -235,6 +288,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             form->window_menu.hovered_item = -1;
             /* Initialize menubar */
             form->menubar_enabled = 0;
+            form->display_resize_pending = 0;
 
             /* Track owner task for cleanup on process exit */
             task_t *current = task_get_current();

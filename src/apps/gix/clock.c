@@ -1,6 +1,7 @@
 #include "../../syscall.h"
 #include "../../lib/app.h"
 #include "../../lib/gix_app.h"
+#include "../../lib/display.h"
 
 OSLET_APP("Clock", OSLET_KIND_GIX, "C:/ICONS/CLOCK.ICO", OSLET_APP_FLAG_NONE);
 
@@ -60,5 +61,11 @@ void _start(void) {
         .on_tick = clock_tick
     };
 
+    if (oslet_display_init() != 0) {
+        sys_win_msgbox("Unable to query display dimensions.", "OK", "Clock");
+        sys_exit();
+        return;
+    }
+    app.x = disp_width - WIN_W;
     gix_app_run(&app);
 }

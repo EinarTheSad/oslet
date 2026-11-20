@@ -23,12 +23,12 @@
 #define MAIN_WIDTH 138
 #define MAIN_HEIGHT 348
 #define WIN_X 17
-#define WIN_Y 89
+#define WIN_Y (WM_SCREEN_HEIGHT - 391)
 
 #define SUBWIN_MAX_WIDTH 330
 #define SUBWIN_MAX_HEIGHT 200
-#define SUBWIN_X 150
-#define SUBWIN_Y 89
+#define SUBWIN_X 155
+#define SUBWIN_Y WIN_Y
 #define CASCADE_OFFSET_X 40
 #define CASCADE_OFFSET_Y 40
 
@@ -361,7 +361,7 @@ static int g_pending_win_x = 0;
 static int g_pending_win_y = 0;
 static int g_main_geom_valid = 0;
 static int g_main_win_x = WIN_X;
-static int g_main_win_y = WIN_Y;
+static int g_main_win_y = 0;
 static int g_main_win_w = MAIN_WIDTH;
 static int g_main_win_h = MAIN_HEIGHT;
 static void rebuild_layout(startman_state_t *state);

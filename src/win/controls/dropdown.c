@@ -45,6 +45,16 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
     gfx_hline(abs_x + 1, abs_y + 1, field_w - 1, COLOR_DARK_GRAY);
     gfx_vline(abs_x + 1, abs_y + 1, control->h - 1, COLOR_DARK_GRAY);
 
+    if (font->data) {
+        char item_text[64];
+        int selected = control->dropdown.cursor_pos;
+        dropdown_get_item(control->text, selected, item_text, sizeof(item_text));
+
+        int text_x = abs_x + 4;
+        int text_y = abs_y + (control->h - 12) / 2 + 3;
+        bmf_printf(text_x, text_y, font, size, control->fg, "%s", item_text);
+    }
+
     int btn_x = abs_x + field_w;
     gfx_fillrect(btn_x, abs_y, btn_w, control->h, theme->button_color);
 
@@ -74,16 +84,6 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
             gfx_hline(arrow_x - 3 + i, arrow_y + i, 7 - i * 2, COLOR_BLACK);
         }
         gfx_fillrect(arrow_x - 1, arrow_y - 3, 3, 3, COLOR_BLACK);
-    }
-
-    if (font->data) {
-        char item_text[64];
-        int selected = control->dropdown.cursor_pos;
-        dropdown_get_item(control->text, selected, item_text, sizeof(item_text));
-
-        int text_x = abs_x + 4;
-        int text_y = abs_y + (control->h - 12) / 2 + 3;
-        bmf_printf(text_x, text_y, font, size, control->fg, "%s", item_text);
     }
 }
 
@@ -125,10 +125,10 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control, int y_offset
         control->dropdown.dropdown_saved_h = list_h;
         control->dropdown.dropdown_saved_x = abs_x;
         control->dropdown.dropdown_saved_y = list_y;
-        int row_bytes = (control->dropdown.dropdown_saved_w + 1) / 2;
-        control->dropdown.dropdown_saved_bg = kmalloc(row_bytes * control->dropdown.dropdown_saved_h);
+        control->dropdown.dropdown_saved_bg = kmalloc(gfx_region_size(
+            control->dropdown.dropdown_saved_w, control->dropdown.dropdown_saved_h));
         if (control->dropdown.dropdown_saved_bg) {
-            gfx_read_screen_region_packed(control->dropdown.dropdown_saved_bg,
+            gfx_save_region(control->dropdown.dropdown_saved_bg,
                                           control->dropdown.dropdown_saved_w,
                                           control->dropdown.dropdown_saved_h,
                                           control->dropdown.dropdown_saved_x,
@@ -204,7 +204,7 @@ void ctrl_hide_dropdown_list(window_t *win, gui_control_t *control) {
     if (!control) return;
 
     if (control->dropdown.dropdown_saved_bg) {
-        gfx_write_screen_region_packed(control->dropdown.dropdown_saved_bg,
+        gfx_restore_region(control->dropdown.dropdown_saved_bg,
                                        control->dropdown.dropdown_saved_w,
                                        control->dropdown.dropdown_saved_h,
                                        control->dropdown.dropdown_saved_x,
