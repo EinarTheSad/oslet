@@ -1,11 +1,177 @@
 #include "ini.h"
 #include "string.h"
 #include "stdlib.h"
+#include "../syscall.h"
 
 void ini_init(ini_parser_t *ini, char *buffer) {
     ini->data = buffer;
     ini->ptr = buffer;
     ini->section[0] = '\0';
+}
+
+static int ini_line_name(const char *line, int len, char *name, int section) {
+    while (len && (*line == ' ' || *line == '\t')) { line++; len--; }
+    if (section) {
+        if (!len || *line++ != '[') return 0;
+        len--;
+    } else if (!len || *line == ';' || *line == '#' || *line == '[') {
+        return 0;
+    }
+    int n = 0;
+    while (len && *line != (section ? ']' : '=')) {
+        if (n >= 63) return -1;
+        name[n++] = *line++;
+        len--;
+    }
+    if (!len) return 0;
+    while (n && (name[n - 1] == ' ' || name[n - 1] == '\t')) n--;
+    name[n] = '\0';
+    return n ? 1 : 0;
+}
+
+static int ini_append(char *out, int size, int *used, const char *text, int len) {
+    if (len < 0 || len >= size - *used) return -1;
+    memcpy(out + *used, text, len);
+    *used += len;
+    out[*used] = '\0';
+    return 0;
+}
+
+int ini_update_section(const char *data, const char *section, const char *new_text,
+                       char *outbuf, int outbuf_size) {
+    struct update { const char *line; int len; int found; char name[64]; } updates[32];
+    int count = 0, used = 0, in_section = 0, seen_section = 0;
+    if (!data || !section || !new_text || !outbuf || outbuf_size <= 0) return -1;
+    outbuf[0] = '\0';
+    for (const char *p = new_text; *p;) {
+        const char *end = p;
+        while (*end && *end != '\n') end++;
+        int len = end - p;
+        char name[64];
+        int key = ini_line_name(p, len, name, 0);
+        if (key < 0) return -1;
+        if (key) {
+            if (count == 32) return -1;
+            updates[count].line = p;
+            updates[count].len = len;
+            updates[count].found = 0;
+            strcpy(updates[count].name, name);
+            count++;
+        }
+        p = *end ? end + 1 : end;
+    }
+    for (const char *p = data; *p;) {
+        const char *end = p;
+        while (*end && *end != '\n') end++;
+        const char *next = *end ? end + 1 : end;
+        int len = end - p;
+        char name[64];
+        int is_section = ini_line_name(p, len, name, 1);
+        if (is_section < 0) return -1;
+        if (is_section) {
+            if (in_section) {
+                for (int i = 0; i < count; i++) {
+                    if (updates[i].found) continue;
+                    if (used && outbuf[used - 1] != '\n' &&
+                        ini_append(outbuf, outbuf_size, &used, "\n", 1) != 0) return -1;
+                    if (ini_append(outbuf, outbuf_size, &used, updates[i].line, updates[i].len) != 0 ||
+                        ini_append(outbuf, outbuf_size, &used, "\n", 1) != 0) return -1;
+                    updates[i].found = 1;
+                }
+            }
+            in_section = strcasecmp(name, section) == 0;
+            if (in_section) seen_section = 1;
+        } else if (in_section) {
+            int key = ini_line_name(p, len, name, 0);
+            if (key < 0) return -1;
+            if (key) {
+                for (int i = 0; i < count; i++) {
+                    if (strcasecmp(name, updates[i].name) != 0) continue;
+                    if (ini_append(outbuf, outbuf_size, &used, updates[i].line, updates[i].len) != 0 ||
+                        ini_append(outbuf, outbuf_size, &used, "\n", 1) != 0) return -1;
+                    updates[i].found = 1;
+                    p = next;
+                    goto next_line;
+                }
+            }
+        }
+        if (ini_append(outbuf, outbuf_size, &used, p, next - p) != 0) return -1;
+        p = next;
+next_line:;
+    }
+    if (!seen_section) {
+        if (used && outbuf[used - 1] != '\n' &&
+            ini_append(outbuf, outbuf_size, &used, "\n", 1) != 0) return -1;
+        if (ini_append(outbuf, outbuf_size, &used, "[", 1) != 0 ||
+            ini_append(outbuf, outbuf_size, &used, section, strlen(section)) != 0 ||
+            ini_append(outbuf, outbuf_size, &used, "]\n", 2) != 0) return -1;
+    }
+    for (int i = 0; i < count; i++) {
+        if (updates[i].found) continue;
+        if (used && outbuf[used - 1] != '\n' &&
+            ini_append(outbuf, outbuf_size, &used, "\n", 1) != 0) return -1;
+        if (ini_append(outbuf, outbuf_size, &used, updates[i].line, updates[i].len) != 0 ||
+            ini_append(outbuf, outbuf_size, &used, "\n", 1) != 0) return -1;
+    }
+    return used;
+}
+
+char *ini_read_file(const char *path) {
+    const int capacity = 16384;
+    char *data = malloc(capacity);
+    if (!data) return NULL;
+    int fd = sys_open(path, "r");
+    if (fd < 0) {
+        free(data);
+        return NULL;
+    }
+    int used = 0, n = 0;
+    while (used < capacity - 1) {
+        n = sys_read(fd, data + used, capacity - 1 - used);
+        if (n <= 0) break;
+        used += n;
+    }
+    if (used == capacity - 1) {
+        char extra;
+        n = sys_read(fd, &extra, 1);
+        if (n != 0) n = -1;
+    }
+    int closed = sys_close(fd);
+    if (n < 0 || closed != 0) {
+        free(data);
+        return NULL;
+    }
+    for (int i = 0; i < used; i++) {
+        if (!data[i]) {
+            free(data);
+            return NULL;
+        }
+    }
+    data[used] = '\0';
+    return data;
+}
+
+int ini_save_section(const char *path, const char *section, const char *new_text) {
+    const int capacity = 16384;
+    char *data = ini_read_file(path);
+    char *out = malloc(capacity);
+    if (!data || !out) {
+        if (data) free(data);
+        if (out) free(out);
+        return -1;
+    }
+    int result = -1;
+    int length = ini_update_section(data, section, new_text, out, capacity);
+    if (length < 0) goto done;
+    int fd = sys_open(path, "w");
+    if (fd < 0) goto done;
+    int n = sys_write_file(fd, out, length);
+    int closed = sys_close(fd);
+    if (n == length && closed == 0) result = 0;
+done:
+    free(data);
+    free(out);
+    return result;
 }
 
 /* Replace or insert a section while preserving the rest of the file. */

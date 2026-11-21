@@ -41,3 +41,13 @@ int ini_get_color(ini_parser_t *ini, const char *section, const char *key, int d
  * Returns number of bytes written to outbuf (excluding terminating NUL), or -1 on overflow.
  */
 int ini_replace_section(const char *data, const char *section, const char *new_text, char *outbuf, int outbuf_size);
+
+/* Update only the keys supplied in new_text, preserving other lines. */
+int ini_update_section(const char *data, const char *section, const char *new_text,
+                       char *outbuf, int outbuf_size);
+
+/* Read an INI file into allocated storage; the caller must free it. */
+char *ini_read_file(const char *path);
+
+/* Read, update and write an existing INI file. */
+int ini_save_section(const char *path, const char *section, const char *new_text);

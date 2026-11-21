@@ -262,7 +262,13 @@ binstall:
 			sudo cp $(BUILD_BIN)/$$f mnt/OSLET/START/; \
 		fi; \
 	done; \
-	sudo cp $(SRC)/ini/*.[iI][nN][iI] mnt/OSLET/ 2>/dev/null || true; \
+	for f in $(SRC)/ini/*.[iI][nN][iI]; do \
+		[ -f "$$f" ] || continue; \
+		name=$$(basename "$$f"); \
+		if [ ! -e "mnt/OSLET/$$name" ] && [ ! -e "mnt/OSLET/$$(echo "$$name" | tr '[:lower:]' '[:upper:]')" ]; then \
+			sudo cp "$$f" mnt/OSLET/; \
+		fi; \
+	done; \
 	sudo cp $(SRC)/grp/*.[gG][rR][pP] mnt/OSLET/START/ 2>/dev/null || true; \
 	sudo umount mnt; \
 	sudo losetup -d $$LOOP; \

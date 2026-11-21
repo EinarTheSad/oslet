@@ -358,6 +358,7 @@ typedef struct {
 typedef struct {
     bitmap_t *cached_bitmap_orig;
     uint8_t pressed;
+    uint8_t use_fg;                  /* Use control fg instead of theme text */
 } control_button_t;
 
 typedef struct {
@@ -503,7 +504,7 @@ typedef struct gui_control_s {
     uint8_t font_size;
     int16_t x, y;
     uint16_t w, h;
-    int fg, bg;
+    int fg, bg; /* -1 selects the theme default where supported */
     uint8_t border;
     uint8_t border_color;
     uint8_t _reserved[8];  /* Padding to align union to 8-byte boundary for bitmap_t* */
@@ -634,7 +635,14 @@ typedef struct {
     uint8_t taskbar_color;
     uint8_t start_button_color;
     uint8_t desktop_color;
+    uint8_t control_color;
+    uint8_t frame_shine;
+    uint8_t highlight_color;
+    uint8_t hover_color;
 } sys_theme_t;
+
+/* For window icon captions, negative values select system text. */
+#define CTRL_ICON_SYSTEM_TEXT (-2)
 
 void syscall_init(void);
 uint32_t syscall_handler(uint32_t eax, uint32_t ebx, uint32_t ecx, uint32_t edx);

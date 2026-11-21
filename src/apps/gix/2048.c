@@ -238,8 +238,8 @@ static gui_control_t Form1_controls[] = {
     { .type = CTRL_BUTTON, .x = 48, .y = 128, .w = 40, .h = 40, .fg = 0, .bg = 7, .text = "", .id = 14, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
     { .type = CTRL_BUTTON, .x = 88, .y = 128, .w = 40, .h = 40, .fg = 0, .bg = 7, .text = "", .id = 15, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
     { .type = CTRL_BUTTON, .x = 128, .y = 128, .w = 40, .h = 40, .fg = 0, .bg = 7, .text = "", .id = 16, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_LABEL, .x = 8, .y = 176, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "Score:", .id = ID_SCORE_LABEL, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_LABEL, .x = 56, .y = 176, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "0", .id = ID_SCORE_VALUE, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
+    { .type = CTRL_LABEL, .x = 8, .y = 176, .w = 0, .h = 0, .fg = -1, .bg = -1, .text = "Score:", .id = ID_SCORE_LABEL, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
+    { .type = CTRL_LABEL, .x = 56, .y = 176, .w = 0, .h = 0, .fg = -1, .bg = -1, .text = "0", .id = ID_SCORE_VALUE, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
 };
 
 static int Form1_handle_event(void *form, const sys_win_event_t *event, void *userdata) {
@@ -315,6 +315,8 @@ void _start(void) {
     sys_win_menubar_add_item(Form1, help_menu, "About", MENU_HELP_ABOUT);
     
     for (int i = 0; i < 18; i++) {
+        if (Form1_controls[i].type == CTRL_BUTTON)
+            Form1_controls[i].button.use_fg = 1;
         sys_win_add_control(Form1, &Form1_controls[i]);
     }
     

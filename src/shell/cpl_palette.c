@@ -141,49 +141,25 @@ static void preview_palette(cpl_palette_state_t *state, int dirty) {
 }
 
 static int load_settings_path(cpl_palette_state_t *state) {
-    int fd = sys_open(SETTINGS_PATH, "r");
-    if (fd < 0) return -1;
-
-    char buffer[1024];
-    int bytes = sys_read(fd, buffer, sizeof(buffer) - 1);
-    sys_close(fd);
-    if (bytes <= 0) return -1;
-
-    buffer[bytes] = '\0';
+    char *buffer = ini_read_file(SETTINGS_PATH);
+    if (!buffer) return -1;
     ini_parser_t ini;
     ini_init(&ini, buffer);
     const char *val = ini_get(&ini, "PALETTE", "FILE");
     if (val && val[0]) copy_path(state->palette_path, val);
+    free(buffer);
     return 0;
 }
 
-static void save_settings_path(cpl_palette_state_t *state) {
-    char read_buf[2048];
-    char out_buf[4096];
+static int save_settings_path(cpl_palette_state_t *state) {
     char section[320];
-    int bytes = 0;
-
-    int fd = sys_open(SETTINGS_PATH, "r");
-    if (fd >= 0) {
-        bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
-        sys_close(fd);
-    }
-    if (bytes > 0) read_buf[bytes] = '\0';
-    else read_buf[0] = '\0';
 
     snprintf(section, sizeof(section),
         "[PALETTE]\r\n"
         "FILE=%s\r\n",
         state->palette_path);
 
-    if (ini_replace_section(read_buf, "PALETTE", section, out_buf, sizeof(out_buf)) < 0)
-        return;
-
-    fd = sys_open(SETTINGS_PATH, "w");
-    if (fd >= 0) {
-        sys_write_file(fd, out_buf, strlen(out_buf));
-        sys_close(fd);
-    }
+    return ini_save_section(SETTINGS_PATH, "PALETTE", section);
 }
 
 static int apply_palette_setting(cpl_palette_state_t *state) {
@@ -195,7 +171,10 @@ static int apply_palette_setting(cpl_palette_state_t *state) {
         return -1;
     }
 
-    save_settings_path(state);
+    if (save_settings_path(state) != 0) {
+        palette_error("Could not save palette setting");
+        return -1;
+    }
     copy_path(state->orig_palette_path, state->palette_path);
     copy_palette(state->orig_palette, state->palette);
     state->preview_dirty = 0;
@@ -385,28 +364,28 @@ static int cpl_palette_init(prog_instance_t *inst) {
     sys_win_set_resizable(state->form, 0);
 
     static gui_control_t controls[] = {
-        { .type = CTRL_FRAME,      .x = 6,   .y = 5,   .w = 190, .h = 50, .fg = 0, .bg = -1, .id = CTRL_FRAME_FILE,    .text = "System palette" },
-        { .type = CTRL_TEXTBOX,    .x = 16,  .y = 28,  .w = 140, .h = 18, .fg = 0, .bg = 15, .id = CTRL_TXT_PATH,      .textbox = { .max_length = 255 }, .text = "" },
+        { .type = CTRL_FRAME,      .x = 6,   .y = 5,   .w = 190, .h = 50, .fg = -1, .bg = -1, .id = CTRL_FRAME_FILE,    .text = "System palette" },
+        { .type = CTRL_TEXTBOX,    .x = 16,  .y = 28,  .w = 140, .h = 18, .fg = -1, .bg = -1, .id = CTRL_TXT_PATH,      .textbox = { .max_length = 255 }, .text = "" },
         { .type = CTRL_BUTTON,     .x = 164, .y = 28,  .w = 22,  .h = 18, .fg = 0, .bg = -1, .id = CTRL_BTN_OPEN,      .text = "..." },
 
-        { .type = CTRL_FRAME,      .x = 202, .y = 5,   .w = 146, .h = 142, .fg = 0, .bg = -1, .id = CTRL_FRAME_PREVIEW, .text = "Colour preview" },
-        { .type = CTRL_LABEL,      .x = 208, .y = 26,  .w = 16,  .h = 16, .fg = 0, .bg = -1, .id = CTRL_SWATCH_SELECT, .border = 1, .border_color = 0, .text = "" },
+        { .type = CTRL_FRAME,      .x = 202, .y = 5,   .w = 146, .h = 142, .fg = -1, .bg = -1, .id = CTRL_FRAME_PREVIEW, .text = "Colour preview" },
+        { .type = CTRL_LABEL,      .x = 208, .y = 26,  .w = 16,  .h = 16, .fg = -1, .bg = -1, .id = CTRL_SWATCH_SELECT, .border = 1, .border_color = 0, .text = "" },
         { .type = CTRL_PICTUREBOX, .x = 214, .y = 68,  .w = 32,  .h = 32, .fg = 0, .bg = -1, .id = CTRL_ICON_ONE,      .text = "C:/ICONS/VIEWER.ICO" },
         { .type = CTRL_PICTUREBOX, .x = 263, .y = 68,  .w = 32,  .h = 32, .fg = 0, .bg = -1, .id = CTRL_ICON_TWO,      .text = "C:/ICONS/OSLET.ICO" },
         { .type = CTRL_PICTUREBOX, .x = 308, .y = 68,  .w = 32,  .h = 32, .fg = 0, .bg = -1, .id = CTRL_ICON_THREE,    .text = "C:/ICONS/CABINET.ICO" },
-        { .type = CTRL_LABEL,      .x = 253, .y = 112, .w = 44,  .h = 24, .fg = 0, .bg = 0,  .id = CTRL_PREVIEW_COLOR, .border = 1, .border_color = 0, .text = "" },
+        { .type = CTRL_LABEL,      .x = 253, .y = 112, .w = 44,  .h = 24, .fg = -1, .bg = 0,  .id = CTRL_PREVIEW_COLOR, .border = 1, .border_color = 0, .text = "" },
 
-        { .type = CTRL_LABEL,      .x = 6,   .y = 72,                    .fg = 0, .bg = -1, .id = CTRL_LBL_RED,   .text = "Red" },
+        { .type = CTRL_LABEL,      .x = 6,   .y = 72,                    .fg = -1, .bg = -1, .id = CTRL_LBL_RED,   .text = "Red" },
         { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 70,  .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_RED,   .scrollbar = { .max_length = 255, .checked = 1 } },
-        { .type = CTRL_TEXTBOX,    .x = 164, .y = 70,  .w = 30,  .h = 18, .fg = 0, .bg = 15, .id = CTRL_VAL_RED,   .textbox = { .max_length = 4 }, .text = "0" },
+        { .type = CTRL_TEXTBOX,    .x = 164, .y = 70,  .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_RED,   .textbox = { .max_length = 4 }, .text = "0" },
 
-        { .type = CTRL_LABEL,      .x = 6,   .y = 100,                   .fg = 0, .bg = -1, .id = CTRL_LBL_GREEN, .text = "Green" },
+        { .type = CTRL_LABEL,      .x = 6,   .y = 100,                   .fg = -1, .bg = -1, .id = CTRL_LBL_GREEN, .text = "Green" },
         { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 98,  .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_GREEN, .scrollbar = { .max_length = 255, .checked = 1 } },
-        { .type = CTRL_TEXTBOX,    .x = 164, .y = 98,  .w = 30,  .h = 18, .fg = 0, .bg = 15, .id = CTRL_VAL_GREEN, .textbox = { .max_length = 4 }, .text = "0" },
+        { .type = CTRL_TEXTBOX,    .x = 164, .y = 98,  .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_GREEN, .textbox = { .max_length = 4 }, .text = "0" },
 
-        { .type = CTRL_LABEL,      .x = 6,   .y = 128,                   .fg = 0, .bg = -1, .id = CTRL_LBL_BLUE,  .text = "Blue" },
+        { .type = CTRL_LABEL,      .x = 6,   .y = 128,                   .fg = -1, .bg = -1, .id = CTRL_LBL_BLUE,  .text = "Blue" },
         { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 126, .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_BLUE,  .scrollbar = { .max_length = 255, .checked = 1 } },
-        { .type = CTRL_TEXTBOX,    .x = 164, .y = 126, .w = 30,  .h = 18, .fg = 0, .bg = 15, .id = CTRL_VAL_BLUE,  .textbox = { .max_length = 4 }, .text = "0" },
+        { .type = CTRL_TEXTBOX,    .x = 164, .y = 126, .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_BLUE,  .textbox = { .max_length = 4 }, .text = "0" },
 
         { .type = CTRL_BUTTON,     .x = 55,  .y = 164, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_SAVE,   .text = "Save" },
         { .type = CTRL_BUTTON,     .x = 117, .y = 164, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_APPLY,  .text = "Apply" },

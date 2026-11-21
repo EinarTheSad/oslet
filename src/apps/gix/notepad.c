@@ -49,13 +49,13 @@ typedef struct {
 static gui_control_t Form1_controls[] = {
     {
         .type = CTRL_TEXTBOX, .x = TEXTBOX_MARGIN, .y = TEXTBOX_MARGIN,
-        .w = 10, .h = 10, .fg = 0, .bg = -1, .text = "", .id = ID_TEXT,
+        .w = 10, .h = 10, .fg = -1, .bg = -1, .text = "", .id = ID_TEXT,
         .font_type = FONT_NORMAL, .font_size = 12, .border = 1,
         .border_color = 0, .textbox = { .is_multiline = 1 }
     },
     {
         .type = CTRL_TEXTBOX | 0x80, .x = TEXTBOX_MARGIN, .y = 0, .w = 10, .h = FIND_HEIGHT,
-        .fg = 0, .bg = 15, .text = "", .id = ID_FIND_TEXT,
+        .fg = -1, .bg = -1, .text = "", .id = ID_FIND_TEXT,
         .font_type = FONT_NORMAL, .font_size = 12, .border = 1,
         .border_color = 0, .textbox = { .max_length = FIND_TEXT_SIZE }
     },

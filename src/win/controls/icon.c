@@ -38,7 +38,7 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
         for (int py = 0; py < geometry.h; py++) {
             for (int px = 0; px < label_total_w; px++) {
                 if ((px + py) % 2 == 0) {
-                    gfx_putpixel(label_x + px, abs_y + py, 1);
+                    gfx_putpixel(label_x + px, abs_y + py, theme->highlight_color);
                 }
             }
         }
@@ -49,11 +49,13 @@ void ctrl_draw_icon(gui_control_t *control, int abs_x, int abs_y, uint8_t win_bg
     if (control->text[0]) {
         uint8_t text_color;
         if (control->icon.checked) {
-            text_color = 15;
+            text_color = theme_contrast_text(theme->highlight_color);
         } else if (control->icon.use_desktop_text_color) {
             text_color = theme->desktop_icon_text_color;
+        } else if (control->fg == CTRL_ICON_SYSTEM_TEXT) {
+            text_color = theme->text_color;
         } else {
-            text_color = (control->fg >= 0) ? (uint8_t)control->fg : theme->icon_text_color;
+            text_color = (control->fg >= 0) ? (uint8_t)control->fg : theme->text_color;
         }
         int text_y = abs_y + WM_ICON_SIZE + 4;
         if (control->h > 0) {

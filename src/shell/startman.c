@@ -580,7 +580,7 @@ static int startman_init(prog_instance_t *inst) {
         back.y = PADDING_Y;
         back.w = ICON_W;
         back.h = ICON_H;
-        back.fg = 0;
+        back.fg = CTRL_ICON_SYSTEM_TEXT;
         back.bg = 15;
         back.id = CTRL_BACK_BUTTON;
         strcpy(back.text, "..");
@@ -602,7 +602,7 @@ static int startman_init(prog_instance_t *inst) {
         icon.y = y;
         icon.w = ICON_W;
         icon.h = ICON_H;
-        icon.fg = 0;
+        icon.fg = CTRL_ICON_SYSTEM_TEXT;
         icon.bg = 15;
         icon.id = CTRL_APP_BASE + i;
 

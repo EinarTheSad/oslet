@@ -7,8 +7,8 @@ void ctrl_draw_sunken_border(int x, int y, int w, int h) {
     gfx_vline(x, y, h, theme->frame_dark);
     gfx_hline(x + 1, y + h - 1, w - 1, theme->frame_light);
     gfx_vline(x + w - 1, y, h, theme->frame_light);
-    gfx_hline(x + 1, y + 1, w - 2, COLOR_DARK_GRAY);
-    gfx_vline(x + 1, y + 1, h - 2, COLOR_DARK_GRAY);
+    gfx_hline(x + 1, y + 1, w - 2, theme->frame_dark);
+    gfx_vline(x + 1, y + 1, h - 2, theme->frame_dark);
 }
 
 void ctrl_draw_with_offset(window_t *win, gui_control_t *control, int y_offset) {

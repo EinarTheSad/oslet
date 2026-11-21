@@ -12,9 +12,9 @@ static void *Form1 = 0;
 static gui_control_t Form1_controls[] = {
     { .type = CTRL_PICTUREBOX, .x = 2, .y = 0, .w = 296, .h = 82, .fg = 0, .bg = 7, .text = "C:/OSLET/BANNER.BMP", .id = 1, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
     { .type = CTRL_BUTTON, .x = 228, .y = 127, .w = 65, .h = 22, .fg = 0, .bg = -1, .text = "OK", .id = 2, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_LABEL, .x = 7, .y = 89, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "", .id = 3, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_LABEL, .x = 7, .y = 105, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "This project is licensed under GPL3.", .id = 4, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
-    { .type = CTRL_LABEL, .x = 7, .y = 129, .w = 0, .h = 0, .fg = 0, .bg = -1, .text = "", .id = 5, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
+    { .type = CTRL_LABEL, .x = 7, .y = 89, .w = 0, .h = 0, .fg = -1, .bg = -1, .text = "", .id = 3, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
+    { .type = CTRL_LABEL, .x = 7, .y = 105, .w = 0, .h = 0, .fg = -1, .bg = -1, .text = "This project is licensed under GPL3.", .id = 4, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
+    { .type = CTRL_LABEL, .x = 7, .y = 129, .w = 0, .h = 0, .fg = -1, .bg = -1, .text = "", .id = 5, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 }
 };
 
 static int Form1_handle_event(void *form, const sys_win_event_t *event, void *userdata) {

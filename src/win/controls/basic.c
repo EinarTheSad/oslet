@@ -86,15 +86,16 @@ void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
     window_theme_t *theme = theme_get_current();
     /* Use theme button_color when bg is -1 (unset) */
     uint8_t btn_color = (control->bg == -1) ? theme->button_color : control->bg;
+    uint8_t text_color = control->button.use_fg ? ctrl_text_color(control) : theme->text_color;
 
     int has_icon = (control->button.cached_bitmap_orig != NULL);
     int has_text = (control->text[0] != '\0');
     
     /* Don't pass text to win_draw_button if we have an icon - we'll draw it ourselves */
     if (control->button.pressed) {
-        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, has_icon ? "" : control->text, 1);
+        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, text_color, has_icon ? "" : control->text, 1);
     } else {
-        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, has_icon ? "" : control->text, 0);
+        win_draw_button(abs_x, abs_y, control->w, control->h, btn_color, text_color, has_icon ? "" : control->text, 0);
     }
     
     if (has_icon) {
@@ -108,7 +109,7 @@ void ctrl_draw_button(gui_control_t *control, int abs_x, int abs_y) {
             
             int text_x = abs_x + 22;
             int text_y = abs_y + 7;
-            bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", control->text);
+            bmf_printf(text_x, text_y, &font_b, 12, text_color, "%s", control->text);
         } else {
             int icon_x = abs_x + (control->w - bmp->width) / 2 + offset;
             int icon_y = abs_y + (control->h - bmp->height) / 2 + offset;
@@ -188,7 +189,7 @@ static void draw_label(gui_control_t *control, int abs_x, int abs_y, int sunken)
         if (control->bg != -1) {
             gfx_fillrect(abs_x, abs_y, label_w, label_h, control->bg);
         } else if (sunken) {
-            gfx_fillrect(abs_x, abs_y, label_w, label_h, COLOR_WHITE);
+            gfx_fillrect(abs_x, abs_y, label_w, label_h, theme_get_current()->control_color);
         }
 
         if (sunken) {
@@ -211,7 +212,7 @@ static void draw_label(gui_control_t *control, int abs_x, int abs_y, int sunken)
 
         int text_x = abs_x + 2;
         int text_y = abs_y + 5;
-        bmf_printf(text_x, text_y, font, size, control->fg, "%s", formatted_text);
+        bmf_printf(text_x, text_y, font, size, ctrl_text_color(control), "%s", formatted_text);
     }
 }
 
@@ -375,7 +376,7 @@ void ctrl_draw_checkbox(gui_control_t *control, int abs_x, int abs_y) {
 
     int box_size = 13;
 
-    gfx_fillrect(abs_x, abs_y, box_size, box_size, COLOR_WHITE);
+    gfx_fillrect(abs_x, abs_y, box_size, box_size, ctrl_inside_color(control));
 
     // 3D border effect (sunken)
     gfx_hline(abs_x, abs_y, box_size, theme->frame_dark);  // Top
@@ -384,15 +385,15 @@ void ctrl_draw_checkbox(gui_control_t *control, int abs_x, int abs_y) {
     gfx_vline(abs_x + box_size - 1, abs_y, box_size, theme->frame_light);  // Right
 
     // Inner border
-    gfx_hline(abs_x + 1, abs_y + 1, box_size - 2, COLOR_DARK_GRAY);
-    gfx_vline(abs_x + 1, abs_y + 1, box_size - 2, COLOR_DARK_GRAY);
+    gfx_hline(abs_x + 1, abs_y + 1, box_size - 2, theme->frame_dark);
+    gfx_vline(abs_x + 1, abs_y + 1, box_size - 2, theme->frame_dark);
 
     // Draw checkmark if checked
     if (control->checkbox.checked) {
         // Simple X checkmark
         for (int i = 0; i < 7; i++) {
-            gfx_putpixel(abs_x + 3 + i, abs_y + 3 + i, control->fg);
-            gfx_putpixel(abs_x + 9 - i, abs_y + 3 + i, control->fg);
+            gfx_putpixel(abs_x + 3 + i, abs_y + 3 + i, ctrl_text_color(control));
+            gfx_putpixel(abs_x + 9 - i, abs_y + 3 + i, ctrl_text_color(control));
         }
     }
 
@@ -400,7 +401,7 @@ void ctrl_draw_checkbox(gui_control_t *control, int abs_x, int abs_y) {
     if (control->text[0] && font->data) {
         int text_x = abs_x + box_size + 4;
         int text_y = abs_y + 3;
-        bmf_printf(text_x, text_y, font, size, control->fg, "%s", control->text);
+        bmf_printf(text_x, text_y, font, size, ctrl_text_color(control), "%s", control->text);
     }
 }
 
@@ -418,7 +419,7 @@ void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y) {
     for (int dy = -radius; dy <= radius; dy++) {
         for (int dx = -radius; dx <= radius; dx++) {
             if (dx * dx + dy * dy <= radius * radius) {
-                gfx_putpixel(center_x + dx, center_y + dy, COLOR_WHITE);
+                gfx_putpixel(center_x + dx, center_y + dy, ctrl_inside_color(control));
             }
         }
     }
@@ -431,7 +432,7 @@ void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y) {
         for (int dy = -3; dy <= 3; dy++) {
             for (int dx = -3; dx <= 3; dx++) {
                 if (dx * dx + dy * dy <= 9) {
-                    gfx_putpixel(center_x + dx, center_y + dy, control->fg);
+                    gfx_putpixel(center_x + dx, center_y + dy, ctrl_text_color(control));
                 }
             }
         }
@@ -441,6 +442,6 @@ void ctrl_draw_radiobutton(gui_control_t *control, int abs_x, int abs_y) {
     if (control->text[0] && font->data) {
         int text_x = abs_x + 12 + 4;
         int text_y = abs_y + 3;
-        bmf_printf(text_x, text_y, font, size, control->fg, "%s", control->text);
+        bmf_printf(text_x, text_y, font, size, ctrl_text_color(control), "%s", control->text);
     }
 }

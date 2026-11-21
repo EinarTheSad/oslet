@@ -360,6 +360,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                     case CTRL_BUTTON:
                         dest->button.cached_bitmap_orig = NULL;
                         dest->button.pressed = 0;
+                        dest->button.use_fg = ctrl->button.use_fg;
                         break;
                     case CTRL_PICTUREBOX:
                         dest->picturebox.cached_bitmap_orig = NULL;
@@ -906,10 +907,10 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                         ctrl->type |= 0x80;
                     break;
                 case 7: /* PROP_FG - universal */
-                    ctrl->fg = (uint8_t)value;
+                    ctrl->fg = (int)value;
                     break;
                 case 8: /* PROP_BG - universal */
-                    ctrl->bg = (uint8_t)value;
+                    ctrl->bg = (int)value;
                     break;
                 case 9: /* PROP_IMAGE */
                     if (value) {

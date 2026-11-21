@@ -10,9 +10,6 @@ extern bmf_font_t font_b, font_n;
 extern void mouse_invalidate_buffer(void);
 extern void mouse_restore(void);
 
-#define MENU_BG_COLOR       15
-#define MENU_HOVER_COLOR    7
-#define MENU_TEXT_COLOR     0
 #define MENU_DISABLED_COLOR 8
 #define MENU_BORDER_COLOR   0
 #define MENU_LEFT_PADDING   8
@@ -223,7 +220,8 @@ void menu_draw(menu_t *menu) {
     mouse_restore();
     mouse_invalidate_buffer();
 
-    gfx_fillrect(menu->x, menu->y, menu->w, menu->h, MENU_BG_COLOR);
+    window_theme_t *theme = theme_get_current();
+    gfx_fillrect(menu->x, menu->y, menu->w, menu->h, theme->control_color);
     gfx_rect(menu->x, menu->y, menu->w, menu->h, MENU_BORDER_COLOR);
 
     /* Draw items */
@@ -238,16 +236,16 @@ void menu_draw(menu_t *menu) {
             gfx_hline(menu->x + 1, sep_y, menu->w - 2, MENU_BORDER_COLOR);
             item_y += 5;
         } else {
-            /* Draw item background if hovered (light gray) */
-            if (i == menu->hovered_item && (item->flags & MENU_ITEM_ENABLED)) {
-                gfx_fillrect(menu->x + 1, item_y, menu->w - 2, MENU_ITEM_HEIGHT, MENU_HOVER_COLOR);
+            int hovered = i == menu->hovered_item && (item->flags & MENU_ITEM_ENABLED);
+            if (hovered) {
+                gfx_fillrect(menu->x + 1, item_y, menu->w - 2, MENU_ITEM_HEIGHT, theme->hover_color);
             }
 
             if (font_n.data) {
                 char label[32];
                 char shortcut[16];
-                uint8_t text_color = (item->flags & MENU_ITEM_ENABLED) ?
-                                     MENU_TEXT_COLOR : MENU_DISABLED_COLOR;
+                uint8_t text_color = hovered ? theme_contrast_text(theme->hover_color) :
+                                     (item->flags & MENU_ITEM_ENABLED) ? theme->text_color : MENU_DISABLED_COLOR;
 
                 menu_split_text(item->text, label, sizeof(label),
                                 shortcut, sizeof(shortcut));
@@ -386,14 +384,16 @@ void menubar_draw_item(menubar_t *menubar, int index, int win_x, int win_y) {
 
     menubar_entry_t *entry = &menubar->menus[index];
     uint8_t bg_color = theme->bg_color;
-    if (index == menubar->hovered_menu || index == menubar->active_menu) {
-        bg_color = 7;
+    int highlighted = index == menubar->hovered_menu || index == menubar->active_menu;
+    if (highlighted) {
+        bg_color = theme->hover_color;
     }
 
     gfx_fillrect(x_offset - 4, bar_y + 2, entry->title_width - 4,
                  MENUBAR_HEIGHT - 4, bg_color);
     if (font_n.data) {
-        bmf_printf(x_offset, bar_y + 5, &font_n, 12, theme->text_color,
+        bmf_printf(x_offset, bar_y + 5, &font_n, 12,
+                   highlighted ? theme_contrast_text(bg_color) : theme->text_color,
                    "%s", entry->title);
     }
 }

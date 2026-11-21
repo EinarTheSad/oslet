@@ -192,10 +192,11 @@ uint32_t textbox_pos_from_xy(bmf_font_t *font, int size, gui_control_t *ctrl,
 }
 
 void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
     bmf_font_t *font = &font_n;
     int size = control->font_size > 0 ? control->font_size : 12;
 
-    gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, ctrl_inside_color(control));
     ctrl_draw_sunken_border(abs_x, abs_y, control->w, control->h);
 
     int text_area_x = abs_x + 3;
@@ -283,11 +284,11 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
                 if (sel_min >= 0 && char_idx >= (uint32_t)sel_min &&
                     char_idx < (uint32_t)sel_max) {
                     in_selection = 1;
-                    gfx_fillrect(line_x, line_y - 3, char_w, font_height + 2, COLOR_BLUE);
+                    gfx_fillrect(line_x, line_y - 3, char_w, font_height + 2, theme->highlight_color);
                 }
 
                 if (line_y + font_height < abs_y + control->h - 3) {
-                    uint8_t color = in_selection ? COLOR_WHITE : control->fg;
+                    uint8_t color = in_selection ? theme_contrast_text(theme->highlight_color) : ctrl_text_color(control);
                     bmf_draw_char(line_x, line_y, font, size,
                                   (uint8_t)textbox_char_at(control, char_idx), color);
                 }
@@ -300,7 +301,7 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
         if (control->textbox.is_focused && control->textbox.cursor_visible &&
             cursor_line >= start_line && cursor_line < start_line + visible_lines &&
             cursor_y + font_height < abs_y + control->h - 3) {
-            gfx_vline(cursor_x, cursor_y - 3, font_height + 1, control->fg);
+            gfx_vline(cursor_x, cursor_y - 3, font_height + 1, ctrl_text_color(control));
         }
 
         if (needs_scrollbar) {
@@ -338,7 +339,7 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
             if (sel_x2 > text_area_x + text_area_w) sel_x2 = text_area_x + text_area_w;
 
             if (sel_x2 > sel_x1) {
-                gfx_fillrect(sel_x1, abs_y + 3, sel_x2 - sel_x1, font_height + 2, COLOR_BLUE);
+                gfx_fillrect(sel_x1, abs_y + 3, sel_x2 - sel_x1, font_height + 2, theme->highlight_color);
             }
         }
 
@@ -368,7 +369,7 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
                         in_selection = (i >= (uint32_t)sel_min &&
                                         i < (uint32_t)sel_max);
                     }
-                    uint8_t color = in_selection ? COLOR_WHITE : control->fg;
+                    uint8_t color = in_selection ? theme_contrast_text(theme->highlight_color) : ctrl_text_color(control);
                     bmf_draw_char(x, text_y, font, size, (uint8_t)character, color);
                 }
                 x += g ? g->width : 0;
@@ -382,7 +383,7 @@ void ctrl_draw_textbox(gui_control_t *control, int abs_x, int abs_y) {
             if (cx >= text_area_x && cx < text_area_x + text_area_w) {
                 int cursor_y = text_y - 3;
                 int cursor_height = font_height + 1;
-                gfx_vline(cx, cursor_y, cursor_height, control->fg);
+                gfx_vline(cx, cursor_y, cursor_height, ctrl_text_color(control));
             }
         }
     }

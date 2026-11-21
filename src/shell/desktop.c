@@ -115,15 +115,8 @@ static void load_settings(void) {
     settings.wallpaper_mode = 0; /* center by default */
     settings.volume = 66; /* match default used by volume control */
 
-    int fd = sys_open(SETTINGS_PATH, "r");
-    if (fd < 0) return;
-
-    char buffer[1024];
-    int bytes = sys_read(fd, buffer, sizeof(buffer) - 1);
-    sys_close(fd);
-
-    if (bytes <= 0) return;
-    buffer[bytes] = '\0';
+    char *buffer = ini_read_file(SETTINGS_PATH);
+    if (!buffer) return;
 
     ini_parser_t ini;
     ini_init(&ini, buffer);
@@ -158,36 +151,35 @@ static void load_settings(void) {
     theme->titlebar_inactive = (uint8_t)ini_get_color(&ini, "THEME", "TITLEBAR_INACTIVE", theme->titlebar_inactive);
     theme->frame_dark = (uint8_t)ini_get_color(&ini, "THEME", "FRAME_DARK", theme->frame_dark);
     theme->frame_light = (uint8_t)ini_get_color(&ini, "THEME", "FRAME_LIGHT", theme->frame_light);
+    theme->frame_shine = (uint8_t)ini_get_color(&ini, "THEME", "FRAME_SHINE", theme->frame_shine);
     theme->text_color = (uint8_t)ini_get_color(&ini, "THEME", "TEXT_COLOR", theme->text_color);
-    theme->icon_text_color = (uint8_t)ini_get_color(&ini, "THEME", "ICON_TEXT_COLOR", theme->icon_text_color);
-    theme->desktop_icon_text_color = (uint8_t)ini_get_color(&ini, "THEME", "DESKTOP_ICON_TEXT_COLOR", theme->icon_text_color);
+    theme->control_color = (uint8_t)ini_get_color(&ini, "THEME", "CONTROL_COLOR", theme->control_color);
+    theme->desktop_icon_text_color = (uint8_t)ini_get_color(&ini, "THEME", "DESKTOP_ICON_TEXT_COLOR", theme->desktop_icon_text_color);
+    theme->highlight_color = (uint8_t)ini_get_color(&ini, "THEME", "HIGHLIGHT_COLOR", theme->highlight_color);
+    theme->hover_color = (uint8_t)ini_get_color(&ini, "THEME", "HOVER_COLOR", theme->hover_color);
     theme->button_color = (uint8_t)ini_get_color(&ini, "THEME", "BUTTON_COLOR", theme->button_color);
     theme->taskbar_color = (uint8_t)ini_get_color(&ini, "THEME", "TASKBAR_COLOR", theme->taskbar_color);
     theme->start_button_color = (uint8_t)ini_get_color(&ini, "THEME", "START_BUTTON_COLOR", theme->start_button_color);
     settings.volume = (uint8_t)ini_get_int(&ini, "SOUND", "VOL", settings.volume);
+    free(buffer);
 }
 
 static void load_palette_settings(void) {
     char palette_path[256] = DEFAULT_PALETTE_PATH;
-    int fd = sys_open(SETTINGS_PATH, "r");
-    if (fd >= 0) {
-        char buffer[1024];
-        int bytes = sys_read(fd, buffer, sizeof(buffer) - 1);
-        sys_close(fd);
-        if (bytes > 0) {
-            buffer[bytes] = '\0';
-            ini_parser_t ini;
-            ini_init(&ini, buffer);
-            const char *val = ini_get(&ini, "PALETTE", "FILE");
-            if (val && val[0] != '\0') {
-                int i = 0;
-                while (val[i] && i < 255) {
-                    palette_path[i] = val[i];
-                    i++;
-                }
-                palette_path[i] = '\0';
+    char *buffer = ini_read_file(SETTINGS_PATH);
+    if (buffer) {
+        ini_parser_t ini;
+        ini_init(&ini, buffer);
+        const char *val = ini_get(&ini, "PALETTE", "FILE");
+        if (val && val[0] != '\0') {
+            int i = 0;
+            while (val[i] && i < 255) {
+                palette_path[i] = val[i];
+                i++;
             }
+            palette_path[i] = '\0';
         }
+        free(buffer);
     }
 
     uint8_t palette[16][3];
@@ -296,11 +288,11 @@ static int clock_update(void) {
 static void taskbar_draw(void) {
     sys_theme_t *theme = sys_win_get_theme();
     sys_gfx_fillrect(0, TASKBAR_Y, WM_SCREEN_WIDTH, WM_TASKBAR_HEIGHT, theme->taskbar_color);
-    sys_gfx_line(0, TASKBAR_Y, WM_SCREEN_WIDTH, TASKBAR_Y, COLOR_WHITE);
+    sys_gfx_line(0, TASKBAR_Y, WM_SCREEN_WIDTH, TASKBAR_Y, theme->frame_shine);
 
     sys_gfx_rect(WM_SCREEN_WIDTH-60, TASKBAR_Y + 3, 57, 21, theme->frame_dark);
-    sys_gfx_line(WM_SCREEN_WIDTH-59, TASKBAR_Y + 23, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, COLOR_WHITE);
-    sys_gfx_line(WM_SCREEN_WIDTH-4, TASKBAR_Y + 4, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, COLOR_WHITE);
+    sys_gfx_line(WM_SCREEN_WIDTH-59, TASKBAR_Y + 23, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, theme->frame_shine);
+    sys_gfx_line(WM_SCREEN_WIDTH-4, TASKBAR_Y + 4, WM_SCREEN_WIDTH-4, TASKBAR_Y + 23, theme->frame_shine);
 
     for (int i = 0; i < taskbar_button_count; i++) {
         taskbar_button_t *b = &taskbar_buttons[i];

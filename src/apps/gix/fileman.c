@@ -115,12 +115,13 @@ static char* show_prompt_dialog(const char *title, const char *label, const char
     gui_control_t label_ctrl = {0};
     label_ctrl.type = CTRL_LABEL;
     label_ctrl.x = 9; label_ctrl.y = 6;
-    label_ctrl.id = 1; label_ctrl.font_size = 12; label_ctrl.bg = -1;
+    label_ctrl.id = 1; label_ctrl.font_size = 12; label_ctrl.fg = -1; label_ctrl.bg = -1;
     strncpy(label_ctrl.text, label, sizeof(label_ctrl.text) - 1);
     sys_win_add_control(dlg, &label_ctrl);
 
     gui_control_t textbox = {0};
     textbox.type = CTRL_TEXTBOX;
+    textbox.fg = -1; textbox.bg = -1;
     textbox.x = 80; textbox.y = 5; textbox.w = 210; textbox.h = 20;
     textbox.id = 2; textbox.font_size = 12; textbox.textbox.max_length = 255;
     if (default_value && default_value[0])
@@ -1548,7 +1549,7 @@ void _start(void) {
     gui_control_t path_textbox = {0};
     path_textbox.type = CTRL_TEXTBOX;
     path_textbox.x = 8; path_textbox.y = 8; path_textbox.w = 408; path_textbox.h = 20;
-    path_textbox.bg = 15;
+    path_textbox.fg = -1; path_textbox.bg = -1;
     path_textbox.id = ID_PATH_TEXTBOX; path_textbox.font_size = 12;
     path_textbox.border = 1; path_textbox.border_color = 8;
     path_textbox.textbox.max_length = 255;
@@ -1600,18 +1601,18 @@ void _start(void) {
     treeview.type = CTRL_TREEVIEW;
     treeview.x = TREE_X - 3; treeview.y = CONTENT_Y - 1;
     treeview.w = TREE_W + 8; treeview.h = 192;
-    treeview.fg = 0; treeview.bg = 15;
+    treeview.fg = -1; treeview.bg = -1;
     treeview.id = ID_TREEVIEW; treeview.font_size = 12;
     treeview.treeview.row_height = TREE_ITEM_H;
     sys_win_add_control(state.form, &treeview);
     ctrl_tree_set_icons(state.form, ID_TREEVIEW, "C:/ICONS/FLD.ICO", "C:/ICONS/FLO.ICO");
 
-    /* White background beneath the file icons */
+    /* Background beneath the file icons */
     gui_control_t file_frame = {0};
     file_frame.type = CTRL_LABEL_3D;
     file_frame.x = TREE_X + TREE_W + 12; file_frame.y = CONTENT_Y - 1;
     file_frame.w = 1; file_frame.h = 1;
-    file_frame.fg = 0; file_frame.bg = 15;
+    file_frame.fg = -1; file_frame.bg = -1;
     file_frame.id = ID_FILE_FRAME; file_frame.font_size = 12;
     file_frame.border = 1; file_frame.border_color = 7;
     sys_win_add_control(state.form, &file_frame);
@@ -1638,7 +1639,7 @@ void _start(void) {
         file_icon.x = (TREE_X + TREE_W + 12) + 1 + col * FILE_ICON_STEP_X;
         file_icon.y = CONTENT_Y + 4 + row * (FILE_ICON_H + FILE_PAD);
         file_icon.w = FILE_ICON_W; file_icon.h = FILE_ICON_H;
-        file_icon.bg = 15;
+        file_icon.fg = CTRL_ICON_SYSTEM_TEXT; file_icon.bg = 15;
         file_icon.id = ID_FILE_BASE + i; file_icon.font_size = 9;
         sys_win_add_control(state.form, &file_icon);
         ctrl_set_visible(state.form, ID_FILE_BASE + i, 0);

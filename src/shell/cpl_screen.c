@@ -12,6 +12,9 @@
 #ifndef SETTINGS_PATH
 #define SETTINGS_PATH "C:/OSLET/SYSTEM.INI"
 #endif
+#ifndef DISPLAY_TRIAL
+#define DISPLAY_TRIAL "C:/OSLET/VMODE.TRY"
+#endif
 #define MAX_BMP_FILES 32
 
 extern void desktop_apply_settings(uint8_t color, const char *wallpaper, uint8_t wallpaper_mode);
@@ -76,6 +79,7 @@ static int cpl_screen_init(prog_instance_t *inst);
 static int cpl_screen_event(prog_instance_t *inst, int win_idx,
                             const sys_win_event_t *event);
 static void cpl_screen_cleanup(prog_instance_t *inst);
+static int file_exists(const char *path);
 
 const progmod_t cpl_screen_module = {
     .name = "Screen",
@@ -94,15 +98,8 @@ static void load_settings(cpl_screen_state_t *state) {
     strcpy(state->folder, "C:/IMAGES");
     state->wallpaper_mode = 0; /* centre default */
 
-    int fd = sys_open(SETTINGS_PATH, "r");
-    if (fd < 0) goto store_orig;
-
-    char buffer[1024];
-    int bytes = sys_read(fd, buffer, sizeof(buffer) - 1);
-    sys_close(fd);
-
-    if (bytes <= 0) goto store_orig;
-    buffer[bytes] = '\0';
+    char *buffer = ini_read_file(SETTINGS_PATH);
+    if (!buffer) goto store_orig;
 
     ini_parser_t ini;
     ini_init(&ini, buffer);
@@ -140,6 +137,7 @@ static void load_settings(cpl_screen_state_t *state) {
             state->wallpaper_mode = 0;
         }
     }
+    free(buffer);
 
 store_orig:
     state->orig_desktop_color = state->desktop_color;
@@ -148,18 +146,7 @@ store_orig:
 }
 
 static int save_settings(cpl_screen_state_t *state) {
-    char read_buf[2048];
-    char tmp[4096];
     char desktop_text[512];
-
-    int fd = sys_open(SETTINGS_PATH, "r");
-    int bytes = 0;
-    if (fd >= 0) {
-        bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
-        sys_close(fd);
-    }
-    if (bytes > 0) read_buf[bytes] = '\0';
-    else read_buf[0] = '\0';
 
     snprintf(desktop_text, sizeof(desktop_text),
         "[DESKTOP]\r\n"
@@ -171,18 +158,7 @@ static int save_settings(cpl_screen_state_t *state) {
         state->wallpaper_mode
     );
 
-    /* Replace or insert only the DESKTOP section; leave THEME and others untouched */
-    if (ini_replace_section(read_buf, "DESKTOP", desktop_text, tmp, sizeof(tmp)) < 0)
-        return -1;
-
-    /* Write final content */
-    fd = sys_open(SETTINGS_PATH, "w");
-    if (fd < 0) return -1;
-
-    size_t size = strlen(tmp);
-    int written = sys_write_file(fd, tmp, (uint32_t)size);
-    int close_result = sys_close(fd);
-    return written == (int)size && close_result == 0 ? 0 : -1;
+    return ini_save_section(SETTINGS_PATH, "DESKTOP", desktop_text);
 }
 
 static int scan_bmp_files(cpl_screen_state_t *state) {
@@ -380,19 +356,19 @@ static int cpl_screen_init(prog_instance_t *inst) {
     static gui_control_t controls[] = {
         { .type = CTRL_PICTUREBOX, .x = 42,  .y = 12,  .w = 162, .h = 144, .fg = 5,  .bg = -1, .id = CTRL_PIC_MONITOR, .text = "C:/OSLET/MONITOR.BMP" },
         { .type = CTRL_PICTUREBOX, .x = 57,  .y = 26,  .w = 133, .h = 100, .fg = 0,  .bg = 0,  .id = CTRL_PIC_PREVIEW,  .text = "" },
-        { .type = CTRL_FRAME,      .x = 6,   .y = 160, .w = 234, .h = 92, .fg = 0,  .bg = 7,  .id = CTRL_FRAME_WALLPAPER, .text = "Wallpaper" },
-        { .type = CTRL_LABEL,      .x = 12,  .y = 181,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_FOLDER,      .text = "Folder:" },
-        { .type = CTRL_TEXTBOX,    .x = 58,  .y = 180, .w = 138, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_TXT_FOLDER,     .textbox = { .max_length = 127 }, .text = "" },
+        { .type = CTRL_FRAME,      .x = 6,   .y = 160, .w = 234, .h = 92, .fg = -1,  .bg = 7,  .id = CTRL_FRAME_WALLPAPER, .text = "Wallpaper" },
+        { .type = CTRL_LABEL,      .x = 12,  .y = 181,                     .fg = -1,  .bg = -1, .id = CTRL_LBL_FOLDER,      .text = "Folder:" },
+        { .type = CTRL_TEXTBOX,    .x = 58,  .y = 180, .w = 138, .h = 18,  .fg = -1,  .bg = -1, .id = CTRL_TXT_FOLDER,     .textbox = { .max_length = 127 }, .text = "" },
         { .type = CTRL_BUTTON,     .x = 198, .y = 180, .w = 35,  .h = 18,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_FOLDER_OK, .text = "OK" },
-        { .type = CTRL_LABEL,      .x = 12,  .y = 203,                     .fg = 0,  .bg = -1, .id = CTRL_LBL_CHOOSE,     .text = "Choose an image:" },
-        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 223, .w = 128, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_IMAGES,    .dropdown = { .cursor_pos = 0, .item_count = 0 }, .text = "" },
-        { .type = CTRL_LABEL,      .x = 160, .y = 203,                     .fg = 0,  .bg = -1, .id = 0,                   .text = "Mode:" },
-        { .type = CTRL_DROPDOWN,   .x = 161, .y = 223, .w = 72,  .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_MODE,      .dropdown = { .cursor_pos = 0, .item_count = 3 }, .text = "Center|Stretch|Tile" },
-        { .type = CTRL_FRAME,      .x = 6,   .y = 252, .w = 234, .h = 48,  .fg = 0,  .bg = 7,  .id = CTRL_FRAME_COLOR,     .text = "Desktop colour" },
-        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 272, .w = 128, .h = 18,  .fg = 0,  .bg = 15, .id = CTRL_DROP_COLOR,     .dropdown = { .cursor_pos = 0, .item_count = 16 }, .text = "" },
-        { .type = CTRL_FRAME,      .x = 6,   .y = 300, .w = 234, .h = 48,  .fg = 0,  .bg = 7,  .id = CTRL_FRAME_RESOLUTION, .text = "Resolution" },
-        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 320, .w = 82,  .h = 18, .fg = 0,  .bg = 15, .id = CTRL_DROP_RESOLUTION, .dropdown = { .cursor_pos = 0, .item_count = 0 }, .text = "" },
-        { .type = CTRL_DROPDOWN,   .x = 101, .y = 320, .w = 132, .h = 18, .fg = 0,  .bg = 15, .id = CTRL_DROP_DEPTH,      .dropdown = { .cursor_pos = 0, .item_count = 0 }, .text = "" },
+        { .type = CTRL_LABEL,      .x = 12,  .y = 203,                     .fg = -1,  .bg = -1, .id = CTRL_LBL_CHOOSE,     .text = "Choose an image:" },
+        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 223, .w = 128, .h = 18,  .fg = -1,  .bg = -1, .id = CTRL_DROP_IMAGES,    .dropdown = { .cursor_pos = 0, .item_count = 0 }, .text = "" },
+        { .type = CTRL_LABEL,      .x = 160, .y = 203,                     .fg = -1,  .bg = -1, .id = 0,                   .text = "Mode:" },
+        { .type = CTRL_DROPDOWN,   .x = 161, .y = 223, .w = 72,  .h = 18,  .fg = -1,  .bg = -1, .id = CTRL_DROP_MODE,      .dropdown = { .cursor_pos = 0, .item_count = 3 }, .text = "Center|Stretch|Tile" },
+        { .type = CTRL_FRAME,      .x = 6,   .y = 252, .w = 234, .h = 48,  .fg = -1,  .bg = 7,  .id = CTRL_FRAME_COLOR,     .text = "Desktop colour" },
+        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 272, .w = 128, .h = 18,  .fg = -1,  .bg = -1, .id = CTRL_DROP_COLOR,     .dropdown = { .cursor_pos = 0, .item_count = 16 }, .text = "" },
+        { .type = CTRL_FRAME,      .x = 6,   .y = 300, .w = 234, .h = 48,  .fg = -1,  .bg = 7,  .id = CTRL_FRAME_RESOLUTION, .text = "Resolution" },
+        { .type = CTRL_DROPDOWN,   .x = 13,  .y = 320, .w = 82,  .h = 18, .fg = -1,  .bg = -1, .id = CTRL_DROP_RESOLUTION, .dropdown = { .cursor_pos = 0, .item_count = 0 }, .text = "" },
+        { .type = CTRL_DROPDOWN,   .x = 101, .y = 320, .w = 132, .h = 18, .fg = -1,  .bg = -1, .id = CTRL_DROP_DEPTH,      .dropdown = { .cursor_pos = 0, .item_count = 0 }, .text = "" },
         { .type = CTRL_BUTTON,     .x = 36,  .y = 354, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_APPLY,      .text = "Apply" },
         { .type = CTRL_BUTTON,     .x = 96,  .y = 354, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_OK,         .text = "OK" },
         { .type = CTRL_BUTTON,     .x = 156, .y = 354, .w = 55,  .h = 22,  .fg = 0,  .bg = -1,  .id = CTRL_BTN_CANCEL,     .text = "Cancel" },
@@ -485,6 +461,12 @@ static int apply_display_mode(cpl_screen_state_t *state, int resolution, int dep
         if (screen_save_display(width, height, depth) != 0) {
             sys_win_msgbox("The display mode was kept, but could not be saved.",
                            "OK", "Screen");
+            return -1;
+        }
+    } else {
+        int trial = file_exists(DISPLAY_TRIAL);
+        if (trial < 0 || (trial && screen_save_display(width, height, depth) != 0)) {
+            sys_win_msgbox("Could not save display recovery.", "OK", "Screen");
             return -1;
         }
     }
@@ -671,20 +653,8 @@ static void cpl_screen_cleanup(prog_instance_t *inst) {
 }
 
 
-#ifndef DISPLAY_PATH
-#define DISPLAY_PATH "C:/OSLET/VMODE.CFG"
-#define DISPLAY_TEMP "C:/OSLET/VMODE.NEW"
-#define DISPLAY_BACKUP "C:/OSLET/VMODE.BAK"
-#define DISPLAY_TRIAL "C:/OSLET/VMODE.TRY"
-#endif
-#define DISPLAY_MAGIC 0x31454256u
-#define DISPLAY_DISABLED_MAGIC 0x30454256u
-
-extern int desktop_refresh_display(void);
-extern void desktop_present_display(void);
-
 typedef struct {
-    uint32_t magic, width, height, depth, check;
+    uint32_t width, height, depth;
 } saved_display_t;
 
 static int valid_display(const saved_display_t *mode) {
@@ -697,8 +667,7 @@ static int valid_display(const saved_display_t *mode) {
                (mode->width == 1920 && mode->height == 1080);
     int depth = mode->depth == 4 || mode->depth == 8 || mode->depth == 16 ||
                 mode->depth == 24 || mode->depth == 32;
-    return mode->magic == DISPLAY_MAGIC && size && depth &&
-           mode->check == (mode->magic ^ mode->width ^ mode->height ^ mode->depth);
+    return size && depth;
 }
 
 static int file_exists(const char *path) {
@@ -728,66 +697,71 @@ static int remove_if_present(const char *path) {
     return exists ? sys_unlink(path) : 0;
 }
 
-static int write_display(const char *path, const saved_display_t *mode) {
-    int fd = sys_open(path, "w");
+static int write_display_trial(void) {
+    const uint8_t marker = 1;
+    uint8_t saved;
+    int fd = sys_open(DISPLAY_TRIAL, "w");
     if (fd < 0) return -1;
-    int written = sys_write_file(fd, mode, sizeof(*mode));
+    int written = sys_write_file(fd, &marker, sizeof(marker));
     int closed = sys_close(fd);
-    if (written != (int)sizeof(*mode) || closed != 0) return -1;
-    uint8_t bytes[sizeof(*mode) + 1];
-    fd = sys_open(path, "r");
+    if (written != (int)sizeof(marker) || closed != 0) return -1;
+    fd = sys_open(DISPLAY_TRIAL, "r");
     if (fd < 0) return -1;
-    int length = sys_read(fd, bytes, sizeof(bytes));
+    int length = sys_read(fd, &saved, sizeof(saved));
     closed = sys_close(fd);
-    if (length != (int)sizeof(*mode) || closed != 0) return -1;
-    for (unsigned i = 0; i < sizeof(*mode); ++i)
-        if (bytes[i] != ((const uint8_t *)mode)[i]) return -1;
-    return 0;
+    return length == (int)sizeof(saved) && closed == 0 && saved == marker ? 0 : -1;
 }
 
 int screen_save_display(uint32_t width, uint32_t height, uint32_t depth) {
-    saved_display_t mode = { DISPLAY_MAGIC, width, height, depth,
-                             DISPLAY_MAGIC ^ width ^ height ^ depth };
+    saved_display_t mode = { width, height, depth };
     if (depth == 32 || !valid_display(&mode)) return -1;
-    if (write_display(DISPLAY_TEMP, &mode) != 0) return -1;
-
-    int previous = file_exists(DISPLAY_PATH);
-    if (previous < 0 || remove_if_present(DISPLAY_BACKUP) != 0) return -1;
-    if (previous && sys_rename(DISPLAY_PATH, DISPLAY_BACKUP) != 0) return -1;
-    if (sys_rename(DISPLAY_TEMP, DISPLAY_PATH) != 0) {
-        if (previous && sys_rename(DISPLAY_BACKUP, DISPLAY_PATH) != 0)
-            return -1;
-        return -1;
-    }
-    if (previous && remove_if_present(DISPLAY_BACKUP) != 0) return -1;
+    char text[128];
+    snprintf(text, sizeof(text), "[DESKTOP]\nWIDTH=%u\nHEIGHT=%u\nDEPTH=%u\n",
+             width, height, depth);
+    if (ini_save_section(SETTINGS_PATH, "DESKTOP", text) != 0) return -1;
     return remove_if_present(DISPLAY_TRIAL);
 }
 
-static int read_saved_display(saved_display_t *mode) {
-    uint8_t bytes[sizeof(*mode) + 1];
-    int fd = sys_open(DISPLAY_PATH, "r");
-    if (fd < 0) return file_exists(DISPLAY_PATH) == 0 ? 0 : -1;
-    int length = sys_read(fd, bytes, sizeof(bytes));
-    int closed = sys_close(fd);
-    if (length != (int)sizeof(*mode) || closed != 0) return -1;
-    for (unsigned i = 0; i < sizeof(*mode); ++i) ((uint8_t *)mode)[i] = bytes[i];
-    return valid_display(mode) ? 1 : -1;
+static int parse_display_value(const char *text, uint32_t *value) {
+    uint32_t n = 0;
+    if (!*text) return -1;
+    while (*text) {
+        if (*text < '0' || *text > '9' || n > 10000) return -1;
+        n = n * 10 + (uint32_t)(*text++ - '0');
+    }
+    *value = n;
+    return 0;
 }
 
-static int boot_display_selected(void) {
-    saved_display_t marker;
-    int fd = sys_open(DISPLAY_TRIAL, "r");
-    if (fd < 0) return 0;
-    int length = sys_read(fd, &marker, sizeof(marker));
-    int closed = sys_close(fd);
-    return length == (int)sizeof(marker) && closed == 0 &&
-           marker.magic == DISPLAY_DISABLED_MAGIC &&
-           marker.width == 640 && marker.height == 480 && marker.depth == 4 &&
-           marker.check == (DISPLAY_DISABLED_MAGIC ^ 640 ^ 480 ^ 4);
+static int read_saved_display(saved_display_t *mode) {
+    char *buffer = ini_read_file(SETTINGS_PATH);
+    if (!buffer) return -1;
+    ini_parser_t ini;
+    ini_init(&ini, buffer);
+    char width[32], height[32], depth[32];
+    int has_width = ini_get_into(&ini, "DESKTOP", "WIDTH", width, sizeof(width)) == 0;
+    int has_height = ini_get_into(&ini, "DESKTOP", "HEIGHT", height, sizeof(height)) == 0;
+    int has_depth = ini_get_into(&ini, "DESKTOP", "DEPTH", depth, sizeof(depth)) == 0;
+    free(buffer);
+    if (!has_width && !has_height && !has_depth) return 0;
+    if (!has_width || !has_height || !has_depth) return -1;
+    if (parse_display_value(width, &mode->width) != 0 ||
+        parse_display_value(height, &mode->height) != 0 ||
+        parse_display_value(depth, &mode->depth) != 0) return -1;
+    return valid_display(mode) ? 1 : -1;
 }
 
 void screen_restore_display(void) {
     saved_display_t mode;
+    int trial = file_exists(DISPLAY_TRIAL);
+    if (trial != 0) {
+        if (trial < 0)
+            sys_win_msgbox("Could not check the display recovery marker.", "OK", "Display");
+        else
+            sys_win_msgbox("Saved display mode disabled\\nafter an interrupted trial.",
+                           "OK", "Display");
+        return;
+    }
     int saved = read_saved_display(&mode);
     if (saved < 0) {
         sys_win_msgbox("The saved display mode is invalid.", "OK", "Display");
@@ -798,18 +772,7 @@ void screen_restore_display(void) {
                        "OK", "Display");
         return;
     }
-    if (!saved) {
-        int trial = file_exists(DISPLAY_TRIAL);
-        if (trial != 0) {
-            if (trial < 0)
-                sys_win_msgbox("Could not check the display recovery marker.", "OK", "Display");
-            else if (!boot_display_selected())
-                sys_win_msgbox("Saved display mode disabled\\nafter an interrupted trial.",
-                               "OK", "Display");
-            return;
-        }
-        return;
-    }
+    if (!saved) return;
     sys_vbe_state_t current;
     if (sys_gfx_vbe_state(&current) != 0) {
         sys_win_msgbox("Could not query the display mode.", "OK", "Display");
@@ -818,8 +781,7 @@ void screen_restore_display(void) {
     if (current.width == mode.width && current.height == mode.height &&
         current.depth == mode.depth) return;
 
-    if (remove_if_present(DISPLAY_TRIAL) != 0 ||
-        sys_rename(DISPLAY_PATH, DISPLAY_TRIAL) != 0) {
+    if (write_display_trial() != 0) {
         sys_win_msgbox("Display recovery failed.\\nSaved mode not applied.",
                        "OK", "Display");
         return;
@@ -857,8 +819,8 @@ void screen_restore_display(void) {
         desktop_present_display();
     }
     if (kept) {
-        if (screen_save_display(mode.width, mode.height, mode.depth) != 0)
-            sys_win_msgbox("Could not restore the saved display setting.", "OK", "Display");
+        if (remove_if_present(DISPLAY_TRIAL) != 0)
+            sys_win_msgbox("Could not clear display recovery.", "OK", "Display");
     } else {
         sys_win_msgbox(transition_error ?
                        "The saved display mode could not be reverted." :

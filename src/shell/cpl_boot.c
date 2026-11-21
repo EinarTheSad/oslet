@@ -57,15 +57,8 @@ static void load_settings(cpl_boot_state_t *state) {
     state->shell_path[0] = '\0';
     state->boot_screen = 1;  /* enabled */
 
-    int fd = sys_open(SETTINGS_PATH, "r");
-    if (fd < 0) goto store_orig;
-
-    char buffer[2048];
-    int bytes = sys_read(fd, buffer, sizeof(buffer) - 1);
-    sys_close(fd);
-
-    if (bytes <= 0) goto store_orig;
-    buffer[bytes] = '\0';
+    char *buffer = ini_read_file(SETTINGS_PATH);
+    if (!buffer) goto store_orig;
 
     ini_parser_t ini;
     ini_init(&ini, buffer);
@@ -88,6 +81,7 @@ static void load_settings(cpl_boot_state_t *state) {
         int bs = atoi(val);
         state->boot_screen = (bs == 1) ? 1 : 0;
     }
+    free(buffer);
 
 store_orig:
     state->orig_shell_type = state->shell_type;
@@ -95,19 +89,8 @@ store_orig:
     state->orig_boot_screen = state->boot_screen;
 }
 
-static void save_settings(cpl_boot_state_t *state) {
-    char read_buf[2048];
-    char tmp1[4096];
+static int save_settings(cpl_boot_state_t *state) {
     char boot_text[512];
-
-    int fd = sys_open(SETTINGS_PATH, "r");
-    int bytes = 0;
-    if (fd >= 0) {
-        bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
-        sys_close(fd);
-    }
-    if (bytes > 0) read_buf[bytes] = '\0';
-    else read_buf[0] = '\0';
 
     const char *shell_val;
     if (state->shell_type == 0) {
@@ -126,14 +109,7 @@ static void save_settings(cpl_boot_state_t *state) {
         state->boot_screen
     );
 
-    /* Replace or insert only the BOOT section */
-    if (ini_replace_section(read_buf, "BOOT", boot_text, tmp1, sizeof(tmp1)) < 0) return;
-
-    fd = sys_open(SETTINGS_PATH, "w");
-    if (fd >= 0) {
-        sys_write_file(fd, tmp1, strlen(tmp1));
-        sys_close(fd);
-    }
+    return ini_save_section(SETTINGS_PATH, "BOOT", boot_text);
 }
 
 static int cpl_boot_init(prog_instance_t *inst) {
@@ -152,15 +128,15 @@ static int cpl_boot_init(prog_instance_t *inst) {
     sys_win_set_resizable(state->form, 0);
 
     static gui_control_t controls[] = {
-        { .type = CTRL_FRAME,      .x = 8,   .y = 5,   .w = 171, .h = 98, .fg = 0,  .bg = -1, .id = CTRL_FRAME_SHELL,      .text = "Shell" },
-        { .type = CTRL_RADIOBUTTON,.x = 16,  .y = 29,  .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_SHELL_GUI,  .text = "Graphical", .radiobutton = { .group_id = 1 } },
-        { .type = CTRL_RADIOBUTTON,.x = 95,  .y = 29,  .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_SHELL_TEXT, .text = "Textmode", .radiobutton = { .group_id = 1 } },
-        { .type = CTRL_LABEL,      .x = 15,  .y = 50,                      .fg = 0,  .bg = -1, .id = CTRL_LBL_OTHER,        .text = "Other (e.g. C:/SHELL.ELF):" },
-        { .type = CTRL_TEXTBOX,    .x = 17,  .y = 70,  .w = 153, .h = 20,  .fg = 0,  .bg = 7,  .id = CTRL_TXT_OTHER,        .text = "", .textbox = { .max_length = 255 } },
+        { .type = CTRL_FRAME,      .x = 8,   .y = 5,   .w = 171, .h = 98, .fg = -1,  .bg = -1, .id = CTRL_FRAME_SHELL,      .text = "Shell" },
+        { .type = CTRL_RADIOBUTTON,.x = 16,  .y = 29,  .w = 12,  .h = 12,  .fg = -1,  .bg = -1, .id = CTRL_RADIO_SHELL_GUI,  .text = "Graphical", .radiobutton = { .group_id = 1 } },
+        { .type = CTRL_RADIOBUTTON,.x = 95,  .y = 29,  .w = 12,  .h = 12,  .fg = -1,  .bg = -1, .id = CTRL_RADIO_SHELL_TEXT, .text = "Textmode", .radiobutton = { .group_id = 1 } },
+        { .type = CTRL_LABEL,      .x = 15,  .y = 50,                      .fg = -1,  .bg = -1, .id = CTRL_LBL_OTHER,        .text = "Other (e.g. C:/SHELL.ELF):" },
+        { .type = CTRL_TEXTBOX,    .x = 17,  .y = 70,  .w = 153, .h = 20,  .fg = -1,  .bg = -1,  .id = CTRL_TXT_OTHER,        .text = "", .textbox = { .max_length = 255 } },
 
-        { .type = CTRL_FRAME,      .x = 8,   .y = 108, .w = 171, .h = 47,  .fg = 0,  .bg = -1, .id = CTRL_FRAME_BOOTSCR,    .text = "Boot screen" },
-        { .type = CTRL_RADIOBUTTON,.x = 16,  .y = 130, .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_BOOTSCR_EN, .text = "Enabled", .radiobutton = { .group_id = 2 } },
-        { .type = CTRL_RADIOBUTTON,.x = 106, .y = 130, .w = 12,  .h = 12,  .fg = 0,  .bg = -1, .id = CTRL_RADIO_BOOTSCR_DIS,.text = "Disabled", .radiobutton = { .group_id = 2 } },
+        { .type = CTRL_FRAME,      .x = 8,   .y = 108, .w = 171, .h = 47,  .fg = -1,  .bg = -1, .id = CTRL_FRAME_BOOTSCR,    .text = "Boot screen" },
+        { .type = CTRL_RADIOBUTTON,.x = 16,  .y = 130, .w = 12,  .h = 12,  .fg = -1,  .bg = -1, .id = CTRL_RADIO_BOOTSCR_EN, .text = "Enabled", .radiobutton = { .group_id = 2 } },
+        { .type = CTRL_RADIOBUTTON,.x = 106, .y = 130, .w = 12,  .h = 12,  .fg = -1,  .bg = -1, .id = CTRL_RADIO_BOOTSCR_DIS,.text = "Disabled", .radiobutton = { .group_id = 2 } },
 
         { .type = CTRL_BUTTON,     .x = 26,  .y = 165, .w = 65,  .h = 23,  .fg = 0,  .bg = -1, .id = CTRL_BTN_OK,           .text = "OK" },
         { .type = CTRL_BUTTON,     .x = 98,  .y = 165, .w = 65,  .h = 23,  .fg = 0,  .bg = -1, .id = CTRL_BTN_CANCEL,       .text = "Cancel" },
@@ -250,7 +226,10 @@ static int cpl_boot_event(prog_instance_t *inst, int win_idx,
 
     if (id == CTRL_BTN_OK) {
         read_current_values(state);
-        save_settings(state);
+        if (save_settings(state) != 0) {
+            sys_win_msgbox("Could not save boot settings.", "OK", "Boot");
+            return PROG_EVENT_HANDLED;
+        }
 
         state->orig_shell_type = state->shell_type;
         strncpy(state->orig_shell_path, state->shell_path, sizeof(state->orig_shell_path));

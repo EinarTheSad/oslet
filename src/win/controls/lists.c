@@ -95,7 +95,7 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
     int sb_w = 18;
     int hsb_h = 18;
 
-    gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, ctrl_inside_color(control));
     ctrl_draw_sunken_border(abs_x, abs_y, control->w, control->h);
 
     if (!control->treeview.items || control->treeview.item_count == 0)
@@ -165,7 +165,7 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
         int selected = (item_idx == control->treeview.selected_index);
 
         if (selected && content_w > 0)
-            gfx_fillrect(inner_x, row_y, content_w + 1, row_h, COLOR_BLUE);
+            gfx_fillrect(inner_x, row_y, content_w + 1, row_h, theme->highlight_color);
 
         int indent = item->level * TREEVIEW_INDENT_W;
         int box_x = inner_x + 3 + indent - control->treeview.hscroll_offset;
@@ -195,7 +195,7 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
 
         int text_x = icon_x + 18;
         int text_y = row_y + (row_h - 12) / 2 + 3;
-        uint8_t text_color = selected ? COLOR_WHITE : control->fg;
+        uint8_t text_color = selected ? theme_contrast_text(theme->highlight_color) : ctrl_text_color(control);
         treeview_draw_text_clipped(text_x, text_y, font, size, item->text,
                                    text_color, inner_x + 1, inner_x + content_w - 2);
     }
@@ -231,12 +231,13 @@ void ctrl_draw_treeview(gui_control_t *control, int abs_x, int abs_y) {
 }
 
 void ctrl_draw_listbox(gui_control_t *control, int abs_x, int abs_y) {
+    window_theme_t *theme = theme_get_current();
     bmf_font_t *font = &font_n;
     int size = control->font_size > 0 ? control->font_size : 12;
     int row_h = control->listbox.row_height ? control->listbox.row_height : 16;
     int sb_w = 18;
 
-    gfx_fillrect(abs_x, abs_y, control->w, control->h, COLOR_WHITE);
+    gfx_fillrect(abs_x, abs_y, control->w, control->h, ctrl_inside_color(control));
     ctrl_draw_sunken_border(abs_x, abs_y, control->w, control->h);
 
     if (!control->listbox.items || control->listbox.item_count == 0)
@@ -267,11 +268,11 @@ void ctrl_draw_listbox(gui_control_t *control, int abs_x, int abs_y) {
         int selected = (item_idx == control->listbox.selected_index);
 
         if (selected && content_w > 0)
-            gfx_fillrect(inner_x, row_y, content_w + 1, row_h, COLOR_BLUE);
+            gfx_fillrect(inner_x, row_y, content_w + 1, row_h, theme->highlight_color);
 
         int text_x = inner_x + 4;
         int text_y = row_y + (row_h - 12) / 2 + 3;
-        uint8_t text_color = selected ? COLOR_WHITE : control->fg;
+        uint8_t text_color = selected ? theme_contrast_text(theme->highlight_color) : ctrl_text_color(control);
         treeview_draw_text_clipped(text_x, text_y, font, size, item->text,
                                    text_color, inner_x + 1, inner_x + content_w - 2);
     }

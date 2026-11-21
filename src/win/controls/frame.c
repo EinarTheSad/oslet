@@ -43,6 +43,6 @@ void ctrl_draw_frame(gui_control_t *control, int abs_x, int abs_y) {
         int text_x = abs_x + title_offset + 4;
         int text_y = abs_y + 5;
 
-        bmf_printf(text_x, text_y, font, size, control->fg, "%s", control->text);
+        bmf_printf(text_x, text_y, font, size, ctrl_text_color(control), "%s", control->text);
     }
 }

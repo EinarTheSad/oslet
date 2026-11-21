@@ -36,14 +36,14 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
     int btn_w = 18;
     int field_w = control->w - btn_w;
 
-    gfx_fillrect(abs_x, abs_y, field_w, control->h, COLOR_WHITE);
+    gfx_fillrect(abs_x, abs_y, field_w, control->h, ctrl_inside_color(control));
 
     gfx_hline(abs_x, abs_y, field_w, theme->frame_dark);
     gfx_vline(abs_x, abs_y, control->h, theme->frame_dark);
     gfx_hline(abs_x+1, abs_y + control->h - 1, field_w, theme->frame_light);
 
-    gfx_hline(abs_x + 1, abs_y + 1, field_w - 1, COLOR_DARK_GRAY);
-    gfx_vline(abs_x + 1, abs_y + 1, control->h - 1, COLOR_DARK_GRAY);
+    gfx_hline(abs_x + 1, abs_y + 1, field_w - 1, theme->frame_dark);
+    gfx_vline(abs_x + 1, abs_y + 1, control->h - 1, theme->frame_dark);
 
     if (font->data) {
         char item_text[64];
@@ -52,7 +52,7 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
 
         int text_x = abs_x + 4;
         int text_y = abs_y + (control->h - 12) / 2 + 3;
-        bmf_printf(text_x, text_y, font, size, control->fg, "%s", item_text);
+        bmf_printf(text_x, text_y, font, size, ctrl_text_color(control), "%s", item_text);
     }
 
     int btn_x = abs_x + field_w;
@@ -63,11 +63,11 @@ void ctrl_draw_dropdown(gui_control_t *control, int abs_x, int abs_y) {
     if (btn_pressed) {
         gfx_hline(btn_x + 1, abs_y + 1, btn_w - 2, theme->frame_dark);
         gfx_vline(btn_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
-        gfx_hline(btn_x + 1, abs_y + control->h - 2, btn_w - 2, COLOR_WHITE);
-        gfx_vline(btn_x + btn_w - 2, abs_y + 1, control->h - 2, COLOR_WHITE);
+        gfx_hline(btn_x + 1, abs_y + control->h - 2, btn_w - 2, theme->frame_shine);
+        gfx_vline(btn_x + btn_w - 2, abs_y + 1, control->h - 2, theme->frame_shine);
     } else {
-        gfx_hline(btn_x + 1, abs_y + 1, btn_w - 2, COLOR_WHITE);
-        gfx_vline(btn_x + 1, abs_y + 1, control->h - 2, COLOR_WHITE);
+        gfx_hline(btn_x + 1, abs_y + 1, btn_w - 2, theme->frame_shine);
+        gfx_vline(btn_x + 1, abs_y + 1, control->h - 2, theme->frame_shine);
         gfx_hline(btn_x + 1, abs_y + control->h - 2, btn_w - 2, theme->frame_dark);
         gfx_vline(btn_x + btn_w - 2, abs_y + 1, control->h - 2, theme->frame_dark);
     }
@@ -136,7 +136,7 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control, int y_offset
         }
     }
 
-    gfx_fillrect(abs_x, list_y, control->w, list_h, COLOR_WHITE);
+    gfx_fillrect(abs_x, list_y, control->w, list_h, ctrl_inside_color(control));
     gfx_rect(abs_x, list_y, control->w, list_h, theme->frame_dark);
 
     for (int vi = 0; vi < visible_count; vi++) {
@@ -150,13 +150,13 @@ void ctrl_draw_dropdown_list(window_t *win, gui_control_t *control, int y_offset
         int content_w = control->w - sb_w;
 
         if (i == control->dropdown.cursor_pos) {
-            gfx_fillrect(abs_x + 1, item_y, content_w - 2, item_h, COLOR_BLUE);
-            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, COLOR_WHITE, "%s", item_text);
+            gfx_fillrect(abs_x + 1, item_y, content_w - 2, item_h, theme->highlight_color);
+            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, theme_contrast_text(theme->highlight_color), "%s", item_text);
         } else if (i == control->dropdown.hovered_item) {
-            gfx_fillrect(abs_x + 1, item_y, content_w - 2, item_h, 7);
-            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
+            gfx_fillrect(abs_x + 1, item_y, content_w - 2, item_h, theme->hover_color);
+            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, theme_contrast_text(theme->hover_color), "%s", item_text);
         } else {
-            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, control->fg, "%s", item_text);
+            if (font->data) bmf_printf(abs_x + 4, item_y + 3, font, size, ctrl_text_color(control), "%s", item_text);
         }
     }
 

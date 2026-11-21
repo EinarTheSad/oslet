@@ -14,8 +14,13 @@ typedef struct {
     uint8_t taskbar_color;
     uint8_t start_button_color;
     uint8_t desktop_color;
+    uint8_t control_color;
+    uint8_t frame_shine;
+    uint8_t highlight_color;
+    uint8_t hover_color;
 } window_theme_t;
 
 void theme_init(void);
 window_theme_t* theme_get_current(void);
 void theme_set(window_theme_t *theme);
+uint8_t theme_contrast_text(uint8_t background);

@@ -61,14 +61,8 @@ static void apply_volume(volume_state_t *state) {
 }
 
 static void load_volume(volume_state_t *state) {
-    int fd = sys_open(SETTINGS_PATH, "r");
-    if (fd < 0) return;
-
-    char buf[2048];
-    int bytes = sys_read(fd, buf, sizeof(buf) - 1);
-    sys_close(fd);
-    if (bytes <= 0) return;
-    buf[bytes] = '\0';
+    char *buf = ini_read_file(SETTINGS_PATH);
+    if (!buf) return;
 
     ini_parser_t ini;
     ini_init(&ini, buf);
@@ -76,21 +70,11 @@ static void load_volume(volume_state_t *state) {
     if (vol < 0) vol = 0;
     if (vol > 100) vol = 100;
     state->volume = (uint8_t)vol;
+    free(buf);
 }
 
-static void save_volume(volume_state_t *state) {
-    char read_buf[2048];
-    char tmp1[4096];
+static int save_volume(volume_state_t *state) {
     char sound_text[128];
-
-    int fd = sys_open(SETTINGS_PATH, "r");
-    int bytes = 0;
-    if (fd >= 0) {
-        bytes = sys_read(fd, read_buf, sizeof(read_buf) - 1);
-        sys_close(fd);
-    }
-    if (bytes > 0) read_buf[bytes] = '\0';
-    else read_buf[0] = '\0';
 
     snprintf(sound_text, sizeof(sound_text),
         "[SOUND]\r\n"
@@ -98,14 +82,7 @@ static void save_volume(volume_state_t *state) {
         state->volume
     );
 
-    if (ini_replace_section(read_buf, "SOUND", sound_text, tmp1, sizeof(tmp1)) < 0)
-        return;
-
-    fd = sys_open(SETTINGS_PATH, "w");
-    if (fd >= 0) {
-        sys_write_file(fd, tmp1, strlen(tmp1));
-        sys_close(fd);
-    }
+    return ini_save_section(SETTINGS_PATH, "SOUND", sound_text);
 }
 
 static int volume_init(prog_instance_t *inst) {
@@ -138,11 +115,11 @@ static int volume_init(prog_instance_t *inst) {
     prog_register_window(inst, state->form);
 
     gui_control_t controls[] = {
-        { .type = CTRL_FRAME,     .x = 6,  .y = 5,  .w = 73, .h = 140, .fg = 0, .bg = 7,  .text = "Volume", .id = CTRL_FRAME_ID,     .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
+        { .type = CTRL_FRAME,     .x = 6,  .y = 5,  .w = 73, .h = 140, .fg = -1, .bg = 7,  .text = "Volume", .id = CTRL_FRAME_ID,     .font_type = 0, .font_size = 12, .border = 0, .border_color = 0 },
         { .type = CTRL_SCROLLBAR, .x = 31, .y = 24, .w = 18, .h = 114, .fg = 0, .bg = 7,  .text = "",       .id = CTRL_SCROLLBAR_ID, .font_type = 0, .font_size = 12, .border = 0, .border_color = 0, .scrollbar = { .max_length = 100 } },
-        { .type = CTRL_LABEL,     .x = 55, .y = 24, .w = 0,  .h = 0,   .fg = 0, .bg = -1, .text = "100",     .id = CTRL_LABEL_TOP,    .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 },
-        { .type = CTRL_LABEL,     .x = 55, .y = 72, .w = 0,  .h = 0,   .fg = 0, .bg = -1, .text = "100",     .id = CTRL_LABEL_MID,    .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 },
-        { .type = CTRL_LABEL,     .x = 55, .y = 120, .w = 0, .h = 0,   .fg = 0, .bg = -1, .text = "0",       .id = CTRL_LABEL_BOTTOM, .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 }
+        { .type = CTRL_LABEL,     .x = 55, .y = 24, .w = 0,  .h = 0,   .fg = -1, .bg = -1, .text = "100",     .id = CTRL_LABEL_TOP,    .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 },
+        { .type = CTRL_LABEL,     .x = 55, .y = 72, .w = 0,  .h = 0,   .fg = -1, .bg = -1, .text = "100",     .id = CTRL_LABEL_MID,    .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 },
+        { .type = CTRL_LABEL,     .x = 55, .y = 120, .w = 0, .h = 0,   .fg = -1, .bg = -1, .text = "0",       .id = CTRL_LABEL_BOTTOM, .font_type = 0, .font_size = 10, .border = 0, .border_color = 0 }
     };
 
     for (int i = 0; i < (int)(sizeof(controls)/sizeof(controls[0])); ++i) {
@@ -193,7 +170,8 @@ static void volume_cleanup(prog_instance_t *inst) {
     if (!inst || !inst->user_data) return;
 
     volume_state_t *state = (volume_state_t*)inst->user_data;
-    save_volume(state);
+    if (save_volume(state) != 0)
+        sys_win_msgbox("Could not save volume.", "OK", "Sound");
 
     free(state);
     inst->user_data = 0;

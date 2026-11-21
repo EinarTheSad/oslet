@@ -60,7 +60,7 @@ void win_draw_focused(window_t *win, int is_focused) {
         window_theme_t *theme = theme_get_current();
         gfx_fillrect(win->x, win->y, win->w, win->h, theme->taskbar_color);
         /* Draw top highlight line */
-        gfx_hline(win->x, win->y, win->w, COLOR_WHITE);
+        gfx_hline(win->x, win->y, win->w, theme->frame_shine);
     } else {
         win_draw_frame(win->x, win->y, win->w, win->h);
         win_draw_titlebar(win->x+2, win->y+2, win->w-4, win->title, is_focused);
@@ -106,27 +106,26 @@ void win_draw_titlebar(int x, int y, int w, const char *title, int is_active) {
     gfx_fillrect(btn_x, btn_y, 14, 14, theme->button_color);
     gfx_rect(btn_x-1, btn_y-1, 16, 16, theme->frame_dark);
     gfx_rect(btn_x+3, btn_y+7, 10, 2, theme->frame_dark);
-    gfx_fillrect(btn_x+2, btn_y+6, 10, 2, 15);
+    gfx_fillrect(btn_x+2, btn_y+6, 10, 2, theme->frame_shine);
 }
 
 void win_draw_3d_border_raised(int x, int y, int w, int h) {
     window_theme_t *theme = theme_get_current();
-    gfx_rect(x, y, w, h, theme->text_color);
+    gfx_rect(x, y, w, h, COLOR_BLACK);
     gfx_rect(x+1, y+1, w-2, h-2, theme->frame_dark);
-    gfx_hline(x+1, y+1, w-3, 15);
-    gfx_vline(x+1, y+1, h-3, 15);
+    gfx_hline(x+1, y+1, w-3, theme->frame_shine);
+    gfx_vline(x+1, y+1, h-3, theme->frame_shine);
 }
 
 void win_draw_3d_border_sunken(int x, int y, int w, int h) {
     window_theme_t *theme = theme_get_current();
-    gfx_rect(x, y, w, h, theme->text_color);
-    gfx_rect(x+1, y+1, w-2, h-2, 15);
+    gfx_rect(x, y, w, h, COLOR_BLACK);
+    gfx_rect(x+1, y+1, w-2, h-2, theme->frame_shine);
     gfx_hline(x+1, y+1, w-3, theme->frame_dark);
     gfx_vline(x+1, y+1, h-3, theme->frame_dark);
 }
 
-void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *label, int pressed) {
-    window_theme_t *theme = theme_get_current();
+void win_draw_button(int x, int y, int w, int h, uint8_t color, uint8_t text_color, const char *label, int pressed) {
     gfx_fillrect(x+2, y+2, w-3, h-3, color);
     
     if (pressed) {
@@ -139,7 +138,7 @@ void win_draw_button(int x, int y, int w, int h, uint8_t color, const char *labe
         int text_w = bmf_measure_text(&font_b, 12, label);
         int text_x = x + (w - text_w) / 2 + 1;
         int text_y = y + (h / 2) - 3;
-        bmf_printf(text_x, text_y, &font_b, 12, theme->text_color, "%s", label);
+        bmf_printf(text_x, text_y, &font_b, 12, text_color, "%s", label);
     }
 }
 
@@ -473,7 +472,7 @@ void win_msgbox_draw(msgbox_t *box) {
             text_y + 5 + i * (line_h + (line_count > 1 ? 1 : 0)),
             &font_n,
             12,
-            0,
+            theme_get_current()->text_color,
             "%s",
             lines[i]
         );

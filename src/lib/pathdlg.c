@@ -591,7 +591,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
     gui_control_t tree = {0};
     tree.type = CTRL_TREEVIEW;
     tree.x = 8; tree.y = 8; tree.w = 122; tree.h = 166;
-    tree.fg = 0; tree.bg = 15; tree.id = PATH_DLG_ID_TREE; tree.font_size = 12;
+    tree.fg = -1; tree.bg = -1; tree.id = PATH_DLG_ID_TREE; tree.font_size = 12;
     tree.treeview.row_height = 18;
     sys_win_add_control(dlg, &tree);
     ctrl_tree_set_icons(dlg, PATH_DLG_ID_TREE, "C:/ICONS/FLD.ICO", "C:/ICONS/FLO.ICO");
@@ -599,13 +599,13 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
     gui_control_t list = {0};
     list.type = CTRL_LISTBOX;
     list.x = 136; list.y = 8; list.w = 150; list.h = 166;
-    list.fg = 0; list.bg = 15; list.id = PATH_DLG_ID_LIST; list.font_size = 12;
+    list.fg = -1; list.bg = -1; list.id = PATH_DLG_ID_LIST; list.font_size = 12;
     list.listbox.row_height = 16;
     sys_win_add_control(dlg, &list);
 
     gui_control_t label = {0};
     label.type = CTRL_LABEL;
-    label.x = 8; label.y = 190; label.fg = 0; label.bg = -1;
+    label.x = 8; label.y = 190; label.fg = -1; label.bg = -1;
     label.id = PATH_DLG_ID_LABEL; label.font_size = 12;
     safe_copy(label.text, sizeof(label.text), "File:");
     sys_win_add_control(dlg, &label);
@@ -614,7 +614,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
     textbox.type = CTRL_TEXTBOX;
     textbox.x = PATH_DLG_TEXT_X; textbox.y = PATH_DLG_TEXT_Y;
     textbox.w = PATH_DLG_TEXT_W; textbox.h = PATH_DLG_TEXT_H;
-    textbox.fg = 0; textbox.bg = 15; textbox.id = PATH_DLG_ID_TEXT; textbox.font_size = 12;
+    textbox.fg = -1; textbox.bg = -1; textbox.id = PATH_DLG_ID_TEXT; textbox.font_size = 12;
     textbox.textbox.max_length = 255;
     safe_copy(textbox.text, sizeof(textbox.text), initial_file);
     sys_win_add_control(dlg, &textbox);

@@ -48,8 +48,8 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
             gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, theme->frame_dark);
             gfx_vline(abs_x + 1, abs_y + 1, arrow_size - 2, theme->frame_dark);
         } else {
-            gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, COLOR_WHITE);
-            gfx_vline(abs_x + 1, abs_y + 1, arrow_size - 2, COLOR_WHITE);
+            gfx_hline(abs_x + 1, abs_y + 1, control->w - 2, theme->frame_shine);
+            gfx_vline(abs_x + 1, abs_y + 1, arrow_size - 2, theme->frame_shine);
             gfx_hline(abs_x + 1, abs_y + arrow_size - 2, control->w - 2, theme->frame_dark);
             gfx_vline(abs_x + control->w - 2, abs_y + 1, arrow_size - 2, theme->frame_dark);
         }
@@ -69,8 +69,8 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
             gfx_hline(abs_x + 1, down_y + 1, control->w - 2, theme->frame_dark);
             gfx_vline(abs_x + 1, down_y + 1, arrow_size - 2, theme->frame_dark);
         } else {
-            gfx_hline(abs_x + 1, down_y + 1, control->w - 2, COLOR_WHITE);
-            gfx_vline(abs_x + 1, down_y + 1, arrow_size - 2, COLOR_WHITE);
+            gfx_hline(abs_x + 1, down_y + 1, control->w - 2, theme->frame_shine);
+            gfx_vline(abs_x + 1, down_y + 1, arrow_size - 2, theme->frame_shine);
             gfx_hline(abs_x + 1, down_y + arrow_size - 2, control->w - 2, theme->frame_dark);
             gfx_vline(abs_x + control->w - 2, down_y + 1, arrow_size - 2, theme->frame_dark);
         }
@@ -84,7 +84,7 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
         int track_y = abs_y + arrow_size;
         for (int py = 0; py < track_len; py++) {
             for (int px = 0; px < control->w; px++) {
-                uint8_t color = ((px + py) & 1) ? COLOR_WHITE : 7;
+                uint8_t color = ((px + py) & 1) ? theme->frame_shine : theme->frame_light;
                 gfx_putpixel(abs_x + px, track_y + py, color);
             }
         }
@@ -97,8 +97,8 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
             gfx_hline(abs_x + 1, thumb_y + 1, control->w - 2, theme->frame_dark);
             gfx_vline(abs_x + 1, thumb_y + 1, thumb_size - 2, theme->frame_dark);
         } else {
-            gfx_hline(abs_x + 1, thumb_y + 1, control->w - 2, COLOR_WHITE);
-            gfx_vline(abs_x + 1, thumb_y + 1, thumb_size - 2, COLOR_WHITE);
+            gfx_hline(abs_x + 1, thumb_y + 1, control->w - 2, theme->frame_shine);
+            gfx_vline(abs_x + 1, thumb_y + 1, thumb_size - 2, theme->frame_shine);
             gfx_hline(abs_x + 1, thumb_y + thumb_size - 2, control->w - 2, theme->frame_dark);
             gfx_vline(abs_x + control->w - 2, thumb_y + 1, thumb_size - 2, theme->frame_dark);
         }
@@ -111,8 +111,8 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
             gfx_hline(abs_x + 1, abs_y + 1, arrow_size - 2, theme->frame_dark);
             gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
         } else {
-            gfx_hline(abs_x + 1, abs_y + 1, arrow_size - 2, COLOR_WHITE);
-            gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, COLOR_WHITE);
+            gfx_hline(abs_x + 1, abs_y + 1, arrow_size - 2, theme->frame_shine);
+            gfx_vline(abs_x + 1, abs_y + 1, control->h - 2, theme->frame_shine);
             gfx_hline(abs_x + 1, abs_y + control->h - 2, arrow_size - 2, theme->frame_dark);
             gfx_vline(abs_x + arrow_size - 2, abs_y + 1, control->h - 2, theme->frame_dark);
         }
@@ -132,8 +132,8 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
             gfx_hline(right_x + 1, abs_y + 1, arrow_size - 2, theme->frame_dark);
             gfx_vline(right_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
         } else {
-            gfx_hline(right_x + 1, abs_y + 1, arrow_size - 2, COLOR_WHITE);
-            gfx_vline(right_x + 1, abs_y + 1, control->h - 2, COLOR_WHITE);
+            gfx_hline(right_x + 1, abs_y + 1, arrow_size - 2, theme->frame_shine);
+            gfx_vline(right_x + 1, abs_y + 1, control->h - 2, theme->frame_shine);
             gfx_hline(right_x + 1, abs_y + control->h - 2, arrow_size - 2, theme->frame_dark);
             gfx_vline(right_x + arrow_size - 2, abs_y + 1, control->h - 2, theme->frame_dark);
         }
@@ -147,7 +147,7 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
         int track_x = abs_x + arrow_size;
         for (int py = 0; py < control->h; py++) {
             for (int px = 0; px < track_len; px++) {
-                uint8_t color = ((px + py) & 1) ? COLOR_WHITE : 7;
+                uint8_t color = ((px + py) & 1) ? theme->frame_shine : theme->frame_light;
                 gfx_putpixel(track_x + px, abs_y + py, color);
             }
         }
@@ -160,8 +160,8 @@ void ctrl_draw_scrollbar(gui_control_t *control, int abs_x, int abs_y) {
             gfx_hline(thumb_x + 1, abs_y + 1, thumb_size - 2, theme->frame_dark);
             gfx_vline(thumb_x + 1, abs_y + 1, control->h - 2, theme->frame_dark);
         } else {
-            gfx_hline(thumb_x + 1, abs_y + 1, thumb_size - 2, COLOR_WHITE);
-            gfx_vline(thumb_x + 1, abs_y + 1, control->h - 2, COLOR_WHITE);
+            gfx_hline(thumb_x + 1, abs_y + 1, thumb_size - 2, theme->frame_shine);
+            gfx_vline(thumb_x + 1, abs_y + 1, control->h - 2, theme->frame_shine);
             gfx_hline(thumb_x + 1, abs_y + control->h - 2, thumb_size - 2, theme->frame_dark);
             gfx_vline(thumb_x + thumb_size - 2, abs_y + 1, control->h - 2, theme->frame_dark);
         }
