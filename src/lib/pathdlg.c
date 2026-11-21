@@ -683,7 +683,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
             sys_win_draw(dlg);
             sys_win_redraw_all();
             path_dialog_present();
-            sys_yield();
+            sys_sleep(10);
             continue;
         }
 
@@ -693,7 +693,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
             sys_win_draw(dlg);
             sys_win_redraw_all();
             path_dialog_present();
-            sys_yield();
+            sys_sleep(10);
             continue;
         }
 
@@ -747,7 +747,7 @@ int gui_show_path_dialog_filtered(const char *title, const char *initial_path,
         }
 
         path_dialog_present();
-        sys_yield();
+        sys_sleep(10);
     }
 
     sys_win_destroy_form(dlg);

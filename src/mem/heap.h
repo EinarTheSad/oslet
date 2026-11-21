@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #define HEAP_START 0xC0000000
-#define HEAP_INITIAL_SIZE (4 * 1024 * 1024)
+#define HEAP_INITIAL_SIZE (64 * 1024)
 #define ALIGN_UP(x, a) ((((uintptr_t)(x)) + ((a) - 1)) & ~((a) - 1))
 
 typedef struct block {

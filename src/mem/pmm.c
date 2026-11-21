@@ -42,14 +42,14 @@ static void pmm_build_bitmap(uintptr_t base, uintptr_t top) {
     free_limit = 0;
 
     /* allocate bitmap via early allocator and align it to page */
-    void *alloc = (void*)mm_early_alloc(bitmap_bytes + PAGE_SIZE, PAGE_SIZE);
+    void *alloc = (void*)mm_early_alloc(bitmap_bytes, PAGE_SIZE);
     if (!alloc) {
         frame_bitmap = NULL;
         return;
     }
     frame_bitmap = (uint8_t*)ALIGN_UP(alloc, PAGE_SIZE);
 
-    alloc = (void*)mm_early_alloc(bitmap_bytes + PAGE_SIZE, PAGE_SIZE);
+    alloc = (void*)mm_early_alloc(bitmap_bytes, PAGE_SIZE);
     if (!alloc) {
         frame_bitmap = NULL;
         return;
@@ -184,6 +184,7 @@ void pmm_free_frame(uintptr_t paddr) {
 }
 
 size_t pmm_total_frames(void) { return nframes; }
+int pmm_ready(void) { return frame_bitmap && ram_bitmap; }
 
 void pmm_init_from_multiboot(uint32_t mboot_ptr) {
     multiboot_info_t *mi = (multiboot_info_t*)(uintptr_t)mboot_ptr;
@@ -191,9 +192,11 @@ void pmm_init_from_multiboot(uint32_t mboot_ptr) {
 
     uintptr_t highest = 0;
 
-    if (mi->mmap_length == 0 || mi->mmap_addr == 0) {
+    if (!(mi->flags & MULTIBOOT_INFO_FLAG_MMAP) ||
+        mi->mmap_length == 0 || mi->mmap_addr == 0) {
         if (mi->mem_upper) highest = 0x100000u + ((uintptr_t)mi->mem_upper * 1024u);
         else highest = 0x100000u + (16 * 1024 * 1024);
+        if (!highest) return;
         pmm_build_bitmap(0, highest);
         pmm_mark_region_free(0x100000u, highest - 0x100000u);
     } else {
@@ -204,20 +207,36 @@ void pmm_init_from_multiboot(uint32_t mboot_ptr) {
 
         for (; p < end; ) {
             multiboot_mmap_entry_t *e = (multiboot_mmap_entry_t*)p;
-            uintptr_t base = (uintptr_t)e->addr;
-            uintptr_t len  = (uintptr_t)e->len;
-            if (base + len > highest) highest = base + len;
+            uint64_t top = e->addr + e->len;
+            if (e->type == 1 && top >= e->addr && e->addr < 0xfffff000ull) {
+                if (top > 0xfffff000ull) top = 0xfffff000ull;
+                if (top > highest) highest = (uintptr_t)top;
+            }
             p += e->size + sizeof(e->size);
         }
 
+        if (!highest) return;
         pmm_build_bitmap(0, highest);
 
         p = mmap;
         for (; p < end; ) {
             multiboot_mmap_entry_t *e = (multiboot_mmap_entry_t*)p;
-            uintptr_t base = (uintptr_t)e->addr;
-            uintptr_t len  = (uintptr_t)e->len;
-            if (e->type == 1) pmm_mark_region_free(base, len);
+            uint64_t top = e->addr + e->len;
+            if (e->type == 1 && top >= e->addr && e->addr < highest) {
+                if (top > highest) top = highest;
+                pmm_mark_region_free((uintptr_t)e->addr, (size_t)(top - e->addr));
+            }
+            p += e->size + sizeof(e->size);
+        }
+
+        p = mmap;
+        for (; p < end; ) {
+            multiboot_mmap_entry_t *e = (multiboot_mmap_entry_t*)p;
+            uint64_t top = e->addr + e->len;
+            if (e->type != 1 && top >= e->addr && e->addr < highest) {
+                if (top > highest) top = highest;
+                pmm_reserve_region((uintptr_t)e->addr, (size_t)(top - e->addr));
+            }
             p += e->size + sizeof(e->size);
         }
     }
@@ -233,6 +252,9 @@ void pmm_init_from_multiboot(uint32_t mboot_ptr) {
         pmm_reserve_region(bmp, bitmap_bytes);
         pmm_reserve_region((uintptr_t)ram_bitmap, bitmap_bytes);
     }
+    pmm_reserve_region((uintptr_t)mi, sizeof(*mi));
+    if (mi->flags & MULTIBOOT_INFO_FLAG_MMAP)
+        pmm_reserve_region(mi->mmap_addr, mi->mmap_length);
 
     if ((mi->flags & MULTIBOOT_INFO_FLAG_FRAMEBUF) &&
         mi->framebuffer_addr <= UINTPTR_MAX &&

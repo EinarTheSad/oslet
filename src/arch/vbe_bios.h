@@ -10,3 +10,4 @@ typedef struct {
 int vbe_bios_init(void);
 int vbe_bios_call(vbe_bios_regs_t *regs, void *buffer, size_t buffer_size);
 int vbe_bios_text_mode(void);
+int vbe_bios_vga_mode(void);

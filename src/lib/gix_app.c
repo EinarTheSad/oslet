@@ -182,7 +182,7 @@ void gix_app_run(const gix_app_desc_t *desc) {
             desc->on_tick(gix_main_form, desc->userdata);
         }
 
-        sys_yield();
+        sys_sleep(10);
     }
 
     if (desc->on_cleanup) {

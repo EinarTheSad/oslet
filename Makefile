@@ -7,12 +7,13 @@ DISK_SIZE = 32
 
 CC      = gcc
 LD      = ld
+SUDO    ?= sudo
 QEMU_AUDIO ?= sdl
 QEMU_DISPLAY ?= sdl,grab-mod=lctrl-lalt,show-cursor=off
 QEMU_SOUND ?= -audiodev $(QEMU_AUDIO),id=snd0 -device sb16,audiodev=snd0
 
-CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector -DOSLET_KERNEL -MMD -MP
-BINCFLAGS = -m32 -ffreestanding -O2 -Wall -Wextra -fno-stack-protector -fPIE -fno-plt -ffunction-sections -fdata-sections -MMD -MP
+CFLAGS  = -m32 -march=i386 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -DOSLET_KERNEL -MMD -MP
+BINCFLAGS = -m32 -march=i386 -ffreestanding -O2 -Wall -Wextra -fno-stack-protector -fPIE -fno-plt -ffunction-sections -fdata-sections -MMD -MP
 LDFLAGS = -m elf_i386 -T $(LNK) -nostdlib
 BIN_LDFLAGS = -m elf_i386 -T $(SRC)/shell/binary.ld -nostdlib -pie --gc-sections
 
@@ -49,6 +50,7 @@ LIB_OBJ_DIR      = $(CURDIR)/$(BUILD)/lib
 LIB_SRCS         = $(filter-out $(SRC)/lib/elf.c $(SRC)/lib/mode_marker.c,$(wildcard $(SRC)/lib/*.c))
 LIB_OBJS         = $(patsubst $(SRC)/lib/%.c,$(LIB_OBJ_DIR)/%.o,$(LIB_SRCS))
 BINARY_CONFIG_STAMP = $(CURDIR)/$(BUILD)/.userland-config
+KERNEL_CONFIG_STAMP = $(CURDIR)/$(BUILD)/.kernel-config
 
 BUILD_BIN        = $(CURDIR)/$(BUILD)/bin
 
@@ -84,15 +86,21 @@ kernel: $(CURDIR)/$(BUILD)/$(TARGET)
 $(CURDIR)/$(BUILD)/$(TARGET): $(KERNEL_OBJS) $(LNK)
 	$(LD) $(LDFLAGS) -o $@ $(KERNEL_OBJS)
 
-$(CURDIR)/$(BUILD)/%.o: $(SRC)/%.c
+$(CURDIR)/$(BUILD)/%.o: $(SRC)/%.c $(KERNEL_CONFIG_STAMP)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(CURDIR)/$(BUILD)/%.o: $(SRC)/%.S
+$(CURDIR)/$(BUILD)/%.o: $(SRC)/%.S $(KERNEL_CONFIG_STAMP)
 	@mkdir -p $(dir $@)
-	$(CC) -m32 -MMD -MP -c $< -o $@
+	$(CC) -m32 -march=i386 -MMD -MP -c $< -o $@
 
 FORCE:
+
+$(KERNEL_CONFIG_STAMP): FORCE
+	@mkdir -p $(dir $@)
+	@if ! printf '%s\n' '$(CFLAGS) $(LDFLAGS)' | cmp -s - $@; then \
+		printf '%s\n' '$(CFLAGS) $(LDFLAGS)' > $@; \
+	fi
 
 $(BINARY_CONFIG_STAMP): FORCE
 	@mkdir -p $(dir $@)
@@ -173,25 +181,25 @@ $(DISK):
 	@echo "Setting up loop device..."
 	@set -e; \
 	LOOP=""; \
-	cleanup() { status=$$?; sudo umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then sudo losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
+	cleanup() { status=$$?; $(SUDO) umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then $(SUDO) losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
 	trap cleanup EXIT; \
-	LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	LOOP=$$($(SUDO) losetup -f --show -P $(DISK)); \
 	echo "Loop: $$LOOP"; \
 	sleep 1; \
 	echo "Formatting partition..."; \
-	sudo mkfs.vfat -F 32 -n BOOTPART $${LOOP}p1; \
+	$(SUDO) mkfs.vfat -F 32 -n BOOTPART $${LOOP}p1; \
 	echo "Mounting..."; \
 	mkdir -p mnt; \
-	sudo mount $${LOOP}p1 mnt; \
+	$(SUDO) mount $${LOOP}p1 mnt; \
 	echo "Creating directories..."; \
-	sudo mkdir -p mnt/boot/grub; \
+	$(SUDO) mkdir -p mnt/boot/grub; \
 	echo "Copying GRUB config..."; \
-	sudo cp grub.cfg mnt/boot/grub/grub.cfg; \
+	$(SUDO) cp grub.cfg mnt/boot/grub/grub.cfg; \
 	echo "Installing GRUB..."; \
-	sudo grub-install --target=i386-pc --boot-directory=mnt/boot --force $$LOOP; \
+	$(SUDO) grub-install --target=i386-pc --boot-directory=mnt/boot --force $$LOOP; \
 	echo "Unmounting..."; \
-	sudo umount mnt; \
-	sudo losetup -d $$LOOP; \
+	$(SUDO) umount mnt; \
+	$(SUDO) losetup -d $$LOOP; \
 	LOOP=""; \
 	rmdir mnt; \
 	trap - EXIT; \
@@ -212,27 +220,27 @@ install: $(CURDIR)/$(BUILD)/$(TARGET)
 	@echo "Installing kernel and resources..."
 	@set -e; \
 	LOOP=""; \
-	cleanup() { status=$$?; sudo umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then sudo losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
+	cleanup() { status=$$?; $(SUDO) umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then $(SUDO) losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
 	trap cleanup EXIT; \
-	LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	LOOP=$$($(SUDO) losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
-	sudo mount $${LOOP}p1 mnt; \
-	sudo cp $(CURDIR)/$(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
-	sudo cp grub.cfg mnt/boot/grub/grub.cfg; \
-	sudo mkdir -p mnt/FONTS; \
-	sudo cp $(SRC)/assets/bmf/*.[bB][mM][fF] mnt/FONTS/ 2>/dev/null || true; \
-	sudo mkdir -p mnt/IMAGES; \
-	sudo cp images/*.[bB][mM][pP] mnt/IMAGES/ 2>/dev/null || true; \
-	sudo mkdir -p mnt/ICONS; \
-	sudo cp $(SRC)/assets/ico/*.[iI][cC][oO] mnt/ICONS/ 2>/dev/null || true; \
-	sudo cp $(SRC)/assets/cur/*.[cC][uU][rR] mnt/ICONS/ 2>/dev/null || true; \
-	sudo mkdir -p mnt/SOUNDS; \
-	sudo cp $(SRC)/assets/wav/*.[wW][aA][vV] mnt/SOUNDS/ 2>/dev/null || true; \
-	sudo mkdir -p mnt/OSLET; \
-	sudo cp $(SRC)/assets/bmp/*.[bB][mM][pP] mnt/OSLET/ 2>/dev/null || true; \
-	sudo cp $(SRC)/assets/pal/*.[pP][aA][lL] mnt/OSLET/ 2>/dev/null || true; \
-	sudo umount mnt; \
-	sudo losetup -d $$LOOP; \
+	$(SUDO) mount $${LOOP}p1 mnt; \
+	$(SUDO) cp $(CURDIR)/$(BUILD)/$(TARGET) mnt/boot/$(TARGET); \
+	$(SUDO) cp grub.cfg mnt/boot/grub/grub.cfg; \
+	$(SUDO) mkdir -p mnt/FONTS; \
+	$(SUDO) cp $(SRC)/assets/bmf/*.[bB][mM][fF] mnt/FONTS/ 2>/dev/null || true; \
+	$(SUDO) mkdir -p mnt/IMAGES; \
+	$(SUDO) cp images/*.[bB][mM][pP] mnt/IMAGES/ 2>/dev/null || true; \
+	$(SUDO) mkdir -p mnt/ICONS; \
+	$(SUDO) cp $(SRC)/assets/ico/*.[iI][cC][oO] mnt/ICONS/ 2>/dev/null || true; \
+	$(SUDO) cp $(SRC)/assets/cur/*.[cC][uU][rR] mnt/ICONS/ 2>/dev/null || true; \
+	$(SUDO) mkdir -p mnt/SOUNDS; \
+	$(SUDO) cp $(SRC)/assets/wav/*.[wW][aA][vV] mnt/SOUNDS/ 2>/dev/null || true; \
+	$(SUDO) mkdir -p mnt/OSLET; \
+	$(SUDO) cp $(SRC)/assets/bmp/*.[bB][mM][pP] mnt/OSLET/ 2>/dev/null || true; \
+	$(SUDO) cp $(SRC)/assets/pal/*.[pP][aA][lL] mnt/OSLET/ 2>/dev/null || true; \
+	$(SUDO) umount mnt; \
+	$(SUDO) losetup -d $$LOOP; \
 	LOOP=""; \
 	rmdir mnt; \
 	trap - EXIT; \
@@ -246,32 +254,32 @@ binstall:
 	@echo "Installing binaries..."
 	@set -e; \
 	LOOP=""; \
-	cleanup() { status=$$?; sudo umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then sudo losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
+	cleanup() { status=$$?; $(SUDO) umount mnt 2>/dev/null || true; if [ -n "$$LOOP" ]; then $(SUDO) losetup -d $$LOOP 2>/dev/null || true; fi; rmdir mnt 2>/dev/null || true; exit $$status; }; \
 	trap cleanup EXIT; \
-	LOOP=$$(sudo losetup -f --show -P $(DISK)); \
+	LOOP=$$($(SUDO) losetup -f --show -P $(DISK)); \
 	mkdir -p mnt; \
-	sudo mount $${LOOP}p1 mnt; \
+	$(SUDO) mount $${LOOP}p1 mnt; \
 	for f in $(SHELL_TARGETS); do \
 		if [ -f $(BUILD_BIN)/$$f ]; then \
-			sudo cp $(BUILD_BIN)/$$f mnt/; \
+			$(SUDO) cp $(BUILD_BIN)/$$f mnt/; \
 		fi; \
 	done; \
-	sudo mkdir -p mnt/OSLET/START; \
+	$(SUDO) mkdir -p mnt/OSLET/START; \
 	for f in $(AGIX_TARGETS) $(GIX_TARGETS); do \
 		if [ -f $(BUILD_BIN)/$$f ]; then \
-			sudo cp $(BUILD_BIN)/$$f mnt/OSLET/START/; \
+			$(SUDO) cp $(BUILD_BIN)/$$f mnt/OSLET/START/; \
 		fi; \
 	done; \
 	for f in $(SRC)/ini/*.[iI][nN][iI]; do \
 		[ -f "$$f" ] || continue; \
 		name=$$(basename "$$f"); \
 		if [ ! -e "mnt/OSLET/$$name" ] && [ ! -e "mnt/OSLET/$$(echo "$$name" | tr '[:lower:]' '[:upper:]')" ]; then \
-			sudo cp "$$f" mnt/OSLET/; \
+			$(SUDO) cp "$$f" mnt/OSLET/; \
 		fi; \
 	done; \
-	sudo cp $(SRC)/grp/*.[gG][rR][pP] mnt/OSLET/START/ 2>/dev/null || true; \
-	sudo umount mnt; \
-	sudo losetup -d $$LOOP; \
+	$(SUDO) cp $(SRC)/grp/*.[gG][rR][pP] mnt/OSLET/START/ 2>/dev/null || true; \
+	$(SUDO) umount mnt; \
+	$(SUDO) losetup -d $$LOOP; \
 	LOOP=""; \
 	rmdir mnt; \
 	trap - EXIT; \

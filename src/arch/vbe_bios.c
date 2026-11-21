@@ -161,10 +161,19 @@ int vbe_bios_call(vbe_bios_regs_t *regs, void *buffer, size_t buffer_size) {
     return bios_call(regs, buffer, buffer_size, 1);
 }
 
-int vbe_bios_text_mode(void) {
-    vbe_bios_regs_t regs = { .ax = 0x0003 };
+static int bios_standard_mode(uint16_t mode) {
+    vbe_bios_regs_t regs = { .ax = mode };
     if (bios_call(&regs, NULL, 0, 0) != 0) return -1;
     regs.ax = 0x0f00;
     if (bios_call(&regs, NULL, 0, 0) != 0) return -1;
-    return (regs.ax & 0x7fu) == 3 && (regs.ax >> 8) == 80 ? 0 : -1;
+    return (regs.ax & 0x7fu) == mode &&
+           (mode != 3 || (regs.ax >> 8) == 80) ? 0 : -1;
+}
+
+int vbe_bios_text_mode(void) {
+    return bios_standard_mode(3);
+}
+
+int vbe_bios_vga_mode(void) {
+    return bios_standard_mode(0x12);
 }

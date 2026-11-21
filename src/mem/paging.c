@@ -4,9 +4,22 @@
 #include "../drivers/graphics/vga.h"
 #include <stdint.h>
 #include "early_alloc.h"
+#include "../arch/cpu.h"
 
 static uintptr_t current_pd_phys = 0;
 static uintptr_t identity_limit = 0;
+
+void paging_invalidate(uintptr_t vaddr) {
+    static int has_invlpg = -1;
+    if (has_invlpg < 0) has_invlpg = cpu_has_invlpg();
+    if (has_invlpg) {
+        __asm__ volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+    } else {
+        uintptr_t cr3;
+        __asm__ volatile("movl %%cr3, %0\n\tmovl %0, %%cr3"
+                         : "=r"(cr3) :: "memory");
+    }
+}
 
 static inline uint32_t pd_index(uintptr_t a) { return (a >> 22) & 0x3FF; }
 static inline uint32_t pt_index(uintptr_t a) { return (a >> 12) & 0x3FF; }
@@ -114,7 +127,7 @@ int paging_unmap_page(uintptr_t vaddr) {
         pmm_free_frame((uintptr_t)pt);
     }
     
-    __asm__ volatile("invlpg (%0)" :: "r"(vaddr) : "memory");
+    paging_invalidate(vaddr);
     return 0;
 }
 

@@ -347,7 +347,7 @@ static void stop_shell(void) {
 
     sys_kill(shell_tid);
     while (task_alive(shell_tid))
-        sys_yield();
+        sys_sleep(10);
     shell_tid = 0;
 }
 
@@ -701,7 +701,7 @@ void _start(void) {
         if (handle_event(form, &event, NULL) != 0)
             running = 0;
 
-        sys_yield();
+        sys_sleep(10);
     }
 
     terminal_cleanup();

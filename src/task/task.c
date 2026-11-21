@@ -162,7 +162,7 @@ void task_sleep(uint32_t milliseconds) {
     uint32_t eflags = irq_save();
 
     uint32_t current_ticks = timer_get_ticks();
-    uint32_t sleep_ticks = (milliseconds * 100) / 1000;
+    uint32_t sleep_ticks = milliseconds / 10 + (milliseconds % 10 != 0);
     if (sleep_ticks < 1) sleep_ticks = 1;
 
     current_task->state = TASK_SLEEPING;
@@ -186,7 +186,7 @@ static void wakeup_sleeping_tasks_locked(void) {
 
     do {
         if (t->state == TASK_SLEEPING) {
-            if (current_ticks >= t->sleep_until_ticks) {
+            if ((int32_t)(current_ticks - t->sleep_until_ticks) >= 0) {
                 t->state = TASK_READY;
                 woken++;
             }
@@ -276,18 +276,11 @@ static task_t *pick_next_task(void) {
         t = t->next;
     } while (t != start);
     
-    /* No READY task found - if current is SLEEPING, return it anyway
-       so the scheduler can do a HLT and wait for wakeup */
-    if (current_task->state == TASK_RUNNING || current_task->state == TASK_SLEEPING) {
+    if (current_task->state == TASK_RUNNING || current_task->state == TASK_READY) {
         return current_task;
     }
 
-    if (task_list->state != TASK_TERMINATED) {
-        task_list->state = TASK_READY;
-        return task_list;
-    }
-
-    return current_task;
+    return NULL;
 }
 
 void schedule(void) {
@@ -299,8 +292,14 @@ void schedule(void) {
     cleanup_terminated_tasks();
 
     task_t *next = pick_next_task();
+    while (!next) {
+        __asm__ volatile ("sti\n\thlt\n\tcli" ::: "memory");
+        wakeup_sleeping_tasks_locked();
+        next = pick_next_task();
+    }
     
     if (next == current_task) {
+        current_task->state = TASK_RUNNING;
         /* No switch needed - restore task_yield's saved context directly */
         __asm__ volatile (
             "movl %0, %%esp\n\t"

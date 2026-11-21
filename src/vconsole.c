@@ -179,7 +179,7 @@ int vc_getchar(vconsole_t *vc) {
     for (;;) {
         if (!vc->active) return -1;
         if (vc->key_head != vc->key_tail) break;
-        task_yield();
+        task_sleep(10);
     }
     uint8_t key = vc->keybuf[vc->key_tail];
     vc->key_tail = (vc->key_tail + 1) % VC_KEYBUF_SIZE;

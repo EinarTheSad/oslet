@@ -117,7 +117,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     }
     memset_s(bitmap, 0, buffer_size);
 
-    uint8_t (*palette)[3] = NULL;
+    uint8_t (*palette)[4] = NULL;
     int palette_entries = 0;
 
     if (info.bpp <= 8) {
@@ -142,17 +142,17 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             return NULL;
         }
         
+        int palette_size = palette_entries * 4;
+        if (fat32_read(f, palette, (size_t)palette_size) != palette_size) {
+            kfree(palette);
+            kfree(bitmap);
+            fat32_close(f);
+            return NULL;
+        }
         for (int i = 0; i < palette_entries; i++) {
-            uint8_t bgr[4];
-            if (fat32_read(f, bgr, 4) != 4) {
-                kfree(palette);
-                kfree(bitmap);
-                fat32_close(f);
-                return NULL;
-            }
-            palette[i][0] = bgr[2];
-            palette[i][1] = bgr[1];
-            palette[i][2] = bgr[0];
+            uint8_t blue = palette[i][0];
+            palette[i][0] = palette[i][2];
+            palette[i][2] = blue;
         }
     }
 
@@ -173,7 +173,10 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         src_row_size = (((width + 1) / 2) + 3) & ~3;
     }
 
-    uint8_t *row_buf = kmalloc(src_row_size);
+    int rows_per_read = 16384 / src_row_size;
+    if (rows_per_read < 1) rows_per_read = 1;
+    if (rows_per_read > height) rows_per_read = height;
+    uint8_t *row_buf = kmalloc((size_t)rows_per_read * src_row_size);
     if (!row_buf) {
         if (palette) kfree(palette);
         kfree(bitmap);
@@ -216,18 +219,26 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
         if (!colors) goto invalid_bitmap;
     }
 
+    int row_in_batch = rows_per_read;
     for (int y = 0; y < height; y++) {
-        if (fat32_read(f, row_buf, src_row_size) != src_row_size)
-            goto invalid_bitmap;
+        if (row_in_batch == rows_per_read) {
+            int rows = height - y;
+            if (rows > rows_per_read) rows = rows_per_read;
+            int bytes = rows * src_row_size;
+            if (fat32_read(f, row_buf, (size_t)bytes) != bytes)
+                goto invalid_bitmap;
+            row_in_batch = 0;
+        }
+        const uint8_t *row = row_buf + (size_t)row_in_batch++ * src_row_size;
 
         int dest_y = bottom_up ? (height - 1 - y) : y;
         int dest_offset = dest_y * out_row_bytes;
 
         if (info.bpp == 24) {
             for (int x = 0; x < width; x++) {
-                int16_t r = (int16_t)row_buf[x * 3 + 2] + err_r_curr[x];
-                int16_t g = (int16_t)row_buf[x * 3 + 1] + err_g_curr[x];
-                int16_t b = (int16_t)row_buf[x * 3 + 0] + err_b_curr[x];
+                int16_t r = (int16_t)row[x * 3 + 2] + err_r_curr[x];
+                int16_t g = (int16_t)row[x * 3 + 1] + err_g_curr[x];
+                int16_t b = (int16_t)row[x * 3 + 0] + err_b_curr[x];
                 
                 if (r < 0) r = 0; else if (r > 255) r = 255;
                 if (g < 0) g = 0; else if (g > 255) g = 255;
@@ -235,8 +246,8 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
                 
                 uint8_t color = find_closest_color((uint8_t)r, (uint8_t)g, (uint8_t)b);
                 colors[(size_t)dest_y * width + x] = ((uint32_t)color << 24) |
-                    ((uint32_t)row_buf[x * 3 + 2] << 16) |
-                    ((uint32_t)row_buf[x * 3 + 1] << 8) | row_buf[x * 3];
+                    ((uint32_t)row[x * 3 + 2] << 16) |
+                    ((uint32_t)row[x * 3 + 1] << 8) | row[x * 3];
                 
                 int16_t err_r = r - (int16_t)gfx_palette[color][0];
                 int16_t err_g = g - (int16_t)gfx_palette[color][1];
@@ -277,7 +288,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             }
         } else if (info.bpp == 8) {
             for (int x = 0; x < width; x++) {
-                uint8_t idx = row_buf[x];
+                uint8_t idx = row[x];
                 if (idx >= palette_entries) goto invalid_bitmap;
                 
                 int16_t r = (int16_t)palette[idx][0] + err_r_curr[x];
@@ -332,7 +343,7 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
             }
         } else {
             for (int x = 0; x < out_row_bytes; x++) {
-                uint8_t byte_val = row_buf[x];
+                uint8_t byte_val = row[x];
                 /* 4bpp osLET assets already use VGA indexes. Preserve them so
                    index 5 remains the transparent icon color after palette edits. */
                 bitmap[dest_offset + x] = byte_val;

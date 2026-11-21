@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "gui.h"
+#include "../arch/cpu.h"
 
 #define MAX_OPEN_FILES 32
 static char shell_version_buf[64] = "";
@@ -767,9 +768,16 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
             for (int i = 0; i < (int)sizeof(out->model); i++) out->model[i] = '\0';
             out->mhz = 0;
 
+            if (!cpu_has_cpuid()) {
+                strcpy_s(out->vendor, "Unknown", sizeof(out->vendor));
+                strcpy_s(out->model, "80386/80486", sizeof(out->model));
+                return 0;
+            }
+
             uint32_t a, b, c, d;
             char vbuf[13];
             __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0));
+            uint32_t max_basic = a;
             ((uint32_t*)vbuf)[0] = b;
             ((uint32_t*)vbuf)[1] = d;
             ((uint32_t*)vbuf)[2] = c;
@@ -1051,13 +1059,18 @@ static __attribute__((noinline, noclone)) uint32_t handle_info(uint32_t al, uint
             if (out->mhz == 0) {
                 /* Newer Intel CPUs may report base MHz directly in CPUID.0x16. */
                 uint32_t a16=0, b16=0, c16=0, d16=0;
-                __asm__ volatile("cpuid" : "=a"(a16), "=b"(b16), "=c"(c16), "=d"(d16) : "a"(0x16));
+                if (max_basic >= 0x16)
+                    __asm__ volatile("cpuid" : "=a"(a16), "=b"(b16), "=c"(c16), "=d"(d16) : "a"(0x16));
                 if (a16 && a16 < 0x80000) {
                     out->mhz = a16;
                     return 0;
                 }
 
                 /* NOTE: CPUID.0x15 handling omitted (avoids 64-bit div helpers). */
+
+                if (max_basic < 1) return 0;
+                __asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1));
+                if (!(d & (1u << 4))) return 0;
 
                 const uint32_t sample_ticks = 20; /* about 200ms at the default PIT rate */
 
@@ -1602,6 +1615,9 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
             return 0;
         }
         case 0x01: {
+            if (!edx && mouse_cursor_drawn_at((int)ebx, (int)ecx) &&
+                !gfx_has_pending_updates())
+                return 0;
             if (!edx && buffer_valid) {
                 mouse_restore();
             }
@@ -1687,7 +1703,8 @@ static uint32_t handle_power(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t e
             outw(0x4004, 0x3400);
 
             /* If still running, show message and halt */
-            vga_clear();
+            if (gfx_shutdown_console() != 0)
+                printf("Unable to restore the text display.\n");
             vga_set_color(0, 6);
             vga_set_cursor(19,11);
             printf("┌────────────────────────────────────────┐\n");
@@ -1717,7 +1734,8 @@ static uint32_t handle_power(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t e
             outb(0xCF9, 0x06);
 
             /* Last resort - halt */
-            vga_clear();
+            if (gfx_shutdown_console() != 0)
+                printf("Unable to restore the text display.\n");
             vga_set_color(0, 6);
             vga_set_cursor(20,11);
             printf("┌──────────────────────────────────────┐\n");

@@ -426,10 +426,14 @@ static int apply_display_mode(cpl_screen_state_t *state, int resolution, int dep
                            "OK", "Screen");
             return -1;
         }
-        if (sys_gfx_vbe_try((unsigned)mode) != 0) {
+        int try_result = sys_gfx_vbe_try((unsigned)mode);
+        if (try_result != 0) {
             if (desktop_refresh_display() >= 0) desktop_present_display();
             refresh_display_options(state, 0);
-            sys_win_msgbox("Could not set the selected display mode.", "OK", "Screen");
+            char message[96];
+            snprintf(message, sizeof(message),
+                     "Could not set the selected display mode (error %d).", try_result);
+            sys_win_msgbox(message, "OK", "Screen");
             return -1;
         }
         if (desktop_refresh_display() < 0) {

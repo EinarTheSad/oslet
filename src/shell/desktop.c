@@ -477,12 +477,7 @@ static void desktop_redraw_rect(int x, int y, int w, int h) {
         /* Redraw wallpaper portion */
         if (settings.wallpaper[0] != '\0' && cached_wallpaper.data) {
             if (settings.wallpaper_mode == 1) {
-                /* Stretch mode: redraw entire cached wallpaper (640x480) */
-                draw_wallpaper();
-                /* Redraw taskbar since wallpaper covers entire screen */
-                taskbar_draw();
-                clock_draw();
-                taskbar_dirty = 0; /* already handled */
+                wallpaper_draw_partial(&cached_wallpaper, x, y, x, y, w, h);
             } else if (settings.wallpaper_mode == 2) {
                 /* Tile mode: repeat template only within dirty rectangle */
                 int bw = cached_wallpaper.width;
@@ -859,7 +854,7 @@ void _start(void) {
         sys_get_mouse_state(&mx, &my, &mb);
         sys_mouse_draw_cursor(mx, my, 0);
         sys_gfx_swap();
-        sys_yield();
+        sys_sleep(10);
     }
 
     sys_gfx_exit();

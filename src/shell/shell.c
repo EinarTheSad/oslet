@@ -225,7 +225,7 @@ void _start(void) {
         print_prompt();
         int n = sys_readline(line, sizeof(line));
         if (n <= 0) {
-            sys_yield();
+            sys_sleep(10);
             continue;
         }
         

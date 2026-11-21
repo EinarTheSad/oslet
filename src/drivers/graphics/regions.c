@@ -2,6 +2,14 @@
 
 void gfx_read_screen_region_color(uint32_t *dst, int width, int height, int x, int y) {
     if (!dst || width <= 0 || height <= 0) return;
+    if (backbuffer && gfx_colorbuffer && x >= 0 && y >= 0 &&
+        width <= GFX_WIDTH - x && height <= GFX_HEIGHT - y) {
+        for (int row = 0; row < height; ++row)
+            memcpy_s(dst + (size_t)row * width,
+                     gfx_colorbuffer + (size_t)(y + row) * GFX_WIDTH + x,
+                     (size_t)width * sizeof(*dst));
+        return;
+    }
     for (int row = 0; row < height; ++row)
         for (int col = 0; col < width; ++col)
             dst[(size_t)row * width + col] = gfx_get_color(x + col, y + row);

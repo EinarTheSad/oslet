@@ -190,6 +190,43 @@ int fat32_read(fat32_file_t *file, void *buffer, size_t size) {
     }
     
     while (to_read > 0 && file->current_cluster >= 2 && file->current_cluster < FAT32_EOC) {
+        if (file->cluster_offset == 0 && vol->bytes_per_sector == ATA_SECTOR_SIZE &&
+            vol->sectors_per_cluster <= 128 && to_read >= cluster_size &&
+            file_cluster_valid(vol, file->current_cluster)) {
+            uint32_t limit = 128 / vol->sectors_per_cluster;
+            size_t available_clusters = to_read / cluster_size;
+            if (limit > available_clusters) limit = (uint32_t)available_clusters;
+            uint32_t last = file->current_cluster;
+            uint32_t count = 1;
+            while (count < limit) {
+                uint32_t next = get_next_cluster(vol, last);
+                if (next != last + 1 || !file_cluster_valid(vol, next)) break;
+                last = next;
+                ++count;
+            }
+            uint32_t sectors = count * vol->sectors_per_cluster;
+            uint64_t lba = (uint64_t)vol->first_data_sector +
+                           (uint64_t)(file->current_cluster - 2) * vol->sectors_per_cluster;
+            if (lba + sectors <= 0x10000000ull) {
+                if (ata_read_sectors((uint32_t)lba, (uint8_t)sectors,
+                                     (uint8_t*)buffer + bytes_read) != 0) {
+                    kfree(cluster_buf);
+                    fat32_release();
+                    return -1;
+                }
+                uint32_t chunk = count * cluster_size;
+                bytes_read += chunk;
+                to_read -= chunk;
+                file->position += chunk;
+                file->current_cluster = get_next_cluster(vol, last);
+                if (!file_cluster_valid(vol, file->current_cluster)) {
+                    kfree(cluster_buf);
+                    fat32_release();
+                    return -1;
+                }
+                continue;
+            }
+        }
         if (read_cluster(vol, file->current_cluster, cluster_buf) != 0) {
             kfree(cluster_buf);
             fat32_release();

@@ -80,19 +80,36 @@ static int map_region(uint32_t vaddr, uint32_t size, uint32_t flags) {
     uint32_t aligned_start = vaddr & ~(PAGE_SIZE - 1);
     uint64_t end = (uint64_t)vaddr + size;
     uint32_t aligned_end = (uint32_t)((end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1));
+    uint8_t added[SLOT_SIZE / PAGE_SIZE / 8] = {0};
+    if (aligned_end <= aligned_start ||
+        aligned_end - aligned_start > SLOT_SIZE) return -1;
     
     for (uint32_t addr = aligned_start; addr < aligned_end; addr += PAGE_SIZE) {
         if (paging_is_mapped(addr)) continue;
         
         uint32_t phys = pmm_alloc_frame();
-        if (!phys) return -1;
+        if (!phys) goto fail;
         
         if (paging_map_page(addr, phys, flags) != 0) {
             pmm_free_frame(phys);
-            return -1;
+            goto fail;
         }
+        unsigned page = (addr - aligned_start) / PAGE_SIZE;
+        added[page / 8] |= (uint8_t)(1u << (page % 8));
     }
     return 0;
+
+fail:
+    for (uint32_t addr = aligned_start; addr < aligned_end; addr += PAGE_SIZE) {
+        unsigned page = (addr - aligned_start) / PAGE_SIZE;
+        uintptr_t phys;
+        if ((added[page / 8] & (1u << (page % 8))) &&
+            paging_get_physical(addr, &phys) == 0) {
+            paging_unmap_page(addr);
+            pmm_free_frame(phys);
+        }
+    }
+    return -1;
 }
 
 static void unmap_region(uint32_t start, uint32_t end) {

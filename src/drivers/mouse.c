@@ -495,6 +495,10 @@ void mouse_draw_cursor(int x, int y) {
     }
 }
 
+int mouse_cursor_drawn_at(int x, int y) {
+    return buffer_valid && saved_x == x && saved_y == y;
+}
+
 void mouse_save(int x, int y) {
     saving_cursor_background = 1;
     mouse_check_default_cursor();

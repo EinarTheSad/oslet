@@ -3,10 +3,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#define VBE_VGA_MODE 0xffffu
+
 typedef struct {
     uint16_t number;
     uint16_t width, height;
-    uint8_t bpp, memory_model, vga_compatible;
+    uint8_t bpp, memory_model, vga_compatible, dac_compatible;
     uint32_t pitch, physical_address;
     uint8_t red_position, red_size;
     uint8_t green_position, green_size;

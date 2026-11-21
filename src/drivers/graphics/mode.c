@@ -34,7 +34,7 @@ typedef struct {
     uint8_t green_position, green_size;
     uint8_t blue_position, blue_size;
     uint8_t memory_model;
-    uint8_t vga_compatible;
+    uint8_t dac_compatible;
     uint8_t window_number;
     uint32_t window_size, window_granularity;
     uint32_t window_start;
@@ -52,7 +52,7 @@ static uint8_t color_palette[256][3];
 static uint8_t gfx_owned_pages[0x100000u / 8u];
 
 static size_t framebuffer_map_length(const framebuffer_t *fb) {
-    return fb->memory_model == 3 ? fb->window_size : fb->length;
+    return fb->window_size ? fb->window_size : fb->length;
 }
 
 static int framebuffer_contains_page(const framebuffer_t *fb, uint64_t page) {
@@ -101,7 +101,7 @@ static int map_framebuffer(framebuffer_t *fb, int check_ram) {
         }
         if (paging_map_page((uintptr_t)page, (uintptr_t)page, P_PRESENT | P_RW) != 0)
             goto fail;
-        __asm__ volatile("invlpg (%0)" :: "r"((uintptr_t)page) : "memory");
+        paging_invalidate((uintptr_t)page);
         size_t index = (size_t)(page >> 12);
         gfx_owned_pages[index >> 3] |= (uint8_t)(1u << (index & 7));
         added[page_number >> 3] |= (uint8_t)(1u << (page_number & 7));
@@ -246,7 +246,11 @@ static uint8_t framebuffer_index(uint32_t rgb, int x, int y) {
     return color_lookup[(r << 10) | (g << 5) | b];
 }
 
-static volatile uint8_t *planar_address(size_t offset) {
+static volatile uint8_t *window_address(size_t offset) {
+    if (offset >= framebuffer.length) {
+        framebuffer.error = 1;
+        return NULL;
+    }
     if (!framebuffer.window_valid ||
         offset < framebuffer.window_start ||
         offset - framebuffer.window_start >= framebuffer.window_size) {
@@ -266,7 +270,7 @@ static volatile uint8_t *planar_address(size_t offset) {
 static void framebuffer_put_index(int x, int y, uint8_t index) {
     if (framebuffer.memory_model == 3) {
         size_t offset = (size_t)y * framebuffer.pitch + (unsigned)x / 8u;
-        volatile uint8_t *pixel = planar_address(offset);
+        volatile uint8_t *pixel = window_address(offset);
         if (!pixel) return;
         uint8_t bit = (uint8_t)(0x80u >> (x & 7));
         for (uint8_t plane = 0; plane < 4; ++plane) {
@@ -282,15 +286,23 @@ static void framebuffer_put_index(int x, int y, uint8_t index) {
         return;
     }
     if (framebuffer.memory_model == 4) {
-        framebuffer.address[(size_t)y * framebuffer.pitch + (unsigned)x] = index;
+        size_t offset = (size_t)y * framebuffer.pitch + (unsigned)x;
+        volatile uint8_t *pixel = framebuffer.window_size
+                                  ? window_address(offset)
+                                  : framebuffer.address + offset;
+        if (pixel) *pixel = index;
         return;
     }
     uint32_t bytes = framebuffer.bpp / 8u;
     uint32_t rgb = framebuffer_color(index);
-    volatile uint8_t *pixel = framebuffer.address + (size_t)y * framebuffer.pitch +
-                              (size_t)x * bytes;
-    for (uint32_t byte = 0; byte < bytes; ++byte)
-        pixel[byte] = (uint8_t)(rgb >> (byte * 8));
+    size_t offset = (size_t)y * framebuffer.pitch + (size_t)x * bytes;
+    for (uint32_t byte = 0; byte < bytes; ++byte, ++offset) {
+        volatile uint8_t *pixel = framebuffer.window_size
+                                  ? window_address(offset)
+                                  : framebuffer.address + offset;
+        if (!pixel) return;
+        *pixel = (uint8_t)(rgb >> (byte * 8));
+    }
 }
 
 void gfx_console_draw_cell(int x, int y, uint8_t ch, uint8_t attr) {
@@ -415,11 +427,23 @@ static display_snapshot_t text_display;
 static int text_suspended;
 static uint8_t text_palette[16][3];
 
+enum {
+    MODE_SNAPSHOT_FAILED = -4,
+    MODE_MEMORY_FAILED = -5,
+    MODE_MAPPING_FAILED = -6,
+    MODE_SET_FAILED = -7,
+    MODE_VERIFY_FAILED = -8,
+    MODE_PALETTE_FAILED = -9,
+    MODE_BANK_FAILED = -10,
+    MODE_PLANAR_FAILED = -11
+};
+
 static int same_vbe_mode(const vbe_mode_t *a, const vbe_mode_t *b) {
     return a->number == b->number && a->width == b->width &&
            a->height == b->height && a->bpp == b->bpp &&
            a->memory_model == b->memory_model &&
-           a->vga_compatible == b->vga_compatible && a->pitch == b->pitch &&
+           a->vga_compatible == b->vga_compatible &&
+           a->dac_compatible == b->dac_compatible && a->pitch == b->pitch &&
            a->physical_address == b->physical_address &&
            a->red_position == b->red_position && a->red_size == b->red_size &&
            a->green_position == b->green_position && a->green_size == b->green_size &&
@@ -435,7 +459,7 @@ static int snapshot_matches_mode(const display_snapshot_t *saved, const vbe_mode
     return mode->width == saved->width && mode->height == saved->height &&
            mode->bpp == fb->bpp && mode->memory_model == fb->memory_model &&
            mode->pitch == fb->pitch &&
-           (mode->memory_model == 3 ?
+           (mode->window_size_kb ?
             ((uintptr_t)mode->window_segment << 4) == fb->physical_address &&
              (uint32_t)mode->window_size_kb * 1024u == fb->window_size &&
              (uint32_t)mode->window_granularity_kb * 1024u == fb->window_granularity &&
@@ -451,7 +475,7 @@ static int find_snapshot_mode(display_snapshot_t *saved) {
     uint16_t hardware;
     vbe_mode_t current;
     if (vbe_get_hardware_mode(&hardware) == 0 &&
-        ((hardware & 0x4000u) != 0) == (saved->framebuffer.memory_model != 3) &&
+        ((hardware & 0x4000u) != 0) == (saved->framebuffer.window_size == 0) &&
         vbe_query_mode(hardware & 0x3fffu, &current) == 0 &&
         snapshot_matches_mode(saved, &current)) {
         saved->hardware_mode = hardware;
@@ -463,7 +487,7 @@ static int find_snapshot_mode(display_snapshot_t *saved) {
     for (size_t i = 0; i < vbe_mode_count(); ++i) {
         const vbe_mode_t *mode = vbe_mode_at(i);
         if (mode && snapshot_matches_mode(saved, mode)) {
-            saved->hardware_mode = mode->number | 0x4000u;
+            saved->hardware_mode = mode->number | (mode->window_size_kb ? 0u : 0x4000u);
             return 0;
         }
     }
@@ -532,7 +556,7 @@ static int set_mode_palette(uint8_t model, int vga_compatible) {
 
 static int restore_hardware(const display_snapshot_t *saved) {
     if (!saved->framebuffer.valid) {
-        if (vbe_set_hardware_mode(0x0012) != 0) return -1;
+        if (vbe_bios_vga_mode() != 0) return -1;
         vga_write_regs(mode_640x480x16);
         for (int i = 0; i < 16; ++i) {
             outb(0x3c8, i);
@@ -546,7 +570,7 @@ static int restore_hardware(const display_snapshot_t *saved) {
     if ((saved->framebuffer.memory_model == 3 ||
          saved->framebuffer.memory_model == 4) &&
         set_mode_palette(saved->framebuffer.memory_model,
-                         saved->framebuffer.vga_compatible) != 0)
+                         saved->framebuffer.dac_compatible) != 0)
         return -1;
     if (saved->framebuffer.memory_model == 3) set_planar_palette_mapping();
     return 0;
@@ -599,10 +623,11 @@ int gfx_vbe_try_mode(size_t index) {
     if (framebuffer.valid) {
         if (find_snapshot_mode(&saved) != 0) {
             __asm__ volatile("pushl %0\n\tpopfl" :: "r"(flags) : "cc", "memory");
-            return -1;
+            return MODE_SNAPSHOT_FAILED;
         }
     }
 
+    int failure = MODE_MEMORY_FAILED;
     size_t buffer_size = ((size_t)mode.width * mode.height + 1u) / 2u;
     uint8_t *new_back = kmalloc(buffer_size);
     uint8_t *new_front = kmalloc(buffer_size);
@@ -619,9 +644,9 @@ int gfx_vbe_try_mode(size_t index) {
             new_colors[i] = 0x80000000u;
 
     framebuffer_t candidate = {0};
-    candidate.valid = 1;
+    candidate.valid = mode.number != VBE_VGA_MODE;
     candidate.memory_model = mode.memory_model;
-    candidate.vga_compatible = mode.vga_compatible;
+    candidate.dac_compatible = mode.dac_compatible;
     candidate.pitch = mode.pitch;
     candidate.bpp = mode.bpp;
     candidate.length = (size_t)mode.pitch * mode.height;
@@ -634,34 +659,48 @@ int gfx_vbe_try_mode(size_t index) {
     candidate.window_number = mode.window_number;
     candidate.window_size = (uint32_t)mode.window_size_kb * 1024u;
     candidate.window_granularity = (uint32_t)mode.window_granularity_kb * 1024u;
-    candidate.physical_address = mode.memory_model == 3
+    candidate.physical_address = mode.window_size_kb
                                  ? (uintptr_t)mode.window_segment << 4
                                  : mode.physical_address;
     candidate.address = (volatile uint8_t*)candidate.physical_address;
-    if (map_framebuffer(&candidate, 1) != 0) goto fail_alloc;
+    if (candidate.valid && map_framebuffer(&candidate, 1) != 0) {
+        failure = MODE_MAPPING_FAILED;
+        goto fail_alloc;
+    }
 
-    uint16_t request = mode.number | (mode.memory_model == 3 ? 0u : 0x4000u);
+    uint16_t request = mode.number | (mode.window_size_kb ? 0u : 0x4000u);
     vbe_mode_t actual;
-    int mode_result = vbe_set_hardware_mode(request);
-    if (mode_result == 0 &&
-        (vbe_query_mode(mode.number, &actual) != 0 || !same_vbe_mode(&mode, &actual)))
+    display_snapshot_t vga = {0};
+    int mode_result = candidate.valid ? vbe_set_hardware_mode(request) : restore_hardware(&vga);
+    if (mode_result != 0) failure = MODE_SET_FAILED;
+    if (mode_result == 0 && candidate.valid &&
+        (vbe_query_mode(mode.number, &actual) != 0 || !same_vbe_mode(&mode, &actual))) {
         mode_result = -1;
-    if (mode_result == 0 && (mode.memory_model == 3 || mode.memory_model == 4) &&
-        set_mode_palette(mode.memory_model, mode.vga_compatible) != 0)
+        failure = MODE_VERIFY_FAILED;
+    }
+    if (mode_result == 0 && candidate.valid &&
+        (mode.memory_model == 3 || mode.memory_model == 4) &&
+        set_mode_palette(mode.memory_model, mode.dac_compatible) != 0) {
         mode_result = -1;
-    if (mode_result == 0 && mode.memory_model == 3 &&
+        failure = MODE_PALETTE_FAILED;
+    }
+    if (mode_result == 0 && mode.window_size_kb &&
         candidate.length > candidate.window_size) {
         uint32_t last_bank = (uint32_t)((candidate.length - 1) /
                                         candidate.window_granularity);
         if (last_bank > UINT16_MAX ||
             vbe_set_window(candidate.window_number, (uint16_t)last_bank) != 0 ||
-            vbe_set_window(candidate.window_number, 0) != 0)
+            vbe_set_window(candidate.window_number, 0) != 0) {
             mode_result = -1;
+            failure = MODE_BANK_FAILED;
+        }
     }
-    if (mode_result == 0 && mode.memory_model == 3 &&
-        validate_planar_access(&candidate) != 0)
+    if (mode_result == 0 && candidate.valid && mode.memory_model == 3 &&
+        validate_planar_access(&candidate) != 0) {
         mode_result = -1;
-    if (mode_result == 0 && mode.memory_model == 3)
+        failure = MODE_PLANAR_FAILED;
+    }
+    if (mode_result == 0 && candidate.valid && mode.memory_model == 3)
         set_planar_palette_mapping();
     if (mode_result != 0) {
         int restored = restore_hardware(&saved);
@@ -674,14 +713,14 @@ int gfx_vbe_try_mode(size_t index) {
         kfree((void*)new_x0);
         kfree((void*)new_x1);
         __asm__ volatile("pushl %0\n\tpopfl" :: "r"(flags) : "cc", "memory");
-        return restored == 0 ? -1 : -2;
+        return restored == 0 ? failure : -2;
     }
 
     previous_display = saved;
     display_pending = 1;
     framebuffer = candidate;
-    framebuffer_mapped = 1;
-    vga_set_framebuffer_console(1);
+    framebuffer_mapped = candidate.valid;
+    vga_set_framebuffer_console(candidate.valid);
     backbuffer = new_back;
     frontbuffer = new_front;
     gfx_colorbuffer = new_colors;
@@ -698,7 +737,7 @@ fail_alloc:
     if (new_x0) kfree((void*)new_x0);
     if (new_x1) kfree((void*)new_x1);
     __asm__ volatile("pushl %0\n\tpopfl" :: "r"(flags) : "cc", "memory");
-    return -1;
+    return failure;
 }
 
 int gfx_vbe_confirm_mode(void) {
@@ -804,7 +843,7 @@ static void wait_vretrace(void) {
 void gfx_load_palette(void) {
     if (framebuffer.valid) {
         if (framebuffer.memory_model == 3 || framebuffer.memory_model == 4) {
-            if (set_mode_palette(framebuffer.memory_model, framebuffer.vga_compatible) != 0)
+            if (set_mode_palette(framebuffer.memory_model, framebuffer.dac_compatible) != 0)
                 framebuffer.error = 1;
             if (framebuffer.memory_model == 3) set_planar_palette_mapping();
             framebuffer.window_valid = 0;
@@ -935,7 +974,7 @@ int gfx_enter_mode(void) {
             (gfx_physical_depth() > 4 && !gfx_colorbuffer)) gfx_init();
         if (!backbuffer || !gfx_dirty_row_x0 || !gfx_dirty_row_x1 ||
             (gfx_physical_depth() > 4 && !gfx_colorbuffer)) return -1;
-        if (framebuffer.memory_model != 3) {
+        if (!framebuffer.window_size) {
             for (size_t i = 0; i < framebuffer.length; ++i)
                 framebuffer.address[i] = 0;
         }
@@ -953,7 +992,15 @@ int gfx_enter_mode(void) {
         }
     }
     graphics_active = 1;
-    if (!backbuffer) gfx_init();
+    if (!backbuffer || !gfx_dirty_row_x0 || !gfx_dirty_row_x1) gfx_init();
+    if (!backbuffer || !gfx_dirty_row_x0 || !gfx_dirty_row_x1) {
+        graphics_active = 0;
+        if (!framebuffer.valid) {
+            vga_write_regs(mode_80x25_text);
+            vga_reset_textmode();
+        }
+        return -1;
+    }
     if (frontbuffer) memset_s(frontbuffer, 0, GFX_BUFFER_SIZE);
     full_redraw = 1;
     dirty_y0 = 0;
@@ -969,6 +1016,20 @@ void gfx_exit_mode(void) {
     }
     vga_write_regs(mode_80x25_text);
     vga_reset_textmode();
+}
+
+int gfx_shutdown_console(void) {
+    if (framebuffer.valid && framebuffer_mapped) {
+        if (vbe_bios_init() != 0 || vbe_bios_text_mode() != 0)
+            return -1;
+    } else {
+        vga_write_regs(mode_80x25_text);
+    }
+    graphics_active = 0;
+    vga_set_framebuffer_console(0);
+    vga_set_color(0, 7);
+    vga_reset_textmode();
+    return 0;
 }
 
 int gfx_is_active(void) {
@@ -993,6 +1054,10 @@ void gfx_clear(uint8_t color) {
             gfx_colorbuffer[i] = 0x80000000u | (color & 0x0F);
     full_redraw = 1;
     GFX_UNLOCK();
+}
+
+int gfx_has_pending_updates(void) {
+    return full_redraw || dirty_y1 >= dirty_y0;
 }
 
 void gfx_swap_buffers(void) {
@@ -1026,21 +1091,38 @@ void gfx_swap_buffers(void) {
             int row_x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
             if (row_x1 < row_x0) continue;
             uint32_t row_offset = (uint32_t)y * row_bytes;
-            volatile uint8_t *pixel = framebuffer.address + (size_t)y * framebuffer.pitch +
-                                      (size_t)row_x0 * bytes;
+            size_t offset = (size_t)y * framebuffer.pitch + (size_t)row_x0 * bytes;
+            volatile uint8_t *pixel = framebuffer.window_size ? NULL :
+                                      framebuffer.address + offset;
             for (int x = row_x0; x <= row_x1; ++x) {
                 uint8_t packed = backbuffer[row_offset + (uint32_t)x / 2u];
                 uint8_t color = (x & 1) ? packed & 0x0F : (packed >> 4) & 0x0F;
                 uint32_t source = gfx_colorbuffer ?
                     gfx_colorbuffer[(size_t)y * GFX_WIDTH + x] : 0x80000000u | color;
                 if (framebuffer.memory_model == 4) {
+                    if (framebuffer.window_size) {
+                        if (!pixel || offset - framebuffer.window_start >= framebuffer.window_size) {
+                            pixel = window_address(offset);
+                            if (!pixel) break;
+                        }
+                        ++offset;
+                    }
                     *pixel++ = (source & 0x80000000u) ? (uint8_t)source :
                                framebuffer_index(source, x, y);
                 } else {
                     uint32_t rgb = (source & 0x80000000u) ?
                                    colors[source & 0x0f] : framebuffer_rgb(source);
-                    for (uint32_t byte = 0; byte < bytes; ++byte)
+                    for (uint32_t byte = 0; byte < bytes; ++byte) {
+                        if (framebuffer.window_size) {
+                            if (!pixel || offset - framebuffer.window_start >= framebuffer.window_size) {
+                                pixel = window_address(offset);
+                                if (!pixel) break;
+                            }
+                            ++offset;
+                        }
                         *pixel++ = (uint8_t)(rgb >> (byte * 8));
+                    }
+                    if (framebuffer.error) break;
                 }
             }
             if (frontbuffer) {
@@ -1056,7 +1138,55 @@ void gfx_swap_buffers(void) {
         return;
     }
 
-    if (!framebuffer.valid) wait_vretrace();
+    if (!framebuffer.valid) {
+        wait_vretrace();
+        volatile uint8_t *vram = GFX_VRAM;
+        outb(0x3c4, 0x02);
+        for (uint8_t plane = 0; plane < 4; ++plane) {
+            outb(0x3c5, (uint8_t)(1u << plane));
+            for (int y = y0; y <= y1; ++y) {
+                int x0 = full_redraw ? 0 : gfx_dirty_row_x0[y];
+                int x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
+                if (x1 < x0) continue;
+                x0 &= ~7;
+                x1 = (x1 + 8) & ~7;
+                if (x1 > GFX_WIDTH) x1 = GFX_WIDTH;
+                uint32_t row = (uint32_t)y * (GFX_WIDTH / 2);
+                for (int x = x0; x < x1; x += 8) {
+                    uint32_t offset = row + (uint32_t)x / 2u;
+                    uint8_t b0 = backbuffer[offset];
+                    uint8_t b1 = backbuffer[offset + 1];
+                    uint8_t b2 = backbuffer[offset + 2];
+                    uint8_t b3 = backbuffer[offset + 3];
+                    if (!full_redraw && frontbuffer &&
+                        frontbuffer[offset] == b0 && frontbuffer[offset + 1] == b1 &&
+                        frontbuffer[offset + 2] == b2 && frontbuffer[offset + 3] == b3)
+                        continue;
+                    vram[(uint32_t)y * 80u + (uint32_t)x / 8u] =
+                        (uint8_t)((plane_pair_table[plane][b0] << 6) |
+                                  (plane_pair_table[plane][b1] << 4) |
+                                  (plane_pair_table[plane][b2] << 2) |
+                                  plane_pair_table[plane][b3]);
+                }
+            }
+        }
+        outb(0x3c5, 0x0f);
+        if (frontbuffer) {
+            for (int y = y0; y <= y1; ++y) {
+                int x0 = full_redraw ? 0 : gfx_dirty_row_x0[y];
+                int x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
+                if (x1 < x0) continue;
+                x0 &= ~7;
+                x1 = (x1 + 8) & ~7;
+                if (x1 > GFX_WIDTH) x1 = GFX_WIDTH;
+                size_t offset = (size_t)y * (GFX_WIDTH / 2) + (unsigned)x0 / 2u;
+                memcpy_s(frontbuffer + offset, backbuffer + offset, (size_t)(x1 - x0) / 2u);
+            }
+        }
+        reset_dirty();
+        GFX_UNLOCK();
+        return;
+    }
     volatile uint8_t* vram = GFX_VRAM;
 
     /* Keep sequencer register 2 selected while updating plane masks. */
@@ -1095,7 +1225,7 @@ void gfx_swap_buffers(void) {
             }
 
             volatile uint8_t *destination = framebuffer.valid && framebuffer.memory_model == 3
-                                            ? planar_address(vram_row + (uint32_t)x / 8u)
+                                            ? window_address(vram_row + (uint32_t)x / 8u)
                                             : vram + vram_row + (uint32_t)x / 8u;
             if (!destination) break;
             outb(0x3C4, 0x02);

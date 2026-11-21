@@ -78,6 +78,7 @@ void gfx_console_draw_cursor(int x, int y, uint8_t attr);
 void gfx_set_palette_data(const uint8_t palette[16][3]);
 int gfx_enter_mode(void);
 void gfx_exit_mode(void);
+int gfx_shutdown_console(void);
 int gfx_enter_textmode(const uint8_t palette[16][3]);
 int gfx_is_active(void);
 int gfx_vbe_try_mode(size_t index);
@@ -87,6 +88,7 @@ int gfx_vbe_mode_pending(void);
 unsigned gfx_physical_depth(void);
 
 void gfx_clear(uint8_t color);
+int gfx_has_pending_updates(void);
 void gfx_swap_buffers(void);
 uint8_t* gfx_get_backbuffer(void);
 

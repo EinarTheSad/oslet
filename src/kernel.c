@@ -84,8 +84,15 @@ static void boot_sequence(void) {
     vga_set_color(0, 7);
     printf(" ] Timer\n");
     
-    mm_early_init((uintptr_t)&__kernel_end);
+    if (mm_early_init((uintptr_t)&__kernel_end, mbi) != 0) {
+        printf("[FAIL] No usable memory for early allocations\n");
+        for (;;) __asm__ volatile ("hlt");
+    }
     pmm_init_from_multiboot((uint32_t)multiboot_info_ptr);
+    if (!pmm_ready()) {
+        printf("[FAIL] Physical memory manager could not be initialised\n");
+        for (;;) __asm__ volatile ("hlt");
+    }
     int vbe_ready = vbe_bios_init() == 0;
     
     printf("[ ");
@@ -101,6 +108,8 @@ static void boot_sequence(void) {
     uintptr_t kernel_end = (uintptr_t)&__kernel_end;
     uintptr_t map_upto = (kernel_end + 0xFFF) & ~((uintptr_t)0xFFF);
     map_upto += 16 * 1024 * 1024;
+    uintptr_t memory_top = pmm_total_frames() * PAGE_SIZE;
+    if (map_upto > memory_top) map_upto = memory_top;
     
     if (paging_identity_enable(map_upto) != 0) {
         printf("\r[");

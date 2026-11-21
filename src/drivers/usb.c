@@ -349,9 +349,13 @@ static int find_usb_controller(uint8_t prog_if, int wanted, uint32_t *base,
 
     for (uint16_t bus = 0; bus < 256; bus++) {
         for (uint8_t dev = 0; dev < 32; dev++) {
-            for (uint8_t fn = 0; fn < 8; fn++) {
-                uint32_t id = pci_read32((uint8_t)bus, dev, fn, 0x00);
-                if (id == 0xFFFFFFFF)
+            uint32_t first = pci_read32((uint8_t)bus, dev, 0, 0x00);
+            if ((first & 0xffffu) == 0xffffu) continue;
+            uint8_t functions = (pci_read32((uint8_t)bus, dev, 0, 0x0c) &
+                                 0x00800000u) ? 8 : 1;
+            for (uint8_t fn = 0; fn < functions; fn++) {
+                uint32_t id = fn ? pci_read32((uint8_t)bus, dev, fn, 0x00) : first;
+                if ((id & 0xffffu) == 0xffffu)
                     continue;
 
                 uint32_t class_reg = pci_read32((uint8_t)bus, dev, fn, 0x08);

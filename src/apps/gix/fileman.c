@@ -39,8 +39,11 @@ OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG
 #define ID_FILE_BASE         2000
 
 #define MAX_TREE_ITEMS       256
-#define MAX_FILE_ITEMS       64
+#define MAX_FILE_ITEMS       256
+#define MAX_FILE_SCAN_ITEMS  256
 #define MAX_DIR_SCAN_ITEMS   128
+#define FILE_FIXED_CONTROLS  14
+#define MAX_FILE_CONTROLS    (WM_MAX_CONTROLS_PER_FORM - FILE_FIXED_CONTROLS)
 
 #define TOOLBAR_Y            30
 #define TOOLBAR_H            35
@@ -57,9 +60,6 @@ OSLET_APP("File Manager", OSLET_KIND_GIX, "C:/ICONS/CABINET.ICO", OSLET_APP_FLAG
 
 #define CURSOR_DEFAULT       "C:/ICONS/default.cur"
 #define CURSOR_MOVE          "C:/ICONS/move.cur"
-
-#define MAX_FILE_COLS        9
-#define MAX_FILE_ROWS        6
 
 typedef struct {
     char name[64];
@@ -82,7 +82,7 @@ typedef struct {
     sys_tree_item_t tree_view_items[MAX_TREE_ITEMS];
     sys_dirent_t tree_scan_entries[MAX_DIR_SCAN_ITEMS];
     sys_dirent_t tree_probe_entries[MAX_DIR_SCAN_ITEMS];
-    sys_dirent_t file_scan_entries[MAX_DIR_SCAN_ITEMS];
+    sys_dirent_t file_scan_entries[MAX_FILE_SCAN_ITEMS];
     int tree_count;
     int selected_tree_index;
     file_item_t file_items[MAX_FILE_ITEMS];
@@ -168,7 +168,7 @@ static char* show_prompt_dialog(const char *title, const char *label, const char
             sys_win_draw(dlg);
             sys_win_redraw_all();
         }
-        sys_yield();
+        sys_sleep(10);
     }
     
     sys_win_destroy_form(dlg);
@@ -671,7 +671,7 @@ static int set_current_path(const char *path, int show_error) {
 
 static void scan_directory(void) {
     sys_dirent_t *entries = state.file_scan_entries;
-    int count = sys_readdir(state.current_path, entries, MAX_DIR_SCAN_ITEMS);
+    int count = sys_readdir(state.current_path, entries, MAX_FILE_SCAN_ITEMS);
     
     state.file_count = 0;
     
@@ -774,11 +774,11 @@ static void relayout(void) {
 
     state.file_cols = (state.files_w + 1) / FILE_ICON_STEP_X;
     if (state.file_cols < 1) state.file_cols = 1;
-    if (state.file_cols > MAX_FILE_COLS) state.file_cols = MAX_FILE_COLS;
+    if (state.file_cols > MAX_FILE_CONTROLS) state.file_cols = MAX_FILE_CONTROLS;
 
     state.file_rows = avail_h / (FILE_ICON_H + FILE_PAD);
     if (state.file_rows < 1) state.file_rows = 1;
-    if (state.file_rows > MAX_FILE_ROWS) state.file_rows = MAX_FILE_ROWS;
+    if (state.file_rows > MAX_FILE_CONTROLS) state.file_rows = MAX_FILE_CONTROLS;
 
     sys_ctrl_set_prop(state.form, ID_FILE_FRAME, PROP_X, state.files_x);
     sys_ctrl_set_prop(state.form, ID_FILE_FRAME, PROP_W, state.files_w + FILE_SCROLLBAR_W);
@@ -789,8 +789,7 @@ static void relayout(void) {
 }
 
 static void clear_file_controls(void) {
-    int max_count = MAX_FILE_ROWS * MAX_FILE_COLS;
-    for (int i = 0; i < max_count; i++) {
+    for (int i = 0; i < MAX_FILE_CONTROLS; i++) {
         gui_control_t *ctrl = sys_win_get_control(state.form, ID_FILE_BASE + i);
         if (ctrl) {
             ctrl->icon.checked = 0;
@@ -826,6 +825,8 @@ static void refresh_display(void) {
     }
     
     int visible_file_count = state.file_rows * state.file_cols;
+    if (visible_file_count > MAX_FILE_CONTROLS)
+        visible_file_count = MAX_FILE_CONTROLS;
     for (int i = 0; i < visible_file_count; i++) {
         int idx = (state.file_scroll_offset * state.file_cols) + i;
         int ctrl_id = ID_FILE_BASE + i;
@@ -882,6 +883,8 @@ static void refresh_display(void) {
 
 static int find_checked_file_index(void) {
     int visible_file_count = state.file_rows * state.file_cols;
+    if (visible_file_count > MAX_FILE_CONTROLS)
+        visible_file_count = MAX_FILE_CONTROLS;
     for (int i = 0; i < visible_file_count; i++) {
         gui_control_t *ctrl = sys_win_get_control(state.form, ID_FILE_BASE + i);
         if (ctrl && ctrl->icon.checked) {
@@ -890,6 +893,9 @@ static int find_checked_file_index(void) {
                 return actual_idx;
         }
     }
+    if (state.selected_file_index >= 0 &&
+        state.selected_file_index < state.file_count)
+        return state.selected_file_index;
     return -1;
 }
 
@@ -911,6 +917,8 @@ static int fileman_drag_allowed(void) {
 static int file_index_at_mouse(int mx, int my) {
     gui_form_t *form = (gui_form_t*)state.form;
     int visible_file_count = state.file_rows * state.file_cols;
+    if (visible_file_count > MAX_FILE_CONTROLS)
+        visible_file_count = MAX_FILE_CONTROLS;
     int y_offset = fileman_ctrl_y_offset();
 
     if (!fileman_drag_allowed()) return -1;
@@ -1091,11 +1099,13 @@ static void update_drag_state(void) {
         int idx = file_index_at_mouse(mx, my);
         state.drag_source_index = -1;
         state.drag_active = 0;
-        if (idx >= 0 && idx < state.file_count &&
-            strcmp(state.file_items[idx].name, "..") != 0) {
-            state.drag_source_index = idx;
-            state.drag_start_x = mx;
-            state.drag_start_y = my;
+        if (idx >= 0 && idx < state.file_count) {
+            state.selected_file_index = idx;
+            if (strcmp(state.file_items[idx].name, "..") != 0) {
+                state.drag_source_index = idx;
+                state.drag_start_x = mx;
+                state.drag_start_y = my;
+            }
         }
     }
 
@@ -1414,7 +1424,7 @@ static int handle_event(const sys_win_event_t *event) {
     
     /* Handle file icon double-clicks */
     if (event->type == SYS_WIN_EVENT_CONTROL &&
-        id >= ID_FILE_BASE && id < ID_FILE_BASE + (MAX_FILE_ROWS * MAX_FILE_COLS)) {
+        id >= ID_FILE_BASE && id < ID_FILE_BASE + MAX_FILE_CONTROLS) {
         int visible_idx = id - ID_FILE_BASE;
         int actual_idx = (state.file_scroll_offset * state.file_cols) + visible_idx;
         if (state.suppress_next_open) {
@@ -1620,24 +1630,21 @@ void _start(void) {
     /* File scrollbar */
     gui_control_t file_scrollbar = {0};
     file_scrollbar.type = CTRL_SCROLLBAR;
-    file_scrollbar.x = TREE_X + TREE_W + 12 + MAX_FILE_COLS * FILE_ICON_STEP_X;
+    file_scrollbar.x = TREE_X + TREE_W + 12;
     file_scrollbar.y = CONTENT_Y - 1;
     file_scrollbar.w = FILE_SCROLLBAR_W;
-    file_scrollbar.h = MAX_FILE_ROWS * (FILE_ICON_H + FILE_PAD);
+    file_scrollbar.h = 1;
     file_scrollbar.fg = 8; file_scrollbar.bg = 7;
     file_scrollbar.id = ID_FILE_SCROLLBAR; file_scrollbar.font_size = 12;
     sys_win_add_control(state.form, &file_scrollbar);
     ctrl_set_visible(state.form, ID_FILE_SCROLLBAR, 0);
 
     /* Pre-create file icon controls */
-    int max_file_count = MAX_FILE_ROWS * MAX_FILE_COLS;
-    for (int i = 0; i < max_file_count; i++) {
-        int col = i % MAX_FILE_COLS;
-        int row = i / MAX_FILE_COLS;
+    for (int i = 0; i < MAX_FILE_CONTROLS; i++) {
         gui_control_t file_icon = {0};
         file_icon.type = CTRL_ICON;
-        file_icon.x = (TREE_X + TREE_W + 12) + 1 + col * FILE_ICON_STEP_X;
-        file_icon.y = CONTENT_Y + 4 + row * (FILE_ICON_H + FILE_PAD);
+        file_icon.x = (TREE_X + TREE_W + 12) + 1;
+        file_icon.y = CONTENT_Y + 4;
         file_icon.w = FILE_ICON_W; file_icon.h = FILE_ICON_H;
         file_icon.fg = CTRL_ICON_SYSTEM_TEXT; file_icon.bg = 15;
         file_icon.id = ID_FILE_BASE + i; file_icon.font_size = 9;
@@ -1664,7 +1671,7 @@ void _start(void) {
         if (state.suppress_next_open &&
             !(event.type == SYS_WIN_EVENT_CONTROL &&
               event.id >= ID_FILE_BASE &&
-              event.id < ID_FILE_BASE + (MAX_FILE_ROWS * MAX_FILE_COLS))) {
+              event.id < ID_FILE_BASE + MAX_FILE_CONTROLS)) {
             state.suppress_next_open = 0;
         }
         if ((event.type == SYS_WIN_EVENT_CONTROL ||
@@ -1679,7 +1686,7 @@ void _start(void) {
                     handle_shortcut(key);
             }
         }
-        sys_yield();
+        sys_sleep(10);
     }
     
     sys_mouse_set_cursor_file(CURSOR_DEFAULT);

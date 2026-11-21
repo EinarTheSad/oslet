@@ -12,6 +12,7 @@ int mouse_set_cursor_file(const char *path);
 int mouse_busy_begin(void);
 void mouse_busy_end(void);
 void mouse_draw_cursor(int x, int y);
+int mouse_cursor_drawn_at(int x, int y);
 void mouse_save(int x, int y);
 void mouse_restore(void);
 void mouse_invalidate_buffer(void);

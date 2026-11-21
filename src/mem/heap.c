@@ -61,7 +61,7 @@ static int commit_block_pages(block_t *b, size_t size) {
             release_block_pages(b);
             return -1;
         }
-        __asm__ volatile("invlpg (%0)" :: "r"(page) : "memory");
+        paging_invalidate(page);
     }
     return 0;
 }

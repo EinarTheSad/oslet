@@ -1692,6 +1692,7 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
         }
         
         if (!form) {
+            sys_sleep(10);
             continue;
         }
 
@@ -1702,7 +1703,7 @@ static inline void sys_win_run_event_loop(void *form, sys_event_handler_t handle
             running = 0;
         }
         
-        sys_yield();
+        sys_sleep(10);
     }
 }
 

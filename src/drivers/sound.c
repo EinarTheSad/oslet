@@ -59,7 +59,8 @@ typedef struct {
     int playing_block;
 } sound_playback_t;
 
-static uint8_t dma_buffer[SOUND_DMA_SAMPLES] __attribute__((aligned(65536)));
+_Static_assert(SOUND_DMA_SAMPLES <= 4096, "Sound DMA buffer must fit within a page");
+static uint8_t dma_buffer[SOUND_DMA_SAMPLES] __attribute__((aligned(4096)));
 static uint8_t temp_buffer[TEMP_BUFFER_SIZE];
 
 static volatile int sound_lock = 0;
