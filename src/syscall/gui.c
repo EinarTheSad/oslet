@@ -1501,6 +1501,26 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             return 0;
         }
 
+        case 0x2B: { /* SYS_WIN_SET_SIZE */
+            gui_form_t *form = (gui_form_t*)ebx;
+            task_t *cur = task_get_current();
+            int w = (int)ecx, h = (int)edx;
+            if (!form || !cur || !sys_range_mapped(ebx, sizeof(*form)) ||
+                form->owner_tid != cur->tid ||
+                form->win.is_minimized || !form->win.resizable ||
+                w < 100 || h < 95 || w > WM_SCREEN_WIDTH || h > WM_SCREEN_HEIGHT)
+                return (uint32_t)-1;
+            if (form->win.is_maximized) win_restore_from_maximize(form);
+            int x = form->win.x, y = form->win.y;
+            if (x + w > WM_SCREEN_WIDTH) x = WM_SCREEN_WIDTH - w;
+            if (y + h > WM_SCREEN_HEIGHT) y = WM_SCREEN_HEIGHT - h;
+            if (x != form->win.x || y != form->win.y)
+                win_move(&form->win, x - form->win.x, y - form->win.y);
+            win_resize(&form->win, w, h);
+            gui_request_full_redraw();
+            return 0;
+        }
+
         default:
             return (uint32_t)-1;
     }

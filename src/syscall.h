@@ -172,6 +172,8 @@ typedef struct {
 #define SYS_VC_READ     0x0F03
 #define SYS_VC_SEND_KEY 0x0F04
 #define SYS_VC_DIRTY    0x0F05
+#define SYS_VC_RESIZE   0x0F06
+#define SYS_VC_READ_VIEW 0x0F07
 
 /* AH = 0Bh - Windows */
 #define SYS_WIN_MSGBOX          0x0B00
@@ -212,6 +214,7 @@ typedef struct {
 #define SYS_WIN_FOCUS_CONTROL        0x0B28
 #define SYS_WIN_TEXTBOX_SELECT_RANGE 0x0B29
 #define SYS_WIN_DISPLAY_CONFIRM      0x0B2A
+#define SYS_WIN_SET_SIZE             0x0B2B
 
 typedef enum {
     SYS_WIN_EVENT_NONE = 0,
@@ -1214,6 +1217,13 @@ static inline void* sys_win_create_form(const char *title, int x, int y, int w, 
     return ret;
 }
 
+static inline int sys_win_set_size(void *form, int w, int h) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_WIN_SET_SIZE),
+                     "b"(form), "c"(w), "d"(h) : "memory");
+    return ret;
+}
+
 static inline void sys_win_add_control(void *form, gui_control_t *ctrl) {
     register int dummy_eax __asm__("eax") = SYS_WIN_ADD_CONTROL;
     register void *dummy_ebx __asm__("ebx") = form;
@@ -1722,6 +1732,22 @@ typedef struct {
     int cursor_y;
 } sys_vc_screen_t;
 
+#define SYS_VC_MAX_COLS 240
+#define SYS_VC_MAX_ROWS 135
+
+/* offset counts history rows back from the live screen. The arrays must hold
+   capacity cells; returned rows are packed with cols cells per row. */
+typedef struct {
+    uint8_t *chars;
+    uint8_t *attrs;
+    int capacity;
+    int offset;
+    int cols, rows;
+    int cursor_x, cursor_y;
+    int history_lines;
+    uint32_t history_sequence;
+} sys_vc_view_t;
+
 static inline void *sys_vc_create(void) {
     void *ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_VC_CREATE));
@@ -1751,5 +1777,17 @@ static inline void sys_vc_send_key(void *vc, int key) {
 static inline int sys_vc_dirty(void *vc) {
     int ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_VC_DIRTY), "b"(vc));
+    return ret;
+}
+
+static inline int sys_vc_resize(void *vc, int cols, int rows) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_VC_RESIZE), "b"(vc), "c"(cols), "d"(rows) : "memory");
+    return ret;
+}
+
+static inline int sys_vc_read_view(void *vc, sys_vc_view_t *view) {
+    int ret;
+    __asm__ volatile("int $0x80" : "=a"(ret) : "a"(SYS_VC_READ_VIEW), "b"(vc), "c"(view) : "memory");
     return ret;
 }

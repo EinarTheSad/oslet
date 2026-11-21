@@ -221,19 +221,28 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
     task_t *cur = task_get_current();
     if (cur && cur->vconsole) {
         vconsole_t *vc = (vconsole_t *)cur->vconsole;
+        if (!vc->active) return (uint32_t)-1;
         switch (al) {
             case 0x00:
                 if (sys_copy_string(text_buf, ebx, sizeof(text_buf)) != 0) return (uint32_t)-1;
                 vc_write(vc, text_buf);
                 return 0;
-            case 0x01:
+            case 0x01: {
                 if (!sys_range_mapped(ebx, ecx)) return (uint32_t)-1;
-                return (uint32_t)vc_getline(vc, (char*)ebx, ecx);
+                vc_begin_read(cur, vc);
+                uint32_t result = (uint32_t)vc_getline(vc, (char*)ebx, ecx);
+                vc_end_read(cur);
+                return result;
+            }
             case 0x02:
                 vc_set_color(vc, (uint8_t)ebx, (uint8_t)ecx);
                 return 0;
-            case 0x03:
-                return (uint32_t)vc_getchar(vc);
+            case 0x03: {
+                vc_begin_read(cur, vc);
+                uint32_t result = (uint32_t)vc_getchar(vc);
+                vc_end_read(cur);
+                return result;
+            }
             case 0x04:
                 vc_clear(vc);
                 return 0;
@@ -246,8 +255,11 @@ static uint32_t handle_console(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_t
                 return 0;
             case 0x07:
                 if (!sys_range_mapped(ebx, VC_COLS * VC_ROWS) || !sys_range_mapped(ecx, VC_COLS * VC_ROWS)) return (uint32_t)-1;
-                memcpy_s(vc->chars, (const void*)ebx, VC_COLS * VC_ROWS);
-                memcpy_s(vc->attrs, (const void*)ecx, VC_COLS * VC_ROWS);
+                for (int y = 0; y < vc->rows && y < VC_ROWS; y++) {
+                    int width = vc->cols < VC_COLS ? vc->cols : VC_COLS;
+                    memcpy_s(vc->chars + y * VC_MAX_COLS, (const uint8_t*)ebx + y * VC_COLS, width);
+                    memcpy_s(vc->attrs + y * VC_MAX_COLS, (const uint8_t*)ecx + y * VC_COLS, width);
+                }
                 vc->dirty = 1;
                 return 0;
             default:
@@ -1735,7 +1747,7 @@ static uint32_t handle_vconsole(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_
         }
         case 0x01: { /* SYS_VC_DESTROY */
             vconsole_t *vc = (vconsole_t*)ebx;
-            if (!vc || !sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (!vc_is_registered(vc)) return (uint32_t)-1;
             if (!cur || vc->owner_tid != cur->tid) return (uint32_t)-1;
             vc_destroy(vc);
             return 0;
@@ -1743,41 +1755,82 @@ static uint32_t handle_vconsole(uint32_t al, uint32_t ebx, uint32_t ecx, uint32_
         case 0x02: { /* SYS_VC_ATTACH */
             vconsole_t *vc = (vconsole_t*)ebx;
             uint32_t tid = (uint32_t)ecx;
-            if (!cur || !vc || !sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (!cur || !vc_is_registered(vc)) return (uint32_t)-1;
             if (vc->owner_tid != cur->tid) return (uint32_t)-1;
             task_t *t = task_find_by_tid(tid);
             if (!t) return (uint32_t)-1;
-            t->vconsole = (struct vconsole *)vc;
+            vc_assign_task(t, vc);
             return 0;
         }
         case 0x03: { /* SYS_VC_READ */
             vconsole_t *vc = (vconsole_t*)ebx;
-            if (!cur || !vc || !ecx) return (uint32_t)-1;
-            if (!sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (!cur || !vc_is_registered(vc) || !ecx) return (uint32_t)-1;
             if (!sys_range_writable((uint32_t)ecx, sizeof(sys_vc_screen_t))) return (uint32_t)-1;
             if (vc->owner_tid != cur->tid && vc->owner_tid != 0) return (uint32_t)-1;
-            uint8_t *dst = (uint8_t*)ecx;
-            memcpy_s(dst, vc->chars, VC_ROWS * VC_COLS);
-            memcpy_s(dst + VC_ROWS * VC_COLS, vc->attrs, VC_ROWS * VC_COLS);
-            int *cursor = (int*)(dst + 2 * VC_ROWS * VC_COLS);
-            cursor[0] = vc->cursor_x;
-            cursor[1] = vc->cursor_y;
+            sys_vc_screen_t *dst = (sys_vc_screen_t*)ecx;
+            memset_s(dst->chars, ' ', sizeof(dst->chars));
+            memset_s(dst->attrs, vc->color, sizeof(dst->attrs));
+            for (int y = 0; y < vc->rows && y < VC_ROWS; y++) {
+                int width = vc->cols < VC_COLS ? vc->cols : VC_COLS;
+                memcpy_s(dst->chars + y * VC_COLS, vc->chars + y * VC_MAX_COLS, width);
+                memcpy_s(dst->attrs + y * VC_COLS, vc->attrs + y * VC_MAX_COLS, width);
+            }
+            dst->cursor_x = vc->cursor_x;
+            dst->cursor_y = vc->cursor_y;
             return 0;
         }
         case 0x04: { /* SYS_VC_SEND_KEY */
             vconsole_t *vc = (vconsole_t*)ebx;
-            if (!cur || !vc || !sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (!cur || !vc_is_registered(vc)) return (uint32_t)-1;
             if (vc->owner_tid != cur->tid) return (uint32_t)-1;
             vc_send_key(vc, (uint8_t)ecx);
             return 0;
         }
         case 0x05: { /* SYS_VC_DIRTY */
             vconsole_t *vc = (vconsole_t*)ebx;
-            if (!cur || !vc || !sys_range_writable((uint32_t)(uintptr_t)vc, sizeof(vconsole_t))) return (uint32_t)-1;
+            if (!cur || !vc_is_registered(vc)) return (uint32_t)-1;
             if (vc->owner_tid != cur->tid) return (uint32_t)-1;
             uint8_t was = vc->dirty;
             vc->dirty = 0;
             return was;
+        }
+        case 0x06: { /* SYS_VC_RESIZE */
+            vconsole_t *vc = (vconsole_t*)ebx;
+            if (!cur || !vc_is_registered(vc) || vc->owner_tid != cur->tid)
+                return (uint32_t)-1;
+            uint32_t flags = sys_irq_save();
+            int result = vc_resize(vc, (int)ecx, (int)edx);
+            sys_irq_restore(flags);
+            return (uint32_t)result;
+        }
+        case 0x07: { /* SYS_VC_READ_VIEW */
+            vconsole_t *vc = (vconsole_t*)ebx;
+            if (!cur || !vc_is_registered(vc) || vc->owner_tid != cur->tid ||
+                !sys_range_writable(ecx, sizeof(sys_vc_view_t)))
+                return (uint32_t)-1;
+            sys_vc_view_t *view = (sys_vc_view_t*)ecx;
+            uint32_t flags = sys_irq_save();
+            int size = vc->cols * vc->rows;
+            if (view->capacity < size || view->offset < 0 ||
+                !sys_range_writable((uint32_t)view->chars, size) ||
+                !sys_range_writable((uint32_t)view->attrs, size)) {
+                sys_irq_restore(flags);
+                return (uint32_t)-1;
+            }
+            int offset = view->offset;
+            if (offset > vc->history_lines) offset = vc->history_lines;
+            for (int y = 0; y < vc->rows; y++)
+                vc_copy_row(vc, vc->history_lines - offset + y,
+                            view->chars + y * vc->cols, view->attrs + y * vc->cols);
+            view->offset = offset;
+            view->cols = vc->cols;
+            view->rows = vc->rows;
+            view->cursor_x = vc->cursor_x;
+            view->cursor_y = vc->cursor_y + offset;
+            view->history_lines = vc->history_lines;
+            view->history_sequence = vc->history_sequence;
+            sys_irq_restore(flags);
+            return 0;
         }
         default:
             return (uint32_t)-1;

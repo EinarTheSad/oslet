@@ -794,7 +794,7 @@ void screen_restore_display(void) {
         return;
     }
     if (saved && mode.depth == 32) {
-        sys_win_msgbox("The saved 32-bit display mode is no longer offered. Choose a mode in Screen.",
+        sys_win_msgbox("32-bit mode is unavailable.\\nChoose a mode in Screen.",
                        "OK", "Display");
         return;
     }
@@ -804,7 +804,7 @@ void screen_restore_display(void) {
             if (trial < 0)
                 sys_win_msgbox("Could not check the display recovery marker.", "OK", "Display");
             else if (!boot_display_selected())
-                sys_win_msgbox("The saved display mode was disabled after an interrupted or rejected trial.",
+                sys_win_msgbox("Saved display mode disabled\\nafter an interrupted trial.",
                                "OK", "Display");
             return;
         }
@@ -820,7 +820,7 @@ void screen_restore_display(void) {
 
     if (remove_if_present(DISPLAY_TRIAL) != 0 ||
         sys_rename(DISPLAY_PATH, DISPLAY_TRIAL) != 0) {
-        sys_win_msgbox("Could not prepare display recovery. The saved mode was not applied.",
+        sys_win_msgbox("Display recovery failed.\\nSaved mode not applied.",
                        "OK", "Display");
         return;
     }
@@ -840,12 +840,8 @@ void screen_restore_display(void) {
     int transition_error = 0;
     if (index >= 0 && sys_gfx_vbe_try((unsigned)index) == 0) {
         if (desktop_refresh_display() >= 0) {
-            desktop_present_display();
-            int answer = sys_win_display_confirm(
-                "Keep the saved display mode? It will revert after 15 seconds.",
-                "Keep|Revert", "Display");
-            if (answer == 1) kept = sys_gfx_vbe_confirm() == 0;
-            else {
+            kept = sys_gfx_vbe_confirm() == 0;
+            if (!kept) {
                 sys_vbe_state_t state;
                 if (sys_gfx_vbe_state(&state) != 0 ||
                     (state.pending && sys_gfx_vbe_revert() != 0))
@@ -866,7 +862,7 @@ void screen_restore_display(void) {
     } else {
         sys_win_msgbox(transition_error ?
                        "The saved display mode could not be reverted." :
-                       "The saved display mode was not kept.",
+                       "The saved display mode could not be applied.",
                        "OK", "Display");
     }
 }

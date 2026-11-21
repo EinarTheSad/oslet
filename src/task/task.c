@@ -6,10 +6,10 @@
 #include <stddef.h>
 #include "../syscall.h"
 #include "exec.h"
+#include "../vconsole.h"
 
 extern int gfx_is_active(void);
 extern void user_alloc_cleanup_task(uint32_t tid);
-extern void vc_detach_for_task(uint32_t tid);
 
 task_t *task_list = NULL;
 static task_t *current_task = NULL;
@@ -217,8 +217,7 @@ static void cleanup_terminated_tasks(void) {
             extern void user_alloc_cleanup_task(uint32_t tid);
             user_alloc_cleanup_task(to_free->tid);
 
-            extern void vc_detach_for_task(uint32_t tid);
-            vc_detach_for_task(to_free->tid);
+            vc_cleanup_task(to_free);
 
             /* Clean up file descriptors owned by this task */
             extern void fd_cleanup_task(uint32_t tid);
@@ -439,7 +438,7 @@ int task_spawn_and_wait(const char *path, const char *args) {
     
     child->parent_tid = current_task->tid;
     current_task->child_tid = child_tid;
-    child->vconsole = current_task->vconsole;
+    vc_assign_task(child, current_task->vconsole);
 
     /* CWD is copied, never shared. Protect both task pointers from a switch. */
     uint32_t cwd_eflags = irq_save();
@@ -521,9 +520,7 @@ int task_spawn(const char *path, const char *args) {
     /* Inherit vconsole from parent, but if graphics mode is not active we want
        the child to write to the system VGA console */
     if (gfx_is_active()) {
-        child->vconsole = current_task->vconsole;
-    } else {
-        child->vconsole = NULL;
+        vc_assign_task(child, current_task->vconsole);
     }
     
     /* Store arguments */

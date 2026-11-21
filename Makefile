@@ -8,7 +8,7 @@ DISK_SIZE = 32
 CC      = gcc
 LD      = ld
 QEMU_AUDIO ?= sdl
-QEMU_DISPLAY ?= sdl,grab-mod=lctrl-lalt,show-cursor=on
+QEMU_DISPLAY ?= sdl,grab-mod=lctrl-lalt,show-cursor=off
 QEMU_SOUND ?= -audiodev $(QEMU_AUDIO),id=snd0 -device sb16,audiodev=snd0
 
 CFLAGS  = -m32 -ffreestanding -O2 -Wall -Wextra -fno-pic -fno-pie -fno-stack-protector -DOSLET_KERNEL -MMD -MP

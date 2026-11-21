@@ -39,7 +39,27 @@ static int usr_bmf_load_from_memory(usr_bmf_font_t *font, const uint8_t *data, s
     font->flags = read_u8(&p);
     font->size_count = read_u16(&p);
     
-    if (font->version != USR_BMF_VERSION || font->size_count > USR_BMF_MAX_SIZES) return -1;
+    if (font->version != USR_BMF_VERSION || font->size_count == 0 ||
+        font->size_count > USR_BMF_MAX_SIZES) return -1;
+
+    size_t offset = 36;
+    for (uint16_t s = 0; s < font->size_count; s++) {
+        if (size - offset < 5) return -1;
+        uint8_t height = data[offset];
+        uint16_t count = (uint16_t)(data[offset + 3] | (data[offset + 4] << 8));
+        if (!height) return -1;
+        offset += 5;
+        for (uint16_t g = 0; g < count; g++) {
+            if (size - offset < 3) return -1;
+            uint8_t width = data[offset + 1];
+            uint8_t pitch = data[offset + 2];
+            if (pitch < (width + 7) / 8) return -1;
+            offset += 3;
+            size_t bytes = (size_t)pitch * height;
+            if (bytes > size - offset) return -1;
+            offset += bytes;
+        }
+    }
     
     font->data = malloc(size);
     if (!font->data) return -1;
@@ -56,15 +76,12 @@ static int usr_bmf_load_from_memory(usr_bmf_font_t *font, const uint8_t *data, s
         seq->glyph_data = (uint8_t*)p;
         
         for (uint16_t g = 0; g < seq->glyph_count; g++) {
-            if ((size_t)(p - font->data) + 3 > size) break;
-            
             read_u8(&p);
             uint8_t width = read_u8(&p);
             uint8_t pitch = read_u8(&p);
             (void)width;
             
             size_t bitmap_size = pitch * seq->height;
-            if ((size_t)(p - font->data) + bitmap_size > size) break;
             p += bitmap_size;
         }
     }
@@ -113,8 +130,8 @@ int usr_bmf_import(usr_bmf_font_t *font, const char *path) {
     }
     
     sys_close(fd);
-    
-    if (total < 36) {
+
+    if (n < 0 || total < 36) {
         free(data);
         return -1;
     }

@@ -6,7 +6,7 @@
 
 static vconsole_t *vc_registry[64];
 
-static int vc_is_registered(vconsole_t *vc) {
+int vc_is_registered(vconsole_t *vc) {
     if (!vc) return 0;
     for (int i = 0; i < 64; i++) {
         if (vc_registry[i] == vc) return 1;
@@ -14,14 +14,15 @@ static int vc_is_registered(vconsole_t *vc) {
     return 0;
 }
 
-static void vc_register(vconsole_t *vc) {
-    if (!vc || vc_is_registered(vc)) return;
+static int vc_register(vconsole_t *vc) {
+    if (!vc || vc_is_registered(vc)) return -1;
     for (int i = 0; i < 64; i++) {
         if (!vc_registry[i]) {
             vc_registry[i] = vc;
-            return;
+            return 0;
         }
     }
+    return -1;
 }
 
 static void vc_unregister(vconsole_t *vc) {
@@ -34,17 +35,36 @@ static void vc_unregister(vconsole_t *vc) {
     }
 }
 
-void vc_detach_for_task(uint32_t tid) {
-    extern task_t *task_list;
-    if (!task_list) return;
-    task_t *t = task_list;
-    do {
-        if (t->tid == tid) {
-            t->vconsole = NULL;
-            break;
-        }
-        t = t->next;
-    } while (t != task_list);
+static void vc_release(vconsole_t *vc) {
+    if (vc && --vc->refs == 0) kfree(vc);
+}
+
+void vc_assign_task(task_t *task, vconsole_t *vc) {
+    if (task->vconsole == vc) return;
+    if (vc) vc->refs++;
+    vconsole_t *old = task->vconsole;
+    task->vconsole = vc;
+    vc_release(old);
+}
+
+void vc_begin_read(task_t *task, vconsole_t *vc) {
+    vc->refs++;
+    task->vc_reading = vc;
+}
+
+void vc_end_read(task_t *task) {
+    vconsole_t *vc = task->vc_reading;
+    task->vc_reading = NULL;
+    vc_release(vc);
+}
+
+void vc_cleanup_task(task_t *task) {
+    for (int i = 0; i < 64; i++) {
+        vconsole_t *vc = vc_registry[i];
+        if (vc && vc->owner_tid == task->tid) vc_destroy(vc);
+    }
+    vc_end_read(task);
+    vc_assign_task(task, NULL);
 }
 
 vconsole_t *vc_create(uint32_t owner_tid) {
@@ -52,10 +72,16 @@ vconsole_t *vc_create(uint32_t owner_tid) {
     if (!vc) return NULL;
     memset_s(vc, 0, sizeof(vconsole_t));
     vc->color = 0x07;
+    vc->cols = VC_COLS;
+    vc->rows = VC_ROWS;
     vc->owner_tid = owner_tid;
+    vc->refs = 1;
     vc->active = 1;
-    vc_register(vc);
-    for (int i = 0; i < VC_ROWS * VC_COLS; i++) {
+    if (vc_register(vc) != 0) {
+        kfree(vc);
+        return NULL;
+    }
+    for (int i = 0; i < VC_MAX_ROWS * VC_MAX_COLS; i++) {
         vc->chars[i] = ' ';
         vc->attrs[i] = vc->color;
     }
@@ -64,17 +90,26 @@ vconsole_t *vc_create(uint32_t owner_tid) {
 
 void vc_destroy(vconsole_t *vc) {
     if (!vc || !vc_is_registered(vc)) return;
-    vc_detach_for_task(vc->owner_tid);
     vc->active = 0;
     vc_unregister(vc);
-    kfree(vc);
+    vc_release(vc);
 }
 
 static void vc_scroll(vconsole_t *vc) {
-    memcpy_s(&vc->chars[0], &vc->chars[VC_COLS], (VC_ROWS - 1) * VC_COLS);
-    memcpy_s(&vc->attrs[0], &vc->attrs[VC_COLS], (VC_ROWS - 1) * VC_COLS);
-    int last = (VC_ROWS - 1) * VC_COLS;
-    for (int x = 0; x < VC_COLS; x++) {
+    int slot;
+    if (vc->history_lines < VC_SCROLLBACK) {
+        slot = (vc->history_start + vc->history_lines++) % VC_SCROLLBACK;
+    } else {
+        slot = vc->history_start;
+        vc->history_start = (vc->history_start + 1) % VC_SCROLLBACK;
+    }
+    memcpy_s(vc->history_chars + slot * VC_MAX_COLS, vc->chars, VC_MAX_COLS);
+    memcpy_s(vc->history_attrs + slot * VC_MAX_COLS, vc->attrs, VC_MAX_COLS);
+    vc->history_sequence++;
+    memcpy_s(vc->chars, vc->chars + VC_MAX_COLS, (vc->rows - 1) * VC_MAX_COLS);
+    memcpy_s(vc->attrs, vc->attrs + VC_MAX_COLS, (vc->rows - 1) * VC_MAX_COLS);
+    int last = (vc->rows - 1) * VC_MAX_COLS;
+    for (int x = 0; x < VC_MAX_COLS; x++) {
         vc->chars[last + x] = ' ';
         vc->attrs[last + x] = vc->color;
     }
@@ -91,8 +126,8 @@ void vc_putchar(vconsole_t *vc, char c) {
             break;
         case '\t': {
             int stop = (vc->cursor_x + 4) & ~3;
-            while (vc->cursor_x < stop && vc->cursor_x < VC_COLS) {
-                int off = vc->cursor_y * VC_COLS + vc->cursor_x;
+            while (vc->cursor_x < stop && vc->cursor_x < vc->cols) {
+                int off = vc->cursor_y * VC_MAX_COLS + vc->cursor_x;
                 vc->chars[off] = ' ';
                 vc->attrs[off] = vc->color;
                 vc->cursor_x++;
@@ -101,26 +136,30 @@ void vc_putchar(vconsole_t *vc, char c) {
         }
         case '\b':
             if (vc->cursor_x > 0) vc->cursor_x--;
+            else if (vc->cursor_y > 0) {
+                vc->cursor_y--;
+                vc->cursor_x = vc->cols - 1;
+            }
             break;
         default: {
-            if (vc->cursor_x >= VC_COLS) {
+            if (vc->cursor_x >= vc->cols) {
                 vc->cursor_x = 0;
                 vc->cursor_y++;
             }
-            while (vc->cursor_y >= VC_ROWS) {
+            while (vc->cursor_y >= vc->rows) {
                 vc_scroll(vc);
-                vc->cursor_y = VC_ROWS - 1;
+                vc->cursor_y = vc->rows - 1;
             }
-            int off = vc->cursor_y * VC_COLS + vc->cursor_x;
+            int off = vc->cursor_y * VC_MAX_COLS + vc->cursor_x;
             vc->chars[off] = (uint8_t)c;
             vc->attrs[off] = vc->color;
             vc->cursor_x++;
             break;
         }
     }
-    while (vc->cursor_y >= VC_ROWS) {
+    while (vc->cursor_y >= vc->rows) {
         vc_scroll(vc);
-        vc->cursor_y = VC_ROWS - 1;
+        vc->cursor_y = vc->rows - 1;
     }
     vc->dirty = 1;
 }
@@ -137,8 +176,9 @@ void vc_send_key(vconsole_t *vc, uint8_t key) {
 }
 
 int vc_getchar(vconsole_t *vc) {
-    while (vc->key_head == vc->key_tail) {
+    for (;;) {
         if (!vc->active) return -1;
+        if (vc->key_head != vc->key_tail) break;
         task_yield();
     }
     uint8_t key = vc->keybuf[vc->key_tail];
@@ -159,7 +199,10 @@ size_t vc_getline(vconsole_t *vc, char *buf, size_t maxlen) {
 
     for (;;) {
         int c = vc_getchar(vc);
-        if (c < 0) break;
+        if (c < 0) {
+            buf[n] = '\0';
+            return (size_t)-1;
+        }
 
         if (c == KEY_UP) {
             if (vc->history_count == 0) continue;
@@ -291,12 +334,14 @@ size_t vc_getline(vconsole_t *vc, char *buf, size_t maxlen) {
 }
 
 void vc_clear(vconsole_t *vc) {
-    for (int i = 0; i < VC_ROWS * VC_COLS; i++) {
+    for (int i = 0; i < VC_MAX_ROWS * VC_MAX_COLS; i++) {
         vc->chars[i] = ' ';
         vc->attrs[i] = vc->color;
     }
     vc->cursor_x = 0;
     vc->cursor_y = 0;
+    vc->history_start = 0;
+    vc->history_lines = 0;
     vc->dirty = 1;
 }
 
@@ -305,12 +350,53 @@ void vc_set_color(vconsole_t *vc, uint8_t bg, uint8_t fg) {
 }
 
 void vc_set_cursor(vconsole_t *vc, int x, int y) {
-    if (x >= 0 && x < VC_COLS) vc->cursor_x = x;
-    if (y >= 0 && y < VC_ROWS) vc->cursor_y = y;
+    if (x >= 0 && x < vc->cols) vc->cursor_x = x;
+    if (y >= 0 && y < vc->rows) vc->cursor_y = y;
     vc->dirty = 1;
 }
 
 void vc_get_cursor(vconsole_t *vc, int *x, int *y) {
     if (x) *x = vc->cursor_x;
     if (y) *y = vc->cursor_y;
+}
+
+int vc_resize(vconsole_t *vc, int cols, int rows) {
+    if (cols < 1 || cols > VC_MAX_COLS || rows < 1 || rows > VC_MAX_ROWS)
+        return -1;
+    if (cols == vc->cols && rows == vc->rows) return 0;
+
+    while (vc->cursor_y >= rows) {
+        vc_scroll(vc);
+        vc->cursor_y--;
+    }
+    if (rows > vc->rows) {
+        for (int y = vc->rows; y < rows; y++) {
+            memset_s(vc->chars + y * VC_MAX_COLS, ' ', VC_MAX_COLS);
+            memset_s(vc->attrs + y * VC_MAX_COLS, vc->color, VC_MAX_COLS);
+        }
+    }
+    if (cols != vc->cols) {
+        int from = cols < vc->cols ? cols : vc->cols;
+        for (int y = 0; y < VC_MAX_ROWS; y++) {
+            memset_s(vc->chars + y * VC_MAX_COLS + from, ' ', VC_MAX_COLS - from);
+            memset_s(vc->attrs + y * VC_MAX_COLS + from, vc->color, VC_MAX_COLS - from);
+        }
+    }
+    vc->cols = cols;
+    vc->rows = rows;
+    if (vc->cursor_x > cols) vc->cursor_x = cols;
+    vc->dirty = 1;
+    return 0;
+}
+
+void vc_copy_row(vconsole_t *vc, int row, uint8_t *chars, uint8_t *attrs) {
+    if (row < vc->history_lines) {
+        int slot = (vc->history_start + row) % VC_SCROLLBACK;
+        memcpy_s(chars, vc->history_chars + slot * VC_MAX_COLS, vc->cols);
+        memcpy_s(attrs, vc->history_attrs + slot * VC_MAX_COLS, vc->cols);
+    } else {
+        row -= vc->history_lines;
+        memcpy_s(chars, vc->chars + row * VC_MAX_COLS, vc->cols);
+        memcpy_s(attrs, vc->attrs + row * VC_MAX_COLS, vc->cols);
+    }
 }

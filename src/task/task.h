@@ -42,6 +42,8 @@ typedef struct task {
     char args[256];
     char cwd[TASK_CWD_SIZE];
     struct vconsole *vconsole;
+    /* A blocked read may still use the previous console after reattachment. */
+    struct vconsole *vc_reading;
     struct task *next;
 } task_t;
 
