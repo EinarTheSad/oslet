@@ -17,6 +17,25 @@ void gfx_read_screen_region_color(uint32_t *dst, int width, int height, int x, i
 
 void gfx_write_screen_region_color(const uint32_t *src, int width, int height, int x, int y) {
     if (!src || width <= 0 || height <= 0) return;
+    if (backbuffer && gfx_colorbuffer && !gfx_clip_enabled &&
+        x >= 0 && y >= 0 && width <= GFX_WIDTH - x && height <= GFX_HEIGHT - y &&
+        !(x & 1) && !(width & 1)) {
+        for (int row = 0; row < height; ++row) {
+            const uint32_t *in = src + (size_t)row * width;
+            uint32_t *colors = gfx_colorbuffer + (size_t)(y + row) * GFX_WIDTH + x;
+            uint8_t *packed = backbuffer + (size_t)(y + row) * (GFX_WIDTH / 2) + x / 2;
+            for (int col = 0; col < width; col += 2) {
+                uint32_t first = in[col], second = in[col + 1];
+                uint8_t a = (first & 0x80000000u) ? first & 15 : (first >> 24) & 15;
+                uint8_t b = (second & 0x80000000u) ? second & 15 : (second >> 24) & 15;
+                packed[col / 2] = (uint8_t)((a << 4) | b);
+                colors[col] = (first & 0x80000000u) ? 0x80000000u | a : first;
+                colors[col + 1] = (second & 0x80000000u) ? 0x80000000u | b : second;
+            }
+        }
+        mark_dirty(x, y, width, height);
+        return;
+    }
     for (int row = 0; row < height; ++row)
         for (int col = 0; col < width; ++col)
             putcolor_raw(x + col, y + row, src[(size_t)row * width + col]);

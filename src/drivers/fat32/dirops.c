@@ -116,6 +116,7 @@ static int fat32_list_dir_unlocked(const char *path, fat32_dirent_t *entries, in
 
     int count = 0;
     uint32_t cluster = dir_cluster;
+    lfn_state_t lfn = {0};
     
     while (cluster >= 2 && cluster < FAT32_EOC && count < max_entries) {
         if (read_cluster(vol, cluster, cluster_buf) != 0) {
@@ -126,62 +127,40 @@ static int fat32_list_dir_unlocked(const char *path, fat32_dirent_t *entries, in
         fat32_direntry_t *dir_entries = (fat32_direntry_t*)cluster_buf;
         uint32_t entries_count = cluster_size / 32;
         
-        char lfn_buffer[FAT32_MAX_PATH];
-        int lfn_valid = 0;
-        uint8_t lfn_checksum_val = 0;
-        
         for (uint32_t i = 0; i < entries_count && count < max_entries; i++) {
             if (count >= max_entries) break;
 
             if (dir_entries[i].name[0] == 0x00) {
-                break;
+                kfree(cluster_buf);
+                return count;
             }
             
             if ((uint8_t)dir_entries[i].name[0] == 0xE5) {
-                lfn_valid = 0;
+                lfn.valid = 0;
                 continue;
             }
             
             if (dir_entries[i].attr == FAT_ATTR_LFN) {
-                lfn_entry_t *lfn = (lfn_entry_t*)&dir_entries[i];
-                int order = lfn->order & 0x3F;
-                int is_last = (lfn->order & 0x40) != 0;
-                
-                if (is_last) {
-                    lfn_checksum_val = lfn->checksum;
-                    lfn_valid = 1;
-                    memset_s(lfn_buffer, 0, sizeof(lfn_buffer));
-                }
-                
-                if (lfn_valid && order > 0 && order <= 20) {
-                    int base = (order - 1) * 13;
-                    uint16_t temp1[5], temp2[6], temp3[2];
-                    memcpy_s(temp1, lfn->name1, sizeof(temp1));
-                    memcpy_s(temp2, lfn->name2, sizeof(temp2));
-                    memcpy_s(temp3, lfn->name3, sizeof(temp3));
-                    utf16_to_ascii(temp1, lfn_buffer + base, 5);
-                    utf16_to_ascii(temp2, lfn_buffer + base + 5, 6);
-                    utf16_to_ascii(temp3, lfn_buffer + base + 11, 2);
-                }
+                lfn_add(&lfn, (const lfn_entry_t*)&dir_entries[i]);
                 continue;
             }
             
             if (dir_entries[i].attr & FAT_ATTR_VOLUME_ID) {
-                lfn_valid = 0;
+                lfn.valid = 0;
                 continue;
             }
             
             if (dir_entries[i].name[0] == '.' && 
                 (dir_entries[i].name[1] == ' ' || dir_entries[i].name[1] == '.')) {
-                lfn_valid = 0;
+                lfn.valid = 0;
                 continue;
             }
             
             memset_s(entries[count].name, 0, sizeof(entries[count].name));
             
-            if (lfn_valid && lfn_checksum(dir_entries[i].name) == lfn_checksum_val &&
-                lfn_matches_short_name(lfn_buffer, dir_entries[i].name)) {
-                strcpy_s(entries[count].name, lfn_buffer, sizeof(entries[count].name));
+            const char *long_name = lfn_name(&lfn, dir_entries[i].name);
+            if (long_name) {
+                strcpy_s(entries[count].name, long_name, sizeof(entries[count].name));
             } else {
                 int j = 0;
                 int name_end = 7;
@@ -211,7 +190,7 @@ static int fat32_list_dir_unlocked(const char *path, fat32_dirent_t *entries, in
             entries[count].is_directory = (dir_entries[i].attr & FAT_ATTR_DIRECTORY) ? 1 : 0;
             entries[count].attr = dir_entries[i].attr;
             count++;
-            lfn_valid = 0;
+            lfn.valid = 0;
         }
         
         cluster = get_next_cluster(vol, cluster);

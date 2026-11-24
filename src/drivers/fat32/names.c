@@ -19,20 +19,41 @@ uint8_t lfn_checksum(const char *short_name) {
     return sum;
 }
 
-int lfn_matches_short_name(const char *long_name, const char *short_name) {
-    char generated[11];
-    if (!long_name || !short_name || !long_name[0]) return 0;
-    parse_filename(long_name, generated);
-    for (int i = 0; i < 11; i++) {
-        if (toupper_s(generated[i]) != toupper_s(short_name[i])) return 0;
+void lfn_add(lfn_state_t *state, const lfn_entry_t *entry) {
+    int order = entry->order & 0x3F;
+    if (entry->order & 0x40) {
+        memset_s(state, 0, sizeof(*state));
+        state->valid = 1;
+        state->next = order;
+        state->checksum = entry->checksum;
     }
-    return 1;
+    if (!state->valid || (entry->order & 0x80) || order < 1 || order > 20 ||
+        order != state->next || entry->checksum != state->checksum ||
+        entry->type != 0 || entry->first_cluster != 0) {
+        state->valid = 0;
+        return;
+    }
+
+    uint16_t chars[13];
+    memcpy_s(chars, entry->name1, sizeof(entry->name1));
+    memcpy_s(chars + 5, entry->name2, sizeof(entry->name2));
+    memcpy_s(chars + 11, entry->name3, sizeof(entry->name3));
+    int base = (order - 1) * 13;
+    for (int i = 0; i < 13; i++) {
+        if (chars[i] == 0 || chars[i] == 0xFFFF) break;
+        if (base + i >= FAT32_MAX_PATH - 1) {
+            state->valid = 0;
+            return;
+        }
+        state->name[base + i] = chars[i] < 128 ? (char)chars[i] : '?';
+    }
+    state->next--;
 }
 
-void utf16_to_ascii(const uint16_t *src, char *dst, int max_chars) {
-    for (int i = 0; i < max_chars && src[i] != 0 && src[i] != 0xFFFF; i++) {
-        dst[i] = (src[i] < 128) ? (char)src[i] : '?';
-    }
+const char *lfn_name(const lfn_state_t *state, const char *short_name) {
+    if (!state->valid || state->next != 0 || !state->name[0] ||
+        state->checksum != lfn_checksum(short_name)) return NULL;
+    return state->name;
 }
 
 void parse_filename(const char *name, char *out_name) {

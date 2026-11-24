@@ -25,12 +25,29 @@ int find_in_dir(fat32_volume_t *vol, uint32_t dir_cluster, const char *name,
                        fat32_direntry_t *out, uint32_t *out_cluster, uint32_t *out_offset) {
     char search[11];
     parse_filename(name, search);
+    const char *dot = NULL;
+    int dots = 0;
+    size_t base_len = 0, ext_len = 0;
+    for (const char *p = name; *p; p++) {
+        if (*p == '.') {
+            dot = p;
+            dots++;
+        }
+    }
+    if (dot) {
+        base_len = (size_t)(dot - name);
+        ext_len = strlen_s(dot + 1);
+    } else {
+        base_len = strlen_s(name);
+    }
+    int short_query = dots <= 1 && base_len <= 8 && ext_len <= 3;
     
     size_t cluster_size = vol->sectors_per_cluster * vol->bytes_per_sector;
     uint8_t *cluster_buf = kmalloc(cluster_size);
     if (!cluster_buf) return -1;
     
     uint32_t cluster = dir_cluster;
+    lfn_state_t lfn = {0};
     while (cluster >= 2 && cluster < FAT32_EOC) {
         if (read_cluster(vol, cluster, cluster_buf) != 0) {
             kfree(cluster_buf);
@@ -39,61 +56,36 @@ int find_in_dir(fat32_volume_t *vol, uint32_t dir_cluster, const char *name,
         
         fat32_direntry_t *entries = (fat32_direntry_t*)cluster_buf;
         uint32_t count = cluster_size / 32;
-        char lfn_buffer[FAT32_MAX_PATH];
-        uint8_t lfn_checksum_val = 0;
-        int lfn_valid = 0;
-        
         for (uint32_t i = 0; i < count; i++) {
             if (entries[i].name[0] == 0x00) {
                 kfree(cluster_buf);
                 return -1;
             }
             if ((uint8_t)entries[i].name[0] == 0xE5) {
-                lfn_valid = 0;
+                lfn.valid = 0;
                 continue;
             }
             
             if (entries[i].attr == FAT_ATTR_LFN) {
-                lfn_entry_t *lfn = (lfn_entry_t*)&entries[i];
-                int order = lfn->order & 0x3F;
-                int is_last = (lfn->order & 0x40) != 0;
-                
-                if (is_last) {
-                    lfn_checksum_val = lfn->checksum;
-                    lfn_valid = 1;
-                    memset_s(lfn_buffer, 0, sizeof(lfn_buffer));
-                }
-                
-                if (lfn_valid && order > 0 && order <= 20) {
-                    int base = (order - 1) * 13;
-                    uint16_t temp1[5], temp2[6], temp3[2];
-                    memcpy_s(temp1, lfn->name1, sizeof(temp1));
-                    memcpy_s(temp2, lfn->name2, sizeof(temp2));
-                    memcpy_s(temp3, lfn->name3, sizeof(temp3));
-                    utf16_to_ascii(temp1, lfn_buffer + base, 5);
-                    utf16_to_ascii(temp2, lfn_buffer + base + 5, 6);
-                    utf16_to_ascii(temp3, lfn_buffer + base + 11, 2);
-                }
+                lfn_add(&lfn, (const lfn_entry_t*)&entries[i]);
                 continue;
             }
             
             if (entries[i].attr & FAT_ATTR_VOLUME_ID) {
-                lfn_valid = 0;
+                lfn.valid = 0;
                 continue;
             }
             
-            if (lfn_valid && lfn_checksum(entries[i].name) == lfn_checksum_val) {
-                if (lfn_matches_short_name(lfn_buffer, entries[i].name) &&
-                    strcasecmp_s(lfn_buffer, name) == 0) {
-                    memcpy_s(out, &entries[i], sizeof(fat32_direntry_t));
-                    if (out_cluster) *out_cluster = cluster;
-                    if (out_offset) *out_offset = i * 32;
-                    kfree(cluster_buf);
-                    return 0;
-                }
+            const char *long_name = lfn_name(&lfn, entries[i].name);
+            if (long_name && strcasecmp_s(long_name, name) == 0) {
+                memcpy_s(out, &entries[i], sizeof(fat32_direntry_t));
+                if (out_cluster) *out_cluster = cluster;
+                if (out_offset) *out_offset = i * 32;
+                kfree(cluster_buf);
+                return 0;
             }
             
-            int match = 1;
+            int match = short_query;
             for (int j = 0; j < 11; j++) {
                 char a = toupper_s(entries[i].name[j]);
                 char b = toupper_s(search[j]);
@@ -111,7 +103,7 @@ int find_in_dir(fat32_volume_t *vol, uint32_t dir_cluster, const char *name,
                 return 0;
             }
             
-            lfn_valid = 0;
+            lfn.valid = 0;
         }
         
         cluster = get_next_cluster(vol, cluster);
@@ -125,6 +117,20 @@ int add_dir_entry(fat32_volume_t *vol, uint32_t dir_cluster, const char *name,
                         uint32_t first_cluster, uint32_t size, uint8_t attr) {
     char short_name[11];
     parse_filename(name, short_name);
+
+    char alias[13];
+    int alias_len = 0;
+    for (int i = 0; i < 8 && short_name[i] != ' '; i++)
+        alias[alias_len++] = short_name[i];
+    if (short_name[8] != ' ') {
+        alias[alias_len++] = '.';
+        for (int i = 8; i < 11 && short_name[i] != ' '; i++)
+            alias[alias_len++] = short_name[i];
+    }
+    alias[alias_len] = '\0';
+    fat32_direntry_t existing;
+    if (find_in_dir(vol, dir_cluster, alias, &existing, NULL, NULL) == 0)
+        return -1;
     
     int name_len = strlen_s(name);
     int needs_lfn = 0;

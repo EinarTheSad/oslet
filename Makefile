@@ -230,7 +230,10 @@ install: $(CURDIR)/$(BUILD)/$(TARGET)
 	$(SUDO) mkdir -p mnt/FONTS; \
 	$(SUDO) cp $(SRC)/assets/bmf/*.[bB][mM][fF] mnt/FONTS/ 2>/dev/null || true; \
 	$(SUDO) mkdir -p mnt/IMAGES; \
-	$(SUDO) cp images/*.[bB][mM][pP] mnt/IMAGES/ 2>/dev/null || true; \
+	for f in images/*.[bB][mM][pP] images/*.[jJ][pP][gG] images/*.[jJ][pP][eE][gG]; do \
+		[ -f "$$f" ] || continue; \
+		$(SUDO) cp "$$f" mnt/IMAGES/; \
+	done; \
 	$(SUDO) mkdir -p mnt/ICONS; \
 	$(SUDO) cp $(SRC)/assets/ico/*.[iI][cC][oO] mnt/ICONS/ 2>/dev/null || true; \
 	$(SUDO) cp $(SRC)/assets/cur/*.[cC][uU][rR] mnt/ICONS/ 2>/dev/null || true; \

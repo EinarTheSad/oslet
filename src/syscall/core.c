@@ -1372,11 +1372,9 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 src.height = src_h;
                 src.bits_per_pixel = 4;
 
-                bitmap_t *scaled = bitmap_scale_nearest(&src, dest_w, dest_h);
+                bitmap_t *scaled = bitmap_scale_bilinear(&src, dest_w, dest_h, 0);
 
                 if (!scaled) {
-                    graphics_begin_draw();
-                    gfx_draw_cached_bmp_ex(bmp, src_w, src_h, dest_x, dest_y, 0);
                     gfx_free_bmp(bmp);
                     mouse_busy_end();
                     return (uint32_t)-1;
@@ -1418,7 +1416,7 @@ static uint32_t handle_graphics(uint32_t al, uint32_t ebx,
                 src.height = src_h;
                 src.bits_per_pixel = 4;
 
-                bitmap_t *scaled = bitmap_scale_nearest(&src, target_w, target_h);
+                bitmap_t *scaled = bitmap_scale_bilinear(&src, target_w, target_h, 1);
                 gfx_free_bmp(bmp);
 
                 if (!scaled) {
@@ -1651,6 +1649,10 @@ static uint32_t handle_mouse(uint32_t al, uint32_t ebx,
             mouse_busy_end();
             return 0;
         }
+
+        case 0x06:
+            mouse_center();
+            return 0;
         
         default:
             return (uint32_t)-1;

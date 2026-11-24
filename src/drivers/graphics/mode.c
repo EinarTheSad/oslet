@@ -216,14 +216,31 @@ static uint32_t framebuffer_color(uint8_t index) {
     return rgb;
 }
 
+static uint32_t rgb_components[3][256];
+
+static void prepare_rgb_components(void) {
+    static uint16_t previous[3];
+    static int ready;
+    uint16_t format[3] = {
+        (uint16_t)((framebuffer.red_size << 8) | framebuffer.red_position),
+        (uint16_t)((framebuffer.green_size << 8) | framebuffer.green_position),
+        (uint16_t)((framebuffer.blue_size << 8) | framebuffer.blue_position)
+    };
+    for (int channel = 0; channel < 3; ++channel) {
+        if (ready && previous[channel] == format[channel]) continue;
+        uint8_t bits = (uint8_t)(format[channel] >> 8);
+        uint8_t position = (uint8_t)format[channel];
+        for (int value = 0; value < 256; ++value)
+            rgb_components[channel][value] = scale_component((uint8_t)value, bits) << position;
+        previous[channel] = format[channel];
+    }
+    ready = 1;
+}
+
 static uint32_t framebuffer_rgb(uint32_t rgb) {
-    uint32_t value = scale_component((uint8_t)(rgb >> 16), framebuffer.red_size)
-                     << framebuffer.red_position;
-    value |= scale_component((uint8_t)(rgb >> 8), framebuffer.green_size)
-             << framebuffer.green_position;
-    value |= scale_component((uint8_t)rgb, framebuffer.blue_size)
-             << framebuffer.blue_position;
-    return value;
+    return rgb_components[0][(rgb >> 16) & 255] |
+           rgb_components[1][(rgb >> 8) & 255] |
+           rgb_components[2][rgb & 255];
 }
 
 static uint8_t dither_component(uint8_t value, int offset) {
@@ -1084,8 +1101,10 @@ void gfx_swap_buffers(void) {
         uint32_t row_bytes = (GFX_WIDTH + 1u) / 2u;
         uint32_t colors[16];
         uint32_t bytes = framebuffer.bpp / 8u;
-        if (framebuffer.memory_model != 4)
+        if (framebuffer.memory_model != 4) {
+            prepare_rgb_components();
             for (int i = 0; i < 16; ++i) colors[i] = framebuffer_color((uint8_t)i);
+        }
         for (int y = y0; y <= y1; y++) {
             int row_x0 = full_redraw ? 0 : gfx_dirty_row_x0[y];
             int row_x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
@@ -1094,11 +1113,17 @@ void gfx_swap_buffers(void) {
             size_t offset = (size_t)y * framebuffer.pitch + (size_t)row_x0 * bytes;
             volatile uint8_t *pixel = framebuffer.window_size ? NULL :
                                       framebuffer.address + offset;
+            const uint32_t *row_colors = gfx_colorbuffer ?
+                gfx_colorbuffer + (size_t)y * GFX_WIDTH : NULL;
             for (int x = row_x0; x <= row_x1; ++x) {
-                uint8_t packed = backbuffer[row_offset + (uint32_t)x / 2u];
-                uint8_t color = (x & 1) ? packed & 0x0F : (packed >> 4) & 0x0F;
-                uint32_t source = gfx_colorbuffer ?
-                    gfx_colorbuffer[(size_t)y * GFX_WIDTH + x] : 0x80000000u | color;
+                uint32_t source;
+                if (row_colors) {
+                    source = row_colors[x];
+                } else {
+                    uint8_t packed = backbuffer[row_offset + (uint32_t)x / 2u];
+                    uint8_t color = (x & 1) ? packed & 0x0F : packed >> 4;
+                    source = 0x80000000u | color;
+                }
                 if (framebuffer.memory_model == 4) {
                     if (framebuffer.window_size) {
                         if (!pixel || offset - framebuffer.window_start >= framebuffer.window_size) {
@@ -1112,15 +1137,20 @@ void gfx_swap_buffers(void) {
                 } else {
                     uint32_t rgb = (source & 0x80000000u) ?
                                    colors[source & 0x0f] : framebuffer_rgb(source);
-                    for (uint32_t byte = 0; byte < bytes; ++byte) {
-                        if (framebuffer.window_size) {
+                    if (!framebuffer.window_size) {
+                        *pixel++ = (uint8_t)rgb;
+                        *pixel++ = (uint8_t)(rgb >> 8);
+                        if (bytes > 2) *pixel++ = (uint8_t)(rgb >> 16);
+                        if (bytes > 3) *pixel++ = (uint8_t)(rgb >> 24);
+                    } else {
+                        for (uint32_t byte = 0; byte < bytes; ++byte) {
                             if (!pixel || offset - framebuffer.window_start >= framebuffer.window_size) {
                                 pixel = window_address(offset);
                                 if (!pixel) break;
                             }
                             ++offset;
+                            *pixel++ = (uint8_t)(rgb >> (byte * 8));
                         }
-                        *pixel++ = (uint8_t)(rgb >> (byte * 8));
                     }
                     if (framebuffer.error) break;
                 }
@@ -1139,30 +1169,36 @@ void gfx_swap_buffers(void) {
     }
 
     if (!framebuffer.valid) {
-        wait_vretrace();
         volatile uint8_t *vram = GFX_VRAM;
-        outb(0x3c4, 0x02);
-        for (uint8_t plane = 0; plane < 4; ++plane) {
-            outb(0x3c5, (uint8_t)(1u << plane));
-            for (int y = y0; y <= y1; ++y) {
-                int x0 = full_redraw ? 0 : gfx_dirty_row_x0[y];
-                int x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
-                if (x1 < x0) continue;
-                x0 &= ~7;
-                x1 = (x1 + 8) & ~7;
-                if (x1 > GFX_WIDTH) x1 = GFX_WIDTH;
-                uint32_t row = (uint32_t)y * (GFX_WIDTH / 2);
-                for (int x = x0; x < x1; x += 8) {
-                    uint32_t offset = row + (uint32_t)x / 2u;
-                    uint8_t b0 = backbuffer[offset];
-                    uint8_t b1 = backbuffer[offset + 1];
-                    uint8_t b2 = backbuffer[offset + 2];
-                    uint8_t b3 = backbuffer[offset + 3];
-                    if (!full_redraw && frontbuffer &&
-                        frontbuffer[offset] == b0 && frontbuffer[offset + 1] == b1 &&
-                        frontbuffer[offset + 2] == b2 && frontbuffer[offset + 3] == b3)
-                        continue;
-                    vram[(uint32_t)y * 80u + (uint32_t)x / 8u] =
+        static uint8_t planes[4][80 * 480];
+        static uint8_t changed[80 * 480];
+        uint8_t changed_rows[480] = {0};
+        int any = 0;
+
+        /* Prepare VGA plane bytes before retrace so presentation starts promptly. */
+        for (int y = y0; y <= y1; ++y) {
+            int x0 = full_redraw ? 0 : gfx_dirty_row_x0[y];
+            int x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
+            if (x1 < x0) continue;
+            x0 &= ~7;
+            x1 = (x1 + 8) & ~7;
+            if (x1 > GFX_WIDTH) x1 = GFX_WIDTH;
+            uint32_t row = (uint32_t)y * (GFX_WIDTH / 2);
+            for (int x = x0; x < x1; x += 8) {
+                uint32_t offset = row + (uint32_t)x / 2u;
+                uint8_t b0 = backbuffer[offset];
+                uint8_t b1 = backbuffer[offset + 1];
+                uint8_t b2 = backbuffer[offset + 2];
+                uint8_t b3 = backbuffer[offset + 3];
+                uint32_t pos = (uint32_t)y * 80u + (uint32_t)x / 8u;
+                changed[pos] = full_redraw || !frontbuffer ||
+                    frontbuffer[offset] != b0 || frontbuffer[offset + 1] != b1 ||
+                    frontbuffer[offset + 2] != b2 || frontbuffer[offset + 3] != b3;
+                if (!changed[pos]) continue;
+                any = 1;
+                changed_rows[y] = 1;
+                for (int plane = 0; plane < 4; ++plane) {
+                    planes[plane][pos] =
                         (uint8_t)((plane_pair_table[plane][b0] << 6) |
                                   (plane_pair_table[plane][b1] << 4) |
                                   (plane_pair_table[plane][b2] << 2) |
@@ -1170,12 +1206,36 @@ void gfx_swap_buffers(void) {
                 }
             }
         }
+        if (!any) {
+            reset_dirty();
+            GFX_UNLOCK();
+            return;
+        }
+
+        wait_vretrace();
+        outb(0x3c4, 0x02);
+        for (int y = y0; y <= y1; ++y) {
+            if (!changed_rows[y]) continue;
+            int x0 = full_redraw ? 0 : gfx_dirty_row_x0[y];
+            int x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
+            x0 &= ~7;
+            x1 = (x1 + 8) & ~7;
+            if (x1 > GFX_WIDTH) x1 = GFX_WIDTH;
+            uint32_t row = (uint32_t)y * 80u;
+            for (uint8_t plane = 0; plane < 4; ++plane) {
+                outb(0x3c5, (uint8_t)(1u << plane));
+                for (uint32_t pos = row + (unsigned)x0 / 8u;
+                     pos < row + (unsigned)x1 / 8u; ++pos)
+                    if (changed[pos])
+                        vram[pos] = planes[plane][pos];
+            }
+        }
         outb(0x3c5, 0x0f);
         if (frontbuffer) {
             for (int y = y0; y <= y1; ++y) {
+                if (!changed_rows[y]) continue;
                 int x0 = full_redraw ? 0 : gfx_dirty_row_x0[y];
                 int x1 = full_redraw ? GFX_WIDTH - 1 : gfx_dirty_row_x1[y];
-                if (x1 < x0) continue;
                 x0 &= ~7;
                 x1 = (x1 + 8) & ~7;
                 if (x1 > GFX_WIDTH) x1 = GFX_WIDTH;

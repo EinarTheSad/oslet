@@ -685,12 +685,6 @@ __attribute__((section(".entry"), used))
 void _start(void) {
     char args[16] = "";
     int from_text = sys_getargs(args, sizeof(args)) && strcmp(args, "/text") == 0;
-    int display_info_status = oslet_display_init();
-    desktop_layout_width = WM_SCREEN_WIDTH;
-    desktop_layout_height = WM_SCREEN_HEIGHT;
-    int mx = WM_SCREEN_WIDTH / 2;
-    int my = WM_SCREEN_HEIGHT / 2;
-    unsigned char mb;
 
     if (sys_gfx_enter() != 0) {
         sys_write("Could not restore the desktop display.\n");
@@ -699,11 +693,21 @@ void _start(void) {
         sys_exit();
         return;
     }
+    if (!from_text) {
+        load_palette_settings();
+        screen_restore_display();
+        sys_mouse_center();
+    }
+    int display_info_status = oslet_display_init();
+    desktop_layout_width = WM_SCREEN_WIDTH;
+    desktop_layout_height = WM_SCREEN_HEIGHT;
+    int mx = WM_SCREEN_WIDTH / 2;
+    int my = WM_SCREEN_HEIGHT / 2;
+    unsigned char mb;
     if (display_info_status != 0)
         sys_win_msgbox("Unable to query display dimensions; using 640x480 defaults.",
                        "OK", "Display");
     load_settings();
-    if (!from_text) load_palette_settings();
     cache_wallpaper();
 
     sys_gfx_fillrect(0, 0, WM_SCREEN_WIDTH, WM_SCREEN_HEIGHT, settings.color);
@@ -738,7 +742,6 @@ void _start(void) {
 
     int exit_requested = 0;
     desktop_present_display();
-    if (!from_text) screen_restore_display();
     int taskbar_needs_redraw = 0;
     int gk = 0;
 

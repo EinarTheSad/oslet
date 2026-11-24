@@ -32,6 +32,7 @@ extern int gfx_height;
 
 #define GRADIENT_H 0
 #define GRADIENT_V 1
+#define GFX_BMP_TRANSPARENT 0x40000000u
 
 static const uint8_t bayer8[8][8] = {
     {  0, 48, 12, 60,  3, 51, 15, 63 },
@@ -122,6 +123,9 @@ int gfx_load_bmp_4bit_ex(const char *path, int dest_x, int dest_y, int transpare
 uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_height);
 const uint32_t *gfx_bmp_colors(const uint8_t *data);
 int gfx_bmp_set_colors(uint8_t *data, uint32_t *colors);
+int gfx_bmp_set_masked_colors(uint8_t *data, uint32_t *colors);
+int gfx_bmp_has_mask(const uint8_t *data);
+int gfx_dither_colors(uint8_t *data, uint32_t *colors, int width, int height, int masked);
 void gfx_free_bmp(uint8_t *data);
 void gfx_draw_cached_bmp(uint8_t *cached_data, int width, int height, int dest_x, int dest_y);
 void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int dest_x, int dest_y, int transparent);

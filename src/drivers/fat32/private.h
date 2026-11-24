@@ -67,6 +67,13 @@ typedef struct {
 } __attribute__((packed)) lfn_entry_t;
 
 typedef struct {
+    char name[FAT32_MAX_PATH];
+    uint8_t checksum;
+    int next;
+    int valid;
+} lfn_state_t;
+
+typedef struct {
     uint8_t  status;
     uint8_t  chs_first[3];
     uint8_t  type;
@@ -91,8 +98,8 @@ uint16_t rtc_to_fat_time(const rtc_time_t *rtc);
 uint16_t rtc_to_fat_date(const rtc_time_t *rtc);
 void get_fat_timestamp(uint16_t *time, uint16_t *date);
 uint8_t lfn_checksum(const char *short_name);
-int lfn_matches_short_name(const char *long_name, const char *short_name);
-void utf16_to_ascii(const uint16_t *src, char *dst, int max_chars);
+void lfn_add(lfn_state_t *state, const lfn_entry_t *entry);
+const char *lfn_name(const lfn_state_t *state, const char *short_name);
 int parse_path(const char *path, uint8_t *drive, char *rest, size_t rest_size);
 void parse_filename(const char *name, char *out_name);
 

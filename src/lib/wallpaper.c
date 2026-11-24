@@ -30,8 +30,6 @@ int wallpaper_cache(const char *path, gfx_cached_bmp_t *out, int *out_x, int *ou
         } else {
             int wx = (WM_SCREEN_WIDTH - out->width) / 2;
             int wy = (WM_SCREEN_HEIGHT - out->height) / 2;
-            if (wx < 0) wx = 0;
-            if (wy < 0) wy = 0;
             if (out_x) *out_x = wx;
             if (out_y) *out_y = wy;
         }
@@ -49,6 +47,13 @@ void wallpaper_free(gfx_cached_bmp_t *out) {
 
 void wallpaper_draw(gfx_cached_bmp_t *out, int x, int y) {
     if (!out || !out->data) return;
+    if (x < 0 || y < 0) {
+        int sx = x < 0 ? -x : 0;
+        int sy = y < 0 ? -y : 0;
+        sys_gfx_draw_cached_partial(out, x < 0 ? 0 : x, y < 0 ? 0 : y,
+                                    sx, sy, out->width - sx, out->height - sy, 0);
+        return;
+    }
     sys_gfx_draw_cached(out, x, y, 0);
 }
 

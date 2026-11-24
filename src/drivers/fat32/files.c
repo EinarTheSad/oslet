@@ -9,7 +9,7 @@ static int file_cluster_size(const fat32_volume_t *vol, uint32_t *size) {
 }
 
 static int file_cluster_valid(const fat32_volume_t *vol, uint32_t cluster) {
-    return cluster == FAT32_EOC ||
+    return (cluster >= FAT32_EOC && cluster <= 0x0FFFFFFF) ||
            (cluster >= 2 && cluster < FAT32_EOC &&
             cluster - 2 < vol->data_clusters);
 }

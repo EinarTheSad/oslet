@@ -382,8 +382,8 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
     /* Find and redraw the specific control */
     gui_control_t *ctrl = compositor_get_control_by_id(form, ctrl_id);
     if (ctrl) {
-        /* Set focus state before drawing */
-        ctrl->textbox.is_focused = (ctrl->id == form->focused_control_id) ? 1 : 0;
+        if (ctrl->type == CTRL_TEXTBOX)
+            ctrl->textbox.is_focused = (ctrl->id == form->focused_control_id) ? 1 : 0;
 
         int ctrl_y_offset = 20;
         if (form->menubar_enabled) {

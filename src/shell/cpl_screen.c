@@ -164,18 +164,15 @@ static int save_settings(cpl_screen_state_t *state) {
 static int scan_bmp_files(cpl_screen_state_t *state) {
     sys_dirent_t entries[64];
     int n = sys_readdir(state->folder, entries, 64);
+    state->bmp_count = 0;
     if (n <= 0) return 0;
 
-    state->bmp_count = 0;
     for (int i = 0; i < n && state->bmp_count < MAX_BMP_FILES; i++) {
         if (!entries[i].is_directory) {
             const char *name = entries[i].name;
-            int len = strlen(name);
-            if (len > 4 && 
-                (name[len-4] == '.' || name[len-4] == '.') &&
-                ((name[len-3] == 'b' || name[len-3] == 'B') &&
-                 (name[len-2] == 'm' || name[len-2] == 'M') &&
-                 (name[len-1] == 'p' || name[len-1] == 'P'))) {
+            if (str_ends_with_icase(name, ".bmp") ||
+                str_ends_with_icase(name, ".jpg") ||
+                str_ends_with_icase(name, ".jpeg")) {
                 strncpy(state->bmp_files[state->bmp_count], name, 63);
                 state->bmp_files[state->bmp_count][63] = '\0';
                 state->bmp_count++;
@@ -317,22 +314,21 @@ static void update_dropdown_list(cpl_screen_state_t *state) {
         current_filename = last_slash;
     }
 
+    int shown = 0;
     for (int i = 0; i < state->bmp_count && i < MAX_BMP_FILES; i++) {
-        if (pos < 255) {
-            drop->text[pos++] = '|';
-        }
         int len = strlen(state->bmp_files[i]);
-        if (pos + len < 255) {
-            strcpy(&drop->text[pos], state->bmp_files[i]);
-            pos += len;
-        }
+        if (pos + 1 + len >= (int)sizeof(drop->text)) break;
+        drop->text[pos++] = '|';
+        strcpy(&drop->text[pos], state->bmp_files[i]);
+        pos += len;
+        shown++;
         
         if (current_filename && strcmp(state->bmp_files[i], current_filename) == 0) {
             selected_idx = i + 1;
         }
     }
     drop->text[pos] = '\0';
-    drop->dropdown.item_count = state->bmp_count + 1;
+    drop->dropdown.item_count = shown + 1;
     drop->dropdown.cursor_pos = selected_idx;
 }
 
@@ -497,11 +493,6 @@ static int apply_settings(cpl_screen_state_t *state) {
         sys_win_msgbox("No display mode is selected.", "OK", "Screen");
         return -1;
     }
-    int resolution = drop_resolution->dropdown.cursor_pos;
-    if (apply_display_mode(state, resolution, drop_depth->dropdown.cursor_pos) != 0) {
-        return -1;
-    }
-
     /* Get selected image from dropdown */
     gui_control_t *drop_images = sys_win_get_control(state->form, CTRL_DROP_IMAGES);
     if (drop_images && drop_images->dropdown.item_count > 0) {
@@ -519,6 +510,16 @@ static int apply_settings(cpl_screen_state_t *state) {
     gui_control_t *pic_preview = sys_win_get_control(state->form, CTRL_PIC_PREVIEW);
     if (pic_preview) {
         pic_preview->bg = state->desktop_color;
+        if (state->wallpaper[0] && pic_preview->picturebox.load_failed) {
+            sys_win_msgbox("Could not load this wallpaper. JPEG images must be baseline format.",
+                           "OK", "Screen");
+            return -1;
+        }
+    }
+
+    int resolution = drop_resolution->dropdown.cursor_pos;
+    if (apply_display_mode(state, resolution, drop_depth->dropdown.cursor_pos) != 0) {
+        return -1;
     }
 
     int settings_result = save_settings(state);
@@ -805,7 +806,7 @@ void screen_restore_display(void) {
     int kept = 0;
     int transition_error = 0;
     if (index >= 0 && sys_gfx_vbe_try((unsigned)index) == 0) {
-        if (desktop_refresh_display() >= 0) {
+        if (oslet_display_init() == 0) {
             kept = sys_gfx_vbe_confirm() == 0;
             if (!kept) {
                 sys_vbe_state_t state;
@@ -817,10 +818,8 @@ void screen_restore_display(void) {
             if (sys_gfx_vbe_revert() != 0) transition_error = 1;
         }
     }
-    if (desktop_refresh_display() < 0) {
+    if (oslet_display_init() != 0) {
         sys_win_msgbox("Could not refresh the display.", "OK", "Display");
-    } else {
-        desktop_present_display();
     }
     if (kept) {
         if (remove_if_present(DISPLAY_TRIAL) != 0)

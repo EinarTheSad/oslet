@@ -910,6 +910,12 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                     ctrl->fg = (int)value;
                     break;
                 case 8: /* PROP_BG - universal */
+                    if ((ctrl->type & 0x7F) == CTRL_PICTUREBOX &&
+                        (ctrl->bg == -1) != ((int)value == -1) &&
+                        ctrl->picturebox.cached_bitmap_scaled) {
+                        bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
+                        ctrl->picturebox.cached_bitmap_scaled = NULL;
+                    }
                     ctrl->bg = (int)value;
                     break;
                 case 9: /* PROP_IMAGE */
@@ -956,7 +962,13 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                         if (ctrl->picturebox.buffer &&
                             ctrl->picturebox.buffer_w == src.w &&
                             ctrl->picturebox.buffer_h == src.h) {
-                            memcpy_s(ctrl->picturebox.buffer, src.pixels, bytes);
+                            if (memcmp_s(ctrl->picturebox.buffer, src.pixels, bytes) != 0) {
+                                memcpy_s(ctrl->picturebox.buffer, src.pixels, bytes);
+                                if (ctrl->picturebox.cached_bitmap_scaled) {
+                                    bitmap_free(ctrl->picturebox.cached_bitmap_scaled);
+                                    ctrl->picturebox.cached_bitmap_scaled = NULL;
+                                }
+                            }
                             ctrl->text[0] = '\0';
                             break;
                         }

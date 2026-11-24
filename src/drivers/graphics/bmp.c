@@ -3,6 +3,7 @@
 typedef struct bmp_colors_s {
     uint8_t *data;
     uint32_t *colors;
+    int masked;
     struct bmp_colors_s *next;
 } bmp_colors_t;
 
@@ -14,13 +15,28 @@ const uint32_t *gfx_bmp_colors(const uint8_t *data) {
     return NULL;
 }
 
-int gfx_bmp_set_colors(uint8_t *data, uint32_t *colors) {
+static int set_colors(uint8_t *data, uint32_t *colors, int masked) {
     bmp_colors_t *entry = kmalloc(sizeof(*entry));
     if (!entry) return -1;
     entry->data = data;
     entry->colors = colors;
+    entry->masked = masked;
     entry->next = bmp_colors;
     bmp_colors = entry;
+    return 0;
+}
+
+int gfx_bmp_set_colors(uint8_t *data, uint32_t *colors) {
+    return set_colors(data, colors, 0);
+}
+
+int gfx_bmp_set_masked_colors(uint8_t *data, uint32_t *colors) {
+    return set_colors(data, colors, 1);
+}
+
+int gfx_bmp_has_mask(const uint8_t *data) {
+    for (bmp_colors_t *entry = bmp_colors; entry; entry = entry->next)
+        if (entry->data == data) return entry->masked;
     return 0;
 }
 
@@ -68,6 +84,16 @@ uint8_t* gfx_load_bmp_to_buffer(const char *path, int *out_width, int *out_heigh
     if (fat32_read(f, &header, sizeof(header)) != sizeof(header)) {
         fat32_close(f);
         return NULL;
+    }
+
+    if (header.type == 0xD8FF) {
+        if (fat32_seek(f, 0) != 0) {
+            fat32_close(f);
+            return NULL;
+        }
+        uint8_t *image = gfx_load_jpeg_file(f, out_width, out_height);
+        fat32_close(f);
+        return image;
     }
 
     if (header.type != 0x4D42) {
@@ -383,9 +409,75 @@ invalid_bitmap:
     return NULL;
 }
 
+static int draw_cached_rows(const uint8_t *data, const uint32_t *colors,
+                            int width, int dest_x, int dest_y,
+                            int src_x, int src_y, int src_w, int src_h,
+                            int transparent, int masked) {
+    if (width <= 0 || src_w <= 0 || src_h <= 0 ||
+        (transparent && (!colors || masked)) ||
+        (masked && gfx_colorbuffer) ||
+        (gfx_colorbuffer && !colors))
+        return 0;
+
+    int left = gfx_clip_enabled ? gfx_clip_x0 : 0;
+    int top = gfx_clip_enabled ? gfx_clip_y0 : 0;
+    int right = gfx_clip_enabled ? gfx_clip_x1 : GFX_WIDTH;
+    int bottom = gfx_clip_enabled ? gfx_clip_y1 : GFX_HEIGHT;
+    int64_t x0 = dest_x, y0 = dest_y;
+    int64_t x1 = x0 + src_w, y1 = y0 + src_h;
+    if (x0 < left) x0 = left;
+    if (y0 < top) y0 = top;
+    if (x1 > right) x1 = right;
+    if (y1 > bottom) y1 = bottom;
+    if (x0 >= x1 || y0 >= y1) return 1;
+
+    int draw_x = (int)x0;
+    int draw_y = (int)y0;
+    int draw_w = (int)(x1 - x0);
+    int draw_h = (int)(y1 - y0);
+    src_x += (int)(x0 - dest_x);
+    src_y += (int)(y0 - dest_y);
+
+    int row_bytes = (width + 1) / 2;
+    for (int y = 0; y < draw_h; y++) {
+        int screen_y = draw_y + y;
+        const uint8_t *row = data + (size_t)(src_y + y) * row_bytes;
+        uint8_t *dst = backbuffer + (size_t)screen_y * (GFX_WIDTH / 2);
+        int sx = src_x, dx = draw_x, remaining = draw_w;
+        if (dx & 1) {
+            uint8_t pixel = (sx & 1) ? row[sx / 2] & 15 : row[sx / 2] >> 4;
+            dst[dx / 2] = (dst[dx / 2] & 0xF0) | pixel;
+            sx++;
+            dx++;
+            remaining--;
+        }
+        int pairs = remaining / 2;
+        if (!(sx & 1)) {
+            memcpy_s(dst + dx / 2, row + sx / 2, (size_t)pairs);
+        } else {
+            for (int i = 0; i < pairs; i++)
+                dst[dx / 2 + i] = (uint8_t)((row[sx / 2 + i] << 4) |
+                                            (row[sx / 2 + i + 1] >> 4));
+        }
+        sx += pairs * 2;
+        dx += pairs * 2;
+        if (remaining & 1) {
+            uint8_t pixel = (sx & 1) ? row[sx / 2] & 15 : row[sx / 2] >> 4;
+            dst[dx / 2] = (dst[dx / 2] & 0x0F) | (pixel << 4);
+        }
+        if (gfx_colorbuffer) {
+            memcpy_s(gfx_colorbuffer + (size_t)screen_y * GFX_WIDTH + draw_x,
+                     colors + (size_t)(src_y + y) * width + src_x,
+                     (size_t)draw_w * sizeof(*colors));
+        }
+    }
+    return 1;
+}
+
 void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int dest_x, int dest_y, int transparent) {
     if (!backbuffer || !cached_data) return;
     const uint32_t *colors = gfx_bmp_colors(cached_data);
+    int masked = colors && gfx_bmp_has_mask(cached_data);
 
     int dirty_x0 = dest_x < 0 ? 0 : dest_x;
     int dirty_y0 = dest_y < 0 ? 0 : dest_y;
@@ -397,20 +489,8 @@ void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int des
 
     int src_row_bytes = (width + 1) / 2;
 
-    /* Fast path: no transparency, aligned coordinates, fully on screen */
-    if (!gfx_colorbuffer && !gfx_clip_enabled && !transparent &&
-        (dest_x & 1) == 0 && (width & 1) == 0 &&
-        dest_x >= 0 && dest_x + width <= GFX_WIDTH) {
-        int dest_byte_x = dest_x / 2;
-        for (int y = 0; y < height; y++) {
-            int screen_y = dest_y + y;
-            if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
-
-            uint8_t *src = cached_data + y * src_row_bytes;
-            uint8_t *dst = backbuffer + screen_y * (GFX_WIDTH / 2) + dest_byte_x;
-            memcpy_s(dst, src, src_row_bytes);
-        }
-    } else {
+    if (!draw_cached_rows(cached_data, colors, width, dest_x, dest_y,
+                          0, 0, width, height, transparent, masked)) {
         /* Slow path: pixel-by-pixel for transparency or unaligned */
         for (int y = 0; y < height; y++) {
             int screen_y = dest_y + y;
@@ -426,9 +506,9 @@ void gfx_draw_cached_bmp_ex(uint8_t *cached_data, int width, int height, int des
 
                 /* Skip transparent pixels (color index 5) only if transparency enabled */
                 if (screen_x >= 0 && screen_x < GFX_WIDTH &&
-                    (!transparent || colors || pixel != 5)) {
+                    (!transparent || (colors && !masked) || pixel != 5)) {
                     if (colors && gfx_colorbuffer)
-                        putcolor_raw(screen_x, screen_y, colors[(size_t)y * width + x]);
+                        putcolor_raw(screen_x, screen_y, colors[(size_t)y * width + x] & ~GFX_BMP_TRANSPARENT);
                     else
                         putpixel_raw(screen_x, screen_y, pixel);
                 }
@@ -451,6 +531,7 @@ void gfx_draw_cached_bmp_region(uint8_t *cached_data, int width, int height, int
                                 int src_x, int src_y, int src_w, int src_h, int transparent) {
     if (!backbuffer || !cached_data) return;
     const uint32_t *colors = gfx_bmp_colors(cached_data);
+    int masked = colors && gfx_bmp_has_mask(cached_data);
 
     /* Clip source rectangle to bitmap bounds */
     if (src_x < 0) { src_w += src_x; src_x = 0; }
@@ -462,26 +543,29 @@ void gfx_draw_cached_bmp_region(uint8_t *cached_data, int width, int height, int
 
     int src_row_bytes = (width + 1) / 2;
 
-    for (int y = 0; y < src_h; y++) {
-        int screen_y = dest_y + y;
-        if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
+    if (!draw_cached_rows(cached_data, colors, width, dest_x, dest_y,
+                          src_x, src_y, src_w, src_h, transparent, masked)) {
+        for (int y = 0; y < src_h; y++) {
+            int screen_y = dest_y + y;
+            if (screen_y < 0 || screen_y >= GFX_HEIGHT) continue;
 
-        int src_offset = (src_y + y) * src_row_bytes;
+            int src_offset = (src_y + y) * src_row_bytes;
 
-        for (int x = 0; x < src_w; x++) {
-            int sx = src_x + x;
-            int byte_idx = sx / 2;
-            uint8_t pixel = (sx & 1) ? (cached_data[src_offset + byte_idx] & 0x0F) : (cached_data[src_offset + byte_idx] >> 4);
+            for (int x = 0; x < src_w; x++) {
+                int sx = src_x + x;
+                int byte_idx = sx / 2;
+                uint8_t pixel = (sx & 1) ? (cached_data[src_offset + byte_idx] & 0x0F) : (cached_data[src_offset + byte_idx] >> 4);
 
-            int screen_x = dest_x + x;
+                int screen_x = dest_x + x;
 
-            if (screen_x >= 0 && screen_x < GFX_WIDTH &&
-                (!transparent || colors || pixel != 5)) {
-                if (colors && gfx_colorbuffer)
-                    putcolor_raw(screen_x, screen_y,
-                                 colors[(size_t)(src_y + y) * width + sx]);
-                else
-                    putpixel_raw(screen_x, screen_y, pixel);
+                if (screen_x >= 0 && screen_x < GFX_WIDTH &&
+                    (!transparent || (colors && !masked) || pixel != 5)) {
+                    if (colors && gfx_colorbuffer)
+                        putcolor_raw(screen_x, screen_y,
+                                     colors[(size_t)(src_y + y) * width + sx] & ~GFX_BMP_TRANSPARENT);
+                    else
+                        putpixel_raw(screen_x, screen_y, pixel);
+                }
             }
         }
     }

@@ -15,7 +15,7 @@ OSLET_APP("Image Viewer", OSLET_KIND_GIX, "C:/ICONS/VIEWER.ICO", OSLET_APP_FLAG_
 #define ID_PREV       6
 #define ID_NEXT       7
 #define ID_FULLSCREEN 8
-#define IMGVIEW_FILE_FILTER "*.bmp;*.ico"
+#define IMGVIEW_FILE_FILTER "*.bmp;*.ico;*.jpg;*.jpeg"
 #define IMGVIEW_MAX_ENTRIES 256
 #define IMGVIEW_PATH_MAX    256
 
@@ -50,7 +50,9 @@ static int gather_images(imgview_state_t *state, const char *dir) {
         sys_dirent_t *entry = &state->entries[i];
         if (!entry->is_directory &&
             (str_ends_with_icase(entry->name, ".bmp") ||
-             str_ends_with_icase(entry->name, ".ico"))) {
+             str_ends_with_icase(entry->name, ".ico") ||
+             str_ends_with_icase(entry->name, ".jpg") ||
+             str_ends_with_icase(entry->name, ".jpeg"))) {
             if (out != i) state->entries[out] = *entry;
             out++;
         }
@@ -74,6 +76,11 @@ static void set_current_image(imgview_state_t *state, const char *path) {
 
     strcpy(state->image_path, path);
     draw_current_image(state);
+    void *form = state->fullscreen ? state->fs_form : state->form;
+    gui_control_t *picture = sys_win_get_control(form, ID_PICTURE);
+    if (picture && picture->picturebox.load_failed)
+        sys_win_msgbox("Could not load this image. JPEG images must be baseline format.",
+                       "OK", "Image Viewer");
 }
 
 static void enter_fullscreen(imgview_state_t *state) {
@@ -107,7 +114,14 @@ static void exit_fullscreen(imgview_state_t *state) {
     if (fs_form) gix_app_destroy_window(fs_form);
 
     sys_win_restore_form(state->form);
-    draw_current_image(state);
+    gui_control_t *picture = sys_win_get_control(state->form, ID_PICTURE);
+    if (picture && !picture->picturebox.load_failed &&
+        strcmp(picture->text, state->image_path) == 0) {
+        sys_win_draw(state->form);
+        sys_mouse_invalidate();
+    } else {
+        draw_current_image(state);
+    }
     sys_win_force_full_redraw();
     sys_gfx_swap();
 }
@@ -160,6 +174,7 @@ static void navigate_dir(imgview_state_t *state, int delta) {
     if (!slash || slash == state->image_path) return;
 
     dir_len = slash - state->image_path;
+    if (dir_len == 2 && state->image_path[1] == ':') dir_len++;
     if (dir_len <= 0 || dir_len >= (int)sizeof(dir)) return;
     for (int i = 0; i < dir_len; i++) dir[i] = state->image_path[i];
     dir[dir_len] = '\0';
@@ -180,8 +195,9 @@ static void navigate_dir(imgview_state_t *state, int delta) {
         idx = delta > 0 ? (idx + 1) % total : (idx - 1 + total) % total;
     }
 
-    int length = snprintf(new_path, sizeof(new_path), "%s/%s",
-                          dir, state->entries[idx].name);
+    int length = snprintf(new_path, sizeof(new_path), "%s%s%s",
+                          dir, dir[dir_len - 1] == '/' ? "" : "/",
+                          state->entries[idx].name);
     if (length > 0 && length < (int)sizeof(new_path))
         set_current_image(state, new_path);
 }

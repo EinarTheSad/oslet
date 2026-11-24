@@ -1,4 +1,5 @@
 #include "internal.h"
+#include "../../console.h"
 
 /* Sin/cos lookup table (values * 1000) for 0-59 (6 degree steps) */
 static const int sin_table[60] = {
@@ -236,15 +237,36 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
         int bw = control->picturebox.buffer_w;
         int bh = control->picturebox.buffer_h;
 
-        if (control->picturebox.image_mode == 1) {
-            for (int y = 0; y < control->h; y++) {
-                int sy = (y * bh) / control->h;
-                for (int x = 0; x < control->w; x++) {
-                    int sx = (x * bw) / control->w;
-                    uint8_t color = control->picturebox.buffer[sy * bw + sx] & 0x0F;
-                    gfx_putpixel(abs_x + x, abs_y + y, color);
+        if (control->picturebox.image_mode == 1 &&
+            (bw != control->w || bh != control->h)) {
+            if (!control->picturebox.cached_bitmap_scaled ||
+                control->picturebox.cached_bitmap_scaled->width != control->w ||
+                control->picturebox.cached_bitmap_scaled->height != control->h) {
+                if (control->picturebox.cached_bitmap_scaled) {
+                    bitmap_free(control->picturebox.cached_bitmap_scaled);
+                    control->picturebox.cached_bitmap_scaled = NULL;
+                }
+                int row_bytes = (bw + 1) / 2;
+                uint8_t *packed = kmalloc((size_t)row_bytes * bh);
+                if (packed) {
+                    for (int y = 0; y < bh; y++) {
+                        for (int x = 0; x < bw; x++) {
+                            uint8_t color = control->picturebox.buffer[(size_t)y * bw + x] & 15;
+                            size_t pos = (size_t)y * row_bytes + x / 2;
+                            if (x & 1) packed[pos] |= color;
+                            else packed[pos] = color << 4;
+                        }
+                    }
+                    bitmap_t src = { .data = packed, .width = bw, .height = bh, .bits_per_pixel = 4 };
+                    control->picturebox.cached_bitmap_scaled =
+                        bitmap_scale_bilinear(&src, control->w, control->h, 0);
+                    kfree(packed);
+                } else {
+                    printf("Could not allocate picture box image\n");
                 }
             }
+            if (control->picturebox.cached_bitmap_scaled)
+                bitmap_draw_opaque(control->picturebox.cached_bitmap_scaled, abs_x, abs_y);
         } else {
             int draw_w = bw < control->w ? bw : control->w;
             int draw_h = bh < control->h ? bh : control->h;
@@ -299,7 +321,7 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
                         control->picturebox.cached_bitmap_scaled = NULL;
                     }
                     /* Scale to exact control dimensions */
-                    control->picturebox.cached_bitmap_scaled = bitmap_scale_nearest(orig, control->w, control->h);
+                    control->picturebox.cached_bitmap_scaled = bitmap_scale_bilinear(orig, control->w, control->h, control->bg == -1);
                 }
 
                 if (control->picturebox.cached_bitmap_scaled) {
@@ -342,7 +364,7 @@ void ctrl_draw_picturebox(gui_control_t *control, int abs_x, int abs_y) {
                             bitmap_free(control->picturebox.cached_bitmap_scaled);
                             control->picturebox.cached_bitmap_scaled = NULL;
                         }
-                        control->picturebox.cached_bitmap_scaled = bitmap_scale_nearest(orig, new_w, new_h);
+                        control->picturebox.cached_bitmap_scaled = bitmap_scale_bilinear(orig, new_w, new_h, control->bg == -1);
                     }
 
                     if (control->picturebox.cached_bitmap_scaled) {

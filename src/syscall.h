@@ -140,6 +140,7 @@ typedef struct {
 #define SYS_MOUSE_SET_CURSOR 0x0A03
 #define SYS_MOUSE_SET_CURSOR_FILE 0x0A04
 #define SYS_MOUSE_BUSY       0x0A05
+#define SYS_MOUSE_CENTER     0x0A06
 
 #define MOUSE_CURSOR_NORMAL 0
 #define MOUSE_CURSOR_MOVE   1
@@ -1175,6 +1176,11 @@ static inline void sys_mouse_draw_cursor(int x, int y, int full_redraw) {
 
 static inline void sys_mouse_invalidate(void) {
     register int dummy_eax __asm__("eax") = SYS_MOUSE_INVALIDATE;
+    __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
+}
+
+static inline void sys_mouse_center(void) {
+    register int dummy_eax __asm__("eax") = SYS_MOUSE_CENTER;
     __asm__ volatile("int $0x80" : "+r"(dummy_eax) :: "memory");
 }
 

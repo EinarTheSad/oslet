@@ -858,7 +858,8 @@ static void refresh_display(void) {
                         }
                     } else if (strcasecmp(dot, ".txt") == 0 || (strcasecmp(dot, ".ini") == 0)) {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/TEXT.ICO");
-                    } else if (strcasecmp(dot, ".bmp") == 0 || (strcasecmp(dot, ".ico") == 0)) {
+                    } else if (strcasecmp(dot, ".bmp") == 0 || strcasecmp(dot, ".ico") == 0 ||
+                               strcasecmp(dot, ".jpg") == 0 || strcasecmp(dot, ".jpeg") == 0) {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/BITMAP.ICO");
                     } else if (strcasecmp(dot, ".wav") == 0) {
                         ctrl_set_image(state.form, ctrl_id, "C:/ICONS/SOUND.ICO");
@@ -1179,7 +1180,8 @@ static void open_selected_file(int idx) {
                              OSLET_LAUNCH_FROM_GIX,
                              NULL,
                              NULL);
-    } else if (strcasecmp(dot, ".bmp") == 0 || strcasecmp(dot, ".ico") == 0) {
+    } else if (strcasecmp(dot, ".bmp") == 0 || strcasecmp(dot, ".ico") == 0 ||
+               strcasecmp(dot, ".jpg") == 0 || strcasecmp(dot, ".jpeg") == 0) {
         oslet_launch_program("C:/OSLET/START/IMGVIEW.ELF",
                              state.file_items[idx].full_path,
                              OSLET_LAUNCH_FROM_GIX,

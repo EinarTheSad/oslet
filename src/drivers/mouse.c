@@ -135,6 +135,16 @@ int mouse_get_x(void) { return mouse_x; }
 int mouse_get_y(void) { return mouse_y; }
 uint8_t mouse_get_buttons(void) { return mouse_buttons; }
 
+void mouse_center(void) {
+    mouse_restore();
+    mouse_invalidate_buffer();
+    uint32_t flags;
+    __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(flags) :: "memory");
+    mouse_x = GFX_WIDTH / 2;
+    mouse_y = GFX_HEIGHT / 2;
+    __asm__ volatile("pushl %0\n\tpopfl" :: "r"(flags) : "cc", "memory");
+}
+
 void mouse_display_changed(void) {
     if (mouse_x >= GFX_WIDTH) mouse_x = GFX_WIDTH - 1;
     if (mouse_y >= GFX_HEIGHT) mouse_y = GFX_HEIGHT - 1;

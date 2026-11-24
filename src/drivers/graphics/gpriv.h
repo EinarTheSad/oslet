@@ -7,6 +7,8 @@
 #include "vga.h"
 #include "../fat32.h"
 
+uint8_t *gfx_load_jpeg_file(fat32_file_t *file, int *width, int *height);
+
 #define GFX_LOCK() \
     uint32_t gfx_saved_flags; \
     __asm__ volatile("pushfl\n\tpopl %0\n\tcli" : "=r"(gfx_saved_flags) :: "memory")
