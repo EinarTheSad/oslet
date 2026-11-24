@@ -24,6 +24,13 @@ static void gui_picturebox_free_data(gui_control_t *ctrl) {
     ctrl->picturebox.load_failed = 0;
 }
 
+static void gui_msgbox_free(msgbox_t *box) {
+    if (!box) return;
+    if (box->icon_scaled) bitmap_free(box->icon_scaled);
+    if (box->icon_bitmap) bitmap_free(box->icon_bitmap);
+    kfree(box);
+}
+
 void gui_invalidate_saved_backgrounds(window_manager_t *wm) {
     if (!wm) return;
 
@@ -145,12 +152,32 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 gfx_swap_buffers();
             }
 
-            /* Create msgbox (allocate dynamically to support multiple concurrent msgboxes) */
             msgbox_t *box = (msgbox_t*)kmalloc(sizeof(msgbox_t));
             if (!box) return -1;
-
+            gui_form_t *dialog = (gui_form_t*)kmalloc(sizeof(gui_form_t));
+            if (!dialog) {
+                kfree(box);
+                return (uint32_t)-1;
+            }
+            memset_s(dialog, 0, sizeof(*dialog));
             win_msgbox_create(box, msg, btn, title);
-            win_msgbox_draw(box);
+            dialog->win = box->base;
+            dialog->msgbox = box;
+            dialog->focused_control_id = -1;
+            dialog->press_control_id = -1;
+            task_t *current = task_get_current();
+            dialog->owner_tid = current ? current->tid : 0;
+            if (!wm_initialized) {
+                wm_init(&global_wm);
+                wm_initialized = 1;
+            }
+            if (!wm_register_window(&global_wm, dialog)) {
+                gui_msgbox_free(box);
+                kfree(dialog);
+                return (uint32_t)-1;
+            }
+            gui_request_full_redraw();
+            compositor_draw_all(&global_wm);
 
             /* Get initial mouse position and draw cursor */
             int mx = mouse_get_x();
@@ -164,15 +191,14 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Modal event loop */
             int dragging = 0;
             int drag_start_x = 0, drag_start_y = 0;
+            int pressed_button = 0;
             uint8_t last_mb = mouse_get_buttons();
 
+            int result = -1;
             while (1) {
                 if (sys_display_poll() == 1 ||
-                    (al == 0x2a && !gfx_vbe_mode_pending())) {
-                    if (box->base.saved_bg) kfree(box->base.saved_bg);
-                    kfree(box);
-                    return (uint32_t)-1;
-                }
+                    (al == 0x2a && !gfx_vbe_mode_pending()))
+                    break;
                 mx = mouse_get_x();
                 my = mouse_get_y();
                 uint8_t mb = mouse_get_buttons();
@@ -182,30 +208,30 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 uint8_t button_released = !(mb & 1) && (last_mb & 1);
 
                 /* Handle dragging */
-                if (button_pressed) {
-                    if (win_is_titlebar(&box->base, mx, my)) {
+                if (button_pressed && wm_get_window_at(&global_wm, mx, my) == dialog) {
+                    if (wm_bring_to_front(&global_wm, dialog))
+                        gui_request_full_redraw();
+                    if (win_is_titlebar(&dialog->win, mx, my)) {
                         dragging = 1;
                         drag_start_x = mx;
                         drag_start_y = my;
+                    } else {
+                        pressed_button = win_msgbox_handle_click(box, &dialog->win, mx, my);
                     }
                 }
 
                 if (button_released) {
                     /* Check if button was clicked */
-                    if (!dragging) {
-                        int clicked = win_msgbox_handle_click(box, mx, my);
-                        if (clicked) {
-                                     /* Button clicked - restore cursor and window background */
-                                     mouse_invalidate_buffer();
-                                     win_restore_background(&box->base);
-                                     gfx_swap_buffers();
-                                     if (box->base.saved_bg)
-                                         kfree(box->base.saved_bg);
-                                     kfree(box);
-                                     return clicked;
+                    if (!dragging && pressed_button &&
+                        wm_get_window_at(&global_wm, mx, my) == dialog) {
+                        int clicked = win_msgbox_handle_click(box, &dialog->win, mx, my);
+                        if (clicked == pressed_button) {
+                            result = clicked;
+                            break;
                         }
                     }
                     dragging = 0;
+                    pressed_button = 0;
                 }
 
                 /* Perform dragging */
@@ -214,16 +240,15 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                     int dy = my - drag_start_y;
 
                     if (dx != 0 || dy != 0) {
-                        win_move(&box->base, dx, dy);
+                        win_move(&dialog->win, dx, dy);
                         drag_start_x = mx;
                         drag_start_y = my;
 
-                        /* Redraw window and cursor (save new position during drag) */
-                        win_msgbox_draw(box);
+                        compositor_draw_single(&global_wm, dialog);
+                        gui_request_full_redraw();
                         mouse_save(mx, my);
                         mouse_draw_cursor(mx, my);
                         gfx_swap_buffers();
-                        continue;
                     }
                 }
 
@@ -236,10 +261,24 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
                 mouse_save(mx, my);
                 mouse_draw_cursor(mx, my);
                 gfx_swap_buffers();
-                __asm__ volatile("sti\n\thlt\n\tcli" ::: "memory");
+                if (task_get_current()) {
+                    task_sleep(10);
+                    __asm__ volatile("cli" ::: "memory");
+                } else {
+                    __asm__ volatile("sti\n\thlt\n\tcli" ::: "memory");
+                }
             }
 
-            return 0;
+            wm_unregister_window(&global_wm, dialog);
+            mouse_restore();
+            mouse_invalidate_buffer();
+            win_destroy(&dialog->win);
+            gui_msgbox_free(box);
+            kfree(dialog);
+            gui_request_full_redraw();
+            compositor_draw_all(&global_wm);
+            gfx_swap_buffers();
+            return (uint32_t)result;
         }
 
         case 0x05: { /* SYS_WIN_CREATE_FORM */
@@ -289,6 +328,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
             /* Initialize menubar */
             form->menubar_enabled = 0;
             form->display_resize_pending = 0;
+            form->msgbox = NULL;
 
             /* Track owner task for cleanup on process exit */
             task_t *current = task_get_current();
@@ -607,6 +647,7 @@ uint32_t handle_window(uint32_t al, uint32_t ebx,
 
             win_destroy(&form->win);
 
+            gui_msgbox_free(form->msgbox);
             kfree(form);
 
             gui_request_full_redraw();
@@ -1592,6 +1633,8 @@ void wm_cleanup_task(uint32_t tid) {
         if (form->window_menu_initialized) {
             menu_destroy(&form->window_menu);
         }
+
+        gui_msgbox_free(form->msgbox);
 
         /* Destroy window (restores background) */
         win_destroy(&form->win);

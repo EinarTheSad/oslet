@@ -44,7 +44,8 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
     int16_t changed_controls[32];
     int changed_count = 0;
 
-    if (!form->win.is_minimized && form->window_menu.visible) {
+    if (!form->win.is_minimized && form->window_menu.visible &&
+        !(topmost && topmost != form && topmost->msgbox)) {
         int action = menu_handle_mouse(&form->window_menu, mx, my,
                                        button_pressed, button_released);
         if (action > 0) {
@@ -84,7 +85,8 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
     }
 
     /* Handle menubar if enabled */
-    if (!form->win.is_minimized && form->menubar_enabled && form->menubar.visible) {
+    if (!form->win.is_minimized && form->menubar_enabled && form->menubar.visible &&
+        !(topmost && topmost != form && topmost->msgbox)) {
         int old_hovered_menu = form->menubar.hovered_menu;
         int old_active_menu = form->menubar.active_menu;
         int bar_y = form->win.y + WM_TITLEBAR_HEIGHT + 2;
@@ -113,7 +115,7 @@ void sys_win_pump_events_kernel(gui_form_t *form, sys_win_event_t *event) {
         }
         /* Redraw if needed */
         if (needs_redraw) {
-            compositor_draw_menubar_update(form, old_hovered_menu, old_active_menu);
+            compositor_draw_menubar_update(&global_wm, form, old_hovered_menu, old_active_menu);
             if (action > 0) {
                 *event = form->clicked_event;
                 return;

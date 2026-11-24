@@ -61,6 +61,26 @@ static int rects_intersect(int ax, int ay, int aw, int ah,
     return 1;
 }
 
+static int msgbox_above(window_manager_t *wm, int index) {
+    for (int i = index + 1; i < wm->count; i++) {
+        gui_form_t *form = wm->windows[i];
+        if (form && form->win.is_visible && !form->win.is_minimized && form->msgbox)
+            return 1;
+    }
+    return 0;
+}
+
+static void compositor_draw_form(gui_form_t *form, int is_focused) {
+    if (form->msgbox) {
+        win_msgbox_draw(form->msgbox, &form->win, is_focused);
+        return;
+    }
+    win_draw_focused(&form->win, is_focused);
+    if (!form->win.is_minimized && form->menubar_enabled)
+        menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
+    compositor_draw_controls(form);
+}
+
 void compositor_draw_all(window_manager_t *wm) {
     mouse_restore();
 
@@ -149,11 +169,7 @@ void compositor_draw_all(window_manager_t *wm) {
                         continue;
                     }
                     int is_focused = (i == wm->focused_index);
-                    win_draw_focused(&form->win, is_focused);
-                    if (form->menubar_enabled) {
-                        menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
-                    }
-                    compositor_draw_controls(form);
+                    compositor_draw_form(form, is_focused);
                 }
             }
         }
@@ -162,6 +178,7 @@ void compositor_draw_all(window_manager_t *wm) {
         for (int i = 0; i < wm->count; i++) {
             gui_form_t *form = wm->windows[i];
             if (!form || !form->win.is_visible || form->win.is_minimized) continue;
+            if (msgbox_above(wm, i)) continue;
             
             /* Draw window context menu */
             if (form->window_menu.visible) {
@@ -182,6 +199,7 @@ void compositor_draw_all(window_manager_t *wm) {
         for (int i = 0; i < wm->count; i++) {
             gui_form_t *form = wm->windows[i];
             if (!form || !form->win.is_visible || form->win.is_minimized) continue;
+            if (msgbox_above(wm, i)) continue;
             if (!form->controls) continue;
 
             for (int j = 0; j < form->ctrl_count; j++) {
@@ -248,21 +266,14 @@ void compositor_draw_all(window_manager_t *wm) {
         if (!form || !form->win.is_visible) continue;
 
         int is_focused = (i == wm->focused_index);
-        win_draw_focused(&form->win, is_focused);
-
-        /* Draw menubar if enabled */
-        if (!form->win.is_minimized && form->menubar_enabled) {
-            menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
-        }
-
-        /* Draw controls if not minimized */
-        compositor_draw_controls(form);
+        compositor_draw_form(form, is_focused);
     }
 
     /* Draw popup menus on top of ALL windows (final pass) */
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *form = wm->windows[i];
         if (!form || !form->win.is_visible || form->win.is_minimized) continue;
+        if (msgbox_above(wm, i)) continue;
         
         /* Draw window context menu */
         if (form->window_menu.visible) {
@@ -283,6 +294,7 @@ void compositor_draw_all(window_manager_t *wm) {
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *form = wm->windows[i];
         if (!form || !form->win.is_visible || form->win.is_minimized) continue;
+        if (msgbox_above(wm, i)) continue;
         if (!form->controls) continue;
 
         compositor_draw_dropdowns(form);
@@ -318,24 +330,29 @@ void compositor_draw_single(window_manager_t *wm, gui_form_t *form) {
         return;
     }
 
-    /* Draw the window */
-    win_draw_focused(&form->win, is_focused);
+    compositor_draw_form(form, is_focused);
 
-    /* Draw menubar if enabled */
-    if (!form->win.is_minimized && form->menubar_enabled) {
-        menubar_draw(&form->menubar, form->win.x, form->win.y, form->win.w);
+    int form_index = -1;
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] == form) form_index = i;
+    }
+    if (form_index >= 0 && msgbox_above(wm, form_index)) {
+        for (int i = form_index + 1; i < wm->count; i++) {
+            gui_form_t *above = wm->windows[i];
+            if (!above || !above->win.is_visible || above->win.is_minimized) continue;
+            compositor_draw_form(above, i == wm->focused_index);
+        }
     }
 
-    /* Draw controls if not minimized */
-    compositor_draw_controls(form);
-
     /* Draw open dropdown lists on top */
-    compositor_draw_dropdowns(form);
+    if (form_index < 0 || !msgbox_above(wm, form_index))
+        compositor_draw_dropdowns(form);
 
     /* Draw ALL popup menus on top of everything (not just this window's menu) */
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *f = wm->windows[i];
         if (!f || !f->win.is_visible || f->win.is_minimized) continue;
+        if (msgbox_above(wm, i)) continue;
         
         /* Draw window context menu */
         if (f->window_menu.visible) {
@@ -355,9 +372,17 @@ void compositor_draw_single(window_manager_t *wm, gui_form_t *form) {
     mouse_invalidate_buffer();
 }
 
-void compositor_draw_menubar_update(gui_form_t *form, int old_hovered, int old_active) {
+void compositor_draw_menubar_update(window_manager_t *wm, gui_form_t *form,
+                                    int old_hovered, int old_active) {
     if (!form || !form->win.is_visible || form->win.is_minimized ||
         !form->menubar_enabled || !form->menubar.visible) return;
+
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] == form && msgbox_above(wm, i)) {
+            compositor_draw_single(wm, form);
+            return;
+        }
+    }
 
     mouse_restore();
     for (int i = 0; i < form->menubar.menu_count; i++) {
@@ -372,9 +397,16 @@ void compositor_draw_menubar_update(gui_form_t *form, int old_hovered, int old_a
 }
 
 void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16_t ctrl_id) {
-    (void)wm;  /* Unused but kept for API consistency */
     if (!form || !form->win.is_visible || form->win.is_minimized) return;
     if (!form->controls) return;
+
+    int covered_by_msgbox = 0;
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] == form) {
+            covered_by_msgbox = msgbox_above(wm, i);
+            break;
+        }
+    }
 
     /* Restore mouse cursor before drawing to avoid artifacts */
     mouse_restore();
@@ -414,7 +446,7 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
         /* Draw the control normally (may paint over windows on top) */
         ctrl_draw_with_offset(&form->win, ctrl, ctrl_y_offset);
         /* If it's a dropdown with an open list, redraw that too */
-        if (ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
+        if (!covered_by_msgbox && ctrl->type == CTRL_DROPDOWN && ctrl->dropdown.dropdown_open) {
             win_draw_dropdown_list(&form->win, ctrl, ctrl_y_offset);
         }
 
@@ -443,6 +475,7 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *f = wm->windows[i];
         if (!f || !f->win.is_visible || f->win.is_minimized) continue;
+        if (msgbox_above(wm, i)) continue;
         
         /* Draw window context menu */
         if (f->window_menu.visible) {
@@ -463,9 +496,11 @@ void compositor_draw_control_by_id(window_manager_t *wm, gui_form_t *form, int16
 }
 
 void compositor_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, int16_t ctrl_id) {
-    (void)wm;  /* Unused but kept for API consistency */
     if (!form || !form->win.is_visible || form->win.is_minimized) return;
     if (!form->controls) return;
+    for (int i = 0; i < wm->count; i++) {
+        if (wm->windows[i] == form && msgbox_above(wm, i)) return;
+    }
 
     /* Restore mouse cursor before drawing to avoid artifacts */
     mouse_restore();
@@ -484,6 +519,7 @@ void compositor_draw_dropdown_list_only(window_manager_t *wm, gui_form_t *form, 
     for (int i = 0; i < wm->count; i++) {
         gui_form_t *f = wm->windows[i];
         if (!f || !f->win.is_visible || f->win.is_minimized) continue;
+        if (msgbox_above(wm, i)) continue;
         
         /* Draw window context menu */
         if (f->window_menu.visible) {

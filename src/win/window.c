@@ -167,6 +167,8 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     /* Initialize fields */
     box->message[0] = '\0';
     box->icon[0] = '\0';
+    box->icon_bitmap = NULL;
+    box->icon_scaled = NULL;
     for (int i = 0; i < 3; i++) {
         box->buttons[i][0] = '\0';
         box->button_w[i] = 0;
@@ -254,6 +256,23 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
         } else {
             box->button_count = idx;
         }
+    }
+
+    if (box->icon[0]) {
+        char path[160];
+        if (contains_any(box->icon, ":/\\.")) {
+            strcpy_s(path, box->icon, sizeof(path));
+        } else {
+            char token[64];
+            int i = 0;
+            while (box->icon[i] && i < (int)sizeof(token) - 1) {
+                char c = box->icon[i];
+                token[i++] = c >= 'a' && c <= 'z' ? c - 32 : c;
+            }
+            token[i] = '\0';
+            snprintf(path, sizeof(path), "C:/ICONS/%s.ICO", token);
+        }
+        box->icon_bitmap = bitmap_load_from_file(path);
     }
 
     /* Measure message text (multiline) */
@@ -364,8 +383,8 @@ void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const ch
     }
 }
 
-void win_msgbox_draw(msgbox_t *box) {
-    win_draw(&box->base);
+void win_msgbox_draw(msgbox_t *box, window_t *win, int focused) {
+    win_draw_focused(win, focused);
 
     const int MARGIN_LEFT = 10;
     const int MARGIN_TOP = 10;
@@ -380,57 +399,35 @@ void win_msgbox_draw(msgbox_t *box) {
     int line_h = text_measure_height("AQYJaqpjy129", &font_n, 12);
     int text_block_h = line_h * line_count + (line_count > 1 ? 2 : 0);
 
-    int content_y = box->base.y + TITLEBAR_H + MARGIN_TOP;
+    int content_y = win->y + TITLEBAR_H + MARGIN_TOP;
 
     /* Draw icon if present */
     int icon_x = 0;
     int icon_y = 0;
 
     if (has_icon) {
-        icon_x = box->base.x + MARGIN_LEFT;
+        icon_x = win->x + MARGIN_LEFT;
         
         /* Icon vertical centering */
         int content_h = (text_block_h > WM_ICON_SIZE) ? text_block_h : WM_ICON_SIZE;
         icon_y = content_y + (content_h - WM_ICON_SIZE) / 2;
 
-        int is_path = contains_any(box->icon, ":/\\.") ? 1 : 0;
-        int drawn = 0;
-
-        if (is_path) {
+        if (contains_any(box->icon, ":/\\.")) {
             gui_control_t pic = {0};
             pic.type = CTRL_PICTUREBOX;
             pic.w = WM_ICON_SIZE;
             pic.h = WM_ICON_SIZE;
             pic.bg = -1;
             strcpy_s(pic.text, box->icon, sizeof(pic.text));
+            pic.picturebox.cached_bitmap_orig = box->icon_bitmap;
+            pic.picturebox.cached_bitmap_scaled = box->icon_scaled;
+            pic.picturebox.load_failed = 1;
             ctrl_draw_picturebox(&pic, icon_x, icon_y);
-            drawn = 1;
+            box->icon_scaled = pic.picturebox.cached_bitmap_scaled;
+        } else if (box->icon_bitmap) {
+            bitmap_draw(box->icon_bitmap, icon_x, icon_y);
         } else {
-            char token[128];
-            int j = 0;
-
-            while (box->icon[j] && j < (int)sizeof(token) - 10) {
-                char c = box->icon[j];
-                if (c >= 'a' && c <= 'z') c -= 32;
-                token[j++] = c;
-            }
-            token[j] = '\0';
-
-            if (j > 0) {
-                char path[160];
-                snprintf(path, sizeof(path), "C:/ICONS/%s.ICO", token);
-                bitmap_t *bmp = bitmap_load_from_file(path);
-                if (bmp) {
-                    bitmap_draw(bmp, icon_x, icon_y);
-                    bitmap_free(bmp);
-                    drawn = 1;
-                }
-            }
-
-            if (!drawn) {
-                /* Fallback placeholder circle */
-                gfx_circle(icon_x + WM_ICON_SIZE/2, icon_y + WM_ICON_SIZE/2, WM_ICON_SIZE/2 - 2, 7);
-            }
+            gfx_circle(icon_x + WM_ICON_SIZE/2, icon_y + WM_ICON_SIZE/2, WM_ICON_SIZE/2 - 2, 7);
         }
     }
 
@@ -438,9 +435,9 @@ void win_msgbox_draw(msgbox_t *box) {
     int text_x;
     
     if (has_icon) {
-        text_x = box->base.x + MARGIN_LEFT + WM_ICON_SIZE + ICON_TEXT_GAP;
+        text_x = win->x + MARGIN_LEFT + WM_ICON_SIZE + ICON_TEXT_GAP;
     } else {
-        text_x = box->base.x + MARGIN_LEFT;
+        text_x = win->x + MARGIN_LEFT;
     }
 
     /* Text vertical positioning */
@@ -491,16 +488,16 @@ void win_msgbox_draw(msgbox_t *box) {
 
         ctrl_draw_button(
             &btn,
-            box->base.x + box->button_x[i],
-            box->base.y + box->button_y
+            win->x + box->button_x[i],
+            win->y + box->button_y
         );
     }
 }
 
-int win_msgbox_handle_click(msgbox_t *box, int mx, int my) {
+int win_msgbox_handle_click(msgbox_t *box, window_t *win, int mx, int my) {
     for (int i = 0; i < box->button_count; i++) {
-        int abs_x = box->base.x + box->button_x[i];
-        int abs_y = box->base.y + box->button_y;
+        int abs_x = win->x + box->button_x[i];
+        int abs_y = win->y + box->button_y;
         if (mx >= abs_x && mx < abs_x + box->button_w[i] &&
             my >= abs_y && my < abs_y + box->button_h) {
             return i + 1; /* return 1-based index of clicked button */

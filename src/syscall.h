@@ -553,6 +553,7 @@ typedef struct gui_form_s {
     menubar_t menubar;
     uint8_t menubar_enabled;
     uint8_t display_resize_pending;
+    msgbox_t *msgbox;
 } gui_form_t;
 
 typedef struct {

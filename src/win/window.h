@@ -28,6 +28,8 @@ typedef struct {
     window_t base;
     char message[256];
     char icon[64]; /* optional icon token or path (e.g., "info", "warn", "error") */
+    bitmap_t *icon_bitmap;
+    bitmap_t *icon_scaled;
     char buttons[3][32];
     int button_count;
     int default_button; /* 0-based index */
@@ -64,8 +66,8 @@ void win_draw_3d_border_sunken(int x, int y, int w, int h);
 
 
 void win_msgbox_create(msgbox_t *box, const char *msg, const char *btn, const char *title);
-void win_msgbox_draw(msgbox_t *box);
-int win_msgbox_handle_click(msgbox_t *box, int mx, int my);
+void win_msgbox_draw(msgbox_t *box, window_t *win, int focused);
+int win_msgbox_handle_click(msgbox_t *box, window_t *win, int mx, int my);
 
 
 void win_draw_control(window_t *win, void *ctrl);
