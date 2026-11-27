@@ -241,7 +241,10 @@ install: $(CURDIR)/$(BUILD)/$(TARGET)
 	$(SUDO) cp $(SRC)/assets/wav/*.[wW][aA][vV] mnt/SOUNDS/ 2>/dev/null || true; \
 	$(SUDO) mkdir -p mnt/OSLET; \
 	$(SUDO) cp $(SRC)/assets/bmp/*.[bB][mM][pP] mnt/OSLET/ 2>/dev/null || true; \
-	$(SUDO) cp $(SRC)/assets/pal/*.[pP][aA][lL] mnt/OSLET/ 2>/dev/null || true; \
+	for f in $(SRC)/assets/pal/*.[pP][aA][lL]; do \
+		[ -f "$$f" ] || continue; \
+		$(SUDO) cp -n "$$f" mnt/OSLET/; \
+	done; \
 	$(SUDO) umount mnt; \
 	$(SUDO) losetup -d $$LOOP; \
 	LOOP=""; \

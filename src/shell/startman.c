@@ -661,7 +661,10 @@ static void rebuild_layout(startman_state_t *state) {
         for (int ctrl_idx = 0; ctrl_idx < f->ctrl_count; ctrl_idx++) {
             gui_control_t *ctrl = &f->controls[ctrl_idx];
 
-            if ((ctrl->type & 0x7F) == CTRL_ICON) {
+            if ((ctrl->type & 0x7F) == CTRL_ICON &&
+                (ctrl->id == CTRL_BACK_BUTTON ||
+                 (ctrl->id >= CTRL_APP_BASE &&
+                  ctrl->id < CTRL_APP_BASE + state->app_count))) {
                 ctrl->icon.checked = 0;
                 ctrl->icon.dragging = 0;
             }
@@ -671,7 +674,8 @@ static void rebuild_layout(startman_state_t *state) {
                 ctrl->x = PADDING_X;
                 ctrl->y = PADDING_Y + row * (ICON_H + PADDING_Y);
                 ctrl_set_visible(state->form, ctrl->id, row >= 0 && row < visible_rows);
-            } else if (ctrl->id >= CTRL_APP_BASE) {
+            } else if (ctrl->id >= CTRL_APP_BASE &&
+                       ctrl->id < CTRL_APP_BASE + state->app_count) {
                 int pos = (ctrl->id - CTRL_APP_BASE) + icon_offset;
                 int col = pos % cols;
                 int row = (pos / cols) - state->scroll_offset;

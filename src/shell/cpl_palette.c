@@ -13,13 +13,24 @@
 #define PALETTE_FILE_FILTER "*.PAL"
 
 #define WIN_WIDTH  354
-#define WIN_HEIGHT 213
-#define WIN_X      279
-#define WIN_Y      232
+#define WIN_HEIGHT 222
 
-#define CTRL_FRAME_FILE    1
-#define CTRL_TXT_PATH      2
-#define CTRL_BTN_OPEN      3
+#define MENU_NEW   1
+#define MENU_OPEN  2
+#define MENU_SAVE  3
+#define MENU_RESET 4
+#define MENU_EXIT  5
+#define MENU_SAVE_AS 6
+
+#define REQUEST_NONE    0
+#define REQUEST_NEW     1
+#define REQUEST_OPEN    2
+#define REQUEST_SAVE    3
+#define REQUEST_SAVE_AS 4
+#define REQUEST_RESET   5
+#define REQUEST_APPLY   6
+#define REQUEST_OK      7
+
 #define CTRL_FRAME_PREVIEW 4
 #define CTRL_PREVIEW_COLOR 5
 #define CTRL_ICON_ONE      6
@@ -37,7 +48,6 @@
 #define CTRL_VAL_GREEN     27
 #define CTRL_VAL_BLUE      28
 
-#define CTRL_BTN_SAVE      89
 #define CTRL_BTN_APPLY     90
 #define CTRL_BTN_OK        91
 #define CTRL_BTN_CANCEL    92
@@ -57,10 +67,12 @@ typedef struct {
     uint8_t orig_palette[16][3];
     int selected_color;
     int preview_dirty;
+    int modified;
     int last_focus;
-    int open_requested;
-    int save_requested;
+    int request;
 } cpl_palette_state_t;
+
+static int save_palette(cpl_palette_state_t *state, int save_as);
 
 static void copy_path(char *dest, const char *src) {
     int i = 0;
@@ -79,6 +91,20 @@ static void palette_error(const char *message) {
     sys_win_msgbox(message, "OK", "Palette");
 }
 
+static void update_title(cpl_palette_state_t *state) {
+    const char *name = state->palette_path;
+    const char *slash = strrchr(name, '/');
+    const char *backslash = strrchr(name, '\\');
+    if (slash) name = slash + 1;
+    if (backslash && backslash + 1 > name) name = backslash + 1;
+    if (!name[0]) name = "Untitled";
+
+    char title[64];
+    snprintf(title, sizeof(title), "Palette - %s%s", state->modified ? "*" : "", name);
+    if (sys_win_set_title(state->form, title) != 0)
+        palette_error("Could not update the window title");
+}
+
 static void update_swatch_controls(cpl_palette_state_t *state) {
     gui_control_t *select = sys_win_get_control(state->form, CTRL_SWATCH_SELECT);
 
@@ -92,7 +118,6 @@ static void update_swatch_controls(cpl_palette_state_t *state) {
         ctrl->y = SWATCH_Y + row * (SWATCH_SIZE + SWATCH_GAP);
         ctrl->w = SWATCH_SIZE;
         ctrl->h = SWATCH_SIZE;
-
         if (select && i == state->selected_color) {
             select->x = ctrl->x - 1;
             select->y = ctrl->y - 1;
@@ -133,9 +158,24 @@ static void update_slider_values(cpl_palette_state_t *state) {
     update_swatch_controls(state);
 }
 
+static void update_rgb_texts(cpl_palette_state_t *state) {
+    static const int ids[3] = { CTRL_VAL_RED, CTRL_VAL_GREEN, CTRL_VAL_BLUE };
+    char buf[8];
+    for (int i = 0; i < 3; i++) {
+        snprintf(buf, sizeof(buf), "%d", state->palette[state->selected_color][i]);
+        ctrl_set_text(state->form, ids[i], buf);
+    }
+}
+
 static void preview_palette(cpl_palette_state_t *state, int dirty) {
     sys_gfx_set_palette_data(state->palette);
-    if (dirty) state->preview_dirty = 1;
+    if (dirty) {
+        state->preview_dirty = 1;
+        if (!state->modified) {
+            state->modified = 1;
+            update_title(state);
+        }
+    }
     update_slider_values(state);
     sys_win_draw(state->form);
 }
@@ -163,13 +203,8 @@ static int save_settings_path(cpl_palette_state_t *state) {
 }
 
 static int apply_palette_setting(cpl_palette_state_t *state) {
-    const char *typed_path = ctrl_get_text(state->form, CTRL_TXT_PATH);
-    if (typed_path && typed_path[0]) copy_path(state->palette_path, typed_path);
-
-    if (!state->palette_path[0]) {
-        palette_error("Choose a palette file first");
+    if (!save_palette(state, 0))
         return -1;
-    }
 
     if (save_settings_path(state) != 0) {
         palette_error("Could not save palette setting");
@@ -184,7 +219,6 @@ static int apply_palette_setting(cpl_palette_state_t *state) {
 static void restore_original_palette(cpl_palette_state_t *state) {
     copy_path(state->palette_path, state->orig_palette_path);
     copy_palette(state->palette, state->orig_palette);
-    ctrl_set_text(state->form, CTRL_TXT_PATH, state->palette_path);
     sys_gfx_set_palette_data(state->orig_palette);
     state->preview_dirty = 0;
 }
@@ -236,6 +270,7 @@ static void apply_rgb_text(cpl_palette_state_t *state, int ctrl_id) {
 
     channel = rgb_value_channel(ctrl_id);
     value = parse_rgb_text(state, ctrl_id);
+    int changed = state->palette[state->selected_color][channel] != value;
     state->palette[state->selected_color][channel] = (uint8_t)value;
 
     if (ctrl_id == CTRL_VAL_RED) {
@@ -251,7 +286,7 @@ static void apply_rgb_text(cpl_palette_state_t *state, int ctrl_id) {
 
     snprintf(buf, sizeof(buf), "%d", value);
     ctrl_set_text(state->form, ctrl_id, buf);
-    preview_palette(state, 1);
+    if (changed) preview_palette(state, 1);
 }
 
 static void sync_rgb_text_focus(cpl_palette_state_t *state) {
@@ -299,7 +334,6 @@ static void open_palette_dialog(cpl_palette_state_t *state) {
 
     if (palette_parse_pal(path, new_palette) != 0) {
         palette_error("That is not a valid JASC palette file");
-        ctrl_set_text(state->form, CTRL_TXT_PATH, state->palette_path);
         sys_gfx_set_palette_data(state->palette);
         update_slider_values(state);
         sys_win_draw(state->form);
@@ -308,26 +342,51 @@ static void open_palette_dialog(cpl_palette_state_t *state) {
 
     copy_path(state->palette_path, path);
     copy_palette(state->palette, new_palette);
-    ctrl_set_text(state->form, CTRL_TXT_PATH, state->palette_path);
+    update_rgb_texts(state);
     preview_palette(state, 1);
+    state->modified = 0;
+    update_title(state);
 }
 
-static void save_palette_dialog(cpl_palette_state_t *state) {
-    char path[256];
+static int save_palette(cpl_palette_state_t *state, int save_as) {
+    char path[256] = "";
+    if (!save_as) copy_path(path, state->palette_path);
 
-    if (!gui_show_path_dialog_filtered("Save Palette", state->palette_path,
-                                       PALETTE_FILE_FILTER, path, sizeof(path)))
-        return;
-
-    ensure_pal_extension(path);
+    if (!path[0]) {
+        const char *initial = state->palette_path[0] ?
+                              state->palette_path : "C:/OSLET/untitled.pal";
+        if (!gui_show_path_dialog_filtered("Save Palette", initial,
+                                           PALETTE_FILE_FILTER, path, sizeof(path)))
+            return 0;
+        ensure_pal_extension(path);
+        int fd = sys_open(path, "r");
+        if (fd >= 0) {
+            sys_close(fd);
+            if (sys_win_msgbox("Replace the existing palette file?",
+                               "Yes|No", "Save Palette") != 1)
+                return 0;
+        }
+    }
     if (palette_save_pal(path, state->palette) != 0) {
         palette_error("Could not save the palette file");
-        return;
+        return 0;
     }
 
     copy_path(state->palette_path, path);
-    ctrl_set_text(state->form, CTRL_TXT_PATH, state->palette_path);
+    state->modified = 0;
+    if (strcmp(path, state->orig_palette_path) == 0)
+        copy_palette(state->orig_palette, state->palette);
+    update_title(state);
     sys_win_draw(state->form);
+    return 1;
+}
+
+static int confirm_discard(cpl_palette_state_t *state) {
+    if (!state->modified) return 1;
+    int choice = sys_win_msgbox("Save changes to the palette?",
+                                "Yes|No|Cancel", "Palette");
+    if (choice == 1) return save_palette(state, 0);
+    return choice == 2;
 }
 
 static int cpl_palette_init(prog_instance_t *inst) {
@@ -337,9 +396,9 @@ static int cpl_palette_init(prog_instance_t *inst) {
     state->form = NULL;
     state->selected_color = 0;
     state->preview_dirty = 0;
+    state->modified = 0;
     state->last_focus = -1;
-    state->open_requested = 0;
-    state->save_requested = 0;
+    state->request = REQUEST_NONE;
     copy_path(state->palette_path, DEFAULT_PALETTE_PATH);
     load_settings_path(state);
 
@@ -354,7 +413,16 @@ static int cpl_palette_init(prog_instance_t *inst) {
     copy_palette(state->orig_palette, state->palette);
     inst->user_data = state;
 
-    state->form = sys_win_create_form("Palette", WIN_X, WIN_Y, WIN_WIDTH, WIN_HEIGHT);
+    sys_display_info_t display;
+    if (sys_gfx_get_display_info(&display) != 0) {
+        palette_error("Could not query the display size");
+        sys_free(state);
+        inst->user_data = 0;
+        return -1;
+    }
+    int x = display.width > WIN_WIDTH ? (display.width - WIN_WIDTH) / 2 : 0;
+    int y = display.height > WIN_HEIGHT ? (display.height - WIN_HEIGHT) / 2 : 0;
+    state->form = sys_win_create_form("Palette", x, y, WIN_WIDTH, WIN_HEIGHT);
     if (!state->form) {
         sys_free(state);
         inst->user_data = 0;
@@ -362,12 +430,24 @@ static int cpl_palette_init(prog_instance_t *inst) {
     }
     sys_win_set_icon(state->form, "C:/ICONS/PALETTE.ICO");
     sys_win_set_resizable(state->form, 0);
+    sys_win_menubar_enable(state->form);
+    int file_menu = sys_win_menubar_add_menu(state->form, "File");
+    if (file_menu < 0 ||
+        sys_win_menubar_add_item(state->form, file_menu, "New palette\tCtrl+N", MENU_NEW) < 0 ||
+        sys_win_menubar_add_item(state->form, file_menu, "Open palette...\tCtrl+O", MENU_OPEN) < 0 ||
+        sys_win_menubar_add_item(state->form, file_menu, "Save palette\tCtrl+S", MENU_SAVE) < 0 ||
+        sys_win_menubar_add_item(state->form, file_menu, "Save palette as...", MENU_SAVE_AS) < 0 ||
+        sys_win_menubar_add_item(state->form, file_menu, "Reset to default", MENU_RESET) < 0 ||
+        sys_win_menubar_add_separator(state->form, file_menu) < 0 ||
+        sys_win_menubar_add_item(state->form, file_menu, "Exit", MENU_EXIT) < 0) {
+        palette_error("Could not create the palette menu");
+        sys_win_destroy_form(state->form);
+        sys_free(state);
+        inst->user_data = 0;
+        return -1;
+    }
 
     static gui_control_t controls[] = {
-        { .type = CTRL_FRAME,      .x = 6,   .y = 5,   .w = 190, .h = 50, .fg = -1, .bg = -1, .id = CTRL_FRAME_FILE,    .text = "System palette" },
-        { .type = CTRL_TEXTBOX,    .x = 16,  .y = 28,  .w = 140, .h = 18, .fg = -1, .bg = -1, .id = CTRL_TXT_PATH,      .textbox = { .max_length = 255 }, .text = "" },
-        { .type = CTRL_BUTTON,     .x = 164, .y = 28,  .w = 22,  .h = 18, .fg = 0, .bg = -1, .id = CTRL_BTN_OPEN,      .text = "..." },
-
         { .type = CTRL_FRAME,      .x = 202, .y = 5,   .w = 146, .h = 142, .fg = -1, .bg = -1, .id = CTRL_FRAME_PREVIEW, .text = "Colour preview" },
         { .type = CTRL_LABEL,      .x = 208, .y = 26,  .w = 16,  .h = 16, .fg = -1, .bg = -1, .id = CTRL_SWATCH_SELECT, .border = 1, .border_color = 0, .text = "" },
         { .type = CTRL_PICTUREBOX, .x = 214, .y = 68,  .w = 32,  .h = 32, .fg = 0, .bg = -1, .id = CTRL_ICON_ONE,      .text = "C:/ICONS/VIEWER.ICO" },
@@ -375,22 +455,21 @@ static int cpl_palette_init(prog_instance_t *inst) {
         { .type = CTRL_PICTUREBOX, .x = 308, .y = 68,  .w = 32,  .h = 32, .fg = 0, .bg = -1, .id = CTRL_ICON_THREE,    .text = "C:/ICONS/CABINET.ICO" },
         { .type = CTRL_LABEL,      .x = 253, .y = 112, .w = 44,  .h = 24, .fg = -1, .bg = 0,  .id = CTRL_PREVIEW_COLOR, .border = 1, .border_color = 0, .text = "" },
 
-        { .type = CTRL_LABEL,      .x = 6,   .y = 72,                    .fg = -1, .bg = -1, .id = CTRL_LBL_RED,   .text = "Red" },
-        { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 70,  .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_RED,   .scrollbar = { .max_length = 255, .checked = 1 } },
-        { .type = CTRL_TEXTBOX,    .x = 164, .y = 70,  .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_RED,   .textbox = { .max_length = 4 }, .text = "0" },
+        { .type = CTRL_LABEL,      .x = 6,   .y = 28,                    .fg = -1, .bg = -1, .id = CTRL_LBL_RED,   .text = "Red" },
+        { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 26,  .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_RED,   .scrollbar = { .max_length = 255, .checked = 1 } },
+        { .type = CTRL_TEXTBOX,    .x = 164, .y = 26,  .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_RED,   .textbox = { .max_length = 4 }, .text = "0" },
 
-        { .type = CTRL_LABEL,      .x = 6,   .y = 100,                   .fg = -1, .bg = -1, .id = CTRL_LBL_GREEN, .text = "Green" },
-        { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 98,  .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_GREEN, .scrollbar = { .max_length = 255, .checked = 1 } },
-        { .type = CTRL_TEXTBOX,    .x = 164, .y = 98,  .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_GREEN, .textbox = { .max_length = 4 }, .text = "0" },
+        { .type = CTRL_LABEL,      .x = 6,   .y = 68,                    .fg = -1, .bg = -1, .id = CTRL_LBL_GREEN, .text = "Green" },
+        { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 66,  .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_GREEN, .scrollbar = { .max_length = 255, .checked = 1 } },
+        { .type = CTRL_TEXTBOX,    .x = 164, .y = 66,  .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_GREEN, .textbox = { .max_length = 4 }, .text = "0" },
 
-        { .type = CTRL_LABEL,      .x = 6,   .y = 128,                   .fg = -1, .bg = -1, .id = CTRL_LBL_BLUE,  .text = "Blue" },
-        { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 126, .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_BLUE,  .scrollbar = { .max_length = 255, .checked = 1 } },
-        { .type = CTRL_TEXTBOX,    .x = 164, .y = 126, .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_BLUE,  .textbox = { .max_length = 4 }, .text = "0" },
+        { .type = CTRL_LABEL,      .x = 6,   .y = 108,                   .fg = -1, .bg = -1, .id = CTRL_LBL_BLUE,  .text = "Blue" },
+        { .type = CTRL_SCROLLBAR,  .x = 50,  .y = 106, .w = 108, .h = 18, .fg = 0, .bg = 15, .id = CTRL_SLIDER_BLUE,  .scrollbar = { .max_length = 255, .checked = 1 } },
+        { .type = CTRL_TEXTBOX,    .x = 164, .y = 106, .w = 30,  .h = 18, .fg = -1, .bg = -1, .id = CTRL_VAL_BLUE,  .textbox = { .max_length = 4 }, .text = "0" },
 
-        { .type = CTRL_BUTTON,     .x = 55,  .y = 164, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_SAVE,   .text = "Save" },
-        { .type = CTRL_BUTTON,     .x = 117, .y = 164, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_APPLY,  .text = "Apply" },
-        { .type = CTRL_BUTTON,     .x = 179, .y = 164, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_OK,     .text = "OK" },
-        { .type = CTRL_BUTTON,     .x = 241, .y = 164, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_CANCEL, .text = "Cancel" },
+        { .type = CTRL_BUTTON,     .x = 86,  .y = 155, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_APPLY,  .text = "Apply" },
+        { .type = CTRL_BUTTON,     .x = 148, .y = 155, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_OK,     .text = "OK" },
+        { .type = CTRL_BUTTON,     .x = 210, .y = 155, .w = 58,  .h = 22, .fg = 0, .bg = -1, .id = CTRL_BTN_CANCEL, .text = "Cancel" },
     };
 
     for (int i = 0; i < (int)(sizeof(controls) / sizeof(controls[0])); i++)
@@ -405,7 +484,7 @@ static int cpl_palette_init(prog_instance_t *inst) {
         sys_win_add_control(state->form, &swatch);
     }
 
-    ctrl_set_text(state->form, CTRL_TXT_PATH, state->palette_path);
+    update_title(state);
     init_scrollbars(state);
     update_slider_values(state);
 
@@ -422,6 +501,27 @@ static int cpl_palette_event(prog_instance_t *inst, int win_idx,
 
     sync_rgb_text_focus(state);
 
+    if (event->type == SYS_WIN_EVENT_CONTROL_KEY) {
+        if (rgb_value_control(state->last_focus))
+            apply_rgb_text(state, state->last_focus);
+        if (event->id == 14) state->request = REQUEST_NEW;
+        else if (event->id == 15) state->request = REQUEST_OPEN;
+        else if (event->id == 19) state->request = REQUEST_SAVE;
+        else return PROG_EVENT_NONE;
+        return PROG_EVENT_HANDLED;
+    }
+    if (event->type == SYS_WIN_EVENT_MENU) {
+        if (rgb_value_control(state->last_focus))
+            apply_rgb_text(state, state->last_focus);
+        if (event->id == MENU_NEW) state->request = REQUEST_NEW;
+        else if (event->id == MENU_OPEN) state->request = REQUEST_OPEN;
+        else if (event->id == MENU_SAVE) state->request = REQUEST_SAVE;
+        else if (event->id == MENU_SAVE_AS) state->request = REQUEST_SAVE_AS;
+        else if (event->id == MENU_RESET) state->request = REQUEST_RESET;
+        else if (event->id == MENU_EXIT) return PROG_EVENT_CLOSE;
+        else return PROG_EVENT_NONE;
+        return PROG_EVENT_HANDLED;
+    }
     if (event->type == SYS_WIN_EVENT_REDRAW ||
         event->type == SYS_WIN_EVENT_WINDOW_CHANGED) return PROG_EVENT_REDRAW;
     if (event->type != SYS_WIN_EVENT_CONTROL) return PROG_EVENT_NONE;
@@ -431,16 +531,6 @@ static int cpl_palette_event(prog_instance_t *inst, int win_idx,
         state->selected_color = id - CTRL_COLOR_BASE;
         update_slider_values(state);
         sys_win_draw(state->form);
-        return PROG_EVENT_HANDLED;
-    }
-
-    if (id == CTRL_BTN_OPEN) {
-        state->open_requested = 1;
-        return PROG_EVENT_HANDLED;
-    }
-
-    if (id == CTRL_BTN_SAVE) {
-        state->save_requested = 1;
         return PROG_EVENT_HANDLED;
     }
 
@@ -458,14 +548,12 @@ static int cpl_palette_event(prog_instance_t *inst, int win_idx,
     }
 
     if (id == CTRL_BTN_APPLY) {
-        if (apply_palette_setting(state) == 0)
-            sys_win_draw(state->form);
+        state->request = REQUEST_APPLY;
         return PROG_EVENT_HANDLED;
     }
 
     if (id == CTRL_BTN_OK) {
-        if (apply_palette_setting(state) == 0)
-            return PROG_EVENT_CLOSE;
+        state->request = REQUEST_OK;
         return PROG_EVENT_HANDLED;
     }
 
@@ -483,14 +571,38 @@ static void cpl_palette_update(prog_instance_t *inst) {
 
     sync_rgb_text_focus(state);
 
-    if (state->open_requested) {
-        state->open_requested = 0;
-        open_palette_dialog(state);
+    gui_form_t *form = (gui_form_t*)state->form;
+    gui_control_t *focused = form && form->focused_control_id >= 0 ?
+        sys_win_get_control(state->form, form->focused_control_id) : NULL;
+    if (state->request == REQUEST_NONE && sys_win_is_focused(state->form) &&
+        (!focused || focused->type != CTRL_TEXTBOX)) {
+        int key = sys_get_key_nonblock();
+        if (key == 14) state->request = REQUEST_NEW;
+        else if (key == 15) state->request = REQUEST_OPEN;
+        else if (key == 19) state->request = REQUEST_SAVE;
     }
 
-    if (state->save_requested) {
-        state->save_requested = 0;
-        save_palette_dialog(state);
+    int request = state->request;
+    state->request = REQUEST_NONE;
+    if (request == REQUEST_NEW && confirm_discard(state)) {
+        state->palette_path[0] = '\0';
+        palette_set_default(state->palette);
+        update_rgb_texts(state);
+        preview_palette(state, 1);
+        update_title(state);
+    } else if (request == REQUEST_OPEN && confirm_discard(state)) {
+        open_palette_dialog(state);
+    } else if (request == REQUEST_SAVE || request == REQUEST_SAVE_AS) {
+        save_palette(state, request == REQUEST_SAVE_AS);
+    } else if (request == REQUEST_RESET) {
+        palette_set_default(state->palette);
+        update_rgb_texts(state);
+        preview_palette(state, 1);
+    } else if (request == REQUEST_APPLY || request == REQUEST_OK) {
+        if (apply_palette_setting(state) == 0 && request == REQUEST_OK) {
+            progman_close(inst->instance_id);
+            return;
+        }
     }
 }
 

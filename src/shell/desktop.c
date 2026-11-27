@@ -609,7 +609,7 @@ static void pump_all_program_events(int mx, int my, unsigned char mb) {
                     if (ctrl && ctrl->icon.dragging) icon_dragging = 1;
                 }
             }
-            int should_process = (topmost == form) || gform->dragging ||
+            int should_process = (topmost == form) || sys_win_is_focused(form) || gform->dragging ||
                                  gform->resizing || icon_dragging ||
                                  gform->display_resize_pending;
             

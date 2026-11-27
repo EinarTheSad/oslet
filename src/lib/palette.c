@@ -11,7 +11,7 @@ static const uint8_t default_palette[16][3] = {
     {0x64, 0x3C, 0x18},
     {0x46, 0x23, 0x37},
     {0x64, 0x64, 0x18},
-    {0xA0, 0xA0, 0xA0},
+    {0xAA, 0xAA, 0xAA},
     {0x55, 0x55, 0x55},
     {0x59, 0x7D, 0xCE},
     {0x6D, 0xAA, 0x2C},
@@ -149,8 +149,8 @@ int palette_save_pal(const char *path, const uint8_t palette[16][3]) {
     }
 
     int written = sys_write_file(fd, buffer, offset);
-    sys_close(fd);
-    return (written == offset) ? 0 : -1;
+    int closed = sys_close(fd);
+    return (written == offset && closed == 0) ? 0 : -1;
 }
 
 int palette_load_default_file(const char *path, uint8_t palette[16][3]) {

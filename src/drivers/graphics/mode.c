@@ -46,6 +46,7 @@ typedef struct {
 static framebuffer_t framebuffer;
 static int framebuffer_mapped;
 static uint8_t color_lookup[32 * 32 * 32];
+static uint8_t fixed_color_lookup[32 * 32 * 32];
 static uint8_t color_palette[256][3];
 
 #define GFX_MMIO_PAGES ((16u * 1024u * 1024u / PAGE_SIZE) + 1u)
@@ -523,51 +524,69 @@ static void set_planar_palette_mapping(void) {
 
 static int set_mode_palette(uint8_t model, int vga_compatible) {
     if (model != 4) return vbe_set_palette(gfx_palette, vga_compatible);
+    static int fixed_ready;
+    /* Windows 95 system colours and a reduced 7x9x4 colour cube. */
+    static const uint8_t windows_colors[20][3] = {
+        {0, 0, 0}, {128, 0, 0}, {0, 128, 0}, {128, 128, 0},
+        {0, 0, 128}, {128, 0, 128}, {0, 128, 128}, {192, 192, 192},
+        {192, 220, 192}, {166, 202, 240}, {255, 251, 240}, {160, 160, 164},
+        {128, 128, 128}, {255, 0, 0}, {0, 255, 0}, {255, 255, 0},
+        {0, 0, 255}, {255, 0, 255}, {0, 255, 255}, {255, 255, 255}
+    };
+    static const uint8_t green_levels[8] = {0, 31, 63, 95, 159, 191, 223, 255};
     uint8_t (*palette)[3] = color_palette;
     for (int i = 0; i < 16; ++i)
         for (int c = 0; c < 3; ++c) palette[i][c] = gfx_palette[i][c];
-    for (int i = 0; i < 216; ++i) {
-        palette[16 + i][0] = (uint8_t)((i / 36) * 51);
-        palette[16 + i][1] = (uint8_t)(((i / 6) % 6) * 51);
-        palette[16 + i][2] = (uint8_t)((i % 6) * 51);
+    int entry = 16;
+    for (int i = 0; i < 224; ++i) {
+        if (i == 0 || i == 3 || i == 28 || i == 31) continue;
+        palette[entry][0] = (uint8_t)((i / 32) * 255 / 6);
+        palette[entry][1] = green_levels[(i / 4) % 8];
+        palette[entry][2] = (uint8_t)((i % 4) * 85);
+        ++entry;
     }
-    for (int i = 0; i < 24; ++i)
-        for (int c = 0; c < 3; ++c) palette[232 + i][c] = (uint8_t)((i * 255) / 23);
+    for (int i = 0; i < 20; ++i)
+        for (int c = 0; c < 3; ++c) palette[236 + i][c] = windows_colors[i][c];
     for (unsigned r = 0; r < 32; ++r) {
         for (unsigned g = 0; g < 32; ++g) {
             for (unsigned b = 0; b < 32; ++b) {
                 int red = (int)((r * 255u + 15u) / 31u);
                 int green = (int)((g * 255u + 15u) / 31u);
                 int blue = (int)((b * 255u + 15u) / 31u);
-                int best = 16 + ((red + 25) / 51) * 36 +
-                           ((green + 25) / 51) * 6 + (blue + 25) / 51;
+                unsigned key = (r << 10) | (g << 5) | b;
+                int best = fixed_ready ? fixed_color_lookup[key] : 16;
                 int dr = red - palette[best][0];
                 int dg = green - palette[best][1];
                 int db = blue - palette[best][2];
                 int distance = dr * dr + dg * dg + db * db;
-                int grey = 232 + ((red + green + blue) * 23 + 382) / 765;
-                dr = red - palette[grey][0];
-                dg = green - palette[grey][1];
-                db = blue - palette[grey][2];
-                int candidate = dr * dr + dg * dg + db * db;
-                if (candidate < distance) {
-                    distance = candidate;
-                    best = grey;
+                if (!fixed_ready) {
+                    for (int i = 17; i < 256; ++i) {
+                        dr = red - palette[i][0];
+                        dg = green - palette[i][1];
+                        db = blue - palette[i][2];
+                        int candidate = dr * dr + dg * dg + db * db;
+                        if (candidate < distance) {
+                            distance = candidate;
+                            best = i;
+                        }
+                    }
+                    fixed_color_lookup[key] = (uint8_t)best;
                 }
                 for (int i = 0; i < 16; ++i) {
                     int dr = red - palette[i][0];
                     int dg = green - palette[i][1];
                     int db = blue - palette[i][2];
-                    candidate = dr * dr + dg * dg + db * db;
+                    int candidate = dr * dr + dg * dg + db * db;
                     if (candidate < distance) {
                         distance = candidate;
                         best = i;
                     }
                 }
-                color_lookup[(r << 10) | (g << 5) | b] = (uint8_t)best;
+                color_lookup[key] = (uint8_t)best;
             }
         }
     }
+    fixed_ready = 1;
     return vbe_set_palette_entries(palette, 256, vga_compatible);
 }
 
@@ -835,7 +854,7 @@ uint8_t gfx_palette[16][3] = { // osLET custom
     {0x64, 0x3C, 0x18}, // 4  brown
     {0x46, 0x23, 0x37}, // 5  dark purple
     {0x64, 0x64, 0x18}, // 6  olive
-    {0xA0, 0xA0, 0xA0}, // 7  grey
+    {0xAA, 0xAA, 0xAA}, // 7  grey
     {0x55, 0x55, 0x55}, // 8  dark grey
     {0x59, 0x7D, 0xCE}, // 9  blue
     {0x6D, 0xAA, 0x2C}, // 10 green
